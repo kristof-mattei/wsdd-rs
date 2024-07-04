@@ -9,11 +9,7 @@
             "request": "launch",
             "name": "Debug executable 'wsdd-rs'",
             "cargo": {
-                "args": [
-                    "build",
-                    "--bin=wsdd-rs",
-                    "--package=wsdd-rs"
-                ],
+                "args": ["build", "--bin=wsdd-rs", "--package=wsdd-rs"],
                 "filter": {
                     "name": "wsdd-rs",
                     "kind": "bin"

@@ -1,37 +1,37 @@
 {
-	"name": "wsdd-rs",
-	"version": "0.0.0-development",
-	"description": "It's written in Rust!",
-	"main": "src/main.rs",
-	"scripts": {
-		"prettier": "prettier --write .",
-		"release": "semantic-release"
-	},
-	"engines": {
-		"node": ">=20.15.0",
-		"npm": ">=10.8.1"
-	},
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/kristof-mattei/wsdd-rs.git"
-	},
-	"author": "",
-	"license": "ISC",
-	"bugs": {
-		"url": "https://github.com/kristof-mattei/wsdd-rs/issues"
-	},
-	"homepage": "https://github.com/kristof-mattei/wsdd-rs#readme",
-	"devDependencies": {
-		"@actions/tool-cache": "2.0.1",
-		"@semantic-release/changelog": "6.0.3",
-		"@semantic-release/commit-analyzer": "13.0.0",
-		"@semantic-release/github": "10.0.7",
-		"@semantic-release/release-notes-generator": "14.0.1",
-		"conventional-changelog-conventionalcommits": "8.0.0",
-		"prettier": "3.3.2",
-		"semantic-release": "24.0.0"
-	},
-	"publishConfig": {
-		"access": "restricted"
-	}
+  "name": "wsdd-rs",
+  "version": "0.0.0-development",
+  "description": "It's written in Rust!",
+  "main": "src/main.rs",
+  "scripts": {
+    "prettier": "prettier --write .",
+    "release": "semantic-release"
+  },
+  "engines": {
+    "node": ">=20.15.0",
+    "npm": ">=10.8.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kristof-mattei/wsdd-rs.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/kristof-mattei/wsdd-rs/issues"
+  },
+  "homepage": "https://github.com/kristof-mattei/wsdd-rs#readme",
+  "devDependencies": {
+    "@actions/tool-cache": "2.0.1",
+    "@semantic-release/changelog": "6.0.3",
+    "@semantic-release/commit-analyzer": "13.0.0",
+    "@semantic-release/github": "10.0.7",
+    "@semantic-release/release-notes-generator": "14.0.1",
+    "conventional-changelog-conventionalcommits": "8.0.0",
+    "prettier": "3.3.2",
+    "semantic-release": "24.0.0"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  }
 }
