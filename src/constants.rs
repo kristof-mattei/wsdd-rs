@@ -1,4 +1,4 @@
-pub  const WSDD_VERSION: &str = "0.8";
+pub const WSDD_VERSION: &str = "0.8";
 
 // # constants for WSD XML/SOAP parsing
 // WSA_URI: str = 'http://schemas.xmlsoap.org/ws/2004/08/addressing'
@@ -18,7 +18,7 @@ const WSDP_URI: &str = "http://schemas.xmlsoap.org/ws/2006/02/devprof";
 //     'pub': 'http://schemas.microsoft.com/windows/pub/2005/07'
 // }
 
-pub  static NAMESPACES: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+pub static NAMESPACES: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     HashMap::from_iter([
         ("soap", "http://www.w3.org/2003/05/soap-envelope"),
         ("wsa", WSA_URI),
@@ -47,32 +47,31 @@ const WSD_TYPE_DEVICE: &str = "wsdp:Device";
 const PUB_COMPUTER: &str = "pub:Computer";
 // WSD_TYPE_DEVICE_COMPUTER: str = '{0} {1}'.format(WSD_TYPE_DEVICE, PUB_COMPUTER)
 // TODO: fix when format_args!() becomes const
-pub  const WSD_TYPE_DEVICE_COMPUTER: &str = "wsdp:Device pub:Computer";
+pub const WSD_TYPE_DEVICE_COMPUTER: &str = "wsdp:Device pub:Computer";
 
 use std::{
     collections::HashMap,
     net::{Ipv4Addr, Ipv6Addr},
     num::NonZeroU16,
+    sync::LazyLock,
 };
 
-use once_cell::sync::Lazy;
-
 // WSD_MCAST_GRP_V4: str = '239.255.255.250'
-pub  const WSD_MCAST_GRP_V4: Ipv4Addr = Ipv4Addr::new(239, 255, 255, 250);
+pub const WSD_MCAST_GRP_V4: Ipv4Addr = Ipv4Addr::new(239, 255, 255, 250);
 // WSD_MCAST_GRP_V6: str = 'ff02::c'  # link-local
-pub  const WSD_MCAST_GRP_V6: Ipv6Addr = Ipv6Addr::new(65282, 0, 0, 0, 0, 0, 0, 12);
+pub const WSD_MCAST_GRP_V6: Ipv6Addr = Ipv6Addr::new(65282, 0, 0, 0, 0, 0, 0, 12);
 
 // WSA_ANON: str = WSA_URI + '/role/anonymous'
-pub  const WSA_ANON: &str = "http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous";
+pub const WSA_ANON: &str = "http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous";
 // WSA_DISCOVERY: str = 'urn:schemas-xmlsoap-org:ws:2005:04:discovery'
 
 // MIME_TYPE_SOAP_XML: str = 'application/soap+xml'
 
 // # protocol assignments (WSD spec/Section 2.4)
 // WSD_UDP_PORT: int = 3702
-pub  const WSD_UDP_PORT: NonZeroU16 = unsafe { NonZeroU16::new_unchecked(3702) };
+pub const WSD_UDP_PORT: NonZeroU16 = unsafe { NonZeroU16::new_unchecked(3702) };
 // WSD_HTTP_PORT: int = 5357
-pub  const WSD_HTTP_PORT: NonZeroU16 = unsafe { NonZeroU16::new_unchecked(5357) };
+pub const WSD_HTTP_PORT: NonZeroU16 = unsafe { NonZeroU16::new_unchecked(5357) };
 // WSD_MAX_LEN: int = 32767
 
 // WSDD_LISTEN_PORT = 5359
