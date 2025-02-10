@@ -16,7 +16,7 @@
                     "text": "-enable-pretty-printing",
                     "ignoreFailures": false
                 }
-            ],
+            ]
         }
     },
     "rust-analyzer.debug.openDebugPane": true,

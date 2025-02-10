@@ -9,11 +9,7 @@
             "request": "launch",
             "name": "Debug executable 'wsdd-rs'",
             "cargo": {
-                "args": [
-                    "build",
-                    "--bin=wsdd-rs",
-                    "--package=wsdd-rs"
-                ],
+                "args": ["build", "--bin=wsdd-rs", "--package=wsdd-rs"],
                 "filter": {
                     "name": "wsdd-rs",
                     "kind": "bin"
@@ -33,20 +29,13 @@
             "request": "launch",
             "name": "Debug executable 'wsdd-rs' with incorrect uuid",
             "cargo": {
-                "args": [
-                    "build",
-                    "--bin=wsdd-rs",
-                    "--package=wsdd-rs"
-                ],
+                "args": ["build", "--bin=wsdd-rs", "--package=wsdd-rs"],
                 "filter": {
                     "name": "wsdd-rs",
                     "kind": "bin"
                 }
             },
-            "args": [
-                "--uuid",
-                "dc5806ac-724f-40e3-b477-80325"
-            ],
+            "args": ["--uuid", "dc5806ac-724f-40e3-b477-80325"],
             "cwd": "${workspaceFolder}",
             "env": {
                 "RUST_BACKTRACE": "1",
@@ -60,19 +49,13 @@
             "request": "launch",
             "name": "Debug executable 'wsdd-rs' with -h",
             "cargo": {
-                "args": [
-                    "build",
-                    "--bin=wsdd-rs",
-                    "--package=wsdd-rs"
-                ],
+                "args": ["build", "--bin=wsdd-rs", "--package=wsdd-rs"],
                 "filter": {
                     "name": "wsdd-rs",
                     "kind": "bin"
                 }
             },
-            "args": [
-                "-h"
-            ],
+            "args": ["-h"],
             "cwd": "${workspaceFolder}",
             "env": {
                 "RUST_BACKTRACE": "1",

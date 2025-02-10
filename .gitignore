@@ -1,4 +1,5 @@
 /target
+.mypy_cache
 
 .cr-release-packages
 .cr-index
