@@ -9,7 +9,11 @@
             "request": "launch",
             "name": "Debug executable 'wsdd-rs'",
             "cargo": {
-                "args": ["build", "--bin=wsdd-rs", "--package=wsdd-rs"],
+                "args": [
+                    "build",
+                    "--bin=wsdd-rs",
+                    "--package=wsdd-rs"
+                ],
                 "filter": {
                     "name": "wsdd-rs",
                     "kind": "bin"
@@ -21,8 +25,61 @@
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
             },
-            "internalConsoleOptions": "openOnSessionStart",
-            "terminal": "console"
+            "internalConsoleOptions": "neverOpen",
+            "terminal": "integrated"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'wsdd-rs' with incorrect uuid",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=wsdd-rs",
+                    "--package=wsdd-rs"
+                ],
+                "filter": {
+                    "name": "wsdd-rs",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "--uuid",
+                "dc5806ac-724f-40e3-b477-80325"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
+            },
+            "internalConsoleOptions": "neverOpen",
+            "terminal": "integrated"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'wsdd-rs' with -h",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=wsdd-rs",
+                    "--package=wsdd-rs"
+                ],
+                "filter": {
+                    "name": "wsdd-rs",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "-h"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
+            },
+            "internalConsoleOptions": "neverOpen",
+            "terminal": "integrated"
         },
         {
             "type": "lldb",
@@ -46,8 +103,8 @@
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
             },
-            "internalConsoleOptions": "openOnSessionStart",
-            "terminal": "console"
+            "internalConsoleOptions": "neverOpen",
+            "terminal": "integrated"
         },
         {
             "type": "lldb",
@@ -71,8 +128,8 @@
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
             },
-            "internalConsoleOptions": "openOnSessionStart",
-            "terminal": "console"
+            "internalConsoleOptions": "neverOpen",
+            "terminal": "integrated"
         }
     ]
 }
