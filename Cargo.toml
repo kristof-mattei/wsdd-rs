@@ -14,8 +14,15 @@ repository = "https://github.com/kristof-mattei/wsdd-rs"
 [lints.clippy]
 # don't stop from compiling / running
 all = "warn"
-pedantic = "warn"
 cargo = "warn"
+complexity = "warn"
+correctness = "warn"
+pedantic = "warn"
+perf = "warn"
+# restriction = "warn"
+style = "warn"
+suspicious = "warn"
+
 # this one causes confusion when combining variables (`foo`) and
 # dereferenced variables (`foo.bar`). The latter cannot be inlined
 # so we don't inline anything
@@ -25,18 +32,10 @@ uninlined-format-args = { level = "allow", priority = 127 }
 let_underscore_drop = { level = "deny", priority = 127 }
 non_ascii_idents = { level = "deny", priority = 127 }
 
-[profile.dev.package.backtrace]
-opt-level = 3
-
-[features]
-coverage = []
-
 [dependencies]
 bytemuck = { version = "1.18.0", features = ["derive"] }
 clap = { version = "4.5.20", features = ["cargo", "string", "derive"] }
-color-eyre = { git = "https://github.com/eyre-rs/eyre", rev = "2dc0688d33a487009e8bc3222cbab135261383b0", features = [
-    "track-caller",
-] }
+color-eyre = { git = "https://github.com/eyre-rs/eyre", rev = "c4ee249f7c51dc6452e8704ae8d117d90d6eeebc" }
 dotenvy = "0.15.7"
 libc = "0.2.159"
 mockall = "0.13.0"
@@ -65,9 +64,6 @@ tracing-subscriber = { version = "0.3.18", features = [
 uuid = { version = "1.10.0", features = ["v4", "v5"] }
 zerocopy = { version = "0.8.5", features = ["derive"] }
 
-# We compile the Docker container with musl to get a static library. Smaller, faster.
-# BUT that means that we need to include openssl
-# Documentation on the syntax:
-# https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies
-[target.'cfg(all(target_arch = "x86_64", target_os="linux", target_env="musl"))'.dependencies]
-# openssl = { version = "0.10.36", features = ["vendored"] }
+# OpenSSL for musl
+[target.'cfg(all(any(target_arch="x86_64", target_arch="aarch64"), target_os="linux", target_env="musl"))'.dependencies]
+openssl = { version = "0.10.70", features = ["vendored"] }
