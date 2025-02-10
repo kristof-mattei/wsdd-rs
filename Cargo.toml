@@ -37,7 +37,7 @@ bytemuck = { version = "1.18.0", features = ["derive"] }
 clap = { version = "4.5.20", features = ["cargo", "string", "derive"] }
 color-eyre = { git = "https://github.com/eyre-rs/eyre", rev = "c4ee249f7c51dc6452e8704ae8d117d90d6eeebc" }
 dotenvy = "0.15.7"
-libc = "0.2.159"
+libc = "0.2.169"
 socket2 = "0.5.7"
 time = { version = "0.3.36", features = ["formatting"] }
 tokio = { version = "1.40.0", features = [
