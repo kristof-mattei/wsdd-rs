@@ -1,8 +1,9 @@
+#![expect(clippy::struct_field_names)]
 use zerocopy::{Immutable, IntoBytes};
 
-#[allow(non_camel_case_types)]
 #[derive(IntoBytes, Immutable)]
-/// Copy from libc::nlmsghdr, but we need zerocopy
+#[repr(C)]
+/// Copy from `libc::nlmsghdr`, but we need zerocopy
 pub struct nlmsghdr {
     pub nlmsg_len: u32,
     pub nlmsg_type: u16,
@@ -11,8 +12,8 @@ pub struct nlmsghdr {
     pub nlmsg_pid: u32,
 }
 
-#[allow(non_camel_case_types)]
 #[derive(IntoBytes, Immutable)]
+#[repr(C)]
 pub struct ifaddrmsg {
     pub ifa_family: u8,    /* Address type */
     pub ifa_prefixlen: u8, /* Prefixlength of address */

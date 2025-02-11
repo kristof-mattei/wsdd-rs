@@ -171,6 +171,7 @@ impl<'s> MulticastHandler<'s> {
             listen_address
         );
 
+        // TODO
         //         # register calbacks for incoming data (also for mc)
         //         self.aio_loop.add_reader(self.recv_socket.fileno(), self.read_socket, self.recv_socket)
         //         self.aio_loop.add_reader(self.mc_send_socket.fileno(), self.read_socket, self.mc_send_socket)
@@ -190,6 +191,8 @@ impl<'s> MulticastHandler<'s> {
 
     //     def cleanup(self) -> None:
     pub fn cleanup(&mut self) {
+
+        // TODO
         //         self.aio_loop.remove_reader(self.recv_socket)
         //         self.aio_loop.remove_reader(self.mc_send_socket)
         //         self.aio_loop.remove_reader(self.uc_send_socket)
@@ -250,6 +253,7 @@ impl<'s> MulticastHandler<'s> {
 
         #[cfg(target_os = "linux")]
         {
+            const IPV6_MULTICAST_ALL: i32 = 29;
             // Could anyone ask the Linux folks for the rationale for this!?
             // if platform.system() == 'Linux':
             //     try:
@@ -257,8 +261,6 @@ impl<'s> MulticastHandler<'s> {
             //         IPV6_MULTICAST_ALL = 29
             //         self.recv_socket.setsockopt(socket.IPPROTO_IPV6, IPV6_MULTICAST_ALL, 0)
             let value: libc::c_int = 0;
-
-            const IPV6_MULTICAST_ALL: i32 = 29;
 
             #[expect(clippy::cast_possible_truncation)]
             let result = unsafe {
@@ -404,12 +406,11 @@ impl<'s> MulticastHandler<'s> {
 
         #[cfg(target_os = "linux")]
         {
+            const IP_MULTICAST_ALL: i32 = 49;
             // if platform.system() == 'Linux':
             //     IP_MULTICAST_ALL = 49
             //     self.recv_socket.setsockopt(socket.IPPROTO_IP, IP_MULTICAST_ALL, 0)
             let value: libc::c_int = 0;
-
-            const IP_MULTICAST_ALL: i32 = 49;
 
             #[expect(clippy::cast_possible_truncation)]
             let result = unsafe {
