@@ -23,7 +23,7 @@
   "homepage": "https://github.com/kristof-mattei/wsdd-rs#readme",
   "devDependencies": {
     "@actions/tool-cache": "2.0.2",
-    "prettier": "3.5.0"
+    "prettier": "3.5.1"
   },
   "publishConfig": {
     "access": "restricted"
