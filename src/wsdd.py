@@ -1428,6 +1428,11 @@ class NetworkAddressMonitor(metaclass=MetaEnumAfterInit):
         return None
 
 
+# from rtnetlink.h
+RTMGRP_LINK: int = 1
+RTMGRP_IPV4_IFADDR: int = 0x10
+RTMGRP_IPV6_IFADDR: int = 0x100
+
 # from netlink.h (struct nlmsghdr)
 NLM_HDR_DEF: str = '@IHHII'
 
@@ -1459,6 +1464,138 @@ RTA_LEN: int = 4
 
 def align_to(x: int, n: int) -> int:
     return ((x + n - 1) // n) * n
+
+
+class NetlinkAddressMonitor(NetworkAddressMonitor):
+    """
+    Implementation of the AddressMonitor for Netlink sockets, i.e. Linux
+    """
+
+    RTM_NEWADDR: int = 20
+    RTM_DELADDR: int = 21
+    RTM_GETADDR: int = 22
+
+    socket: socket.socket
+
+    def __init__(self, aio_loop: asyncio.AbstractEventLoop) -> None:
+        super().__init__(aio_loop)
+
+        rtm_groups = RTMGRP_LINK
+        if not args.ipv4only:
+            rtm_groups = rtm_groups | RTMGRP_IPV6_IFADDR
+        if not args.ipv6only:
+            rtm_groups = rtm_groups | RTMGRP_IPV4_IFADDR
+
+        self.socket = socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, socket.NETLINK_ROUTE)
+        self.socket.bind((0, rtm_groups))
+        self.aio_loop.add_reader(self.socket.fileno(), self.handle_change)
+
+        self.NLM_HDR_LEN = struct.calcsize(NLM_HDR_DEF)
+
+    def do_enumerate(self) -> None:
+        super().do_enumerate()
+
+        kernel = (0, 0)
+        # Append an unsigned byte to the header for the request.
+        req = struct.pack(NLM_HDR_DEF + 'B', self.NLM_HDR_LEN + 1, self.RTM_GETADDR, NLM_F_REQUEST | NLM_F_DUMP, 1, 0,
+                          socket.AF_PACKET)
+        self.socket.sendto(req, kernel)
+
+    def handle_change(self) -> None:
+        super().handle_change()
+
+        buf, src = self.socket.recvfrom(4096)
+        logger.debug('netlink message with {} bytes'.format(len(buf)))
+
+        offset = 0
+        while offset < len(buf):
+            print("Here we go again: {}/{}".format(offset, len(buf)))
+            h_len, h_type, _, _, _ = struct.unpack_from(NLM_HDR_DEF, buf, offset)
+            offset += self.NLM_HDR_LEN
+            print("NEW OFFSET: {}".format(offset))
+
+            msg_len = h_len - self.NLM_HDR_LEN
+            if msg_len < 0:
+                break
+
+            if h_type != self.RTM_NEWADDR and h_type != self.RTM_DELADDR:
+                logger.debug('invalid rtm_message type {}'.format(h_type))
+                offset += align_to(msg_len, NLM_HDR_ALIGNTO)
+                continue
+
+            # decode ifaddrmsg as in if_addr.h
+            ifa_family, _, ifa_flags, ifa_scope, ifa_idx = struct.unpack_from(IFADDR_MSG_DEF, buf, offset)
+            if ((ifa_flags & IFA_F_DADFAILED) or (ifa_flags & IFA_F_HOMEADDRESS) or (ifa_flags & IFA_F_DEPRECATED) or
+                (ifa_flags & IFA_F_TENTATIVE)):
+                logger.debug('ignore address with invalid state {}'.format(hex(ifa_flags)))
+                offset += align_to(msg_len, NLM_HDR_ALIGNTO)
+                continue
+
+            logger.debug('RTM new/del addr family: {} flags: {} scope: {} idx: {}'.format(
+                ifa_family, ifa_flags, ifa_scope, ifa_idx))
+            addr = None
+            i = offset + IFA_MSG_LEN
+            while i - offset < msg_len:
+                print("NEXT: {}/{}".format(i - offset, msg_len))
+                attr_len, attr_type = struct.unpack_from('HH', buf, i)
+                logger.debug('rt_attr {} {}'.format(attr_len, attr_type))
+
+                if attr_len < RTA_LEN:
+                    logger.debug('invalid rtm_attr_len. skipping remainder')
+                    break
+
+                if attr_type == IFA_LABEL:
+                    name, = struct.unpack_from(str(attr_len - 4 - 1) + 's', buf, i + 4)
+                    print(name)
+                    # self.add_interface(NetworkInterface(name.decode(), ifa_scope, ifa_idx))
+                elif attr_type == IFA_LOCAL and ifa_family == socket.AF_INET:
+                    print(f"IPv4 start at {i}")
+                    addr = buf[i + 4:i + 4 + 4]
+                elif attr_type == IFA_ADDRESS and ifa_family == socket.AF_INET6:
+                    print(f"IPv6 start at {i}")
+                    addr = buf[i + 4:i + 4 + 16]
+                elif attr_type == IFA_FLAGS:
+                    _, ifa_flags = struct.unpack_from('HI', buf, i)
+                print(f"BUMP BEFORE: {i}")
+                i += align_to(attr_len, RTA_ALIGNTO)
+                print(f"BUMP AFTER: {i}")
+
+            if addr is None:
+                logger.debug('no address in RTM message')
+                offset += align_to(msg_len, NLM_HDR_ALIGNTO)
+                continue
+
+            # # In case of IPv6 only addresses, there appears to be no IFA_LABEL
+            # # message. Therefore, the name is requested by other means (#94)
+            # if ifa_idx not in self.interfaces:
+            #     try:
+            #         logger.debug('unknown interface name for idx {}. resolving manually'.format(ifa_idx))
+            #         if_name = socket.if_indextoname(ifa_idx)
+            #         self.add_interface(NetworkInterface(if_name, ifa_scope, ifa_idx))
+            #     except OSError:
+            #         logger.exception('interface detection failed')
+            #         # accept this exception (which should not occur)
+            #         pass
+
+            # # In case really strange things happen and we could not find out the
+            # # interface name for the returned ifa_idx, we... log a message.
+            # if ifa_idx in self.interfaces:
+            #     address = NetworkAddress(ifa_family, addr, self.interfaces[ifa_idx])
+            #     if h_type == self.RTM_NEWADDR:
+            #         self.handle_new_address(address)
+            #     elif h_type == self.RTM_DELADDR:
+            #         self.handle_deleted_address(address)
+            # else:
+            #     logger.debug('unknown interface index: {}'.format(ifa_idx))
+
+            print(f"BEFORE: {offset}")
+            offset += align_to(msg_len, NLM_HDR_ALIGNTO)
+            print(f"AFTER: {offset}")
+
+    def cleanup(self) -> None:
+        self.aio_loop.remove_reader(self.socket.fileno())
+        self.socket.close()
+        super().cleanup()
 
 
 # from sys/net/route.h
@@ -1664,6 +1801,161 @@ def sigterm_handler() -> None:
     sys.exit(0)
 
 
+def parse_args() -> None:
+    global args, logger
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('-i', '--interface', help='interface or address to use', action='append', default=[])
+    parser.add_argument('-H', '--hoplimit', help='hop limit for multicast packets (default = 1)', type=int, default=1)
+    parser.add_argument('-U', '--uuid', help='UUID for the target device', default=None)
+    parser.add_argument('-v', '--verbose', help='increase verbosity', action='count', default=0)
+    parser.add_argument('-d', '--domain', help='set domain name (disables workgroup)', default=None)
+    parser.add_argument(
+        '-n',
+        '--hostname',
+        help='override (NetBIOS) hostname to be used (default hostname)',
+        # use only the local part of a possible FQDN
+        default=socket.gethostname().partition('.')[0])
+    parser.add_argument('-w', '--workgroup', help='set workgroup name (default WORKGROUP)', default='WORKGROUP')
+    parser.add_argument('-A', '--no-autostart', help='do not start networking after launch', action='store_true')
+    parser.add_argument('-t', '--no-http', help='disable http service (for debugging, e.g.)', action='store_true')
+    parser.add_argument('-4', '--ipv4only', help='use only IPv4 (default = off)', action='store_true')
+    parser.add_argument('-6', '--ipv6only', help='use IPv6 (default = off)', action='store_true')
+    parser.add_argument('-s', '--shortlog', help='log only level and message', action='store_true')
+    parser.add_argument('-p',
+                        '--preserve-case',
+                        help='preserve case of the provided/detected hostname',
+                        action='store_true')
+    parser.add_argument('-c', '--chroot', help='directory to chroot into', default=None)
+    parser.add_argument('-u', '--user', help='drop privileges to user:group', default=None)
+    parser.add_argument('-D', '--discovery', help='enable discovery operation mode', action='store_true')
+    parser.add_argument('-l', '--listen', help='listen on path or localhost port in discovery mode', default=None)
+    parser.add_argument('-o',
+                        '--no-host',
+                        help='disable server mode operation (host will be undiscoverable)',
+                        action='store_true')
+    parser.add_argument('-V', '--version', help='show version number and exit', action='store_true')
+    parser.add_argument('--metadata-timeout', help='set timeout for HTTP-based metadata exchange', default=2.0)
+    parser.add_argument('--source-port',
+                        help='send multicast traffic/receive replies on this port',
+                        type=int,
+                        default=0)
+
+    args = parser.parse_args(sys.argv[1:])
+
+    if args.version:
+        print('wsdd - Web Service Discovery Daemon, v{}'.format(WSDD_VERSION))
+        sys.exit(0)
+
+    if args.verbose == 1:
+        log_level = logging.INFO
+    elif args.verbose > 1:
+        log_level = logging.DEBUG
+        asyncio.get_event_loop().set_debug(True)
+        logging.getLogger("asyncio").setLevel(logging.DEBUG)
+    else:
+        log_level = logging.WARNING
+
+    if args.shortlog:
+        fmt = '%(levelname)s: %(message)s'
+    else:
+        fmt = '%(asctime)s:%(name)s %(levelname)s(pid %(process)d): %(message)s'
+
+    logging.basicConfig(level=log_level, format=fmt)
+    logger = logging.getLogger('wsdd')
+
+    if not args.interface:
+        logger.warning('no interface given, using all interfaces')
+
+    if not args.uuid:
+
+        def read_uuid_from_file(fn: str) -> Union[None, uuid.UUID]:
+            try:
+                with open(fn) as f:
+                    s: str = f.readline().strip()
+                    return uuid.UUID(s)
+            except Exception:
+                return None
+
+        # machine uuid: try machine-id file first but also check for hostid (FreeBSD)
+        args.uuid = read_uuid_from_file('/etc/machine-id') or \
+            read_uuid_from_file('/etc/hostid') or \
+            uuid.uuid5(uuid.NAMESPACE_DNS, socket.gethostname())
+
+        logger.info('using pre-defined UUID {0}'.format(str(args.uuid)))
+    else:
+        args.uuid = uuid.UUID(args.uuid)
+        logger.info('user-supplied device UUID is {0}'.format(str(args.uuid)))
+
+    for prefix, uri in namespaces.items():
+        ElementTree.register_namespace(prefix, uri)
+
+
+def chroot(root: str) -> bool:
+    """
+    Chroot into a separate directory to isolate ourself for increased security.
+    """
+    # preload for socket.gethostbyaddr()
+    import encodings.idna
+
+    try:
+        os.chroot(root)
+        os.chdir('/')
+        logger.info('chrooted successfully to {}'.format(root))
+    except Exception as e:
+        logger.error('could not chroot to {}: {}'.format(root, e))
+        return False
+
+    return True
+
+
+def get_ids_from_userspec(user_spec: str) -> Tuple[int, int]:
+    uid: int
+    gid: int
+    try:
+        user, _, group = user_spec.partition(':')
+
+        if user:
+            uid = pwd.getpwnam(user).pw_uid
+
+        if group:
+            gid = grp.getgrnam(group).gr_gid
+    except Exception as e:
+        raise RuntimeError('could not get uid/gid for {}: {}'.format(user_spec, e))
+
+    return (uid, gid)
+
+
+def drop_privileges(uid: int, gid: int) -> bool:
+    try:
+        if gid is not None:
+            os.setgid(gid)
+            os.setegid(gid)
+            logger.debug('switched uid to {}'.format(uid))
+
+        if uid is not None:
+            os.setuid(uid)
+            os.seteuid(uid)
+            logger.debug('switched gid to {}'.format(gid))
+
+        logger.info('running as {} ({}:{})'.format(args.user, uid, gid))
+    except Exception as e:
+        logger.error('dropping privileges failed: {}'.format(e))
+        return False
+
+    return True
+
+
+def create_address_monitor(system: str, aio_loop: asyncio.AbstractEventLoop) -> NetworkAddressMonitor:
+    if system == 'Linux':
+        return NetlinkAddressMonitor(aio_loop)
+    elif system in ['FreeBSD', 'Darwin', 'OpenBSD']:
+        return RouteSocketAddressMonitor(aio_loop)
+    else:
+        raise NotImplementedError('unsupported OS: ' + system)
+
+
 def main() -> int:
     global logger, args
 
@@ -1676,36 +1968,36 @@ def main() -> int:
     aio_loop = asyncio.new_event_loop()
     nm = create_address_monitor(platform.system(), aio_loop)
 
-    api_server = None
-    if args.listen:
-        api_server = ApiServer(aio_loop, args.listen, nm)
+    # api_server = None
+    # if args.listen:
+    #     api_server = ApiServer(aio_loop, args.listen, nm)
 
-    # get uid:gid before potential chroot'ing
-    if args.user is not None:
-        ids = get_ids_from_userspec(args.user)
-        if not ids:
-            return 3
+    # # get uid:gid before potential chroot'ing
+    # if args.user is not None:
+    #     ids = get_ids_from_userspec(args.user)
+    #     if not ids:
+    #         return 3
 
-    if args.chroot is not None:
-        if not chroot(args.chroot):
-            return 2
+    # if args.chroot is not None:
+    #     if not chroot(args.chroot):
+    #         return 2
 
-    if args.user is not None:
-        if not drop_privileges(ids[0], ids[1]):
-            return 3
+    # if args.user is not None:
+    #     if not drop_privileges(ids[0], ids[1]):
+    #         return 3
 
-    if args.chroot and (os.getuid() == 0 or os.getgid() == 0):
-        logger.warning('chrooted but running as root, consider -u option')
+    # if args.chroot and (os.getuid() == 0 or os.getgid() == 0):
+    #     logger.warning('chrooted but running as root, consider -u option')
 
-    # main loop, serve requests coming from any outbound socket
-    aio_loop.add_signal_handler(signal.SIGINT, sigterm_handler)
-    aio_loop.add_signal_handler(signal.SIGTERM, sigterm_handler)
+    # # main loop, serve requests coming from any outbound socket
+    # aio_loop.add_signal_handler(signal.SIGINT, sigterm_handler)
+    # aio_loop.add_signal_handler(signal.SIGTERM, sigterm_handler)
     try:
         aio_loop.run_forever()
     except (SystemExit, KeyboardInterrupt):
         logger.info('shutting down gracefully...')
-        if api_server is not None:
-            aio_loop.run_until_complete(api_server.cleanup())
+        # if api_server is not None:
+        #     aio_loop.run_until_complete(api_server.cleanup())
 
         nm.cleanup()
         aio_loop.stop()

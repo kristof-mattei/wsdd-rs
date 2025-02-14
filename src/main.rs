@@ -21,17 +21,46 @@ use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 
+use color_eyre::eyre;
 use dotenvy::dotenv;
+use security::{chroot, drop_privileges};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::{event, Level};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{EnvFilter, Layer};
 
 use crate::cli::parse_cli;
 
-fn main() -> Result<(), color_eyre::Report> {
+fn init_tracing(console_subscriber: bool) -> Result<(), eyre::Report> {
+    let main_filter = EnvFilter::builder()
+        .parse(env::var(EnvFilter::DEFAULT_ENV).unwrap_or_else(|_| {
+            format!("INFO,{}=TRACE", env!("CARGO_PKG_NAME").replace('-', "_"))
+        }))?;
+
+    let mut layers = vec![];
+
+    if console_subscriber {
+        layers.push(
+            console_subscriber::ConsoleLayer::builder()
+                .with_default_env()
+                .spawn()
+                .boxed(),
+        );
+    }
+
+    layers.push(
+        tracing_subscriber::fmt::layer()
+            .with_filter(main_filter)
+            .boxed(),
+    );
+    layers.push(tracing_error::ErrorLayer::default().boxed());
+
+    Ok(tracing_subscriber::registry().with(layers).try_init()?)
+}
+
+fn main() -> Result<(), eyre::Report> {
     // set up .env, if it fails, user didn't provide any
     let _r = dotenv();
 
@@ -39,27 +68,19 @@ fn main() -> Result<(), color_eyre::Report> {
         .capture_span_trace_by_default(false)
         .install()?;
 
-    let rust_log_value = env::var(EnvFilter::DEFAULT_ENV)
-        .unwrap_or_else(|_| format!("INFO,{}=TRACE", env!("CARGO_PKG_NAME").replace('-', "_")));
-
-    // set up logger
-    // from_env defaults to RUST_LOG
-    tracing_subscriber::registry()
-        .with(EnvFilter::builder().parse(rust_log_value).unwrap())
-        .with(tracing_subscriber::fmt::layer())
-        .with(tracing_error::ErrorLayer::default())
-        .init();
+    // TODO this param should come from env / config,
+    init_tracing(true)?;
 
     // initialize the runtime
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     // start service
-    let result: Result<(), color_eyre::Report> = rt.block_on(start_tasks());
+    let result: Result<(), eyre::Report> = rt.block_on(start_tasks());
 
     result
 }
 
-async fn start_tasks() -> Result<(), color_eyre::Report> {
+async fn start_tasks() -> Result<(), eyre::Report> {
     let config = Arc::new(parse_cli().inspect_err(|error| {
         // this prints the error in color and exits
         // can't do anything else until
@@ -72,26 +93,99 @@ async fn start_tasks() -> Result<(), color_eyre::Report> {
 
     config.log();
 
-    // clients channel
+    // TODO
+    // if args.ipv4only and args.ipv6only:
+    //     logger.error('Listening to no IP address family.')
+    //     return 4
 
     // this channel is used to communicate between
     // tasks and this function, in the case that a task fails, they'll send a message on the shutdown channel
     // after which we'll gracefully terminate other services
     let token = CancellationToken::new();
 
-    let mut tasks = tokio::task::JoinSet::new();
+    let tasks = tokio_util::task::TaskTracker::new();
 
-    let nm = address_monitor::create_address_monitor(Arc::clone(&config));
+    let mut address_monitor = address_monitor::create_address_monitor(&config)?;
+
+    address_monitor.request_current_state().unwrap();
 
     {
-        tasks.spawn(async {
-            println!("Hello");
+        let cancellation_token = token.clone();
+
+        tasks.spawn(async move {
+            let _guard = cancellation_token.drop_guard();
+
+            loop {
+                address_monitor.handle_change().await.unwrap();
+            }
         });
     }
 
-    {}
+    // TODO
+    // api_server = None
+    // if args.listen:
+    //     api_server = ApiServer(aio_loop, args.listen, nm)
 
-    {}
+    // get uid:gid before potential chroot'ing
+    // if args.user is not None:
+
+    //     ids = get_ids_from_userspec(args.user)
+    //     if not ids:
+    //         return 3
+
+    if let Some(chroot_path) = &config.chroot {
+        if let Err(err) = chroot(chroot_path) {
+            event!(
+                Level::ERROR,
+                ?err,
+                "could not chroot to {}",
+                chroot_path.display()
+            );
+
+            // TODO error more gracefully
+            std::process::exit(2);
+        } else {
+            event!(
+                Level::INFO,
+                "chrooted successfully to {}",
+                chroot_path.display()
+            );
+        }
+    }
+
+    if let &Some((uid, gid)) = &config.user {
+        if let Err(reason) = drop_privileges(uid, gid) {
+            event!(Level::ERROR, ?uid, ?gid, reason, "Drop privileges failed");
+
+            // TODO error more gracefully
+            std::process::exit(3);
+        };
+    }
+
+    if config.chroot.is_some() && (unsafe { libc::getuid() == 0 || libc::getgid() == 0 }) {
+        event!(
+            Level::WARN,
+            "chrooted but running as root, consider -u option"
+        );
+    }
+
+    // # main loop, serve requests coming from any outbound socket
+    // aio_loop.add_signal_handler(signal.SIGINT, sigterm_handler)
+    // aio_loop.add_signal_handler(signal.SIGTERM, sigterm_handler)
+    // try:
+    //     aio_loop.run_forever()
+    // except (SystemExit, KeyboardInterrupt):
+    //     logger.info('shutting down gracefully...')
+    //     if api_server is not None:
+    //         aio_loop.run_until_complete(api_server.cleanup())
+
+    //     nm.cleanup()
+    //     aio_loop.stop()
+    // except Exception:
+    //     logger.exception('error in main loop')
+
+    // logger.info('Done.')
+    // return 0
 
     // now we wait forever for either
     // * SIGTERM
@@ -110,14 +204,16 @@ async fn start_tasks() -> Result<(), color_eyre::Report> {
         () = token.cancelled() => {
             event!(Level::WARN, "Underlying task stopped, stopping all others tasks");
         },
-    };
+    }
 
     // backup, in case we forgot a dropguard somewhere
     token.cancel();
 
+    tasks.close();
+
     // wait for the task that holds the server to exit gracefully
     // it listens to shutdown_send
-    if timeout(Duration::from_millis(10000), tasks.shutdown())
+    if timeout(Duration::from_millis(10000), tasks.wait())
         .await
         .is_err()
     {

@@ -49,12 +49,10 @@ const PUB_COMPUTER: &str = "pub:Computer";
 // TODO: fix when format_args!() becomes const
 pub const WSD_TYPE_DEVICE_COMPUTER: &str = "wsdp:Device pub:Computer";
 
-use std::{
-    collections::HashMap,
-    net::{Ipv4Addr, Ipv6Addr},
-    num::NonZeroU16,
-    sync::LazyLock,
-};
+use std::collections::HashMap;
+use std::net::{Ipv4Addr, Ipv6Addr};
+use std::num::NonZeroU16;
+use std::sync::LazyLock;
 
 // WSD_MCAST_GRP_V4: str = '239.255.255.250'
 pub const WSD_MCAST_GRP_V4: Ipv4Addr = Ipv4Addr::new(239, 255, 255, 250);

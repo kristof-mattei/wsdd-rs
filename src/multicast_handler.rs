@@ -1,35 +1,24 @@
-use std::{
-    collections::HashMap,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket},
-    os::fd::AsRawFd,
-    rc::Rc,
-};
-use std::{io::Error, sync::Arc};
+use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket};
+use std::rc::Rc;
+use std::sync::Arc;
 
-use libc::{
-    ip_mreqn, socklen_t, IPPROTO_IP, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, IPV6_MULTICAST_IF,
-    IPV6_MULTICAST_LOOP, IPV6_V6ONLY, IP_ADD_MEMBERSHIP, IP_MULTICAST_LOOP, IP_MULTICAST_TTL,
-    SOL_SOCKET, SO_REUSEADDR,
-};
+use color_eyre::{eyre, Section};
+use libc::{ip_mreqn, IPPROTO_IP, IP_ADD_MEMBERSHIP, IP_MULTICAST_IF};
 use socket2::{Domain, Socket, Type};
 use tracing::{event, Level};
 
-use crate::{
-    config::Config,
-    constants::{self, WSD_HTTP_PORT, WSD_MCAST_GRP_V4, WSD_MCAST_GRP_V6, WSD_UDP_PORT},
-    network_address::NetworkAddress,
-    network_interface::NetworkInterface,
-    network_packet_handler::NetworkPacketHandler,
-    udp_address::UdpAddress,
-};
+use crate::config::Config;
+use crate::constants::{self, WSD_HTTP_PORT, WSD_MCAST_GRP_V4, WSD_MCAST_GRP_V6, WSD_UDP_PORT};
+use crate::ffi_wrapper::setsockopt;
+use crate::network_address::NetworkAddress;
+use crate::network_interface::NetworkInterface;
+use crate::network_packet_handler::NetworkPacketHandler;
+use crate::udp_address::UdpAddress;
 
-// class MulticastHandler:
+/// A class for handling multicast traffic on a given interface for a
+/// given address family. It provides multicast sender and receiver sockets
 pub struct MulticastHandler<'s> {
-    //     """
-    //     A class for handling multicast traffic on a given interface for a
-    //     given address family. It provides multicast sender and receiver sockets
-    //     """
-
     //     # base interface addressing information
     //     address: NetworkAddress
     address: NetworkAddress,
@@ -56,12 +45,16 @@ pub struct MulticastHandler<'s> {
 
     //     # dictionary that holds INetworkPacketHandlers instances for sockets created above
     //     message_handlers: Dict[socket.socket, List[INetworkPacketHandler]]
-    message_handlers: HashMap<Rc<UdpSocket>, Vec<&'s dyn NetworkPacketHandler>>,
+    message_handlers: HashMap<Arc<UdpSocket>, Vec<&'s (dyn NetworkPacketHandler + Sync)>>,
 }
 
 impl<'s> MulticastHandler<'s> {
     //     def __init__(self, address: NetworkAddress, aio_loop: asyncio.AbstractEventLoop) -> None:
-    pub fn new(address: NetworkAddress, aio_loop: (), config: Arc<Config>) -> Self {
+    pub fn new(
+        address: NetworkAddress,
+        aio_loop: (),
+        config: &Arc<Config>,
+    ) -> Result<Self, eyre::Report> {
         // self.address = address
 
         // self.recv_socket = socket.socket(self.address.family, socket.SOCK_DGRAM)
@@ -71,22 +64,15 @@ impl<'s> MulticastHandler<'s> {
             Domain::IPV6
         };
 
+        // TODO error
         let recv_socket = Socket::new(domain, Type::DGRAM, None).unwrap();
 
         // self.recv_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         {
             let value: libc::c_int = 1;
 
-            #[expect(clippy::cast_possible_truncation)]
-            unsafe {
-                libc::setsockopt(
-                    recv_socket.as_raw_fd(),
-                    SOL_SOCKET,
-                    SO_REUSEADDR,
-                    std::ptr::addr_of!(value).cast::<libc::c_void>(),
-                    size_of_val(&value) as libc::socklen_t,
-                )
-            };
+            // TODO handle error
+            recv_socket.set_reuse_address(true).unwrap();
         }
 
         // self.mc_send_socket = socket.socket(self.address.family, socket.SOCK_DGRAM)
@@ -97,18 +83,8 @@ impl<'s> MulticastHandler<'s> {
 
         // self.uc_send_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         {
-            let value: libc::c_int = 1;
-
-            #[expect(clippy::cast_possible_truncation)]
-            unsafe {
-                libc::setsockopt(
-                    uc_send_socket.as_raw_fd(),
-                    SOL_SOCKET,
-                    SO_REUSEADDR,
-                    std::ptr::addr_of!(value).cast::<libc::c_void>(),
-                    size_of_val(&value) as libc::socklen_t,
-                )
-            };
+            // TODO error
+            uc_send_socket.set_reuse_address(true).unwrap();
         }
 
         //         self.message_handlers = {}
@@ -125,13 +101,13 @@ impl<'s> MulticastHandler<'s> {
         let (multicast_address, listen_address) = match address.address {
             IpAddr::V4(ipv4_address) => {
                 let (multicast_address, listen_address) = MulticastHandler::init_v4(
-                    &ipv4_address,
+                    ipv4_address,
                     &address.interface,
                     &recv_socket,
                     &uc_send_socket,
                     &mc_send_socket,
                     config,
-                );
+                )?;
 
                 (multicast_address, SocketAddr::V4(listen_address))
             },
@@ -177,7 +153,7 @@ impl<'s> MulticastHandler<'s> {
         //         self.aio_loop.add_reader(self.mc_send_socket.fileno(), self.read_socket, self.mc_send_socket)
         //         self.aio_loop.add_reader(self.uc_send_socket.fileno(), self.read_socket, self.uc_send_socket)
 
-        Self {
+        Ok(Self {
             address,
             recv_socket: recv_socket.into(),
             uc_send_socket: uc_send_socket.into(),
@@ -186,7 +162,7 @@ impl<'s> MulticastHandler<'s> {
             listen_address,
             aio_loop,
             message_handlers,
-        }
+        })
     }
 
     //     def cleanup(self) -> None:
@@ -209,14 +185,13 @@ impl<'s> MulticastHandler<'s> {
     }
 
     //     def init_v6(self) -> None:
-    #[expect(clippy::too_many_lines)]
     fn init_v6(
         ipv6_address: &Ipv6Addr,
-        interface: &NetworkInterface,
+        interface: &Arc<NetworkInterface>,
         recv_socket: &Socket,
         uc_send_socket: &Socket,
         mc_send_socket: &Socket,
-        config: Arc<Config>,
+        config: &Arc<Config>,
     ) -> (UdpAddress, SocketAddrV6) {
         let idx = interface.index;
 
@@ -228,59 +203,36 @@ impl<'s> MulticastHandler<'s> {
         );
 
         // self.multicast_address = UdpAddress(self.address.family, raw_mc_addr, self.address.interface)
-        let multicast_address = UdpAddress::new(SocketAddr::V6(raw_mc_addr), interface.clone());
+        let multicast_address = UdpAddress::new(SocketAddr::V6(raw_mc_addr), interface);
 
         // v6: member_request = { multicast_addr, intf_idx }
         // mreq = (socket.inet_pton(self.address.family, WSD_MCAST_GRP_V6) + struct.pack('@I', idx))
         // self.recv_socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
-        recv_socket.join_multicast_v6(&constants::WSD_MCAST_GRP_V6, idx);
+        // TODO handle error
+        recv_socket
+            .join_multicast_v6(&constants::WSD_MCAST_GRP_V6, idx)
+            .unwrap();
 
         // self.recv_socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
         {
-            let value: libc::c_int = 1;
-
-            #[expect(clippy::cast_possible_truncation)]
-            unsafe {
-                libc::setsockopt(
-                    recv_socket.as_raw_fd(),
-                    IPPROTO_IPV6,
-                    IPV6_V6ONLY,
-                    std::ptr::addr_of!(value).cast::<libc::c_void>(),
-                    size_of_val(&value) as libc::socklen_t,
-                )
-            };
+            // TODO error
+            recv_socket.set_only_v6(true).unwrap();
         }
 
         #[cfg(target_os = "linux")]
         {
-            const IPV6_MULTICAST_ALL: i32 = 29;
             // Could anyone ask the Linux folks for the rationale for this!?
             // if platform.system() == 'Linux':
             //     try:
             //         # supported starting from Linux 4.20
             //         IPV6_MULTICAST_ALL = 29
             //         self.recv_socket.setsockopt(socket.IPPROTO_IPV6, IPV6_MULTICAST_ALL, 0)
-            let value: libc::c_int = 0;
 
-            #[expect(clippy::cast_possible_truncation)]
-            let result = unsafe {
-                libc::setsockopt(
-                    recv_socket.as_raw_fd(),
-                    IPPROTO_IPV6,
-                    IPV6_MULTICAST_ALL,
-                    std::ptr::addr_of!(value).cast::<libc::c_void>(),
-                    size_of_val(&value) as libc::socklen_t,
-                )
-            };
-
-            // except OSError as e:
-            //  logger.warning('cannot unset all_multicast: {}'.format(e))
-            if result != 0 {
-                event!(
-                    Level::WARN,
-                    "cannot unset all_multicast: {}",
-                    Error::last_os_error()
-                );
+            // TODO error
+            if let Err(err) = recv_socket.set_multicast_all_v6(false) {
+                // except OSError as e:
+                //  logger.warning('cannot unset all_multicast: {}'.format(e))
+                event!(Level::WARN, ?err, "cannot unset all_multicast");
             }
         }
 
@@ -312,50 +264,22 @@ impl<'s> MulticastHandler<'s> {
 
         // self.mc_send_socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_LOOP, 0)
         {
-            let value: libc::c_int = 0;
-
-            #[expect(clippy::cast_possible_truncation)]
-            unsafe {
-                libc::setsockopt(
-                    mc_send_socket.as_raw_fd(),
-                    IPPROTO_IPV6,
-                    IPV6_MULTICAST_LOOP,
-                    std::ptr::addr_of!(value).cast::<libc::c_void>(),
-                    size_of_val(&value) as libc::socklen_t,
-                )
-            };
+            // TODO error
+            mc_send_socket.set_multicast_loop_v6(false).unwrap();
         }
 
         // self.mc_send_socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, args.hoplimit)
         {
-            let value: u8 = config.hoplimit;
-
-            #[expect(clippy::cast_possible_truncation)]
-            unsafe {
-                libc::setsockopt(
-                    mc_send_socket.as_raw_fd(),
-                    IPPROTO_IPV6,
-                    IPV6_MULTICAST_HOPS,
-                    std::ptr::addr_of!(value).cast::<libc::c_void>(),
-                    size_of_val(&value) as libc::socklen_t,
-                )
-            };
+            // TODO error
+            mc_send_socket
+                .set_multicast_hops_v6(config.hoplimit.into())
+                .unwrap();
         }
 
         // self.mc_send_socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF, idx)
         {
-            let value: libc::c_int = idx.try_into().unwrap();
-
-            #[expect(clippy::cast_possible_truncation)]
-            unsafe {
-                libc::setsockopt(
-                    mc_send_socket.as_raw_fd(),
-                    IPPROTO_IPV6,
-                    IPV6_MULTICAST_IF,
-                    std::ptr::addr_of!(value).cast::<libc::c_void>(),
-                    size_of_val(&value) as libc::socklen_t,
-                )
-            };
+            // TODO error
+            mc_send_socket.set_multicast_if_v6(idx).unwrap();
         }
 
         let listen_address = SocketAddrV6::new(*ipv6_address, WSD_HTTP_PORT.into(), 0, idx);
@@ -365,20 +289,20 @@ impl<'s> MulticastHandler<'s> {
 
     //     def init_v4(self) -> None:
     fn init_v4(
-        ipv4_address: &Ipv4Addr,
-        interface: &NetworkInterface,
+        ipv4_address: Ipv4Addr,
+        interface: &Arc<NetworkInterface>,
         recv_socket: &Socket,
         uc_send_socket: &Socket,
         mc_send_socket: &Socket,
-        config: Arc<Config>,
-    ) -> (UdpAddress, SocketAddrV4) {
+        config: &Arc<Config>,
+    ) -> Result<(UdpAddress, SocketAddrV4), eyre::Report> {
         // idx = self.address.interface.index
         let idx = interface.index;
 
         // raw_mc_addr = (WSD_MCAST_GRP_V4, WSD_UDP_PORT)
         let raw_mc_addr = SocketAddrV4::new(WSD_MCAST_GRP_V4, WSD_UDP_PORT.into());
         // self.multicast_address = UdpAddress(self.address.family, raw_mc_addr, self.address.interface)
-        let multicast_address = UdpAddress::new(SocketAddr::V4(raw_mc_addr), interface.clone());
+        let multicast_address = UdpAddress::new(SocketAddr::V4(raw_mc_addr), interface);
 
         // # v4: member_request (ip_mreqn) = { multicast_addr, intf_addr, idx }
         // mreq = (socket.inet_pton(self.address.family, WSD_MCAST_GRP_V4) + self.address.raw + struct.pack('@I', idx))
@@ -389,49 +313,28 @@ impl<'s> MulticastHandler<'s> {
             imr_multiaddr: libc::in_addr {
                 s_addr: ipv4_address.to_bits(),
             },
-            imr_ifindex: idx as i32,
+            imr_ifindex: i32::try_from(idx).unwrap(),
         };
 
+        // TODO: trial whether recv_socket.join_multicast_v4(multiaddr, interface) works, even though on that one we cannot specify the interface index
+
         // self.recv_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-        #[expect(clippy::cast_possible_truncation)]
-        unsafe {
-            libc::setsockopt(
-                recv_socket.as_raw_fd(),
-                IPPROTO_IP,
-                IP_ADD_MEMBERSHIP,
-                std::ptr::addr_of!(mpreq).cast::<libc::c_void>(),
-                size_of_val(&mpreq) as libc::socklen_t,
-            )
-        };
+        // TODO better error
+        if let Err(err) = unsafe { setsockopt(recv_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mpreq) }
+        {
+            return Err(eyre::Report::from(err)
+                .with_note(|| "Failed to set IPPROTO_IP -> IP_ADD_MEMBERSHIP on socket"));
+        }
 
         #[cfg(target_os = "linux")]
         {
-            const IP_MULTICAST_ALL: i32 = 49;
             // if platform.system() == 'Linux':
             //     IP_MULTICAST_ALL = 49
             //     self.recv_socket.setsockopt(socket.IPPROTO_IP, IP_MULTICAST_ALL, 0)
-            let value: libc::c_int = 0;
 
-            #[expect(clippy::cast_possible_truncation)]
-            let result = unsafe {
-                libc::setsockopt(
-                    recv_socket.as_raw_fd(),
-                    IPPROTO_IP,
-                    IP_MULTICAST_ALL,
-                    std::ptr::addr_of!(value).cast::<libc::c_void>(),
-                    size_of_val(&value) as libc::socklen_t,
-                )
+            if let Err(err) = recv_socket.set_multicast_all_v4(false) {
+                event!(Level::WARN, ?err, "cannot unset all_multicast");
             };
-
-            // except OSError as e:
-            //  logger.warning('cannot unset all_multicast: {}'.format(e))
-            if result != 0 {
-                event!(
-                    Level::WARN,
-                    "cannot unset all_multicast: {}",
-                    Error::last_os_error()
-                );
-            }
         }
 
         // try:
@@ -443,6 +346,7 @@ impl<'s> MulticastHandler<'s> {
             // except OSError:
             //     self.recv_socket.bind(('', WSD_UDP_PORT))
             let socket_addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), WSD_UDP_PORT.into());
+
             if let Err(e) = recv_socket.bind(&socket_addr.into()) {
                 event!(
                     Level::ERROR,
@@ -456,46 +360,53 @@ impl<'s> MulticastHandler<'s> {
         // # bind unicast socket to interface address and WSD's udp port
         // self.uc_send_socket.bind((self.address.address_str, WSD_UDP_PORT))
         uc_send_socket
-            .bind(&SocketAddrV4::new(*ipv4_address, WSD_UDP_PORT.into()).into())
+            .bind(&SocketAddrV4::new(ipv4_address, WSD_UDP_PORT.into()).into())
             .unwrap();
 
         // self.mc_send_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, mreq)
+        {
+            // TODO error
+            if let Err(err) =
+                unsafe { setsockopt(mc_send_socket, IPPROTO_IP, IP_MULTICAST_IF, &mpreq) }
+            {
+                return Err(eyre::Report::from(err)
+                    .with_note(|| "Failed to set IPPROTO_IP -> IP_MULTICAST_IF on socket"));
+            }
+        }
+
         // # OpenBSD requires the optlen to be sizeof(char) for LOOP and TTL options
         // # (see also https://github.com/python/cpython/issues/67316)
         // self.mc_send_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, struct.pack('B', 0))
         {
-            let value: u8 = 0;
+            // TODO: Error
+            mc_send_socket.set_multicast_loop_v4(false).unwrap();
 
-            #[expect(clippy::cast_possible_truncation)]
-            unsafe {
-                libc::setsockopt(
-                    mc_send_socket.as_raw_fd(),
-                    IPPROTO_IP,
-                    IP_MULTICAST_LOOP,
-                    std::ptr::addr_of!(value).cast::<libc::c_void>(),
-                    size_of_val(&value) as socklen_t,
-                )
-            };
+            // TODO openBSD case
+            // let value: u8 = 0;
+
+            // #[expect(clippy::cast_possible_truncation)]
+            // unsafe {
+            //     libc::setsockopt(
+            //         mc_send_socket.as_raw_fd(),
+            //         IPPROTO_IP,
+            //         IP_MULTICAST_LOOP,
+            //         std::ptr::addr_of!(value).cast::<libc::c_void>(),
+            //         size_of_val(&value) as socklen_t,
+            //     )
+            // };
         }
+
         // self.mc_send_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, struct.pack('B', args.hoplimit))
         {
-            let value: u8 = config.hoplimit;
-
-            #[expect(clippy::cast_possible_truncation)]
-            unsafe {
-                libc::setsockopt(
-                    mc_send_socket.as_raw_fd(),
-                    IPPROTO_IP,
-                    IP_MULTICAST_TTL,
-                    std::ptr::addr_of!(value).cast::<libc::c_void>(),
-                    size_of_val(&value) as socklen_t,
-                )
-            };
+            // TODO error
+            mc_send_socket
+                .set_multicast_ttl_v4(config.hoplimit.into())
+                .unwrap();
         }
 
-        let listen_address = SocketAddrV4::new(*ipv4_address, WSD_HTTP_PORT.into());
+        let listen_address = SocketAddrV4::new(ipv4_address, WSD_HTTP_PORT.into());
 
-        (multicast_address, listen_address)
+        Ok((multicast_address, listen_address))
     }
 
     //     def add_handler(self, socket: socket.socket, handler: INetworkPacketHandler) -> None:

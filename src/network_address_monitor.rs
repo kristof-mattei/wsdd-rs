@@ -5,18 +5,21 @@
 //             obj.enumerate()
 //         return obj
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use tracing::{event, Level};
 
-use crate::{
-    config::Config, multicast_handler::MulticastHandler, network_address::NetworkAddress,
-    network_interface::NetworkInterface,
-};
+use crate::config::Config;
+use crate::multicast_handler::MulticastHandler;
+use crate::network_address::NetworkAddress;
+use crate::network_interface::{self, NetworkInterface};
 
-struct NetworkAddressMonitor<'mhl> {
+pub struct NetworkAddressMonitor<'mhl> {
+    config: Arc<Config>,
     //     interfaces: Dict[int, NetworkInterface]
-    interfaces: HashMap<u32, NetworkInterface>,
+    interfaces: HashMap<u32, Arc<NetworkInterface>>,
     //     aio_loop: asyncio.AbstractEventLoop
     //     mchs: List[MulticastHandler]
     mchs: Vec<MulticastHandler<'mhl>>,
@@ -25,31 +28,25 @@ struct NetworkAddressMonitor<'mhl> {
     //     teardown_tasks: List[asyncio.Task]
     //     active: bool
     active: bool,
-
-    config: Arc<Config>,
 }
 
 // static INSTANCES: Lazy<NetworkAddressMonitor> = Lazy::new(|| NetworkAddressMonitor {});
 
 // class NetworkAddressMonitor(metaclass=MetaEnumAfterInit):
+/// Observes changes of network addresses, handles addition and removal of
+/// network addresses, and filters for addresses/interfaces that are or are not
+/// handled. The actual OS-specific implementation that detects the changes is
+/// done in subclasses. This class is used as a singleton
 impl<'mhl> NetworkAddressMonitor<'mhl> {
-    // """
-    // Observes changes of network addresses, handles addition and removal of
-    // network addresses, and filters for addresses/interfaces that are or are not
-    // handled. The actual OS-specific implementation that detects the changes is
-    // done in subclasses. This class is used as a singleton
-    // """
-
     // instance: ClassVar[object] = None
 
-    // def __init__(self, aio_loop: asyncio.AbstractEventLoop) -> None:
-    fn new(config: Arc<Config>) -> Self {
+    pub fn new(config: &Arc<Config>) -> Self {
         Self {
+            config: Arc::clone(config),
             interfaces: HashMap::new(),
             mchs: vec![],
             http_servers: vec![],
             active: false,
-            config,
         }
     }
 
@@ -72,26 +69,43 @@ impl<'mhl> NetworkAddressMonitor<'mhl> {
     //     pass
 
     // def add_interface(self, interface: NetworkInterface) -> NetworkInterface:
-    fn add_interface(&mut self, interface: NetworkInterface) {
-        if self.interfaces.contains_key(&interface.index) {
-            return;
-        }
+    pub fn add_interface(
+        &mut self,
+        ifa_scope: u8,
+        ifa_index: u32,
+    ) -> Result<Arc<NetworkInterface>, String> {
+        let interface = match self.interfaces.entry(ifa_index) {
+            Entry::Occupied(occupied_entry) => occupied_entry.get().clone(),
+            Entry::Vacant(vacant_entry) => {
+                let if_name = match network_interface::if_indextoname(ifa_index) {
+                    Ok(if_name) => if_name,
+                    Err(err) => {
+                        // accept this exception (which should not occur)
 
-        self.interfaces.insert(interface.index, interface);
-        //     # TODO: Cleanup
+                        event!(
+                            Level::ERROR,
+                            ifa_idx = ifa_index,
+                            ?err,
+                            "interface detection failed",
+                        );
 
-        //     if interface.index in self.interfaces:
-        //         pass
-        //         # self.interfaces[idx].name = name
-        //     else:
-        //         self.interfaces[interface.index] = interface
+                        return Err("interface detection failed".into());
+                    },
+                };
 
-        //     return self.interfaces[interface.index]
+                vacant_entry
+                    .insert(Arc::new(NetworkInterface::new_with_index(
+                        if_name, ifa_scope, ifa_index,
+                    )))
+                    .clone()
+            },
+        };
+
+        Ok(interface)
     }
 
-    // def is_address_handled(self, address: NetworkAddress) -> bool:
     fn is_address_handled(&self, address: &NetworkAddress) -> bool {
-        // # do not handle anything when we are not active
+        // do not handle anything when we are not active
         if !self.active {
             return false;
         }
@@ -112,7 +126,7 @@ impl<'mhl> NetworkAddressMonitor<'mhl> {
         // Use interface only if it's in the list of user-provided interface names
         if !self.config.interface.is_empty()
             && !self.config.interface.contains(&address.interface.name)
-            && !self.config.interface.contains(&address.address_str)
+            && !self.config.interface.contains(&address.address.to_string())
         {
             return false;
         }
@@ -121,7 +135,7 @@ impl<'mhl> NetworkAddressMonitor<'mhl> {
     }
 
     // def handle_new_address(self, address: NetworkAddress) -> None:
-    fn handle_new_address(&mut self, address: NetworkAddress) {
+    pub fn handle_new_address(&mut self, address: NetworkAddress) {
         event!(Level::DEBUG, "new address {}", address);
 
         if !(self.is_address_handled(&address)) {
@@ -142,7 +156,9 @@ impl<'mhl> NetworkAddressMonitor<'mhl> {
         }
 
         event!(Level::DEBUG, "handling traffic for {}", address);
-        let mch = MulticastHandler::new(address, (), Arc::clone(&self.config));
+        // TODO: Proper error handling here
+        let mch = MulticastHandler::new(address, (), &self.config).expect("FAIL");
+
         self.mchs.push(mch);
 
         if !self.config.no_host {
@@ -160,14 +176,14 @@ impl<'mhl> NetworkAddressMonitor<'mhl> {
         }
     }
 
-    fn handle_deleted_address(&mut self, address: &NetworkAddress) {
+    pub fn handle_deleted_address(&mut self, address: &NetworkAddress) {
         event!(Level::INFO, "deleted address {}", address);
 
         if !self.is_address_handled(address) {
             return;
         }
 
-        let Some(mut mch) = self.get_mch_by_address(address) else {
+        let Some(mut mch) = self.take_mch_by_address(address) else {
             return;
         };
 
@@ -239,18 +255,22 @@ impl<'mhl> NetworkAddressMonitor<'mhl> {
     // def cleanup(self) -> None:
     //     self.teardown()
 
-    fn get_mch_by_address(&mut self, address: &NetworkAddress) -> Option<MulticastHandler<'mhl>> {
-        //     """
-        //     Get the MCI for the address, its family and the interface.
-        //     adress must be given as a string.
-        //     """
+    /// Get the MCI for the address, its family and the interface.
+    /// adress must be given as a string.
+    #[expect(unused)]
+    fn get_mch_by_address(&mut self, address: &NetworkAddress) -> Option<&MulticastHandler<'mhl>> {
+        self.mchs.iter().find(|mch| mch.handles_address(address))
+    }
 
-        let p = self
+    /// Takes the MCI for the address, its family and the interface.
+    /// adress must be given as a string.
+    fn take_mch_by_address(&mut self, address: &NetworkAddress) -> Option<MulticastHandler<'mhl>> {
+        let position = self
             .mchs
             .iter()
             .position(|mch| mch.handles_address(address));
 
-        if let Some(position) = p {
+        if let Some(position) = position {
             Some(self.mchs.swap_remove(position))
         } else {
             None

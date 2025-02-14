@@ -1,31 +1,27 @@
 use core::str;
-use std::path::PathBuf;
-use std::{
-    env,
-    ffi::{CStr, OsString},
-    fs::File,
-    io::{Error, Read},
-    path::Path,
-};
+use std::env;
+use std::ffi::{CStr, OsString};
+use std::fs::File;
+use std::io::{Error, Read};
+use std::path::{Path, PathBuf};
 
-use clap::value_parser;
-use clap::{command, ArgAction, Command};
-use clap::{parser::ValueSource, Arg};
+use clap::parser::ValueSource;
+use clap::{command, value_parser, Arg, ArgAction, Command};
 use color_eyre::eyre;
 use tracing::{event, Level};
 use uuid::Uuid;
 
-use crate::{
-    config::{Config, PortOrSocket},
-    constants::WSDD_VERSION,
-    security::parse_userspec,
-};
+use crate::config::{Config, PortOrSocket};
+use crate::constants::WSDD_VERSION;
+use crate::security::parse_userspec;
 
 #[expect(clippy::too_many_lines)]
 fn build_clap_matcher() -> Command {
     let mut command = command!()
         .disable_version_flag(true)
         .color(clap::ColorChoice::Always);
+
+    // TODO: How do we return a specific error (e.g. 3 for the user spec's value parser) when an error occurs?
 
     // let hostname = gethostname();
     // let hostname_p1 = hostname
@@ -289,9 +285,9 @@ fn to_listen(listen: &str) -> Result<PortOrSocket, String> {
 }
 
 fn gethostname() -> Result<String, std::io::Error> {
-    let mut buffer = [0u8; 512];
+    let mut buffer = [0u8; 255 /* POSIX LIMIT */ + 1 /* for the \n */];
 
-    let length = unsafe { libc::gethostname(buffer.as_mut_ptr().cast(), buffer.len() + 1) };
+    let length = unsafe { libc::gethostname(buffer.as_mut_ptr().cast(), buffer.len()) };
 
     if length == -1 {
         return Err(Error::last_os_error());

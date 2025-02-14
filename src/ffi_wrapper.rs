@@ -1,47 +1,48 @@
 use std::io::Error;
-use std::mem::{size_of_val, MaybeUninit};
+use std::mem::MaybeUninit;
+use std::os::fd::AsFd;
 use std::os::unix::prelude::AsRawFd;
-use std::ptr::{addr_of, null_mut};
+use std::ptr::null_mut;
 
 use color_eyre::eyre;
-use libc::{c_int, c_void, setsockopt, sigaction, sigset_t, socklen_t, SOL_SOCKET, SO_RCVBUF};
-use tokio::net::TcpStream;
+use libc::{c_int, sigaction, sigset_t};
 use tracing::Level;
 
 use crate::wrap_and_report;
 
-#[expect(unused)]
-pub  fn set_receive_buffer_size(
-    tcp_stream: &TcpStream,
-    size_in_bytes: usize,
-) -> Result<(), Error> {
-    // Set the smallest possible recieve buffer. This reduces local
-    // resource usage and slows down the remote end.
-    let value: i32 = i32::try_from(size_in_bytes).expect("Byte buffer didn't fit in an i32");
+macro_rules! syscall {
+    ($fn: ident ( $($arg: expr),* $(,)* ) , $err: literal) => {{
+        #[allow(unused_unsafe)]
+        let res = unsafe { libc::$fn($($arg, )*) };
+        if res == $err {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(res)
+        }
+    }};
+}
 
-    #[allow(clippy::cast_possible_truncation)]
-    let r: c_int = unsafe {
-        setsockopt(
-            tcp_stream.as_raw_fd(),
-            SOL_SOCKET,
-            SO_RCVBUF,
-            addr_of!(value).cast::<c_void>(),
-            size_of_val(&value) as socklen_t,
-        )
-    };
+/// Caller must ensure `T` is the correct type for `opt` and `val`.
+pub(crate) unsafe fn setsockopt<F: AsFd, T>(
+    fd: F,
+    opt: c_int,
+    val: c_int,
+    payload: &T,
+) -> std::io::Result<()> {
+    let payload = std::ptr::addr_of!(*payload).cast();
 
-    if r == -1 {
-        return Err(Error::last_os_error());
-    }
+    #[expect(clippy::cast_possible_truncation)]
+    let length = std::mem::size_of::<T>() as libc::socklen_t;
 
-    Ok(())
+    syscall!(
+        setsockopt(fd.as_fd().as_raw_fd(), opt, val, payload, length),
+        -1
+    )
+    .map(|_| ())
 }
 
 #[allow(unused)]
-pub  fn set_up_handler(
-    signum: c_int,
-    handler: extern "C" fn(_: c_int),
-) -> Result<(), eyre::Report> {
+pub fn set_up_handler(signum: c_int, handler: extern "C" fn(_: c_int)) -> Result<(), eyre::Report> {
     let sa = sigaction {
         sa_sigaction: handler as usize,
         sa_flags: 0,

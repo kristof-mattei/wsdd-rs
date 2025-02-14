@@ -11,9 +11,7 @@ pub mod env;
 /// `Result::Ok(T)` when both the join-handle AND
 /// the result of the inner function are `Result::Ok`, and `Result::Err`
 /// when either the join failed, or the inner task failed
-pub  async fn flatten_handle<T, E>(
-    handle: JoinHandle<Result<T, E>>,
-) -> Result<T, color_eyre::Report>
+pub async fn flatten_handle<T, E>(handle: JoinHandle<Result<T, E>>) -> Result<T, color_eyre::Report>
 where
     E: 'static + Sync + Send,
     color_eyre::Report: From<E>,

@@ -1,6 +1,8 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
-use crate::{network_address::NetworkAddress, network_interface::NetworkInterface};
+use crate::network_address::NetworkAddress;
+use crate::network_interface::NetworkInterface;
 
 #[derive(Eq)]
 pub struct UdpAddress {
@@ -11,7 +13,7 @@ pub struct UdpAddress {
 }
 
 impl UdpAddress {
-    pub fn new(transport_address: SocketAddr, interface: NetworkInterface) -> Self {
+    pub fn new(transport_address: SocketAddr, interface: &Arc<NetworkInterface>) -> Self {
         let network_address = NetworkAddress::new(transport_address.ip(), interface);
 
         Self {
@@ -32,26 +34,3 @@ impl std::fmt::Display for UdpAddress {
         write!(f, "{}", self.transport_address)
     }
 }
-
-// class y(NetworkAddress):
-
-//     def __init__(self, family, transport_address: Tuple, interface: NetworkInterface) -> None:
-
-//         if not (family == socket.AF_INET or family == socket.AF_INET6):
-//             raise RuntimeError('Unsupport address address family: {}.'.format(family))
-
-//         self._transport_address = transport_address
-//         self._port = transport_address[1]
-
-//         super().__init__(family, transport_address[0], interface)
-
-//     @property
-//     def transport_address(self):
-//         return self._transport_address
-
-//     @property
-//     def port(self):
-//         return self._port
-
-//     def __eq__(self, other) -> bool:
-//         return self.transport_address == other.transport_address

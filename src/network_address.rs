@@ -1,23 +1,20 @@
 #![expect(dead_code)]
 use std::net::IpAddr;
+use std::sync::Arc;
 
 use crate::network_interface::NetworkInterface;
 
 #[derive(Eq)]
-pub  struct NetworkAddress {
-    pub  address: IpAddr,
-    pub  address_str: String,
-    pub  interface: NetworkInterface,
+pub struct NetworkAddress {
+    pub address: IpAddr,
+    pub interface: Arc<NetworkInterface>,
 }
 
 impl NetworkAddress {
-    pub  fn new(address: IpAddr, interface: NetworkInterface) -> Self {
-        let address_str = address.to_string();
-
+    pub fn new(address: IpAddr, interface: &Arc<NetworkInterface>) -> Self {
         Self {
             address,
-            address_str,
-            interface,
+            interface: Arc::clone(interface),
         }
     }
 
@@ -52,7 +49,7 @@ impl NetworkAddress {
 
 impl std::fmt::Display for NetworkAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}%{}", self.address_str, self.interface.name)
+        write!(f, "{}%{}", self.address, self.interface.name)
     }
 }
 
