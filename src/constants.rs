@@ -18,17 +18,13 @@ const WSDP_URI: &str = "http://schemas.xmlsoap.org/ws/2006/02/devprof";
 //     'pub': 'http://schemas.microsoft.com/windows/pub/2005/07'
 // }
 
-pub static NAMESPACES: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
-    HashMap::from_iter([
-        ("soap", "http://www.w3.org/2003/05/soap-envelope"),
-        ("wsa", WSA_URI),
-        ("wsd", WSD_URI),
-        ("wsx", "http://schemas.xmlsoap.org/ws/2004/09/mex"),
-        ("wsdp", WSDP_URI),
-        ("pnpx", "http://schemas.microsoft.com/windows/pnpx/2005/10"),
-        ("pub", "http://schemas.microsoft.com/windows/pub/2005/07"),
-    ])
-});
+pub const XML_SOAP_NAMESPACE: &str = "http://www.w3.org/2003/05/soap-envelope";
+pub const XML_WSA_NAMESPACE: &str = WSA_URI;
+pub const XML_WSD_NAMESPACE: &str = WSD_URI;
+pub const XML_WSX_NAMESPACE: &str = "http://schemas.xmlsoap.org/ws/2004/09/mex";
+pub const XML_WSDP_NAMESPACE: &str = WSDP_URI;
+pub const XML_PNPX_NAMESPACE: &str = "http://schemas.microsoft.com/windows/pnpx/2005/10";
+pub const XML_PUB_NAMESPACE: &str = "http://schemas.microsoft.com/windows/pub/2005/07";
 
 // WSD_MAX_KNOWN_MESSAGES: int = 10
 
@@ -47,12 +43,14 @@ const WSD_TYPE_DEVICE: &str = "wsdp:Device";
 const PUB_COMPUTER: &str = "pub:Computer";
 // WSD_TYPE_DEVICE_COMPUTER: str = '{0} {1}'.format(WSD_TYPE_DEVICE, PUB_COMPUTER)
 // TODO: fix when format_args!() becomes const
-pub const WSD_TYPE_DEVICE_COMPUTER: &str = "wsdp:Device pub:Computer";
+pub const WSD_TYPE_DEVICE_COMPUTER: &str = concat!("{WSD_TYPE_DEVICE} {PUB_COMPUTER}");
 
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::num::NonZeroU16;
 use std::sync::LazyLock;
+
+use const_format::formatcp;
 
 // WSD_MCAST_GRP_V4: str = '239.255.255.250'
 pub const WSD_MCAST_GRP_V4: Ipv4Addr = Ipv4Addr::new(239, 255, 255, 250);
@@ -67,9 +65,9 @@ pub const WSA_ANON: &str = "http://schemas.xmlsoap.org/ws/2004/08/addressing/rol
 
 // # protocol assignments (WSD spec/Section 2.4)
 // WSD_UDP_PORT: int = 3702
-pub const WSD_UDP_PORT: NonZeroU16 = unsafe { NonZeroU16::new_unchecked(3702) };
+pub const WSD_UDP_PORT: NonZeroU16 = NonZeroU16::new(3702).unwrap();
 // WSD_HTTP_PORT: int = 5357
-pub const WSD_HTTP_PORT: NonZeroU16 = unsafe { NonZeroU16::new_unchecked(5357) };
+pub const WSD_HTTP_PORT: NonZeroU16 = NonZeroU16::new(5357).unwrap();
 // WSD_MAX_LEN: int = 32767
 
 // WSDD_LISTEN_PORT = 5359

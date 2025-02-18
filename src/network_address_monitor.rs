@@ -9,6 +9,7 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use tokio_util::sync::CancellationToken;
 use tracing::{event, Level};
 
 use crate::config::Config;
@@ -16,15 +17,12 @@ use crate::multicast_handler::MulticastHandler;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::{self, NetworkInterface};
 
-pub struct NetworkAddressMonitor<'mhl> {
+pub struct NetworkAddressMonitor {
     config: Arc<Config>,
     //     interfaces: Dict[int, NetworkInterface]
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
-    //     aio_loop: asyncio.AbstractEventLoop
     //     mchs: List[MulticastHandler]
-    mchs: Vec<MulticastHandler<'mhl>>,
-    //     http_servers: List[WSDHttpServer]
-    http_servers: Vec<()>,
+    multicast_handlers: Vec<MulticastHandler>,
     //     teardown_tasks: List[asyncio.Task]
     //     active: bool
     active: bool,
@@ -37,15 +35,14 @@ pub struct NetworkAddressMonitor<'mhl> {
 /// network addresses, and filters for addresses/interfaces that are or are not
 /// handled. The actual OS-specific implementation that detects the changes is
 /// done in subclasses. This class is used as a singleton
-impl<'mhl> NetworkAddressMonitor<'mhl> {
+impl NetworkAddressMonitor {
     // instance: ClassVar[object] = None
 
     pub fn new(config: &Arc<Config>) -> Self {
         Self {
             config: Arc::clone(config),
             interfaces: HashMap::new(),
-            mchs: vec![],
-            http_servers: vec![],
+            multicast_handlers: vec![],
             active: false,
         }
     }
@@ -135,7 +132,11 @@ impl<'mhl> NetworkAddressMonitor<'mhl> {
     }
 
     // def handle_new_address(self, address: NetworkAddress) -> None:
-    pub fn handle_new_address(&mut self, address: NetworkAddress) {
+    pub fn handle_new_address(
+        &mut self,
+        address: NetworkAddress,
+        cancellation_token: &CancellationToken,
+    ) {
         event!(Level::DEBUG, "new address {}", address);
 
         if !(self.is_address_handled(&address)) {
@@ -149,31 +150,35 @@ impl<'mhl> NetworkAddressMonitor<'mhl> {
         // filter out what is not wanted
         // Ignore addresses or interfaces we already handle. There can only be
         // one multicast handler per address family and network interface
-        for mch in &self.mchs {
-            if mch.handles_address(&address) {
+        for handler in &self.multicast_handlers {
+            if handler.handles_address(&address) {
                 return;
             }
         }
 
         event!(Level::DEBUG, "handling traffic for {}", address);
-        // TODO: Proper error handling here
-        let mch = MulticastHandler::new(address, (), &self.config).expect("FAIL");
 
-        self.mchs.push(mch);
+        // TODO: Proper error handling here
+        let multicast_handler =
+            MulticastHandler::new(address, cancellation_token.clone(), &self.config).expect("FAIL");
 
         if !self.config.no_host {
             // TODO start WSDHost
-            // WSDHost(mch)
+
+            multicast_handler.enable_wsd_host();
+
             if !self.config.no_http {
-                // TODO
-                // self.http_servers.append(WSDHttpServer(mch, ()))
+                multicast_handler.enable_http_server();
             }
         }
 
         if self.config.discovery {
             // TODO
             // WSDClient(mch)
+            multicast_handler.enable_wsd_client();
         }
+
+        self.multicast_handlers.push(multicast_handler);
     }
 
     pub fn handle_deleted_address(&mut self, address: &NetworkAddress) {
@@ -183,28 +188,13 @@ impl<'mhl> NetworkAddressMonitor<'mhl> {
             return;
         }
 
-        let Some(mut mch) = self.take_mch_by_address(address) else {
+        let Some(mut handler) = self.take_mch_by_address(address) else {
             return;
         };
 
-        // Do not tear the client/hosts down. Saying goodbye does not work
-        // because the address is already gone (at least on Linux).
         // TODO
-        //     for c in WSDClient.instances:
-        //         if c.mch == mch:
-        //             c.cleanup()
-        //             break
-        //     for h in WSDHost.instances:
-        //         if h.mch == mch:
-        //             h.cleanup()
-        //             break
-        //     for s in self.http_servers:
-        //         if s.mch == mch:
-        //             s.server_close()
-        //             self.http_servers.remove(s)
-
-        mch.cleanup();
         //     self.mchs.remove(mch)
+        handler.cleanup();
     }
 
     // def teardown(self) -> None:
@@ -258,20 +248,22 @@ impl<'mhl> NetworkAddressMonitor<'mhl> {
     /// Get the MCI for the address, its family and the interface.
     /// adress must be given as a string.
     #[expect(unused)]
-    fn get_mch_by_address(&mut self, address: &NetworkAddress) -> Option<&MulticastHandler<'mhl>> {
-        self.mchs.iter().find(|mch| mch.handles_address(address))
+    fn get_mch_by_address(&mut self, address: &NetworkAddress) -> Option<&MulticastHandler> {
+        self.multicast_handlers
+            .iter()
+            .find(|multicast_handler| multicast_handler.handles_address(address))
     }
 
     /// Takes the MCI for the address, its family and the interface.
     /// adress must be given as a string.
-    fn take_mch_by_address(&mut self, address: &NetworkAddress) -> Option<MulticastHandler<'mhl>> {
+    fn take_mch_by_address(&mut self, address: &NetworkAddress) -> Option<MulticastHandler> {
         let position = self
-            .mchs
+            .multicast_handlers
             .iter()
-            .position(|mch| mch.handles_address(address));
+            .position(|multicast_handler| multicast_handler.handles_address(address));
 
         if let Some(position) = position {
-            Some(self.mchs.swap_remove(position))
+            Some(self.multicast_handlers.swap_remove(position))
         } else {
             None
         }

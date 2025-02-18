@@ -1,4 +1,11 @@
+#![allow(unused)]
+#![allow(clippy::needless_lifetimes)]
+#![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::unused_self)]
+#![allow(clippy::manual_let_else)]
+#![allow(clippy::unnecessary_wraps)]
 mod address_monitor;
+mod api_server;
 mod cli;
 mod config;
 mod constants;
@@ -16,6 +23,7 @@ mod security;
 mod signal_handlers;
 mod udp_address;
 mod utils;
+mod wsd;
 
 use std::env;
 use std::sync::Arc;
@@ -101,16 +109,17 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     // this channel is used to communicate between
     // tasks and this function, in the case that a task fails, they'll send a message on the shutdown channel
     // after which we'll gracefully terminate other services
-    let token = CancellationToken::new();
+    let cancellation_token = CancellationToken::new();
 
     let tasks = tokio_util::task::TaskTracker::new();
 
-    let mut address_monitor = address_monitor::create_address_monitor(&config)?;
+    let mut address_monitor =
+        address_monitor::create_address_monitor(cancellation_token.clone(), &config)?;
 
     address_monitor.request_current_state().unwrap();
 
     {
-        let cancellation_token = token.clone();
+        let cancellation_token = cancellation_token.clone();
 
         tasks.spawn(async move {
             let _guard = cancellation_token.drop_guard();
@@ -123,16 +132,10 @@ async fn start_tasks() -> Result<(), eyre::Report> {
 
     // TODO
     // api_server = None
-    // if args.listen:
+    // let api_server = if let Some(listen) = config.listen {
     //     api_server = ApiServer(aio_loop, args.listen, nm)
-
-    // get uid:gid before potential chroot'ing
-    // if args.user is not None:
-
-    //     ids = get_ids_from_userspec(args.user)
-    //     if not ids:
-    //         return 3
-
+    // ApiServer::new(listen, )
+    // };
     if let Some(chroot_path) = &config.chroot {
         if let Err(err) = chroot(chroot_path) {
             event!(
@@ -170,8 +173,6 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     }
 
     // # main loop, serve requests coming from any outbound socket
-    // aio_loop.add_signal_handler(signal.SIGINT, sigterm_handler)
-    // aio_loop.add_signal_handler(signal.SIGTERM, sigterm_handler)
     // try:
     //     aio_loop.run_forever()
     // except (SystemExit, KeyboardInterrupt):
@@ -201,13 +202,13 @@ async fn start_tasks() -> Result<(), eyre::Report> {
             // we completed because ...
             event!(Level::WARN, message = "Sigterm detected, stopping all tasks");
         },
-        () = token.cancelled() => {
+        () = cancellation_token.cancelled() => {
             event!(Level::WARN, "Underlying task stopped, stopping all others tasks");
         },
     }
 
     // backup, in case we forgot a dropguard somewhere
-    token.cancel();
+    cancellation_token.cancel();
 
     tasks.close();
 

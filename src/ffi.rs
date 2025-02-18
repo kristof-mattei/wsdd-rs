@@ -1,7 +1,6 @@
 #![expect(clippy::struct_field_names)]
 #![expect(non_snake_case)]
 #![expect(unused)]
-#![expect(non_camel_case_types)]
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 /// Alignment of `rtattr`. `rtattr`'s `align_of()` is 2, but in a message received there's more because there's extra info in there

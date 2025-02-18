@@ -10,6 +10,7 @@ use libc::{
     NLM_F_REQUEST, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK, RTM_DELADDR, RTM_GETADDR,
     RTM_NEWADDR,
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{event, Level};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
@@ -18,15 +19,17 @@ use crate::ffi::{self, ifaddrmsg, nlmsghdr, rtattr, NLMSG_ALIGNTO};
 use crate::network_address::NetworkAddress;
 use crate::network_address_monitor::NetworkAddressMonitor;
 
-pub struct NetlinkAddressMonitor<'nma> {
-    network_address_monitor: NetworkAddressMonitor<'nma>,
+pub struct NetlinkAddressMonitor {
+    cancellation_token: CancellationToken,
+    network_address_monitor: NetworkAddressMonitor,
     socket: tokio::net::UdpSocket,
 }
 
-impl<'nma> NetlinkAddressMonitor<'nma> {
+impl NetlinkAddressMonitor {
     /// Implementation for Netlink sockets, i.e. Linux
     pub fn new(
-        network_address_monitor: NetworkAddressMonitor<'nma>,
+        network_address_monitor: NetworkAddressMonitor,
+        cancellation_token: CancellationToken,
         config: &Arc<Config>,
     ) -> Result<Self, std::io::Error> {
         let mut rtm_groups = RTMGRP_LINK;
@@ -68,6 +71,7 @@ impl<'nma> NetlinkAddressMonitor<'nma> {
         socket.bind(&socket_addr)?;
 
         Ok(Self {
+            cancellation_token,
             network_address_monitor,
             socket: tokio::net::UdpSocket::from_std(std::net::UdpSocket::from(socket))?,
         })
@@ -285,7 +289,8 @@ impl<'nma> NetlinkAddressMonitor<'nma> {
 
             let address = NetworkAddress::new(addr, &interface);
             if message.nlmsg_type == RTM_NEWADDR {
-                self.network_address_monitor.handle_new_address(address);
+                self.network_address_monitor
+                    .handle_new_address(address, &self.cancellation_token);
             } else if message.nlmsg_type == RTM_DELADDR {
                 self.network_address_monitor
                     .handle_deleted_address(&address);
