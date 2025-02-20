@@ -5,12 +5,12 @@
 //             obj.enumerate()
 //         return obj
 
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
-use tracing::{event, Level};
+use tracing::{Level, event};
 
 use crate::config::Config;
 use crate::multicast_handler::MulticastHandler;
@@ -159,12 +159,11 @@ impl NetworkAddressMonitor {
         event!(Level::DEBUG, "handling traffic for {}", address);
 
         // TODO: Proper error handling here
-        let multicast_handler =
+        let mut multicast_handler =
             MulticastHandler::new(address, cancellation_token.clone(), &self.config).expect("FAIL");
 
         if !self.config.no_host {
             // TODO start WSDHost
-
             multicast_handler.enable_wsd_host();
 
             if !self.config.no_http {

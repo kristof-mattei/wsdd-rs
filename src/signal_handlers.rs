@@ -1,4 +1,4 @@
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal::unix::{SignalKind, signal};
 
 /// Waits forever for a SIGTERM
 pub async fn wait_for_sigterm() -> Option<()> {

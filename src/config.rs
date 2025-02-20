@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use tracing::{event, Level};
+use tracing::{Level, event};
 use uuid::Uuid;
 
 #[expect(clippy::struct_excessive_bools)]

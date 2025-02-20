@@ -1,16 +1,21 @@
 use std::collections::HashMap;
+use std::mem::MaybeUninit;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
-use color_eyre::{eyre, Section};
-use libc::{ip_mreqn, IPPROTO_IP, IP_ADD_MEMBERSHIP, IP_MULTICAST_IF};
+use color_eyre::{Section, eyre};
+use libc::{IP_ADD_MEMBERSHIP, IP_MULTICAST_IF, IPPROTO_IP, ip_mreqn, recv};
 use socket2::{Domain, Socket, Type};
 use tokio::net::UdpSocket;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::{OnceCell, RwLock, RwLockReadGuard};
 use tokio_util::sync::CancellationToken;
-use tracing::{event, Level};
+use tracing::{Level, event};
 
 use crate::config::Config;
-use crate::constants::{self, WSD_HTTP_PORT, WSD_MCAST_GRP_V4, WSD_MCAST_GRP_V6, WSD_UDP_PORT};
+use crate::constants::{
+    self, WSD_HTTP_PORT, WSD_MAX_LEN, WSD_MCAST_GRP_V4, WSD_MCAST_GRP_V6, WSD_UDP_PORT,
+};
 use crate::ffi_wrapper::setsockopt;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
@@ -36,9 +41,9 @@ pub struct MulticastHandler {
     //     recv_socket: socket.socket
     //     mc_send_socket: socket.socket
     //     uc_send_socket: socket.socket
-    recv_socket: UdpSocket,
-    mc_send_socket: UdpSocket,
-    uc_send_socket: UdpSocket,
+    recv_socket_wrapper: SocketWithChannels,
+    mc_send_socket_wrapper: SocketWithChannels,
+    uc_send_socket_wrapper: SocketWithChannels,
 
     //     # addresses used for communication and data
     //     multicast_address: UdpAddress
@@ -49,9 +54,9 @@ pub struct MulticastHandler {
     //     # dictionary that holds INetworkPacketHandlers instances for sockets created above
     //     message_handlers: Dict[socket.socket, List[INetworkPacketHandler]]
     // message_handlers: HashMap<Arc<UdpSocket>, Vec<&'nph (dyn NetworkPacketHandler + Sync)>>,
-    wsd_host: OnceLock<WSDHost>,
-    wsd_client: OnceLock<WSDClient>,
-    http_server: OnceLock<WSDHttpServer>,
+    wsd_host: OnceCell<WSDHost>,
+    wsd_client: OnceCell<WSDClient>,
+    http_server: OnceCell<WSDHttpServer>,
 }
 
 impl MulticastHandler {
@@ -154,19 +159,23 @@ impl MulticastHandler {
         let uc_send_socket = UdpSocket::from_std(uc_send_socket.into())?;
         let mc_send_socket = UdpSocket::from_std(mc_send_socket.into())?;
 
+        let recv_socket_wrapper = SocketWithChannels::new(recv_socket);
+        let uc_send_socket_wrapper = SocketWithChannels::new(uc_send_socket);
+        let mc_send_socket_wrapper = SocketWithChannels::new(mc_send_socket);
+
         Ok(Self {
             config: Arc::clone(config),
             cancellation_token,
             address,
-            recv_socket,
-            uc_send_socket,
-            mc_send_socket,
+            recv_socket_wrapper,
+            uc_send_socket_wrapper,
+            mc_send_socket_wrapper,
             multicast_address,
             listen_address,
             // message_handlers,
-            wsd_client: OnceLock::new(),
-            wsd_host: OnceLock::new(),
-            http_server: OnceLock::new(),
+            wsd_client: OnceCell::new(),
+            wsd_host: OnceCell::new(),
+            http_server: OnceCell::new(),
         })
     }
 
@@ -262,17 +271,17 @@ impl MulticastHandler {
         //   self.recv_socket.bind((WSD_MCAST_GRP_V6, WSD_UDP_PORT, 0, idx))
         let socket_addr = SocketAddrV6::new(WSD_MCAST_GRP_V6, WSD_UDP_PORT.into(), 0, idx);
 
-        if let Err(e) = recv_socket.bind(&socket_addr.into()) {
-            event!(Level::WARN, "Failed to bind to {}: {}", socket_addr, e);
+        if let Err(err) = recv_socket.bind(&socket_addr.into()) {
+            event!(Level::WARN, "Failed to bind to {}: {}", socket_addr, err);
             // except OSError:
             //   self.recv_socket.bind(('::', 0, 0, idx))
             let socket_addr = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, idx);
-            if let Err(e) = recv_socket.bind(&socket_addr.into()) {
+            if let Err(err) = recv_socket.bind(&socket_addr.into()) {
                 event!(
                     Level::ERROR,
                     "Fallback also failed to bind to {}: {}",
                     socket_addr,
-                    e
+                    err
                 );
             }
         }
@@ -366,8 +375,8 @@ impl MulticastHandler {
         //     self.recv_socket.bind((WSD_MCAST_GRP_V4, WSD_UDP_PORT))
         let socket_addr = SocketAddrV4::new(WSD_MCAST_GRP_V4, WSD_UDP_PORT.into());
 
-        if let Err(e) = recv_socket.bind(&socket_addr.into()) {
-            event!(Level::WARN, "Failed to bind to {}: {}", socket_addr, e);
+        if let Err(err) = recv_socket.bind(&socket_addr.into()) {
+            event!(Level::WARN, "Failed to bind to {}: {}", socket_addr, err);
             // except OSError:
             //     self.recv_socket.bind(('', WSD_UDP_PORT))
             let socket_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, WSD_UDP_PORT.into());
@@ -502,17 +511,13 @@ impl MulticastHandler {
         Ok(())
     }
 
-    pub(crate) fn enable_wsd_host(&self) {
-        self.wsd_host.get_or_init(|| {
+    pub(crate) fn enable_wsd_host(&mut self) {
+        self.wsd_host.get_or_init(|| async {
             // interests:
             //
 
-            WSDHost {}
+            WSDHost::new(self.recv_socket_wrapper.get_channel().await)
         });
-        // wsd_host = Some(crate::wsd::udp::host::WSDHost::new(
-        //     &multicast_handler,
-        //     &self.config,
-        // ));
     }
 
     pub(crate) fn enable_http_server(&self) {
@@ -524,5 +529,63 @@ impl MulticastHandler {
         //     &multicast_handler,
         //     &self.config,
         // ));
+    }
+}
+
+type Channels = Arc<RwLock<Vec<Sender<Arc<[u8]>>>>>;
+
+struct SocketWithChannels {
+    socket: Arc<UdpSocket>,
+    channels: Channels,
+}
+
+impl SocketWithChannels {
+    fn new(socket: UdpSocket) -> Self {
+        let socket = Arc::new(socket);
+
+        let channels: Channels = Channels::new(RwLock::const_new(vec![]));
+
+        {
+            let socket = Arc::clone(&socket);
+            let channels = Arc::clone(&channels);
+
+            tokio::spawn(async move {
+                loop {
+                    let mut buffer = Vec::with_capacity(WSD_MAX_LEN);
+
+                    let read = match socket.recv_buf(&mut buffer).await {
+                        Ok(read) => read,
+                        Err(err) => {
+                            let local_addr = socket.local_addr().map_or_else(
+                                |err| format!("Failed to get local socket address: {:?}", err),
+                                |addr| addr.to_string(),
+                            );
+
+                            event!(Level::ERROR, ?err, local_addr, "Failed to read from socket");
+
+                            continue;
+                        },
+                    };
+
+                    let buffer = Arc::from(buffer);
+
+                    let lock = channels.read().await;
+
+                    for channel in (&*lock) {
+                        channel.send(Arc::clone(&buffer));
+                    }
+                }
+            });
+        }
+
+        Self { socket, channels }
+    }
+
+    async fn get_channel(&mut self) -> Receiver<Arc<[u8]>> {
+        let (sender, receiver) = tokio::sync::mpsc::channel::<Arc<_>>(10);
+
+        self.channels.write().await.push(sender);
+
+        receiver
     }
 }

@@ -6,9 +6,9 @@ use std::io::{Error, Read};
 use std::path::{Path, PathBuf};
 
 use clap::parser::ValueSource;
-use clap::{command, value_parser, Arg, ArgAction, Command};
+use clap::{Arg, ArgAction, Command, command, value_parser};
 use color_eyre::eyre;
-use tracing::{event, Level};
+use tracing::{Level, event};
 use uuid::Uuid;
 
 use crate::config::{Config, PortOrSocket};

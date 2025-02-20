@@ -4,7 +4,7 @@ use std::path::Path;
 
 use color_eyre::eyre;
 use libc::{setegid, seteuid, setgid, setuid};
-use tracing::{event, Level};
+use tracing::{Level, event};
 
 pub fn parse_userspec(user_spec: &str) -> Result<(u32, u32), String> {
     let (user_id, group_id) = user_spec
@@ -17,37 +17,39 @@ pub fn parse_userspec(user_spec: &str) -> Result<(u32, u32), String> {
     Ok((uid, gid))
 }
 
-unsafe fn getpwname(user: &str) -> Result<u32, String> {
-    *libc::__errno_location() = 0;
+fn getpwname(user: &str) -> Result<u32, String> {
+    unsafe { *libc::__errno_location() = 0 };
 
     let u = CString::new(user).unwrap();
-    let result = libc::getpwnam(u.as_ptr());
+    let result = unsafe { libc::getpwnam(u.as_ptr()) };
 
-    if result.is_null() {
-        if (*libc::__errno_location()) == 0 {
-            Err(format!("User '{}' not found in /etc/passwd", user))
-        } else {
-            Err(format!("{}", Error::last_os_error()))
-        }
-    } else {
-        Ok((*result).pw_uid)
+    match unsafe { result.as_ref() } {
+        None => {
+            if unsafe { *libc::__errno_location() } == 0 {
+                Err(format!("User '{}' not found in /etc/passwd", user))
+            } else {
+                Err(format!("{}", Error::last_os_error()))
+            }
+        },
+        Some(passwd) => Ok(passwd.pw_uid),
     }
 }
 
 unsafe fn getgrname(group: &str) -> Result<u32, String> {
-    *libc::__errno_location() = 0;
+    unsafe { *libc::__errno_location() = 0 };
 
     let g = CString::new(group).unwrap();
-    let result = libc::getgrnam(g.as_ptr());
+    let result = unsafe { libc::getgrnam(g.as_ptr()) };
 
-    if result.is_null() {
-        if (*libc::__errno_location()) == 0 {
-            Err(format!("Group {} not found in /etc/passwd", group))
-        } else {
-            Err(format!("{}", Error::last_os_error()))
-        }
-    } else {
-        Ok((*result).gr_gid)
+    match unsafe { result.as_ref() } {
+        None => {
+            if unsafe { *libc::__errno_location() } == 0 {
+                Err(format!("Group {} not found in /etc/passwd", group))
+            } else {
+                Err(format!("{}", Error::last_os_error()))
+            }
+        },
+        Some(group) => Ok(group.gr_gid),
     }
 }
 

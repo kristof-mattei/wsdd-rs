@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use color_eyre::eyre;
 use tokio_util::sync::CancellationToken;
-use tracing::{event, Level};
+use tracing::{Level, event};
 
 use crate::config::Config;
 use crate::network_address_monitor::NetworkAddressMonitor;

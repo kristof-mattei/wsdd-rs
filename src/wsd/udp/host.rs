@@ -1,5 +1,15 @@
+use std::sync::Arc;
+
+use tokio::sync::mpsc::Receiver;
+
 pub(crate) struct WSDHost {
     // udp_message_handler: WSDUDPMessageHandler<'nph>,
+    receiver: Receiver<Arc<[u8]>>,
+}
+impl WSDHost {
+    pub(crate) fn new(receiver: Receiver<Arc<[u8]>>) -> Self {
+        Self { receiver }
+    }
 }
 // impl WSDHost {
 //     pub(crate) fn new(

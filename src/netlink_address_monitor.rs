@@ -3,19 +3,19 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::os::fd::FromRawFd;
 use std::sync::Arc;
 
-use color_eyre::eyre;
+use color_eyre::eyre::{self, Context};
 use libc::{
-    AF_INET, AF_INET6, AF_PACKET, IFA_ADDRESS, IFA_FLAGS, IFA_F_DADFAILED, IFA_F_DEPRECATED,
-    IFA_F_HOMEADDRESS, IFA_F_TENTATIVE, IFA_LABEL, IFA_LOCAL, NETLINK_ROUTE, NLM_F_DUMP,
-    NLM_F_REQUEST, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK, RTM_DELADDR, RTM_GETADDR,
-    RTM_NEWADDR,
+    AF_INET, AF_INET6, AF_PACKET, IFA_ADDRESS, IFA_F_DADFAILED, IFA_F_DEPRECATED,
+    IFA_F_HOMEADDRESS, IFA_F_TENTATIVE, IFA_FLAGS, IFA_LABEL, IFA_LOCAL, NETLINK_ROUTE, NLM_F_DUMP,
+    NLM_F_REQUEST, RTM_DELADDR, RTM_GETADDR, RTM_NEWADDR, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR,
+    RTMGRP_LINK,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{event, Level};
+use tracing::{Level, event};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use crate::config::Config;
-use crate::ffi::{self, ifaddrmsg, nlmsghdr, rtattr, NLMSG_ALIGNTO};
+use crate::ffi::{self, NLMSG_ALIGNTO, ifaddrmsg, nlmsghdr, rtattr};
 use crate::network_address::NetworkAddress;
 use crate::network_address_monitor::NetworkAddressMonitor;
 
@@ -146,10 +146,8 @@ impl NetlinkAddressMonitor {
             // let message=
             //     unsafe { base_ptr.byte_add(offset).cast::<ffi::nlmsghdr>().as_ref() }.unwrap();
 
-            // TODO better error
             let (message, _suffix) = nlmsghdr::ref_from_prefix(&buffer[offset..])
-                .map_err(|error| format!("Bad stuff: {:?}", error))
-                .map_err(|e| eyre::Report::msg(e))?;
+                .map_err(|error| eyre::Report::msg(error.to_string()))?;
 
             offset += size_of::<ffi::nlmsghdr>();
 
@@ -176,8 +174,7 @@ impl NetlinkAddressMonitor {
             //     unsafe { base_ptr.byte_add(offset).cast::<ffi::ifaddrmsg>().as_ref() }.unwrap();
 
             let (ifaddr_message, _suffix) = ffi::ifaddrmsg::ref_from_prefix(&buffer[offset..])
-                .map_err(|error| format!("Bad stuff: {:?}", error))
-                .map_err(|e| eyre::Report::msg(e))?;
+                .map_err(|error| eyre::Report::msg(error.to_string()))?;
 
             let ifa_flags = u32::from(ifaddr_message.ifa_flags);
 
@@ -233,7 +230,7 @@ impl NetlinkAddressMonitor {
                 );
 
                 if usize::from(ifa_header.rta_len) < size_of::<rtattr>() {
-                    event!(Level::DEBUG, "invalid rtm_attr_len. skipping remainder");
+                    event!(Level::DEBUG, "Invalid `rta_len`. skipping remainder.");
                     break;
                 }
 

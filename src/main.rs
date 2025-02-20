@@ -34,7 +34,7 @@ use dotenvy::dotenv;
 use security::{chroot, drop_privileges};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
-use tracing::{event, Level};
+use tracing::{Level, event};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
@@ -125,7 +125,10 @@ async fn start_tasks() -> Result<(), eyre::Report> {
             let _guard = cancellation_token.drop_guard();
 
             loop {
-                address_monitor.handle_change().await.unwrap();
+                match address_monitor.handle_change().await {
+                    Ok(()) => (),
+                    Err(error) => event!(Level::ERROR, ?error, "TODO"),
+                }
             }
         });
     }
