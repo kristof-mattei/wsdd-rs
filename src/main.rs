@@ -47,23 +47,20 @@ fn init_tracing(console_subscriber: bool) -> Result<(), eyre::Report> {
             format!("INFO,{}=TRACE", env!("CARGO_PKG_NAME").replace('-', "_"))
         }))?;
 
-    let mut layers = vec![];
-
-    if console_subscriber {
-        layers.push(
+    let layers = vec![
+        console_subscriber.then(|| {
             console_subscriber::ConsoleLayer::builder()
                 .with_default_env()
                 .spawn()
+                .boxed()
+        }),
+        Some(
+            tracing_subscriber::fmt::layer()
+                .with_filter(main_filter)
                 .boxed(),
-        );
-    }
-
-    layers.push(
-        tracing_subscriber::fmt::layer()
-            .with_filter(main_filter)
-            .boxed(),
-    );
-    layers.push(tracing_error::ErrorLayer::default().boxed());
+        ),
+        Some(tracing_error::ErrorLayer::default().boxed()),
+    ];
 
     Ok(tracing_subscriber::registry().with(layers).try_init()?)
 }
@@ -72,9 +69,7 @@ fn main() -> Result<(), eyre::Report> {
     // set up .env, if it fails, user didn't provide any
     let _r = dotenv();
 
-    color_eyre::config::HookBuilder::default()
-        .capture_span_trace_by_default(false)
-        .install()?;
+    color_eyre::config::HookBuilder::default().install()?;
 
     // TODO this param should come from env / config,
     init_tracing(true)?;
