@@ -18,24 +18,16 @@ impl NetworkAddress {
         }
     }
 
-    //     @property
-    //     def is_multicastable(self):
-    //         # Nah, this check is not optimal but there are no local flags for
-    //         # addresses, but it should be safe for IPv4 anyways
-    //         # (https://tools.ietf.org/html/rfc5735#page-3)
-    //         return ((self._family == socket.AF_INET) and (self._raw_address[0] == 127)
-    //                 or (self._family == socket.AF_INET6) and (self._raw_address[0:2] != b'\xfe\x80'))
-    fn is_multicastable(&self) -> bool {
-        const HEX_FE: u8 = 254;
-        const HEX_80: u8 = 128;
-
+    // """ return true if the (interface) address can be used for creating (link-local) multicasting sockets  """
+    // # Nah, this check is not optimal but there are no local flags for
+    // # addresses, but it should be safe for IPv4 anyways
+    // # (https://tools.ietf.org/html/rfc5735#page-3)
+    // return ((self._family == socket.AF_INET) and (self._raw_address[0] != 127)
+    //         or (self._family == socket.AF_INET6) and (self._raw_address[0:2] == b'\xfe\x80'))
+    pub fn is_multicastable(&self) -> bool {
         match self.address {
-            IpAddr::V4(ipv4_addr) => ipv4_addr.octets()[0] == 127,
-            IpAddr::V6(ipv6_addr) => {
-                let octets = ipv6_addr.octets();
-
-                !(octets[0] == HEX_FE && octets[1] == HEX_80)
-            },
+            IpAddr::V4(ipv4_addr) => !ipv4_addr.is_loopback(),
+            IpAddr::V6(ipv6_addr) => ipv6_addr.is_unicast_link_local(),
         }
     }
 

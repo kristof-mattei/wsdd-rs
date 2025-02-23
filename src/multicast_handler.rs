@@ -341,11 +341,11 @@ impl MulticastHandler {
         // # v4: member_request (ip_mreqn) = { multicast_addr, intf_addr, idx }
         // mreq = (socket.inet_pton(self.address.family, WSD_MCAST_GRP_V4) + self.address.raw + struct.pack('@I', idx))
         let mpreq = ip_mreqn {
-            imr_address: libc::in_addr {
-                s_addr: WSD_MCAST_GRP_V4.to_bits(),
-            },
             imr_multiaddr: libc::in_addr {
-                s_addr: ipv4_address.to_bits(),
+                s_addr: WSD_MCAST_GRP_V4.to_bits().to_be(),
+            },
+            imr_address: libc::in_addr {
+                s_addr: ipv4_address.to_bits().to_be(),
             },
             imr_ifindex: i32::try_from(idx).unwrap(),
         };

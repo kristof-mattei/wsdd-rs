@@ -69,7 +69,9 @@ fn main() -> Result<(), eyre::Report> {
     // set up .env, if it fails, user didn't provide any
     let _r = dotenv();
 
-    color_eyre::config::HookBuilder::default().install()?;
+    color_eyre::config::HookBuilder::default()
+        .capture_span_trace_by_default(false)
+        .install()?;
 
     // TODO this param should come from env / config,
     init_tracing(true)?;
