@@ -116,7 +116,7 @@ impl NetworkAddressMonitor {
             return false;
         }
 
-        if !address.address.is_multicast() {
+        if !address.is_multicastable() {
             return false;
         }
 
@@ -145,6 +145,8 @@ impl NetworkAddressMonitor {
                 "ignoring that address on {}",
                 address.interface
             );
+
+            return;
         }
 
         // filter out what is not wanted
@@ -266,5 +268,9 @@ impl NetworkAddressMonitor {
         } else {
             None
         }
+    }
+
+    pub(crate) fn set_active(&mut self) {
+        self.active = true;
     }
 }

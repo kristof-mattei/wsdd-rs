@@ -77,7 +77,7 @@ impl NetlinkAddressMonitor {
         })
     }
 
-    pub fn request_current_state(&self) -> Result<(), std::io::Error> {
+    pub fn request_current_state(&mut self) -> Result<(), std::io::Error> {
         #[derive(IntoBytes, Immutable)]
         #[repr(C)]
         struct Request {
@@ -118,9 +118,11 @@ impl NetlinkAddressMonitor {
             })
         }?;
 
-        socket2::SockRef::from(&self.socket)
-            .send_to(request.as_bytes(), &socket_addr)
-            .map(|_| ())
+        socket2::SockRef::from(&self.socket).send_to(request.as_bytes(), &socket_addr)?;
+
+        self.network_address_monitor.set_active();
+
+        Ok(())
     }
 
     #[expect(clippy::too_many_lines)]

@@ -5,14 +5,13 @@ use std::sync::Arc;
 
 use color_eyre::{Section, eyre};
 use libc::{IP_ADD_MEMBERSHIP, IP_MULTICAST_IF, IPPROTO_IP, ip_mreqn, recv};
-use socket2::{Domain, Socket, Type};
+use socket2::{Domain, InterfaceIndexOrAddress, Socket, Type};
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{OnceCell, RwLock, RwLockReadGuard};
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
-use crate::config::Config;
 use crate::constants::{
     self, WSD_HTTP_PORT, WSD_MAX_LEN, WSD_MCAST_GRP_V4, WSD_MCAST_GRP_V6, WSD_UDP_PORT,
 };
@@ -24,6 +23,7 @@ use crate::udp_address::UdpAddress;
 use crate::wsd::http::http_server::WSDHttpServer;
 use crate::wsd::udp::client::WSDClient;
 use crate::wsd::udp::host::WSDHost;
+use crate::{config::Config, wrap_and_report};
 
 /// A class for handling multicast traffic on a given interface for a
 /// given address family. It provides multicast sender and receiver sockets
@@ -341,24 +341,22 @@ impl MulticastHandler {
         // # v4: member_request (ip_mreqn) = { multicast_addr, intf_addr, idx }
         // mreq = (socket.inet_pton(self.address.family, WSD_MCAST_GRP_V4) + self.address.raw + struct.pack('@I', idx))
         let mpreq = ip_mreqn {
-            imr_address: libc::in_addr {
-                s_addr: WSD_MCAST_GRP_V4.to_bits(),
-            },
             imr_multiaddr: libc::in_addr {
-                s_addr: ipv4_address.to_bits(),
+                s_addr: WSD_MCAST_GRP_V4.to_bits().to_be(),
+            },
+            imr_address: libc::in_addr {
+                s_addr: ipv4_address.to_bits().to_be(),
             },
             imr_ifindex: i32::try_from(idx).unwrap(),
         };
 
-        // TODO: trial whether recv_socket.join_multicast_v4(multiaddr, interface) works, even though on that one we cannot specify the interface index
-
-        // self.recv_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-        // TODO better error
-        if let Err(err) = unsafe { setsockopt(recv_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mpreq) }
+        if let Err(err) =
+            recv_socket.join_multicast_v4_n(&WSD_MCAST_GRP_V4, &InterfaceIndexOrAddress::Index(idx))
         {
-            return Err(eyre::Report::from(err)
-                .with_note(|| "Failed to set IPPROTO_IP -> IP_ADD_MEMBERSHIP on socket"));
-        }
+            event!(Level::ERROR, ?err, multi_addr = ?WSD_MCAST_GRP_V4, ifindex = ?idx, "could not join multicast group");
+
+            return Err(eyre::Report::msg("could not join multicast group"));
+        };
 
         #[cfg(target_os = "linux")]
         {
@@ -367,7 +365,9 @@ impl MulticastHandler {
             //     self.recv_socket.setsockopt(socket.IPPROTO_IP, IP_MULTICAST_ALL, 0)
 
             if let Err(err) = recv_socket.set_multicast_all_v4(false) {
-                event!(Level::WARN, ?err, "cannot unset all_multicast");
+                event!(Level::ERROR, ?err, "could not unset IP_MULTICAST_ALL");
+
+                return Err(eyre::Report::msg("could not unset IP_MULTICAST_ALL"));
             };
         }
 
@@ -388,6 +388,11 @@ impl MulticastHandler {
                     "Fallback also failed to bind to {}",
                     socket_addr,
                 );
+
+                return Err(eyre::Report::msg(format!(
+                    "Fallback also failed to bind to {}",
+                    socket_addr
+                )));
             }
         }
 
@@ -398,11 +403,16 @@ impl MulticastHandler {
             .unwrap();
 
         // self.mc_send_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, mreq)
+        mc_send_socket.set_multicast_if_v4(&ipv4_address);
         {
             // TODO error
-            if let Err(err) =
-                unsafe { setsockopt(mc_send_socket, IPPROTO_IP, IP_MULTICAST_IF, &mpreq) }
-            {
+            if let Err(err) = mc_send_socket.set_multicast_if_v4(&ipv4_address) {
+                event!(
+                    Level::ERROR,
+                    ?err,
+                    "Failed to set IPPROTO_IP -> IP_MULTICAST_IF on socket"
+                );
+
                 return Err(eyre::Report::from(err)
                     .with_note(|| "Failed to set IPPROTO_IP -> IP_MULTICAST_IF on socket"));
             }
@@ -413,7 +423,9 @@ impl MulticastHandler {
         // self.mc_send_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, struct.pack('B', 0))
         {
             // TODO: Error
-            mc_send_socket.set_multicast_loop_v4(false).unwrap();
+            if let Err(err) = mc_send_socket.set_multicast_loop_v4(false) {
+                // TODO error
+            }
 
             // TODO openBSD case
             // let value: u8 = 0;
