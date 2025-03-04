@@ -1,9 +1,10 @@
-#![allow(unused)]
+// #![allow(unused)]
 #![allow(clippy::needless_lifetimes)]
 #![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::unused_self)]
 #![allow(clippy::manual_let_else)]
 #![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::too_many_lines)]
 mod address_monitor;
 mod api_server;
 mod cli;
@@ -21,6 +22,7 @@ mod network_packet_handler;
 mod parsers;
 mod security;
 mod signal_handlers;
+mod soap;
 mod udp_address;
 mod utils;
 mod wsd;
@@ -36,7 +38,6 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
 use crate::cli::parse_cli;
@@ -44,25 +45,24 @@ use crate::cli::parse_cli;
 fn init_tracing(console_subscriber: bool) -> Result<(), eyre::Report> {
     let main_filter = EnvFilter::builder()
         .parse(env::var(EnvFilter::DEFAULT_ENV).unwrap_or_else(|_| {
-            format!("INFO,{}=TRACE", env!("CARGO_PKG_NAME").replace('-', "_"))
+            format!("INFO,{}=DEBUG", env!("CARGO_PKG_NAME").replace('-', "_"))
         }))?;
 
-    let layers = vec![
-        console_subscriber.then(|| {
+    let registry = tracing_subscriber::registry()
+        .with(console_subscriber.then(|| {
             console_subscriber::ConsoleLayer::builder()
                 .with_default_env()
                 .spawn()
-                .boxed()
-        }),
-        Some(
+        }))
+        .with(
             tracing_subscriber::fmt::layer()
-                .with_filter(main_filter)
-                .boxed(),
-        ),
-        Some(tracing_error::ErrorLayer::default().boxed()),
-    ];
+                .and_then(tracing_error::ErrorLayer::default())
+                .with_filter(main_filter),
+        );
 
-    Ok(tracing_subscriber::registry().with(layers).try_init()?)
+    tracing::subscriber::set_global_default(registry).expect("Unable to set global subscriber");
+
+    Ok(())
 }
 
 fn main() -> Result<(), eyre::Report> {

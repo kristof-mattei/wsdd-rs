@@ -11,8 +11,8 @@ pub fn parse_userspec(user_spec: &str) -> Result<(u32, u32), String> {
         .split_once(':')
         .ok_or(String::from("wrong format (expected username:groupname)"))?;
 
-    let uid = unsafe { getpwname(user_id) }?;
-    let gid = unsafe { getgrname(group_id) }?;
+    let uid = { getpwname(user_id) }?;
+    let gid = { getgrname(group_id) }?;
 
     Ok((uid, gid))
 }
@@ -35,7 +35,7 @@ fn getpwname(user: &str) -> Result<u32, String> {
     }
 }
 
-unsafe fn getgrname(group: &str) -> Result<u32, String> {
+fn getgrname(group: &str) -> Result<u32, String> {
     unsafe { *libc::__errno_location() = 0 };
 
     let g = CString::new(group).unwrap();

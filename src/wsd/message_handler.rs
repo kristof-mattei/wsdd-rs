@@ -20,12 +20,15 @@ pub(crate) struct WSDMessageHandler {
     config: Arc<Config>,
 
     //     handlers: Dict[str, MessageTypeHandler]
+    #[expect(unused)]
     handlers: HashMap<String, MessageTypeHandler>,
 
     //     known_messages: Deque[str] = collections.deque([], WSD_MAX_KNOWN_MESSAGES)
+    #[expect(unused)]
     known_messages: VecDeque<String>,
 
     //     pending_tasks: List[asyncio.Task]
+    #[expect(unused)]
     pending_tasks: Vec<String>,
 }
 // class WSDMessageHandler(INetworkPacketHandler):
@@ -47,6 +50,8 @@ impl WSDMessageHandler {
 
     //     # shortcuts for building WSD responses
     //     def add_endpoint_reference(self, parent: ElementTree.Element, endpoint: Optional[str] = None) -> None:
+
+    #[expect(unused)]
     fn add_endpoint_reference<T: std::io::Write>(
         &self,
         parent: &mut Writer<T>,
@@ -75,6 +80,8 @@ impl WSDMessageHandler {
     }
 
     //     def add_metadata_version(self, parent: ElementTree.Element) -> None:
+
+    #[expect(unused)]
     fn add_metadata_version<T: std::io::Write>(
         &self,
         parent: &mut Writer<T>,
@@ -90,6 +97,7 @@ impl WSDMessageHandler {
 
     //     def add_types(self, parent: ElementTree.Element) -> None:
 
+    #[expect(unused)]
     fn add_types<T: std::io::Write>(&self, parent: &mut Writer<T>) -> Result<(), std::io::Error> {
         parent
             .create_element("wsd:Types")
@@ -102,6 +110,7 @@ impl WSDMessageHandler {
 
     //     def add_xaddr(self, parent: ElementTree.Element, transport_addr: str) -> None:
 
+    #[expect(unused)]
     fn add_xaddr<T: std::io::Write>(
         &self,
         parent: &mut Writer<T>,
@@ -126,6 +135,8 @@ impl WSDMessageHandler {
 
     //     def build_message(self, to_addr: str, action_str: str, request_header: Optional[ElementTree.Element],
     //                       response: ElementTree.Element) -> str:
+
+    #[expect(unused)]
     fn bulid_messages(
         &self,
         _to_addr: String,
@@ -142,6 +153,7 @@ impl WSDMessageHandler {
 
     //     def build_message_tree(self, to_addr: str, action_str: str, request_header: Optional[ElementTree.Element],
     //                            body: Optional[ElementTree.Element]) -> Tuple[ElementTree.Element, str]:
+    #[expect(unused)]
     fn build_message_tree(&self) {
         //         """
         //         Build a WSD message with a given action string including SOAP header.
@@ -217,6 +229,7 @@ impl WSDMessageHandler {
     }
 
     //     def handle_message(self, msg: str, src: Optional[UdpAddress] = None) -> Optional[str]:
+    #[expect(unused)]
     fn handle_message(&self, message: &str, _source: Option<UdpAddress>) {
         // """
         // handle a WSD message

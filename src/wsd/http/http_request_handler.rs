@@ -1,3 +1,4 @@
+#[expect(unused)]
 pub struct WSDHttpRequestHandler {}
 // class WSDHttpRequestHandler(http.server.BaseHTTPRequestHandler):
 //     """Class for handling WSD requests coming over HTTP"""

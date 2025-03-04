@@ -1,16 +1,26 @@
+use std::sync::Arc;
+
+use tokio::sync::mpsc::Receiver;
+
 pub(crate) struct WSDClient {
-    // udp_message_handler: WSDUDPMessageHandler<'nph>,
+    #[expect(unused)]
+    mc_send_socket_receiver: Receiver<Arc<[u8]>>,
+
+    #[expect(unused)]
+    recv_socket_receiver: Receiver<Arc<[u8]>>,
 }
-// impl<'nph> WSDClient<'nph> {
-//     pub(crate) fn new(
-//         multicast_handler: &Arc<MulticastHandler<'nph>>,
-//         config: &Arc<Config>,
-//     ) -> Self {
-//         Self {
-//             udp_message_handler: WSDUDPMessageHandler::new(multicast_handler, config),
-//         }
-//     }
-// }
+
+impl WSDClient {
+    pub(crate) fn new(
+        mc_send_socket_receiver: Receiver<Arc<[u8]>>,
+        recv_socket_receiver: Receiver<Arc<[u8]>>,
+    ) -> Self {
+        Self {
+            mc_send_socket_receiver,
+            recv_socket_receiver,
+        }
+    }
+}
 
 // class WSDClient(WSDUDPMessageHandler):
 

@@ -161,7 +161,7 @@ class UdpAddress(NetworkAddress):
 
 class INetworkPacketHandler:
 
-    def handle_packet(self, msg: str, udp_src_address: UdpAddress) -> None:
+    def handle_packet(self, msg: str, src: UdpAddress) -> None:
         pass
 
 
@@ -923,6 +923,10 @@ class WSDHost(WSDUDPMessageHandler):
         self.send_bye()
 
     def handle_packet(self, msg: str, src: UdpAddress) -> None:
+        if src == self.mch.multicast_address:
+            logger.error("WSDHOST RECEIVED FROM (??) multicast address")
+        else:
+            logger.error("WSDHOST RECEIVED FROM normal address")
         reply = self.handle_message(msg, src)
         if reply:
             self.enqueue_datagram(reply, src)

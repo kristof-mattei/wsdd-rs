@@ -1,3 +1,4 @@
+#[expect(unused)]
 struct ApiServer {}
 // class ApiServer:
 

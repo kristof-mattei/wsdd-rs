@@ -4,12 +4,14 @@ use crate::config::Config;
 use crate::multicast_handler::MulticastHandler;
 use crate::wsd::message_handler::WSDMessageHandler;
 
+#[expect(unused)]
 pub(crate) struct WSDUDPMessageHandler {
     multicast_handler: Arc<MulticastHandler>,
     message_handler: WSDMessageHandler,
 }
 
 impl WSDUDPMessageHandler {
+    #[expect(unused)]
     pub fn new(multicast_handler: &Arc<MulticastHandler>, config: &Arc<Config>) -> Self {
         Self {
             multicast_handler: Arc::clone(multicast_handler),

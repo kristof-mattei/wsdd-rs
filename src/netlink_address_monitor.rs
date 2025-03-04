@@ -3,7 +3,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::os::fd::FromRawFd;
 use std::sync::Arc;
 
-use color_eyre::eyre::{self, Context};
+use color_eyre::eyre::{self};
 use libc::{
     AF_INET, AF_INET6, AF_PACKET, IFA_ADDRESS, IFA_F_DADFAILED, IFA_F_DEPRECATED,
     IFA_F_HOMEADDRESS, IFA_F_TENTATIVE, IFA_FLAGS, IFA_LABEL, IFA_LOCAL, NETLINK_ROUTE, NLM_F_DUMP,
@@ -289,7 +289,8 @@ impl NetlinkAddressMonitor {
             let address = NetworkAddress::new(addr, &interface);
             if message.nlmsg_type == RTM_NEWADDR {
                 self.network_address_monitor
-                    .handle_new_address(address, &self.cancellation_token);
+                    .handle_new_address(address, &self.cancellation_token)
+                    .await;
             } else if message.nlmsg_type == RTM_DELADDR {
                 self.network_address_monitor
                     .handle_deleted_address(&address);
@@ -301,6 +302,7 @@ impl NetlinkAddressMonitor {
         Ok(())
     }
 
+    #[expect(unused)]
     fn cleanup() {
         // self.aio_loop.remove_reader(self.socket.fileno())
         // self.socket.close()

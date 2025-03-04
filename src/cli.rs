@@ -4,6 +4,7 @@ use std::ffi::{CStr, OsString};
 use std::fs::File;
 use std::io::{Error, Read};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::parser::ValueSource;
 use clap::{Arg, ArgAction, Command, command, value_parser};
@@ -261,6 +262,13 @@ where
             .get_one("source-port")
             .copied()
             .expect("source-port has a default"),
+
+        wsd_instance_id: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Before epoch? Time travel?")
+            .as_secs()
+            .to_string()
+            .into(),
     };
 
     // TODO

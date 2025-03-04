@@ -132,7 +132,7 @@ impl NetworkAddressMonitor {
     }
 
     // def handle_new_address(self, address: NetworkAddress) -> None:
-    pub fn handle_new_address(
+    pub async fn handle_new_address(
         &mut self,
         address: NetworkAddress,
         cancellation_token: &CancellationToken,
@@ -166,7 +166,7 @@ impl NetworkAddressMonitor {
 
         if !self.config.no_host {
             // TODO start WSDHost
-            multicast_handler.enable_wsd_host();
+            multicast_handler.enable_wsd_host().await;
 
             if !self.config.no_http {
                 multicast_handler.enable_http_server();
@@ -174,9 +174,7 @@ impl NetworkAddressMonitor {
         }
 
         if self.config.discovery {
-            // TODO
-            // WSDClient(mch)
-            multicast_handler.enable_wsd_client();
+            multicast_handler.enable_wsd_client().await;
         }
 
         self.multicast_handlers.push(multicast_handler);

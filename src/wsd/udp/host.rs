@@ -1,15 +1,16 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use tokio::sync::mpsc::Receiver;
+use color_eyre::eyre;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::task::JoinHandle;
+use tracing::{Level, event};
 
 pub(crate) struct WSDHost {
     // udp_message_handler: WSDUDPMessageHandler<'nph>,
-    receiver: Receiver<Arc<[u8]>>,
-}
-impl WSDHost {
-    pub(crate) fn new(receiver: Receiver<Arc<[u8]>>) -> Self {
-        Self { receiver }
-    }
+    #[expect(unused)]
+    handle: JoinHandle<()>,
+    multicast: Sender<Box<[u8]>>,
 }
 // impl WSDHost {
 //     pub(crate) fn new(
@@ -21,6 +22,55 @@ impl WSDHost {
 //         }
 //     }
 // }
+impl WSDHost {
+    pub(crate) async fn new(
+        mut receiver: Receiver<Arc<[u8]>>,
+        unicast: Sender<(Box<[u8]>, SocketAddr)>,
+        multicast: Sender<Box<[u8]>>,
+    ) -> Self {
+        let handle = tokio::spawn(async move {
+            loop {
+                if let Some(buf) = receiver.recv().await {
+                    // ...
+
+                    let target: SocketAddr = "[::1]:12345".parse().unwrap();
+
+                    if let Err(err) = unicast.send((Box::new([buf[0]]), target)).await {
+                        event!(Level::ERROR, ?err, "Failed to broadcast");
+                    }
+                } else {
+                    // the end
+                    event!(Level::ERROR, "recv socket gone?");
+                    break;
+                }
+            }
+        });
+
+        let s = Self { handle, multicast };
+
+        // this shouldn't be an await...
+        s.send_hello().await.unwrap();
+
+        s
+    }
+
+    async fn send_hello(&self) -> Result<(), eyre::Report> {
+        //     def send_hello(self) -> None:
+        //         """WS-Discovery, Section 4.1, Hello message"""
+        //         hello = ElementTree.Element('wsd:Hello')
+        //         self.add_endpoint_reference(hello)
+        //         # THINK: Microsoft does not send the transport address here due to privacy reasons. Could make this optional.
+        //         self.add_xaddr(hello, self.mch.address.transport_str)
+        //         self.add_metadata_version(hello)
+
+        //         msg = self.build_message(WSA_DISCOVERY, WSD_HELLO, None, hello)
+        //         self.enqueue_datagram(msg, self.mch.multicast_address, msg_type='Hello')
+        let message = Box::from([1, 2, 3]);
+        self.multicast.send(message).await?;
+        Ok(())
+    }
+}
+
 // class WSDHost(WSDUDPMessageHandler):
 //     """Class for handling WSD requests coming from UDP datagrams."""
 
@@ -51,17 +101,6 @@ impl WSDHost {
 //         reply = self.handle_message(msg, src)
 //         if reply:
 //             self.enqueue_datagram(reply, src)
-
-//     def send_hello(self) -> None:
-//         """WS-Discovery, Section 4.1, Hello message"""
-//         hello = ElementTree.Element('wsd:Hello')
-//         self.add_endpoint_reference(hello)
-//         # THINK: Microsoft does not send the transport address here due to privacy reasons. Could make this optional.
-//         self.add_xaddr(hello, self.mch.address.transport_str)
-//         self.add_metadata_version(hello)
-
-//         msg = self.build_message(WSA_DISCOVERY, WSD_HELLO, None, hello)
-//         self.enqueue_datagram(msg, self.mch.multicast_address, msg_type='Hello')
 
 //     def send_bye(self) -> None:
 //         """WS-Discovery, Section 4.2, Bye message"""

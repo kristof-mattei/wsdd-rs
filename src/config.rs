@@ -26,6 +26,8 @@ pub struct Config {
     pub no_host: bool,
     pub metadata_timeout: f32,
     pub source_port: u16,
+
+    pub wsd_instance_id: Box<str>,
 }
 
 #[derive(Debug, PartialEq, Clone)]

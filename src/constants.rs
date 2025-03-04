@@ -1,12 +1,15 @@
+use std::net::{Ipv4Addr, Ipv6Addr};
+use std::num::NonZeroU16;
+
 pub const WSDD_VERSION: &str = "0.8";
 
 // # constants for WSD XML/SOAP parsing
 // WSA_URI: str = 'http://schemas.xmlsoap.org/ws/2004/08/addressing'
-const WSA_URI: &str = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+pub const WSA_URI: &str = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
 // WSD_URI: str = 'http://schemas.xmlsoap.org/ws/2005/04/discovery'
-const WSD_URI: &str = "http://schemas.xmlsoap.org/ws/2005/04/discovery";
+pub const WSD_URI: &str = "http://schemas.xmlsoap.org/ws/2005/04/discovery";
 // WSDP_URI: str = 'http://schemas.xmlsoap.org/ws/2006/02/devprof'
-const WSDP_URI: &str = "http://schemas.xmlsoap.org/ws/2006/02/devprof";
+pub const WSDP_URI: &str = "http://schemas.xmlsoap.org/ws/2006/02/devprof";
 
 // namespaces: Dict[str, str] = {
 //     'soap': 'http://www.w3.org/2003/05/soap-envelope',
@@ -20,10 +23,15 @@ const WSDP_URI: &str = "http://schemas.xmlsoap.org/ws/2006/02/devprof";
 
 pub const XML_SOAP_NAMESPACE: &str = "http://www.w3.org/2003/05/soap-envelope";
 pub const XML_WSA_NAMESPACE: &str = WSA_URI;
+#[expect(unused)]
 pub const XML_WSD_NAMESPACE: &str = WSD_URI;
+#[expect(unused)]
 pub const XML_WSX_NAMESPACE: &str = "http://schemas.xmlsoap.org/ws/2004/09/mex";
+#[expect(unused)]
 pub const XML_WSDP_NAMESPACE: &str = WSDP_URI;
+#[expect(unused)]
 pub const XML_PNPX_NAMESPACE: &str = "http://schemas.microsoft.com/windows/pnpx/2005/10";
+#[expect(unused)]
 pub const XML_PUB_NAMESPACE: &str = "http://schemas.microsoft.com/windows/pub/2005/07";
 
 // WSD_MAX_KNOWN_MESSAGES: int = 10
@@ -33,24 +41,21 @@ pub const XML_PUB_NAMESPACE: &str = "http://schemas.microsoft.com/windows/pub/20
 // WSD_RESOLVE: str = WSD_URI + '/Resolve'
 // WSD_RESOLVE_MATCH: str = WSD_URI + '/ResolveMatches'
 // WSD_HELLO: str = WSD_URI + '/Hello'
+pub const WSD_HELLO: &str = concat!("{WSD_URI}/Hello");
 // WSD_BYE: str = WSD_URI + '/Bye'
 // WSD_GET: str = 'http://schemas.xmlsoap.org/ws/2004/09/transfer/Get'
 // WSD_GET_RESPONSE: str = 'http://schemas.xmlsoap.org/ws/2004/09/transfer/GetResponse'
 
 // WSD_TYPE_DEVICE: str = 'wsdp:Device'
+
+#[expect(unused)]
 const WSD_TYPE_DEVICE: &str = "wsdp:Device";
 // PUB_COMPUTER: str = 'pub:Computer'
+#[expect(unused)]
 const PUB_COMPUTER: &str = "pub:Computer";
 // WSD_TYPE_DEVICE_COMPUTER: str = '{0} {1}'.format(WSD_TYPE_DEVICE, PUB_COMPUTER)
 // TODO: fix when format_args!() becomes const
 pub const WSD_TYPE_DEVICE_COMPUTER: &str = concat!("{WSD_TYPE_DEVICE} {PUB_COMPUTER}");
-
-use std::collections::HashMap;
-use std::net::{Ipv4Addr, Ipv6Addr};
-use std::num::NonZeroU16;
-use std::sync::LazyLock;
-
-use const_format::formatcp;
 
 // WSD_MCAST_GRP_V4: str = '239.255.255.250'
 pub const WSD_MCAST_GRP_V4: Ipv4Addr = Ipv4Addr::new(239, 255, 255, 250);
@@ -58,8 +63,10 @@ pub const WSD_MCAST_GRP_V4: Ipv4Addr = Ipv4Addr::new(239, 255, 255, 250);
 pub const WSD_MCAST_GRP_V6: Ipv6Addr = Ipv6Addr::new(65282, 0, 0, 0, 0, 0, 0, 12);
 
 // WSA_ANON: str = WSA_URI + '/role/anonymous'
+#[expect(unused)]
 pub const WSA_ANON: &str = "http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous";
 // WSA_DISCOVERY: str = 'urn:schemas-xmlsoap-org:ws:2005:04:discovery'
+pub const WSA_DISCOVERY: &str = "urn:schemas-xmlsoap-org:ws:2005:04:discovery";
 
 // MIME_TYPE_SOAP_XML: str = 'application/soap+xml'
 

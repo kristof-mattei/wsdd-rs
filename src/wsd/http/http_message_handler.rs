@@ -1,5 +1,6 @@
 use crate::wsd::message_handler::WSDMessageHandler;
 
+#[expect(unused)]
 struct WSDHttpMessageHandler {
     message_handler: WSDMessageHandler,
 }

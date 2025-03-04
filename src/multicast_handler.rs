@@ -1,37 +1,35 @@
-use std::collections::HashMap;
-use std::mem::MaybeUninit;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
 
 use color_eyre::{Section, eyre};
-use libc::{IP_ADD_MEMBERSHIP, IP_MULTICAST_IF, IPPROTO_IP, ip_mreqn, recv};
 use socket2::{Domain, InterfaceIndexOrAddress, Socket, Type};
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::{OnceCell, RwLock, RwLockReadGuard};
+use tokio::sync::{OnceCell, RwLock};
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
+use crate::config::Config;
 use crate::constants::{
     self, WSD_HTTP_PORT, WSD_MAX_LEN, WSD_MCAST_GRP_V4, WSD_MCAST_GRP_V6, WSD_UDP_PORT,
 };
-use crate::ffi_wrapper::setsockopt;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
-use crate::network_packet_handler::NetworkPacketHandler;
 use crate::udp_address::UdpAddress;
 use crate::wsd::http::http_server::WSDHttpServer;
 use crate::wsd::udp::client::WSDClient;
 use crate::wsd::udp::host::WSDHost;
-use crate::{config::Config, wrap_and_report};
 
 /// A class for handling multicast traffic on a given interface for a
 /// given address family. It provides multicast sender and receiver sockets
 pub struct MulticastHandler {
+    #[expect(unused)]
     cancellation_token: CancellationToken,
+    #[expect(unused)]
     config: Arc<Config>,
     //     # base interface addressing information
     //     address: NetworkAddress
+    /// The address and interface we're bound on
     address: NetworkAddress,
 
     //     # individual interface-bound sockets for:
@@ -41,22 +39,27 @@ pub struct MulticastHandler {
     //     recv_socket: socket.socket
     //     mc_send_socket: socket.socket
     //     uc_send_socket: socket.socket
-    recv_socket_wrapper: SocketWithChannels,
-    mc_send_socket_wrapper: SocketWithChannels,
-    uc_send_socket_wrapper: SocketWithChannels,
+    recv_socket_wrapper: SocketWithReceivers,
+    mc_send_socket_wrapper: SocketWithReceivers,
+    uc_send_socket_wrapper: SocketWithReceivers,
 
     //     # addresses used for communication and data
     //     multicast_address: UdpAddress
+    /// The multicast group on which we broadcast our messages
     multicast_address: UdpAddress,
     //     listen_address: Tuple
-    listen_address: SocketAddr,
+    #[expect(unused)]
+    http_listen_address: SocketAddr,
 
     //     # dictionary that holds INetworkPacketHandlers instances for sockets created above
     //     message_handlers: Dict[socket.socket, List[INetworkPacketHandler]]
     // message_handlers: HashMap<Arc<UdpSocket>, Vec<&'nph (dyn NetworkPacketHandler + Sync)>>,
     wsd_host: OnceCell<WSDHost>,
     wsd_client: OnceCell<WSDClient>,
+    #[expect(unused)]
     http_server: OnceCell<WSDHttpServer>,
+    unicast: Sender<(Box<[u8]>, SocketAddr)>,
+    multicast: Sender<Box<[u8]>>,
 }
 
 impl MulticastHandler {
@@ -66,41 +69,27 @@ impl MulticastHandler {
         cancellation_token: CancellationToken,
         config: &Arc<Config>,
     ) -> Result<Self, eyre::Report> {
-        // self.address = address
-
-        // self.recv_socket = socket.socket(self.address.family, socket.SOCK_DGRAM)
-        let domain = if address.address.is_ipv4() {
-            Domain::IPV4
-        } else {
-            Domain::IPV6
+        let domain = match address.address {
+            IpAddr::V4(_) => Domain::IPV4,
+            IpAddr::V6(_) => Domain::IPV6,
         };
 
         // TODO error
         let recv_socket = Socket::new(domain, Type::DGRAM, None)?;
 
-        // self.recv_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         // TODO handle error
         recv_socket.set_reuse_address(true)?;
 
-        // self.mc_send_socket = socket.socket(self.address.family, socket.SOCK_DGRAM)
-        let mc_send_socket = Socket::new(domain, Type::DGRAM, None).unwrap();
+        // TODO error
+        let mc_send_socket = Socket::new(domain, Type::DGRAM, None)?;
 
-        // self.uc_send_socket = socket.socket(self.address.family, socket.SOCK_DGRAM)
-        let uc_send_socket = Socket::new(domain, Type::DGRAM, None).unwrap();
+        // TODO error
+        let uc_send_socket = Socket::new(domain, Type::DGRAM, None)?;
 
-        // self.uc_send_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         // TODO error
         uc_send_socket.set_reuse_address(true)?;
 
-        //         self.message_handlers = {}
-        // let message_handlers = HashMap::new();
-
-        //         if self.address.family == socket.AF_INET:
-        //             self.init_v4()
-        //         elif self.address.family == socket.AF_INET6:
-        //             self.init_v6()
-
-        let (multicast_address, listen_address) = match address.address {
+        let (multicast_address, http_listen_address) = match address.address {
             IpAddr::V4(ipv4_address) => {
                 let (multicast_address, listen_address) = MulticastHandler::init_v4(
                     ipv4_address,
@@ -127,10 +116,6 @@ impl MulticastHandler {
             },
         };
 
-        //         logger.info('joined multicast group {0} on {1}'.format(self.multicast_address.transport_str, self.address))
-        //         logger.debug('transport address on {0} is {1}'.format(self.address.interface.name, self.address.transport_str))
-        //         logger.debug('will listen for HTTP traffic on address {0}'.format(self.listen_address))
-
         event!(
             Level::INFO,
             "joined multicast group {} on {}",
@@ -146,7 +131,7 @@ impl MulticastHandler {
         event!(
             Level::DEBUG,
             "will listen for HTTP traffic on address {}",
-            listen_address
+            http_listen_address
         );
 
         // TODO
@@ -155,13 +140,58 @@ impl MulticastHandler {
         //         self.aio_loop.add_reader(self.mc_send_socket.fileno(), self.read_socket, self.mc_send_socket)
         //         self.aio_loop.add_reader(self.uc_send_socket.fileno(), self.read_socket, self.uc_send_socket)
 
-        let recv_socket = UdpSocket::from_std(recv_socket.into())?;
-        let uc_send_socket = UdpSocket::from_std(uc_send_socket.into())?;
-        let mc_send_socket = UdpSocket::from_std(mc_send_socket.into())?;
+        let recv_socket_wrapper =
+            SocketWithReceivers::new(UdpSocket::from_std(recv_socket.into())?);
+        let uc_send_socket_wrapper =
+            SocketWithReceivers::new(UdpSocket::from_std(uc_send_socket.into())?);
+        let mc_send_socket_wrapper =
+            SocketWithReceivers::new(UdpSocket::from_std(mc_send_socket.into())?);
 
-        let recv_socket_wrapper = SocketWithChannels::new(recv_socket);
-        let uc_send_socket_wrapper = SocketWithChannels::new(uc_send_socket);
-        let mc_send_socket_wrapper = SocketWithChannels::new(mc_send_socket);
+        let multicast = {
+            let socket = Arc::clone(&mc_send_socket_wrapper.socket);
+            let multicast_address = multicast_address.transport_address;
+            let (sender, mut receiver) = tokio::sync::mpsc::channel::<Box<[u8]>>(10);
+
+            tokio::spawn(async move {
+                loop {
+                    if let Some(buf) = receiver.recv().await {
+                        match socket.send_to(&buf, multicast_address).await {
+                            Ok(_) => {},
+                            Err(err) => {
+                                event!(Level::WARN, ?err, target = ?multicast_address, "Failed to send data");
+                            },
+                        }
+                    } else {
+                        // receiver gone? :(
+                    }
+                }
+            });
+
+            sender
+        };
+
+        let unicast = {
+            let socket = Arc::clone(&uc_send_socket_wrapper.socket);
+
+            let (sender, mut receiver) = tokio::sync::mpsc::channel::<(Box<[u8]>, SocketAddr)>(10);
+
+            tokio::spawn(async move {
+                loop {
+                    if let Some((buf, target)) = receiver.recv().await {
+                        match socket.send_to(&buf, target).await {
+                            Ok(_) => {},
+                            Err(err) => {
+                                event!(Level::WARN, ?err, target = ?target, "Failed to send data");
+                            },
+                        }
+                    } else {
+                        // receiver gone? :(
+                    }
+                }
+            });
+
+            sender
+        };
 
         Ok(Self {
             config: Arc::clone(config),
@@ -171,11 +201,12 @@ impl MulticastHandler {
             uc_send_socket_wrapper,
             mc_send_socket_wrapper,
             multicast_address,
-            listen_address,
-            // message_handlers,
+            http_listen_address,
             wsd_client: OnceCell::new(),
             wsd_host: OnceCell::new(),
             http_server: OnceCell::new(),
+            multicast,
+            unicast,
         })
     }
 
@@ -207,13 +238,10 @@ impl MulticastHandler {
         //         self.uc_send_socket.close()
     }
 
-    //     def handles_address(self, address: NetworkAddress) -> bool:
     pub fn handles_address(&self, address: &NetworkAddress) -> bool {
-        //         return self.address == address
         &self.address == address
     }
 
-    //     def init_v6(self) -> None:
     fn init_v6(
         ipv6_address: Ipv6Addr,
         interface: &Arc<NetworkInterface>,
@@ -224,15 +252,16 @@ impl MulticastHandler {
     ) -> Result<(UdpAddress, SocketAddrV6), eyre::Report> {
         let idx = interface.index;
 
-        let raw_mc_addr = SocketAddrV6::new(
-            constants::WSD_MCAST_GRP_V6,
-            constants::WSD_UDP_PORT.into(),
-            0x575Cu32,
-            idx,
+        let multicast_address = UdpAddress::new(
+            SocketAddrV6::new(
+                constants::WSD_MCAST_GRP_V6,
+                constants::WSD_UDP_PORT.into(),
+                0x575Cu32,
+                idx,
+            )
+            .into(),
+            interface,
         );
-
-        // self.multicast_address = UdpAddress(self.address.family, raw_mc_addr, self.address.interface)
-        let multicast_address = UdpAddress::new(SocketAddr::V6(raw_mc_addr), interface);
 
         // v6: member_request = { multicast_addr, intf_idx }
         // mreq = (socket.inet_pton(self.address.family, WSD_MCAST_GRP_V6) + struct.pack('@I', idx))
@@ -267,15 +296,13 @@ impl MulticastHandler {
 
         // bind to network interface, i.e. scope and handle OS differences,
         // see Stevens: Unix Network Programming, Section 21.6, last paragraph
-        // try:
-        //   self.recv_socket.bind((WSD_MCAST_GRP_V6, WSD_UDP_PORT, 0, idx))
         let socket_addr = SocketAddrV6::new(WSD_MCAST_GRP_V6, WSD_UDP_PORT.into(), 0, idx);
 
         if let Err(err) = recv_socket.bind(&socket_addr.into()) {
             event!(Level::WARN, "Failed to bind to {}: {}", socket_addr, err);
-            // except OSError:
-            //   self.recv_socket.bind(('::', 0, 0, idx))
+
             let socket_addr = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, idx);
+
             if let Err(err) = recv_socket.bind(&socket_addr.into()) {
                 event!(
                     Level::ERROR,
@@ -283,34 +310,26 @@ impl MulticastHandler {
                     socket_addr,
                     err
                 );
+
+                return Err(eyre::Report::msg(format!(
+                    "Fallback also failed to bind to {}",
+                    socket_addr
+                )));
             }
         }
 
         // bind unicast socket to interface address and WSD's udp port
-        // self.uc_send_socket.bind((str(self.address), WSD_UDP_PORT, 0, idx))
         uc_send_socket
-            .bind(&SocketAddrV6::new(ipv6_address, WSD_UDP_PORT.into(), 0, idx).into())
-            .unwrap();
+            .bind(&SocketAddrV6::new(ipv6_address, WSD_UDP_PORT.into(), 0, idx).into())?;
 
-        // self.mc_send_socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_LOOP, 0)
-        {
-            // TODO error
-            mc_send_socket.set_multicast_loop_v6(false).unwrap();
-        }
+        // TODO error
+        mc_send_socket.set_multicast_loop_v6(false)?;
 
-        // self.mc_send_socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, args.hoplimit)
-        {
-            // TODO error
-            mc_send_socket
-                .set_multicast_hops_v6(config.hoplimit.into())
-                .unwrap();
-        }
+        // TODO error
+        mc_send_socket.set_multicast_hops_v6(config.hoplimit.into())?;
 
-        // self.mc_send_socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF, idx)
-        {
-            // TODO error
-            mc_send_socket.set_multicast_if_v6(idx).unwrap();
-        }
+        // TODO error
+        mc_send_socket.set_multicast_if_v6(idx).unwrap();
 
         // TODO error
         mc_send_socket
@@ -321,7 +340,6 @@ impl MulticastHandler {
         Ok((multicast_address, listen_address))
     }
 
-    //     def init_v4(self) -> None:
     fn init_v4(
         ipv4_address: Ipv4Addr,
         interface: &Arc<NetworkInterface>,
@@ -330,25 +348,12 @@ impl MulticastHandler {
         mc_send_socket: &Socket,
         config: &Arc<Config>,
     ) -> Result<(UdpAddress, SocketAddrV4), eyre::Report> {
-        // idx = self.address.interface.index
         let idx = interface.index;
 
-        // raw_mc_addr = (WSD_MCAST_GRP_V4, WSD_UDP_PORT)
-        let raw_mc_addr = SocketAddrV4::new(WSD_MCAST_GRP_V4, WSD_UDP_PORT.into());
-        // self.multicast_address = UdpAddress(self.address.family, raw_mc_addr, self.address.interface)
-        let multicast_address = UdpAddress::new(SocketAddr::V4(raw_mc_addr), interface);
-
-        // # v4: member_request (ip_mreqn) = { multicast_addr, intf_addr, idx }
-        // mreq = (socket.inet_pton(self.address.family, WSD_MCAST_GRP_V4) + self.address.raw + struct.pack('@I', idx))
-        let mpreq = ip_mreqn {
-            imr_multiaddr: libc::in_addr {
-                s_addr: WSD_MCAST_GRP_V4.to_bits().to_be(),
-            },
-            imr_address: libc::in_addr {
-                s_addr: ipv4_address.to_bits().to_be(),
-            },
-            imr_ifindex: i32::try_from(idx).unwrap(),
-        };
+        let multicast_address = UdpAddress::new(
+            SocketAddrV4::new(WSD_MCAST_GRP_V4, WSD_UDP_PORT.into()).into(),
+            interface,
+        );
 
         if let Err(err) =
             recv_socket.join_multicast_v4_n(&WSD_MCAST_GRP_V4, &InterfaceIndexOrAddress::Index(idx))
@@ -360,10 +365,6 @@ impl MulticastHandler {
 
         #[cfg(target_os = "linux")]
         {
-            // if platform.system() == 'Linux':
-            //     IP_MULTICAST_ALL = 49
-            //     self.recv_socket.setsockopt(socket.IPPROTO_IP, IP_MULTICAST_ALL, 0)
-
             if let Err(err) = recv_socket.set_multicast_all_v4(false) {
                 event!(Level::ERROR, ?err, "could not unset IP_MULTICAST_ALL");
 
@@ -371,14 +372,11 @@ impl MulticastHandler {
             };
         }
 
-        // try:
-        //     self.recv_socket.bind((WSD_MCAST_GRP_V4, WSD_UDP_PORT))
         let socket_addr = SocketAddrV4::new(WSD_MCAST_GRP_V4, WSD_UDP_PORT.into());
 
         if let Err(err) = recv_socket.bind(&socket_addr.into()) {
             event!(Level::WARN, "Failed to bind to {}: {}", socket_addr, err);
-            // except OSError:
-            //     self.recv_socket.bind(('', WSD_UDP_PORT))
+
             let socket_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, WSD_UDP_PORT.into());
 
             if let Err(err) = recv_socket.bind(&socket_addr.into()) {
@@ -397,57 +395,46 @@ impl MulticastHandler {
         }
 
         // # bind unicast socket to interface address and WSD's udp port
-        // self.uc_send_socket.bind((self.address.address_str, WSD_UDP_PORT))
-        uc_send_socket
-            .bind(&SocketAddrV4::new(ipv4_address, WSD_UDP_PORT.into()).into())
-            .unwrap();
+        uc_send_socket.bind(&SocketAddrV4::new(ipv4_address, WSD_UDP_PORT.into()).into())?;
 
-        // self.mc_send_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, mreq)
-        mc_send_socket.set_multicast_if_v4(&ipv4_address);
-        {
-            // TODO error
-            if let Err(err) = mc_send_socket.set_multicast_if_v4(&ipv4_address) {
-                event!(
-                    Level::ERROR,
-                    ?err,
-                    "Failed to set IPPROTO_IP -> IP_MULTICAST_IF on socket"
-                );
+        if let Err(err) = mc_send_socket.set_multicast_if_v4(&ipv4_address) {
+            event!(
+                Level::ERROR,
+                ?err,
+                "Failed to set IPPROTO_IP -> IP_MULTICAST_IF on socket"
+            );
 
-                return Err(eyre::Report::from(err)
-                    .with_note(|| "Failed to set IPPROTO_IP -> IP_MULTICAST_IF on socket"));
-            }
+            return Err(eyre::Report::from(err)
+                .with_note(|| "Failed to set IPPROTO_IP -> IP_MULTICAST_IF on socket"));
         }
 
         // # OpenBSD requires the optlen to be sizeof(char) for LOOP and TTL options
         // # (see also https://github.com/python/cpython/issues/67316)
+        // TODO openBSD/freebsd case
+
         // self.mc_send_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, struct.pack('B', 0))
-        {
-            // TODO: Error
-            if let Err(err) = mc_send_socket.set_multicast_loop_v4(false) {
-                // TODO error
-            }
+        // self.mc_send_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, struct.pack('B', args.hoplimit))
 
-            // TODO openBSD case
-            // let value: u8 = 0;
+        if let Err(err) = mc_send_socket.set_multicast_loop_v4(false) {
+            event!(
+                Level::ERROR,
+                ?err,
+                "Failed to set IPPROTO_IP -> IP_MULTICAST_LOOP on socket"
+            );
 
-            // #[expect(clippy::cast_possible_truncation)]
-            // unsafe {
-            //     libc::setsockopt(
-            //         mc_send_socket.as_raw_fd(),
-            //         IPPROTO_IP,
-            //         IP_MULTICAST_LOOP,
-            //         std::ptr::addr_of!(value).cast::<libc::c_void>(),
-            //         size_of_val(&value) as socklen_t,
-            //     )
-            // };
+            return Err(eyre::Report::from(err)
+                .with_note(|| "Failed to set IPPROTO_IP -> IP_MULTICAST_LOOP on socket"));
         }
 
-        // self.mc_send_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, struct.pack('B', args.hoplimit))
-        {
-            // TODO error
-            mc_send_socket
-                .set_multicast_ttl_v4(config.hoplimit.into())
-                .unwrap();
+        if let Err(err) = mc_send_socket.set_multicast_ttl_v4(config.hoplimit.into()) {
+            event!(
+                Level::ERROR,
+                ?err,
+                "Failed to set IPPROTO_IP -> IP_MULTICAST_TTL on socket"
+            );
+
+            return Err(eyre::Report::from(err)
+                .with_note(|| "Failed to set IPPROTO_IP -> IP_MULTICAST_TTL on socket"));
         }
 
         // TODO error
@@ -458,32 +445,9 @@ impl MulticastHandler {
         Ok((multicast_address, listen_address))
     }
 
-    //     def add_handler(self, socket: socket.socket, handler: INetworkPacketHandler) -> None:
-    fn add_handler(self, socket: &Arc<UdpSocket>, _handler: &dyn NetworkPacketHandler) {
-        //         # try:
-        //         #    self.selector.register(socket, selectors.EVENT_READ, self)
-        //         # except KeyError:
-        //         #    # accept attempts of multiple registrations
-        //         #    pass
-
-        // if self.message_handlers.get(&socket) {}
-
-        // self.message_handlers.entry(socket.as_raw_fd()).
-        // if self.message_handlers
-        // if socket in self.message_handlers:
-        //     self.message_handlers[socket].append(handler)
-        //         else:
-        //             self.message_handlers[socket] = [handler]
-    }
-
-    //     def remove_handler(self, socket: socket.socket, handler) -> None:
-    fn remove_handler(&mut self, _socket: &UdpSocket, _handler: &dyn NetworkPacketHandler) {
-        //         if socket in self.message_handlers:
-        //             if handler in self.message_handlers[socket]:
-        //                 self.message_handlers[socket].remove(handler)
-    }
-
     //     def read_socket(self, key: socket.socket) -> None:
+
+    #[expect(unused)]
     fn read_socket(&self, _key: UdpSocket) {
         //         # TODO: refactor this
         //         s = None
@@ -504,7 +468,8 @@ impl MulticastHandler {
     }
 
     //     def send(self, msg: bytes, addr: UdpAddress):
-    fn send(&self, _message: &[u8], _address: &UdpAddress) -> Result<(), color_eyre::Report> {
+    #[expect(unused)]
+    async fn send(&self, message: &[u8], address: &UdpAddress) -> Result<(), eyre::Report> {
         // Request from a client must be answered from a socket that is bound
         // to the WSD port, i.e. the recv_socket. Messages to multicast
         // addresses are sent over the dedicated send socket.
@@ -520,38 +485,68 @@ impl MulticastHandler {
         //         .send_to(message, address.transport_address)?;
         // }
 
+        if address == &self.multicast_address {
+            self.mc_send_socket_wrapper
+                .socket
+                .send_to(message, address.transport_address)
+                .await?;
+        } else {
+            self.uc_send_socket_wrapper
+                .socket
+                .send_to(message, address.transport_address)
+                .await?;
+        }
+
         Ok(())
     }
 
-    pub(crate) fn enable_wsd_host(&mut self) {
-        self.wsd_host.get_or_init(|| async {
-            // interests:
-            //
+    pub(crate) async fn enable_wsd_host(&mut self) {
+        self.wsd_host
+            .get_or_init(|| async {
+                // interests:
+                // * recv_socket
 
-            WSDHost::new(self.recv_socket_wrapper.get_channel().await)
-        });
+                let host = WSDHost::new(
+                    self.recv_socket_wrapper.get_channel().await,
+                    self.unicast.clone(),
+                    self.multicast.clone(),
+                )
+                .await;
+
+                #[expect(clippy::let_and_return)]
+                host
+            })
+            .await;
     }
 
     pub(crate) fn enable_http_server(&self) {
         // http_server = Some(WSDHttpServer::new(&multicast_handler));
     }
 
-    pub(crate) fn enable_wsd_client(&self) {
-        // wsd_client = Some(crate::wsd::udp::client::WSDClient::new(
-        //     &multicast_handler,
-        //     &self.config,
-        // ));
+    pub(crate) async fn enable_wsd_client(&mut self) {
+        self.wsd_client
+            .get_or_init(|| async {
+                // interests:
+                // * recv_socket
+                // * mc_send_socket
+
+                WSDClient::new(
+                    self.mc_send_socket_wrapper.get_channel().await,
+                    self.recv_socket_wrapper.get_channel().await,
+                )
+            })
+            .await;
     }
 }
 
 type Channels = Arc<RwLock<Vec<Sender<Arc<[u8]>>>>>;
 
-struct SocketWithChannels {
+struct SocketWithReceivers {
     socket: Arc<UdpSocket>,
     channels: Channels,
 }
 
-impl SocketWithChannels {
+impl SocketWithReceivers {
     fn new(socket: UdpSocket) -> Self {
         let socket = Arc::new(socket);
 
@@ -579,12 +574,16 @@ impl SocketWithChannels {
                         },
                     };
 
+                    buffer.shrink_to(read);
+
                     let buffer = Arc::from(buffer);
 
                     let lock = channels.read().await;
 
-                    for channel in (&*lock) {
-                        channel.send(Arc::clone(&buffer));
+                    for channel in &*lock {
+                        if let Err(err) = channel.send(Arc::clone(&buffer)).await {
+                            event!(Level::ERROR, ?err, "Failed to send data to channel");
+                        }
                     }
                 }
             });

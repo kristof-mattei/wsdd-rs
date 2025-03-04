@@ -1,3 +1,4 @@
+#[expect(unused)]
 pub struct WSDDiscoveredDevice {}
 // class WSDDiscoveredDevice:
 
