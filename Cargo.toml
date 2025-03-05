@@ -60,7 +60,7 @@ tracing-subscriber = { version = "0.3.19", features = [
     "tracing-log",
 ] }
 uuid = { version = "1.15.1", features = ["v1", "v4", "v5"] }
-zerocopy = { version = "0.8.21", features = ["derive"] }
+zerocopy = { version = "0.8.22", features = ["derive"] }
 
 # OpenSSL for musl
 [target.'cfg(all(any(target_arch="x86_64", target_arch="aarch64"), target_os="linux", target_env="musl"))'.dependencies]
