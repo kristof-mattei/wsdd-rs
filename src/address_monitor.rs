@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use color_eyre::eyre;
+use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
 use crate::config::Config;
-use crate::network_address_monitor::NetworkAddressMonitor;
+use crate::network_handler::Command;
 
 #[cfg(target_os = "linux")]
 type Monitor = crate::netlink_address_monitor::NetlinkAddressMonitor;
@@ -23,11 +24,10 @@ type Monitor = !;
 
 pub fn create_address_monitor(
     cancellation_token: CancellationToken,
+    channel: Sender<Command>,
     config: &Arc<Config>,
 ) -> Result<Monitor, eyre::Report> {
-    let nma = NetworkAddressMonitor::new(config);
-
-    Monitor::new(nma, cancellation_token, config).map_err(|e| {
+    Monitor::new(cancellation_token, channel, config).map_err(|e| {
         event!(Level::ERROR, ?e);
         e.into()
     })
