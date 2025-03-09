@@ -1,10 +1,9 @@
-#![expect(dead_code)]
 use std::net::IpAddr;
 use std::sync::Arc;
 
 use crate::network_interface::NetworkInterface;
 
-#[derive(Eq)]
+#[derive(Eq, Clone)]
 pub struct NetworkAddress {
     pub address: IpAddr,
     pub interface: Arc<NetworkInterface>,
@@ -28,13 +27,6 @@ impl NetworkAddress {
         match self.address {
             IpAddr::V4(ipv4_addr) => !ipv4_addr.is_loopback(),
             IpAddr::V6(ipv6_addr) => ipv6_addr.is_unicast_link_local(),
-        }
-    }
-
-    fn transport_str(&self) -> String {
-        match self.address {
-            IpAddr::V4(ipv4_addr) => ipv4_addr.to_string(),
-            IpAddr::V6(ipv6_addr) => format!("[{}]", ipv6_addr),
         }
     }
 }

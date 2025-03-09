@@ -1,31 +1,40 @@
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
-use std::sync::Arc;
+use std::{
+    mem::MaybeUninit,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
+};
+use std::{sync::Arc, time::Duration};
 
 use color_eyre::{Section, eyre};
+use rand::Rng;
 use socket2::{Domain, InterfaceIndexOrAddress, Socket, Type};
-use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{OnceCell, RwLock};
+use tokio::{net::UdpSocket, time::sleep};
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
-use crate::config::Config;
-use crate::constants::{
-    self, WSD_HTTP_PORT, WSD_MAX_LEN, WSD_MCAST_GRP_V4, WSD_MCAST_GRP_V6, WSD_UDP_PORT,
-};
-use crate::network_address::NetworkAddress;
-use crate::network_interface::NetworkInterface;
 use crate::udp_address::UdpAddress;
 use crate::wsd::http::http_server::WSDHttpServer;
 use crate::wsd::udp::client::WSDClient;
 use crate::wsd::udp::host::WSDHost;
+use crate::{config::Config, url_ip_addr::UrlIpAddr};
+use crate::{
+    constants::{
+        self, WSD_HTTP_PORT, WSD_MAX_LEN, WSD_MCAST_GRP_V4, WSD_MCAST_GRP_V6, WSD_UDP_PORT,
+    },
+    soap::builder::MessageType,
+};
+use crate::{
+    constants::{MULTICAST_UDP_REPEAT, UDP_MAX_DELAY, UDP_MIN_DELAY, UDP_UPPER_DELAY},
+    network_interface::NetworkInterface,
+};
+use crate::{network_address::NetworkAddress, utils::task::spawn_with_name};
 
 /// A class for handling multicast traffic on a given interface for a
 /// given address family. It provides multicast sender and receiver sockets
 pub struct MulticastHandler {
     #[expect(unused)]
     cancellation_token: CancellationToken,
-    #[expect(unused)]
     config: Arc<Config>,
     //     # base interface addressing information
     //     address: NetworkAddress
@@ -59,7 +68,7 @@ pub struct MulticastHandler {
     #[expect(unused)]
     http_server: OnceCell<WSDHttpServer>,
     unicast: Sender<(Box<[u8]>, SocketAddr)>,
-    multicast: Sender<Box<[u8]>>,
+    multicast: Sender<(MessageType, Box<[u8]>)>,
 }
 
 impl MulticastHandler {
@@ -76,17 +85,16 @@ impl MulticastHandler {
 
         // TODO error
         let recv_socket = Socket::new(domain, Type::DGRAM, None)?;
-
-        // TODO handle error
+        recv_socket.set_nonblocking(true)?;
         recv_socket.set_reuse_address(true)?;
 
         // TODO error
         let mc_send_socket = Socket::new(domain, Type::DGRAM, None)?;
+        mc_send_socket.set_nonblocking(true)?;
 
         // TODO error
         let uc_send_socket = Socket::new(domain, Type::DGRAM, None)?;
-
-        // TODO error
+        uc_send_socket.set_nonblocking(true)?;
         uc_send_socket.set_reuse_address(true)?;
 
         let (multicast_address, http_listen_address) = match address.address {
@@ -119,14 +127,14 @@ impl MulticastHandler {
         event!(
             Level::INFO,
             "joined multicast group {} on {}",
-            multicast_address,
+            UrlIpAddr::from(multicast_address.transport_address.ip()),
             address
         );
         event!(
             Level::DEBUG,
             "transport address on {} is {}",
             address.interface.name,
-            address
+            UrlIpAddr::from(address.address)
         );
         event!(
             Level::DEBUG,
@@ -149,23 +157,64 @@ impl MulticastHandler {
 
         let multicast = {
             let socket = Arc::clone(&mc_send_socket_wrapper.socket);
-            let multicast_address = multicast_address.transport_address;
-            let (sender, mut receiver) = tokio::sync::mpsc::channel::<Box<[u8]>>(10);
+            let address = multicast_address.network_address.address;
+            let interface = multicast_address.network_address.interface.name.clone();
+            let multicast_target = multicast_address.transport_address;
 
-            tokio::spawn(async move {
-                loop {
-                    if let Some(buf) = receiver.recv().await {
-                        match socket.send_to(&buf, multicast_address).await {
-                            Ok(_) => {},
-                            Err(err) => {
-                                event!(Level::WARN, ?err, target = ?multicast_address, "Failed to send data");
-                            },
+            let (sender, mut receiver) = tokio::sync::mpsc::channel::<(MessageType, Box<[u8]>)>(10);
+
+            {
+                // TODO handle error
+                let name = format!("multicast handler ({})", multicast_target);
+                spawn_with_name(name.as_str(), async move {
+                    loop {
+                        if let Some((message_type, buffer)) = receiver.recv().await {
+                            // TODO this needs to be changed, we're not scheduling, we're sending
+                            event!(
+                                Level::INFO,
+                                "scheduling {} message via {} to {}%{}",
+                                message_type,
+                                interface,
+                                address,
+                                interface,
+                            );
+                            {
+                                let socket = socket.clone();
+
+                                tokio::spawn(async move {
+                                    // Schedule to send the given message to the given address.
+                                    // Implements SOAP over UDP, Appendix I.
+
+                                    let mut delta =
+                                        rand::rng().random_range(UDP_MIN_DELAY..=UDP_MAX_DELAY);
+
+                                    for i in 0..MULTICAST_UDP_REPEAT {
+                                        if i != 0 {
+                                            sleep(Duration::from_millis(delta)).await;
+                                            delta = UDP_UPPER_DELAY.min(delta * 2);
+                                        }
+
+                                        match socket.send_to(&buffer, multicast_target).await {
+                                            Ok(_) => {},
+                                            Err(err) => {
+                                                event!(
+                                                    Level::WARN,
+                                                    ?err,
+                                                    target = ?multicast_target,
+                                                    "Failed to send data"
+                                                );
+                                            },
+                                        }
+                                    }
+                                });
+                            }
+                        } else {
+                            // receiver gone? :(
                         }
-                    } else {
-                        // receiver gone? :(
                     }
-                }
-            });
+                })
+                .expect("Failed to launch task");
+            }
 
             sender
         };
@@ -175,7 +224,9 @@ impl MulticastHandler {
 
             let (sender, mut receiver) = tokio::sync::mpsc::channel::<(Box<[u8]>, SocketAddr)>(10);
 
-            tokio::spawn(async move {
+            // TODO failure here is fatal
+            let name = format!("unicast handler ({})", socket.local_addr().unwrap());
+            spawn_with_name(name.as_str(), async move {
                 loop {
                     if let Some((buf, target)) = receiver.recv().await {
                         match socket.send_to(&buf, target).await {
@@ -188,7 +239,8 @@ impl MulticastHandler {
                         // receiver gone? :(
                     }
                 }
-            });
+            })
+            .expect("Failed to set up unicast handler");
 
             sender
         };
@@ -272,26 +324,21 @@ impl MulticastHandler {
             .unwrap();
 
         // self.recv_socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
-        {
-            // TODO error
-            recv_socket.set_only_v6(true).unwrap();
-        }
+        // TODO error
+        recv_socket.set_only_v6(true).unwrap();
 
-        #[cfg(target_os = "linux")]
-        {
-            // Could anyone ask the Linux folks for the rationale for this!?
-            // if platform.system() == 'Linux':
-            //     try:
-            //         # supported starting from Linux 4.20
-            //         IPV6_MULTICAST_ALL = 29
-            //         self.recv_socket.setsockopt(socket.IPPROTO_IPV6, IPV6_MULTICAST_ALL, 0)
+        // Could anyone ask the Linux folks for the rationale for this!?
+        // if platform.system() == 'Linux':
+        //     try:
+        //         # supported starting from Linux 4.20
+        //         IPV6_MULTICAST_ALL = 29
+        //         self.recv_socket.setsockopt(socket.IPPROTO_IPV6, IPV6_MULTICAST_ALL, 0)
 
-            // TODO error
-            if let Err(err) = recv_socket.set_multicast_all_v6(false) {
-                // except OSError as e:
-                //  logger.warning('cannot unset all_multicast: {}'.format(e))
-                event!(Level::WARN, ?err, "cannot unset all_multicast");
-            }
+        // TODO error
+        if let Err(err) = recv_socket.set_multicast_all_v6(false) {
+            // except OSError as e:
+            //  logger.warning('cannot unset all_multicast: {}'.format(e))
+            event!(Level::WARN, ?err, "cannot unset all_multicast");
         }
 
         // bind to network interface, i.e. scope and handle OS differences,
@@ -363,14 +410,11 @@ impl MulticastHandler {
             return Err(eyre::Report::msg("could not join multicast group"));
         };
 
-        #[cfg(target_os = "linux")]
-        {
-            if let Err(err) = recv_socket.set_multicast_all_v4(false) {
-                event!(Level::ERROR, ?err, "could not unset IP_MULTICAST_ALL");
+        if let Err(err) = recv_socket.set_multicast_all_v4(false) {
+            event!(Level::ERROR, ?err, "could not unset IP_MULTICAST_ALL");
 
-                return Err(eyre::Report::msg("could not unset IP_MULTICAST_ALL"));
-            };
-        }
+            return Err(eyre::Report::msg("could not unset IP_MULTICAST_ALL"));
+        };
 
         let socket_addr = SocketAddrV4::new(WSD_MCAST_GRP_V4, WSD_UDP_PORT.into());
 
@@ -507,6 +551,8 @@ impl MulticastHandler {
                 // * recv_socket
 
                 let host = WSDHost::new(
+                    Arc::clone(&self.config),
+                    self.address.address,
                     self.recv_socket_wrapper.get_channel().await,
                     self.unicast.clone(),
                     self.multicast.clone(),
@@ -530,16 +576,18 @@ impl MulticastHandler {
                 // * recv_socket
                 // * mc_send_socket
 
-                WSDClient::new(
-                    self.mc_send_socket_wrapper.get_channel().await,
-                    self.recv_socket_wrapper.get_channel().await,
-                )
+                // WSDClient::new(
+                //     self.mc_send_socket_wrapper.get_channel().await,
+                //     self.recv_socket_wrapper.get_channel().await,
+                // )
+
+                todo!()
             })
             .await;
     }
 }
 
-type Channels = Arc<RwLock<Vec<Sender<Arc<[u8]>>>>>;
+type Channels = Arc<RwLock<Vec<Sender<(Arc<[u8]>, SocketAddr)>>>>;
 
 struct SocketWithReceivers {
     socket: Arc<UdpSocket>,
@@ -556,44 +604,60 @@ impl SocketWithReceivers {
             let socket = Arc::clone(&socket);
             let channels = Arc::clone(&channels);
 
-            tokio::spawn(async move {
-                loop {
-                    let mut buffer = Vec::with_capacity(WSD_MAX_LEN);
+            // TODO handle error
+            spawn_with_name(
+                format!("socket receiver ({})", socket.local_addr().unwrap()).as_str(),
+                async move {
+                    loop {
+                        let mut buffer = vec![MaybeUninit::<u8>::uninit(); WSD_MAX_LEN];
 
-                    let read = match socket.recv_buf(&mut buffer).await {
-                        Ok(read) => read,
-                        Err(err) => {
-                            let local_addr = socket.local_addr().map_or_else(
-                                |err| format!("Failed to get local socket address: {:?}", err),
-                                |addr| addr.to_string(),
-                            );
+                        let (bytes_read, from) = match socket
+                            .recv_buf_from(&mut buffer.as_mut_slice())
+                            .await
+                        {
+                            Ok(read) => read,
+                            Err(err) => {
+                                let local_addr = socket.local_addr().map_or_else(
+                                    |err| format!("Failed to get local socket address: {:?}", err),
+                                    |addr| addr.to_string(),
+                                );
 
-                            event!(Level::ERROR, ?err, local_addr, "Failed to read from socket");
+                                event!(
+                                    Level::ERROR,
+                                    ?err,
+                                    local_addr,
+                                    "Failed to read from socket"
+                                );
 
-                            continue;
-                        },
-                    };
+                                continue;
+                            },
+                        };
 
-                    buffer.shrink_to(read);
+                        // `recv_buf` tells us that `bytes_read` were read from the socket into our `buffer`, so they're initialized
+                        buffer.shrink_to(bytes_read);
 
-                    let buffer = Arc::from(buffer);
+                        let buffer = Arc::<[_]>::from(buffer);
 
-                    let lock = channels.read().await;
+                        let buffer = unsafe { buffer.assume_init() };
 
-                    for channel in &*lock {
-                        if let Err(err) = channel.send(Arc::clone(&buffer)).await {
-                            event!(Level::ERROR, ?err, "Failed to send data to channel");
+                        let lock = channels.read().await;
+
+                        for channel in &*lock {
+                            if let Err(err) = channel.send((Arc::clone(&buffer), from)).await {
+                                event!(Level::ERROR, ?err, "Failed to send data to channel");
+                            }
                         }
                     }
-                }
-            });
+                },
+            )
+            .expect("Failed to launch receiver");
         }
 
         Self { socket, channels }
     }
 
-    async fn get_channel(&mut self) -> Receiver<Arc<[u8]>> {
-        let (sender, receiver) = tokio::sync::mpsc::channel::<Arc<_>>(10);
+    async fn get_channel(&mut self) -> Receiver<(Arc<[u8]>, SocketAddr)> {
+        let (sender, receiver) = tokio::sync::mpsc::channel::<(Arc<_>, SocketAddr)>(10);
 
         self.channels.write().await.push(sender);
 

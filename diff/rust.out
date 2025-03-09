@@ -1,0 +1,66 @@
+no interface given, using all interfaces
+using pre-defined UUID ce7d4890-607b-d28f-45b3-b6ee5f3168cd
+Config { interface: [], hoplimit: 1, uuid: ce7d4890-607b-d28f-45b3-b6ee5f3168cd, domain: None, hostname: "LENOVO-P1-GEN5", workgroup: "WORKGROUP", no_autostart: false, no_http: false, ipv4only: false, ipv6only: false, preserve_case: false, chroot: None, user: None, discovery: false, listen: None, no_host: false, metadata_timeout: 2.0, source_port: 0, wsd_instance_id: "1741548164" }
+netlink message with 248 bytes
+RTM new/del addr family: 2 flags: 128 scope: 254 idx: 1
+rt_attr 8 1
+rt_attr 8 2
+rt_attr 7 3
+rt_attr 8 8
+rt_attr 20 6
+new address 127.0.0.1%lo
+ignoring that address on lo
+RTM new/del addr family: 2 flags: 128 scope: 0 idx: 1
+rt_attr 8 1
+rt_attr 8 2
+rt_attr 8 4
+rt_attr 7 3
+rt_attr 8 8
+rt_attr 20 6
+new address 10.255.255.254%lo
+handling traffic for 10.255.255.254%lo
+joined multicast group 239.255.255.250 on 10.255.255.254%lo
+transport address on lo is 10.255.255.254
+will listen for HTTP traffic on address 10.255.255.254:5357
+constructed xml for WSD message: <?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Header><wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To><wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Hello</wsa:Action><wsa:MessageID>urn:uuid:fa7eb04a-fd1a-11ef-9871-00155d30264c</wsa:MessageID><wsd:AppSequence InstanceId="1741548164" SequenceId="urn:uuid:8e59f10e-5a64-47e8-ab41-3b8b39f8a493" MessageNumber="0"/></soap:Header><soap:Body><wsd:Hello><wsa:EndpointReference><wsa:Address>urn:uuid:ce7d4890-607b-d28f-45b3-b6ee5f3168cd</wsa:Address></wsa:EndpointReference><wsd:XAddrs>http://10.255.255.254:5357/ce7d4890-607b-d28f-45b3-b6ee5f3168cd</wsd:XAddrs><wsd:MetadataVersion>1</wsd:MetadataVersion></wsd:Hello></soap:Body></soap:Envelope>
+scheduling Hello message via lo to 239.255.255.250%lo
+RTM new/del addr family: 2 flags: 128 scope: 0 idx: 2
+rt_attr 8 1
+rt_attr 8 2
+rt_attr 8 4
+rt_attr 9 3
+rt_attr 8 8
+rt_attr 20 6
+new address 172.22.92.103%eth0
+handling traffic for 172.22.92.103%eth0
+joined multicast group 239.255.255.250 on 172.22.92.103%eth0
+transport address on eth0 is 172.22.92.103
+will listen for HTTP traffic on address 172.22.92.103:5357
+constructed xml for WSD message: <?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Header><wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To><wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Hello</wsa:Action><wsa:MessageID>urn:uuid:98bd8007-9d7e-4146-8a53-b3f57be5b5d5</wsa:MessageID><wsd:AppSequence InstanceId="1741548164" SequenceId="urn:uuid:6fe8f9c1-e623-40cb-951e-b8c6ecd56d62" MessageNumber="1"/></soap:Header><soap:Body><wsd:Hello><wsa:EndpointReference><wsa:Address>urn:uuid:ce7d4890-607b-d28f-45b3-b6ee5f3168cd</wsa:Address></wsa:EndpointReference><wsd:XAddrs>http://172.22.92.103:5357/ce7d4890-607b-d28f-45b3-b6ee5f3168cd</wsd:XAddrs><wsd:MetadataVersion>1</wsd:MetadataVersion></wsd:Hello></soap:Body></soap:Envelope>
+scheduling Hello message via eth0 to 239.255.255.250%eth0
+netlink message with 144 bytes
+RTM new/del addr family: 10 flags: 128 scope: 254 idx: 1
+rt_attr 20 1
+rt_attr 20 6
+rt_attr 8 8
+new address ::1%lo
+ignoring that address on lo
+RTM new/del addr family: 10 flags: 128 scope: 253 idx: 2
+rt_attr 20 1
+rt_attr 20 6
+rt_attr 8 8
+new address fe80::215:5dff:fe30:264c%eth0
+handling traffic for fe80::215:5dff:fe30:264c%eth0
+joined multicast group [ff02::c] on fe80::215:5dff:fe30:264c%eth0
+transport address on eth0 is [fe80::215:5dff:fe30:264c]
+will listen for HTTP traffic on address [fe80::215:5dff:fe30:264c%2]:5357
+constructed xml for WSD message: <?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery" xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"><soap:Header><wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To><wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Hello</wsa:Action><wsa:MessageID>urn:uuid:f9780b5a-6070-47bd-8dfa-07f985ea919f</wsa:MessageID><wsd:AppSequence InstanceId="1741548164" SequenceId="urn:uuid:4a5e2f1e-b1c6-4654-b0bd-9fe65e89e6cf" MessageNumber="2"/></soap:Header><soap:Body><wsd:Hello><wsa:EndpointReference><wsa:Address>urn:uuid:ce7d4890-607b-d28f-45b3-b6ee5f3168cd</wsa:Address></wsa:EndpointReference><wsd:XAddrs>http://[fe80::215:5dff:fe30:264c]:5357/ce7d4890-607b-d28f-45b3-b6ee5f3168cd</wsd:XAddrs><wsd:MetadataVersion>1</wsd:MetadataVersion></wsd:Hello></soap:Body></soap:Envelope>
+scheduling Hello message via eth0 to ff02::c%eth0
+netlink message with 20 bytes
+invalid rtm_message type 3
+GONE GONE - - "Hello urn:uuid:fa7eb04a-fd1a-11ef-9871-00155d30264c UDP" - -
+incoming message content is <?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery" xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Header><wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To><wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Hello</wsa:Action><wsa:MessageID>urn:uuid:fa7eb04a-fd1a-11ef-9871-00155d30264c</wsa:MessageID><wsd:AppSequence InstanceId="1741548164" SequenceId="urn:uuid:8e59f10e-5a64-47e8-ab41-3b8b39f8a493" MessageNumber="0"/></soap:Header><soap:Body><wsd:Hello><wsa:EndpointReference><wsa:Address>urn:uuid:ce7d4890-607b-d28f-45b3-b6ee5f3168cd</wsa:Address></wsa:EndpointReference><wsd:XAddrs>http://10.255.255.254:5357/ce7d4890-607b-d28f-45b3-b6ee5f3168cd</wsd:XAddrs><wsd:MetadataVersion>1</wsd:MetadataVersion></wsd:Hello></soap:Body></soap:Envelope>
+unhandled action http://schemas.xmlsoap.org/ws/2005/04/discovery/Hello/urn:uuid:fa7eb04a-fd1a-11ef-9871-00155d30264c
+known message (urn:uuid:fa7eb04a-fd1a-11ef-9871-00155d30264c): dropping it
+known message (urn:uuid:fa7eb04a-fd1a-11ef-9871-00155d30264c): dropping it
+known message (urn:uuid:fa7eb04a-fd1a-11ef-9871-00155d30264c): dropping it
