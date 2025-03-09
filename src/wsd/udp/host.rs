@@ -8,6 +8,7 @@ use quick_xml::NsReader;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
 use crate::config::Config;
@@ -40,6 +41,7 @@ pub(crate) struct WSDHost {
 // }
 impl WSDHost {
     pub(crate) async fn new(
+        cancellation_token: CancellationToken,
         config: Arc<Config>,
         address: IpAddr,
         mut receiver: Receiver<(Arc<[u8]>, SocketAddr)>,
@@ -54,47 +56,52 @@ impl WSDHost {
 
             spawn_with_name(format!("wsd host ({})", address).as_str(), async move {
                 loop {
-                    if let Some((buffer, from)) = receiver.recv().await {
-                        let (message_id, action, body_reader) =
-                            match m.deconstruct_message(&buffer).await {
-                                Ok(Some(pieces)) => pieces,
-                                Ok(None) => {
-                                    continue;
-                                },
-                                Err(_err) => {
-                                    // TODO LOG ERROR BETTER
-                                    println!("ERROR");
-                                    continue;
-                                },
-                            };
+                    let message = tokio::select! {
+                        () = cancellation_token.cancelled() => {
+                            break;
+                        },
+                        message = receiver.recv() => {
+                            message
+                        }
+                    };
 
-                        // handle based on action
-                        let response = match action.as_ref() {
-                            constants::WSD_PROBE => handle_probe(Arc::clone(&config), body_reader),
-                            constants::WSD_RESOLVE => handle_resolve(
-                                Arc::clone(&config),
-                                address,
-                                config.uuid,
-                                body_reader,
-                            ),
-                            _ => {
-                                event!(Level::DEBUG, "unhandled action {}/{}", action, message_id);
+                    let Some((buffer, from)) = message else {
+                        // the end, but we just got it before the cancellation
+                        break;
+                    };
+
+                    let (message_id, action, body_reader) =
+                        match m.deconstruct_message(&buffer).await {
+                            Ok(Some(pieces)) => pieces,
+                            Ok(None) => {
+                                continue;
+                            },
+                            Err(_err) => {
+                                // TODO LOG ERROR BETTER
+                                println!("ERROR");
                                 continue;
                             },
                         };
 
-                        let Ok(response) = response else {
-                            // TODO error?
+                    // handle based on action
+                    let response = match action.as_ref() {
+                        constants::WSD_PROBE => handle_probe(Arc::clone(&config), body_reader),
+                        constants::WSD_RESOLVE => {
+                            handle_resolve(Arc::clone(&config), address, config.uuid, body_reader)
+                        },
+                        _ => {
+                            event!(Level::DEBUG, "unhandled action {}/{}", action, message_id);
                             continue;
-                        };
+                        },
+                    };
 
-                        if let Err(err) = unicast.send((response.into(), from)).await {
-                            event!(Level::ERROR, ?err, "Failed to broadcast");
-                        }
-                    } else {
-                        // the end
-                        event!(Level::ERROR, "recv socket gone?");
-                        break;
+                    let Ok(response) = response else {
+                        // TODO error?
+                        continue;
+                    };
+
+                    if let Err(err) = unicast.send((response.into(), from)).await {
+                        event!(Level::ERROR, ?err, "Failed to broadcast");
                     }
                 }
             })
@@ -182,43 +189,3 @@ fn handle_resolve(
 
 //         msg = self.build_message(WSA_DISCOVERY, WSD_BYE, None, bye)
 //         self.enqueue_datagram(msg, self.mch.multicast_address, msg_type='Bye')
-
-//     def handle_probe(self, header: ElementTree.Element, body: ElementTree.Element) -> Optional[WSDMessage]:
-//         probe = body.find('./wsd:Probe', namespaces)
-//         if probe is None:
-//             return None
-
-//         scopes = probe.find('./wsd:Scopes', namespaces)
-
-//         if scopes:
-//             # THINK: send fault message (see p. 21 in WSD)
-//             logger.debug('scopes ({}) unsupported but probed'.format(scopes))
-//             return None
-
-//         types_elem = probe.find('./wsd:Types', namespaces)
-//         if types_elem is None:
-//             logger.debug('Probe message lacks wsd:Types element. Ignored.')
-//             return None
-
-//         types = types_elem.text
-//         if not types == WSD_TYPE_DEVICE:
-//             logger.debug('unknown discovery type ({}) for probe'.format(types))
-//             return None
-
-//         matches = ElementTree.Element('wsd:ProbeMatches')
-//         match = ElementTree.SubElement(matches, 'wsd:ProbeMatch')
-//         self.add_endpoint_reference(match)
-//         self.add_types(match)
-//         self.add_metadata_version(match)
-
-//         return matches, WSD_PROBE_MATCH
-
-//     def add_header_elements(self, header: ElementTree.Element, extra: Any):
-//         ElementTree.SubElement(
-//             header, 'wsd:AppSequence', {
-//                 'InstanceId': str(wsd_instance_id),
-//                 'SequenceId': uuid.uuid1().urn,
-//                 'MessageNumber': str(type(self).message_number)
-//             })
-
-//         type(self).message_number += 1

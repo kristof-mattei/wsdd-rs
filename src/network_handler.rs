@@ -7,8 +7,10 @@
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::net::IpAddr;
 use std::sync::Arc;
 
+use color_eyre::eyre;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
@@ -17,15 +19,28 @@ use crate::multicast_handler::MulticastHandler;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::{self, NetworkInterface};
 
-pub struct NetworkAddressMonitor {
-    config: Arc<Config>,
-    //     interfaces: Dict[int, NetworkInterface]
-    interfaces: HashMap<u32, Arc<NetworkInterface>>,
-    //     mchs: List[MulticastHandler]
-    multicast_handlers: Vec<MulticastHandler>,
-    //     teardown_tasks: List[asyncio.Task]
+pub enum Command {
+    NewAddress {
+        address: IpAddr,
+        scope: u8,
+        index: u32,
+    },
+    DeleteAddress {
+        address: IpAddr,
+        scope: u8,
+        index: u32,
+    },
+}
+
+pub struct NetworkHandler {
     //     active: bool
     active: bool,
+    cancellation_token: CancellationToken,
+    config: Arc<Config>,
+    interfaces: HashMap<u32, Arc<NetworkInterface>>,
+    multicast_handlers: Vec<MulticastHandler>,
+    //     teardown_tasks: List[asyncio.Task]
+    receiver: tokio::sync::mpsc::Receiver<Command>,
 }
 
 // static INSTANCES: Lazy<NetworkAddressMonitor> = Lazy::new(|| NetworkAddressMonitor {});
@@ -35,16 +50,74 @@ pub struct NetworkAddressMonitor {
 /// network addresses, and filters for addresses/interfaces that are or are not
 /// handled. The actual OS-specific implementation that detects the changes is
 /// done in subclasses. This class is used as a singleton
-impl NetworkAddressMonitor {
+impl NetworkHandler {
     // instance: ClassVar[object] = None
 
-    pub fn new(config: &Arc<Config>) -> Self {
+    pub fn new(
+        cancellation_token: CancellationToken,
+        config: &Arc<Config>,
+        receiver: tokio::sync::mpsc::Receiver<Command>,
+    ) -> Self {
         Self {
+            active: false,
             config: Arc::clone(config),
+            cancellation_token,
             interfaces: HashMap::new(),
             multicast_handlers: vec![],
-            active: false,
+            receiver,
         }
+    }
+
+    pub async fn handle_change(&mut self) -> Result<(), eyre::Report> {
+        loop {
+            let command = tokio::select! {
+                () = self.cancellation_token.cancelled() => {
+                    break;
+                },
+                command = self.receiver.recv() => {
+                    command
+                }
+            };
+
+            let Some(command) = command else {
+                // GONE?
+                // TODO
+                return Err(eyre::Report::msg("Receiver gone, kill?"));
+            };
+
+            match command {
+                Command::NewAddress {
+                    address,
+                    scope,
+                    index,
+                } => {
+                    let interface = match self.add_interface(scope, index) {
+                        Ok(interface) => interface,
+                        Err(_) => {
+                            return Ok(());
+                        },
+                    };
+
+                    self.handle_new_address(NetworkAddress::new(address, &interface))
+                        .await;
+                },
+                Command::DeleteAddress {
+                    address,
+                    scope,
+                    index,
+                } => {
+                    let interface = match self.add_interface(scope, index) {
+                        Ok(interface) => interface,
+                        Err(_) => {
+                            return Ok(());
+                        },
+                    };
+
+                    self.handle_deleted_address(NetworkAddress::new(address, &interface));
+                },
+            }
+        }
+        Ok(())
     }
 
     // def enumerate(self) -> None:
@@ -132,11 +205,7 @@ impl NetworkAddressMonitor {
     }
 
     // def handle_new_address(self, address: NetworkAddress) -> None:
-    pub async fn handle_new_address(
-        &mut self,
-        address: NetworkAddress,
-        cancellation_token: &CancellationToken,
-    ) {
+    pub async fn handle_new_address(&mut self, address: NetworkAddress) {
         event!(Level::DEBUG, "new address {}", address);
 
         if !(self.is_address_handled(&address)) {
@@ -162,7 +231,8 @@ impl NetworkAddressMonitor {
 
         // TODO: Proper error handling here
         let mut multicast_handler =
-            MulticastHandler::new(address, cancellation_token.clone(), &self.config).expect("FAIL");
+            MulticastHandler::new(address, self.cancellation_token.clone(), &self.config)
+                .expect("FAIL");
 
         if !self.config.no_host {
             // TODO start WSDHost
@@ -180,14 +250,14 @@ impl NetworkAddressMonitor {
         self.multicast_handlers.push(multicast_handler);
     }
 
-    pub fn handle_deleted_address(&mut self, address: &NetworkAddress) {
+    pub fn handle_deleted_address(&mut self, address: NetworkAddress) {
         event!(Level::INFO, "deleted address {}", address);
 
-        if !self.is_address_handled(address) {
+        if !self.is_address_handled(&address) {
             return;
         }
 
-        let Some(mut handler) = self.take_mch_by_address(address) else {
+        let Some(mut handler) = self.take_mch_by_address(&address) else {
             return;
         };
 

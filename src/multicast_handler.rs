@@ -31,7 +31,6 @@ use crate::wsd::udp::host::WSDHost;
 /// A class for handling multicast traffic on a given interface for a
 /// given address family. It provides multicast sender and receiver sockets
 pub struct MulticastHandler {
-    #[expect(unused)]
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     //     # base interface addressing information
@@ -179,10 +178,10 @@ impl MulticastHandler {
                             {
                                 let socket = socket.clone();
 
-                                tokio::spawn(async move {
+                                // TODO announce error
+                                let _r = spawn_with_name("message sender", async move {
                                     // Schedule to send the given message to the given address.
                                     // Implements SOAP over UDP, Appendix I.
-
                                     let mut delta =
                                         rand::rng().random_range(UDP_MIN_DELAY..=UDP_MAX_DELAY);
 
@@ -549,6 +548,7 @@ impl MulticastHandler {
                 // * recv_socket
 
                 let host = WSDHost::new(
+                    self.cancellation_token.clone(),
                     Arc::clone(&self.config),
                     self.address.address,
                     self.recv_socket_wrapper.get_channel().await,
