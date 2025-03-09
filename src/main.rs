@@ -1,4 +1,3 @@
-// #![allow(unused)]
 #![allow(clippy::needless_lifetimes)]
 #![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::unused_self)]
@@ -24,6 +23,7 @@ mod security;
 mod signal_handlers;
 mod soap;
 mod udp_address;
+mod url_ip_addr;
 mod utils;
 mod wsd;
 
@@ -56,6 +56,7 @@ fn init_tracing(console_subscriber: bool) -> Result<(), eyre::Report> {
         }))
         .with(
             tracing_subscriber::fmt::layer()
+                .with_target(false)
                 .and_then(tracing_error::ErrorLayer::default())
                 .with_filter(main_filter),
         );

@@ -1,4 +1,5 @@
 use std::io::Error;
+use std::mem::MaybeUninit;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::os::fd::FromRawFd;
 use std::sync::Arc;
@@ -135,11 +136,19 @@ impl NetlinkAddressMonitor {
             offset.div_ceil(align_to) * align_to
         }
 
-        let mut buffer = [0u8; 4096];
+        // we originally had this on the stack (array) but tokio moves it to the heap because of size
+        let mut buffer = vec![MaybeUninit::<u8>::uninit(); 4096];
 
-        let bytes_read = self.socket.recv(&mut buffer).await?;
+        let bytes_read = self.socket.recv_buf(&mut buffer.as_mut_slice()).await?;
+
+        // `recv_buf` tells us that `bytes_read` were read from the socket into our `buffer`, so they're initialized
+        buffer.shrink_to(bytes_read);
 
         event!(Level::DEBUG, "netlink message with {} bytes", bytes_read);
+
+        let buffer = Arc::<[_]>::from(buffer);
+
+        let buffer = unsafe { buffer.assume_init() };
 
         let mut offset = 0;
 
