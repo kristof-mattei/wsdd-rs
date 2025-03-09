@@ -192,8 +192,6 @@ async fn start_tasks() -> Result<(), eyre::Report> {
         );
     }
 
-    println!("YOOO");
-
     // # main loop, serve requests coming from any outbound socket
     // try:
     //     aio_loop.run_forever()
