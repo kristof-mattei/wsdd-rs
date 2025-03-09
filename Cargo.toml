@@ -41,6 +41,7 @@ dotenvy = "0.15.7"
 hashbrown = "0.15.2"
 libc = "0.2.170"
 quick-xml = "0.37.2"
+rand = "0.9.0"
 socket2 = { version = "0.5.8", features = ["all"] }
 tokio = { version = "1.44.0", features = [
     "rt-multi-thread",

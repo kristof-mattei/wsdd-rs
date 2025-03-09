@@ -11,6 +11,7 @@ pub(crate) struct WSDClient {
 }
 
 impl WSDClient {
+    #[expect(unused)]
     pub(crate) fn new(
         mc_send_socket_receiver: Receiver<Arc<[u8]>>,
         recv_socket_receiver: Receiver<Arc<[u8]>>,

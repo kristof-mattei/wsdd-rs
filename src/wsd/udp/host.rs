@@ -1,17 +1,33 @@
-use std::net::SocketAddr;
-use std::sync::Arc;
+use std::net::{IpAddr, SocketAddr};
+use std::string::String;
+use std::sync::{Arc, LazyLock};
 
 use color_eyre::eyre;
+use hashbrown::HashSet;
+use quick_xml::NsReader;
+use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 use tracing::{Level, event};
 
+use crate::config::Config;
+use crate::constants;
+use crate::soap::builder::{self, Builder, MessageType};
+use crate::soap::parser::{self, MessageHandler};
+use crate::utils::task::spawn_with_name;
+
+static HANDLED_MESSAGES: LazyLock<Arc<RwLock<HashSet<String>>>> =
+    LazyLock::new(|| Arc::<RwLock<HashSet<String>>>::new(RwLock::new(HashSet::new())));
+
 pub(crate) struct WSDHost {
+    config: Arc<Config>,
+    address: IpAddr,
     // udp_message_handler: WSDUDPMessageHandler<'nph>,
     #[expect(unused)]
-    handle: JoinHandle<()>,
-    multicast: Sender<Box<[u8]>>,
+    listener_handle: JoinHandle<()>,
+    multicast: Sender<(MessageType, Box<[u8]>)>,
 }
+
 // impl WSDHost {
 //     pub(crate) fn new(
 //         multicast_handler: &Arc<MulticastHandler<'nph>>,
@@ -24,29 +40,73 @@ pub(crate) struct WSDHost {
 // }
 impl WSDHost {
     pub(crate) async fn new(
-        mut receiver: Receiver<Arc<[u8]>>,
+        config: Arc<Config>,
+        address: IpAddr,
+        mut receiver: Receiver<(Arc<[u8]>, SocketAddr)>,
         unicast: Sender<(Box<[u8]>, SocketAddr)>,
-        multicast: Sender<Box<[u8]>>,
+        multicast: Sender<(MessageType, Box<[u8]>)>,
     ) -> Self {
-        let handle = tokio::spawn(async move {
-            loop {
-                if let Some(buf) = receiver.recv().await {
-                    // ...
+        let m = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES));
 
-                    let target: SocketAddr = "[::1]:12345".parse().unwrap();
+        // TODO error handler setup
+        let listener_handle = {
+            let config = Arc::clone(&config);
 
-                    if let Err(err) = unicast.send((Box::new([buf[0]]), target)).await {
-                        event!(Level::ERROR, ?err, "Failed to broadcast");
+            spawn_with_name(format!("wsd host ({})", address).as_str(), async move {
+                loop {
+                    if let Some((buffer, from)) = receiver.recv().await {
+                        let (message_id, action, body_reader) =
+                            match m.deconstruct_message(&buffer).await {
+                                Ok(Some(pieces)) => pieces,
+                                Ok(None) => {
+                                    continue;
+                                },
+                                Err(_err) => {
+                                    // TODO LOG ERROR BETTER
+                                    println!("ERROR");
+                                    continue;
+                                },
+                            };
+
+                        // handle based on action
+                        let response = match action.as_ref() {
+                            constants::WSD_PROBE => handle_probe(Arc::clone(&config), body_reader),
+                            constants::WSD_RESOLVE => handle_resolve(
+                                Arc::clone(&config),
+                                address,
+                                config.uuid,
+                                body_reader,
+                            ),
+                            _ => {
+                                event!(Level::DEBUG, "unhandled action {}/{}", action, message_id);
+                                continue;
+                            },
+                        };
+
+                        let Ok(response) = response else {
+                            // TODO error?
+                            continue;
+                        };
+
+                        if let Err(err) = unicast.send((response.into(), from)).await {
+                            event!(Level::ERROR, ?err, "Failed to broadcast");
+                        }
+                    } else {
+                        // the end
+                        event!(Level::ERROR, "recv socket gone?");
+                        break;
                     }
-                } else {
-                    // the end
-                    event!(Level::ERROR, "recv socket gone?");
-                    break;
                 }
-            }
-        });
+            })
+            .expect("FAILED TO LAUNCH LISTENER")
+        };
 
-        let s = Self { handle, multicast };
+        let s = Self {
+            config,
+            address,
+            listener_handle,
+            multicast,
+        };
 
         // this shouldn't be an await...
         s.send_hello().await.unwrap();
@@ -54,21 +114,34 @@ impl WSDHost {
         s
     }
 
+    // WS-Discovery, Section 4.1, Hello message
     async fn send_hello(&self) -> Result<(), eyre::Report> {
-        //     def send_hello(self) -> None:
-        //         """WS-Discovery, Section 4.1, Hello message"""
-        //         hello = ElementTree.Element('wsd:Hello')
-        //         self.add_endpoint_reference(hello)
-        //         # THINK: Microsoft does not send the transport address here due to privacy reasons. Could make this optional.
-        //         self.add_xaddr(hello, self.mch.address.transport_str)
-        //         self.add_metadata_version(hello)
+        let hello = Builder::build_hello(self.config.clone(), self.address)?;
 
-        //         msg = self.build_message(WSA_DISCOVERY, WSD_HELLO, None, hello)
-        //         self.enqueue_datagram(msg, self.mch.multicast_address, msg_type='Hello')
-        let message = Box::from([1, 2, 3]);
-        self.multicast.send(message).await?;
-        Ok(())
+        // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
+        // TODO move event to here and write properly
+        Ok(self
+            .multicast
+            .send((MessageType::Hello, hello.into_bytes().into_boxed_slice()))
+            .await?)
     }
+}
+
+fn handle_probe(config: Arc<Config>, mut reader: NsReader<&[u8]>) -> Result<Vec<u8>, eyre::Report> {
+    parser::parse_probe_body(&mut reader)?;
+
+    builder::Builder::build_probe_matches(config).map(String::into_bytes)
+}
+
+fn handle_resolve(
+    config: Arc<Config>,
+    address: IpAddr,
+    target_uuid: uuid::Uuid,
+    mut reader: NsReader<&[u8]>,
+) -> Result<Vec<u8>, eyre::Report> {
+    parser::parse_resolve_body(&mut reader, target_uuid)?;
+
+    builder::Builder::build_resolve_matches(config, address).map(String::into_bytes)
 }
 
 // class WSDHost(WSDUDPMessageHandler):
@@ -139,30 +212,6 @@ impl WSDHost {
 //         self.add_metadata_version(match)
 
 //         return matches, WSD_PROBE_MATCH
-
-//     def handle_resolve(self, header: ElementTree.Element, body: ElementTree.Element) -> Optional[WSDMessage]:
-//         resolve = body.find('./wsd:Resolve', namespaces)
-//         if resolve is None:
-//             return None
-
-//         addr = resolve.find('./wsa:EndpointReference/wsa:Address', namespaces)
-//         if addr is None:
-//             logger.debug('invalid resolve request: missing endpoint address')
-//             return None
-
-//         if not addr.text == args.uuid.urn:
-//             logger.debug('invalid resolve request: address ({}) does not match own one ({})'.format(
-//                 addr.text, args.uuid.urn))
-//             return None
-
-//         matches = ElementTree.Element('wsd:ResolveMatches')
-//         match = ElementTree.SubElement(matches, 'wsd:ResolveMatch')
-//         self.add_endpoint_reference(match)
-//         self.add_types(match)
-//         self.add_xaddr(match, self.mch.address.transport_str)
-//         self.add_metadata_version(match)
-
-//         return matches, WSD_RESOLVE_MATCH
 
 //     def add_header_elements(self, header: ElementTree.Element, extra: Any):
 //         ElementTree.SubElement(
