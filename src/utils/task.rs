@@ -1,5 +1,4 @@
-use tokio::task::Builder;
-use tokio::task::JoinHandle;
+use tokio::task::{Builder, JoinHandle};
 
 pub fn spawn_with_name<Fut>(name: &str, future: Fut) -> std::io::Result<JoinHandle<Fut::Output>>
 where

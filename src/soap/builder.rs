@@ -1,28 +1,22 @@
-use crate::{
-    config::Config,
-    constants::{
-        WSA_ANON, WSA_DISCOVERY, WSA_URI, WSD_BYE, WSD_HELLO, WSD_HTTP_PORT, WSD_PROBE_MATCH,
-        WSD_RESOLVE_MATCH, WSD_TYPE_DEVICE_COMPUTER, WSD_URI, XML_WSA_NAMESPACE, XML_WSD_NAMESPACE,
-    },
-    url_ip_addr::UrlIpAddr,
-};
+use std::borrow::Cow;
+use std::io::{Cursor, Write};
+use std::net::IpAddr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use color_eyre::eyre;
 use hashbrown::HashMap;
-use quick_xml::{
-    Writer,
-    events::{BytesDecl, BytesText, Event},
-};
-use std::{
-    borrow::Cow,
-    io::{Cursor, Write},
-    net::IpAddr,
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
-};
+use quick_xml::Writer;
+use quick_xml::events::{BytesDecl, BytesText, Event};
 use tracing::{Level, event};
 use uuid::Uuid;
+
+use crate::config::Config;
+use crate::constants::{
+    WSA_ANON, WSA_DISCOVERY, WSA_URI, WSD_BYE, WSD_HELLO, WSD_HTTP_PORT, WSD_PROBE_MATCH,
+    WSD_RESOLVE_MATCH, WSD_TYPE_DEVICE_COMPUTER, WSD_URI, XML_WSA_NAMESPACE, XML_WSD_NAMESPACE,
+};
+use crate::url_ip_addr::UrlIpAddr;
 
 static MESSAGES_BUILT: AtomicU64 = AtomicU64::new(0);
 // <?xml version="1.0" encoding="utf-8"?>

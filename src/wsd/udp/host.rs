@@ -1,25 +1,20 @@
-use std::{net::IpAddr, string::String, sync::Arc};
-use std::{net::SocketAddr, sync::LazyLock};
+use std::net::{IpAddr, SocketAddr};
+use std::string::String;
+use std::sync::{Arc, LazyLock};
 
 use color_eyre::eyre;
 use hashbrown::HashSet;
 use quick_xml::NsReader;
-use tokio::sync::{
-    RwLock,
-    mpsc::{Receiver, Sender},
-};
+use tokio::sync::RwLock;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 use tracing::{Level, event};
 
-use crate::{
-    config::Config,
-    constants,
-    soap::{
-        builder::{self, Builder, MessageType},
-        parser::{self, MessageHandler},
-    },
-    utils::task::spawn_with_name,
-};
+use crate::config::Config;
+use crate::constants;
+use crate::soap::builder::{self, Builder, MessageType};
+use crate::soap::parser::{self, MessageHandler};
+use crate::utils::task::spawn_with_name;
 
 static HANDLED_MESSAGES: LazyLock<Arc<RwLock<HashSet<String>>>> =
     LazyLock::new(|| Arc::<RwLock<HashSet<String>>>::new(RwLock::new(HashSet::new())));

@@ -1,10 +1,12 @@
-use color_eyre::eyre;
+use std::borrow::Cow;
+use std::sync::Arc;
 
+use color_eyre::eyre;
 use hashbrown::HashSet;
-use quick_xml::name::{Namespace, ResolveResult::Bound};
+use quick_xml::events::Event;
+use quick_xml::name::ResolveResult::Bound;
+use quick_xml::name::{Namespace, ResolveResult};
 use quick_xml::reader::NsReader;
-use quick_xml::{events::Event, name::ResolveResult};
-use std::{borrow::Cow, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::{Level, event};
 use uuid::Uuid;

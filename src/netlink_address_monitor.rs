@@ -1,7 +1,8 @@
+use std::io::Error;
+use std::mem::MaybeUninit;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::os::fd::FromRawFd;
 use std::sync::Arc;
-use std::{io::Error, mem::MaybeUninit};
 
 use color_eyre::eyre::{self};
 use libc::{
