@@ -15,7 +15,7 @@ mod helpers;
 mod multicast_handler;
 mod netlink_address_monitor;
 mod network_address;
-mod network_address_monitor;
+mod network_handler;
 mod network_interface;
 mod network_packet_handler;
 mod parsers;
@@ -33,6 +33,7 @@ use std::time::Duration;
 
 use color_eyre::eyre;
 use dotenvy::dotenv;
+use network_handler::NetworkHandler;
 use security::{chroot, drop_privileges};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
@@ -111,10 +112,28 @@ async fn start_tasks() -> Result<(), eyre::Report> {
 
     let tasks = tokio_util::task::TaskTracker::new();
 
-    let mut address_monitor =
-        address_monitor::create_address_monitor(cancellation_token.clone(), &config)?;
+    let (sender, receiver) = tokio::sync::mpsc::channel(10);
 
-    address_monitor.request_current_state().unwrap();
+    let mut network_handler = NetworkHandler::new(cancellation_token.clone(), &config, receiver);
+    network_handler.set_active();
+
+    {
+        let mut address_monitor =
+            address_monitor::create_address_monitor(cancellation_token.clone(), sender, &config)?;
+
+        address_monitor.request_current_state()?;
+
+        let cancellation_token = cancellation_token.clone();
+
+        tasks.spawn(async move {
+            let _guard = cancellation_token.drop_guard();
+
+            match address_monitor.handle_change().await {
+                Ok(()) => (),
+                Err(error) => event!(Level::ERROR, ?error, "TODO"),
+            }
+        });
+    }
 
     {
         let cancellation_token = cancellation_token.clone();
@@ -122,11 +141,11 @@ async fn start_tasks() -> Result<(), eyre::Report> {
         tasks.spawn(async move {
             let _guard = cancellation_token.drop_guard();
 
-            loop {
-                match address_monitor.handle_change().await {
-                    Ok(()) => (),
-                    Err(error) => event!(Level::ERROR, ?error, "TODO"),
-                }
+            match network_handler.handle_change().await {
+                Ok(()) => (),
+                Err(error) => {
+                    event!(Level::ERROR, ?error, "TODO");
+                },
             }
         });
     }

@@ -18,13 +18,12 @@ permissions:
 
 env:
   # set this to true in GitHub variables to enable building the container
-  # HAS_CONTAINER: true
+  HAS_CONTAINER: true
   # Use docker.io for Docker Hub if empty
   REGISTRY: ghcr.io
   # github.repository as <account>/<repo>
   IMAGE_NAME: ${{ github.repository }}
-  # just a name, but storing it separately as we're nice people
-  RUSTFLAGS: --deny=warnings
+  RUSTFLAGS: --deny=warnings --cfg tokio_unstable
 
 concurrency:
   # each new commit to a PR runs this workflow
