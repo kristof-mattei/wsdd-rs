@@ -86,7 +86,6 @@ pub const WSD_MAX_LEN: usize = 32767;
 // MULTICAST_UDP_REPEAT: int = 4
 pub const MULTICAST_UDP_REPEAT: usize = 4;
 // UNICAST_UDP_REPEAT: int = 2
-#[expect(unused)]
 pub const UNICAST_UDP_REPEAT: usize = 2;
 // UDP_MIN_DELAY: int = 50
 pub const UDP_MIN_DELAY: u64 = 50;

@@ -1,25 +1,26 @@
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio_util::sync::CancellationToken;
 
-use tokio::sync::mpsc::Receiver;
+use crate::config::Config;
 
-pub(crate) struct WSDClient {
-    #[expect(unused)]
-    mc_send_socket_receiver: Receiver<Arc<[u8]>>,
-
-    #[expect(unused)]
-    recv_socket_receiver: Receiver<Arc<[u8]>>,
-}
+pub(crate) struct WSDClient {}
 
 impl WSDClient {
-    #[expect(unused)]
-    pub(crate) fn new(
-        mc_send_socket_receiver: Receiver<Arc<[u8]>>,
-        recv_socket_receiver: Receiver<Arc<[u8]>>,
+    #[expect(unused_variables)]
+    #[expect(unused_mut)]
+    #[expect(clippy::unused_async)]
+    pub(crate) async fn init(
+        cancellation_token: &CancellationToken,
+        config: Arc<Config>,
+        address: IpAddr,
+        mut receiver: Receiver<(Arc<[u8]>, SocketAddr)>,
+        mut receiver2: Receiver<(Arc<[u8]>, SocketAddr)>,
+        multicast: Sender<Box<[u8]>>,
+        unicast: Sender<(Box<[u8]>, SocketAddr)>,
     ) -> Self {
-        Self {
-            mc_send_socket_receiver,
-            recv_socket_receiver,
-        }
+        todo!()
     }
 }
 

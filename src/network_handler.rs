@@ -11,7 +11,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 
 use color_eyre::eyre;
-use tokio_util::sync::CancellationToken;
+use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use tracing::{Level, event};
 
 use crate::config::Config;
@@ -33,26 +33,20 @@ pub enum Command {
 }
 
 pub struct NetworkHandler {
-    //     active: bool
+    // TODO this should _probably_ be an AtomicBool
     active: bool,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
     multicast_handlers: Vec<MulticastHandler>,
-    //     teardown_tasks: List[asyncio.Task]
     receiver: tokio::sync::mpsc::Receiver<Command>,
 }
 
-// static INSTANCES: Lazy<NetworkAddressMonitor> = Lazy::new(|| NetworkAddressMonitor {});
-
-// class NetworkAddressMonitor(metaclass=MetaEnumAfterInit):
 /// Observes changes of network addresses, handles addition and removal of
 /// network addresses, and filters for addresses/interfaces that are or are not
 /// handled. The actual OS-specific implementation that detects the changes is
 /// done in subclasses. This class is used as a singleton
 impl NetworkHandler {
-    // instance: ClassVar[object] = None
-
     pub fn new(
         cancellation_token: CancellationToken,
         config: &Arc<Config>,
@@ -82,7 +76,7 @@ impl NetworkHandler {
             let Some(command) = command else {
                 // GONE?
                 // TODO
-                return Err(eyre::Report::msg("Receiver gone, kill?"));
+                break;
             };
 
             match command {
@@ -113,7 +107,8 @@ impl NetworkHandler {
                         },
                     };
 
-                    self.handle_deleted_address(NetworkAddress::new(address, &interface));
+                    self.handle_deleted_address(NetworkAddress::new(address, &interface))
+                        .await;
                 },
             }
         }
@@ -204,11 +199,10 @@ impl NetworkHandler {
         true
     }
 
-    // def handle_new_address(self, address: NetworkAddress) -> None:
     pub async fn handle_new_address(&mut self, address: NetworkAddress) {
         event!(Level::DEBUG, "new address {}", address);
 
-        if !(self.is_address_handled(&address)) {
+        if !self.is_address_handled(&address) {
             event!(
                 Level::DEBUG,
                 "ignoring that address on {}",
@@ -235,7 +229,6 @@ impl NetworkHandler {
                 .expect("FAIL");
 
         if !self.config.no_host {
-            // TODO start WSDHost
             multicast_handler.enable_wsd_host().await;
 
             if !self.config.no_http {
@@ -250,56 +243,66 @@ impl NetworkHandler {
         self.multicast_handlers.push(multicast_handler);
     }
 
-    pub fn handle_deleted_address(&mut self, address: NetworkAddress) {
+    pub async fn handle_deleted_address(&mut self, address: NetworkAddress) {
         event!(Level::INFO, "deleted address {}", address);
 
         if !self.is_address_handled(&address) {
             return;
         }
 
-        let Some(mut handler) = self.take_mch_by_address(&address) else {
+        let Some(handler) = self.take_mch_by_address(&address) else {
             return;
         };
 
-        // TODO
-        //     self.mchs.remove(mch)
-        handler.cleanup();
+        handler.teardown(false).await;
+
+        // handler gets dropped
     }
 
     // def teardown(self) -> None:
-    //     if not self.active:
-    //         return
+    pub async fn teardown(&mut self) {
+        if !self.active {
+            return;
+        }
 
-    //     self.active = False
+        self.active = false;
 
-    //     # return if we are still in tear down process
-    //     if len(self.teardown_tasks) > 0:
-    //         return
+        let tasks = TaskTracker::new();
 
-    //     for h in WSDHost.instances:
-    //         h.teardown()
-    //         h.cleanup()
-    //         self.teardown_tasks.extend(h.pending_tasks)
+        while let Some(mch) = self.multicast_handlers.pop() {
+            tasks.spawn(async move {
+                mch.teardown(true).await;
+            });
+        }
 
-    //     for c in WSDClient.instances:
-    //         c.teardown()
-    //         c.cleanup()
-    //         self.teardown_tasks.extend(c.pending_tasks)
+        tasks.close();
+        tasks.wait().await;
 
-    //     for s in self.http_servers:
-    //         s.server_close()
+        //     for h in WSDHost.instances:
+        //         h.teardown()
+        //         h.cleanup()
+        //         self.teardown_tasks.extend(h.pending_tasks)
 
-    //     self.http_servers.clear()
+        //     for c in WSDClient.instances:
+        //         c.teardown()
+        //         c.cleanup()
+        //         self.teardown_tasks.extend(c.pending_tasks)
 
-    //     if not self.teardown_tasks:
-    //         return
+        //     for s in self.http_servers:
+        //         s.server_close()
 
-    //     if not self.aio_loop.is_running():
-    //         # Wait here for all pending tasks so that the main loop can be finished on termination.
-    //         self.aio_loop.run_until_complete(asyncio.gather(*self.teardown_tasks))
-    //     else:
-    //         for t in self.teardown_tasks:
-    //             t.add_done_callback(self.mch_teardown)
+        //     self.http_servers.clear()
+
+        //     if not self.teardown_tasks:
+        //         return
+
+        //     if not self.aio_loop.is_running():
+        //         # Wait here for all pending tasks so that the main loop can be finished on termination.
+        //         self.aio_loop.run_until_complete(asyncio.gather(*self.teardown_tasks))
+        //     else:
+        //         for t in self.teardown_tasks:
+        //             t.add_done_callback(self.mch_teardown)
+    }
 
     // def mch_teardown(self, task) -> None:
     //     if any([not t.done() for t in self.teardown_tasks]):

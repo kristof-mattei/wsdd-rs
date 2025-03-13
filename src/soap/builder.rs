@@ -19,28 +19,9 @@ use crate::constants::{
 use crate::url_ip_addr::UrlIpAddr;
 
 static MESSAGES_BUILT: AtomicU64 = AtomicU64::new(0);
-// <?xml version="1.0" encoding="utf-8"?>
-// <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery" xmlns:wsx="http://schemas.xmlsoap.org/ws/2004/09/mex" xmlns:wsdp="http://schemas.xmlsoap.org/ws/2006/02/devprof" xmlns:pnpx="http://schemas.microsoft.com/windows/pnpx/2005/10" xmlns:pub="http://schemas.microsoft.com/windows/pub/2005/07">
-//     <soap:Header>
-//         <wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To>
-//         <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Hello</wsa:Action>
-//         <wsa:MessageID>urn:uuid:f1af118a-9629-4e95-93dc-5db54dd3dda0</wsa:MessageID>
-//         <wsd:AppSequence InstanceId="1740621833" SequenceId="urn:uuid:8126dd81-2633-4691-9585-8a297ec7c194" MessageNumber="0" />
-//     </soap:Header>
-//     <soap:Body>
-//         <wsd:Hello>
-//             <wsa:EndpointReference>
-//                 <wsa:Address>urn:uuid:6bf93afb-f524-4e2e-9fa9-82ac80a366dd</wsa:Address>
-//             </wsa:EndpointReference>
-//             <wsd:XAddrs>http://192.168.12.5:5357/6bf93afb-f524-4e2e-9fa9-82ac80a366dd</wsd:XAddrs>
-//             <wsd:MetadataVersion>1</wsd:MetadataVersion>
-//         </wsd:Hello>
-//     </soap:Body>
-// </soap:Envelope>
 
 pub enum MessageType {
     Hello,
-    #[expect(unused)]
     Bye,
 }
 
@@ -115,6 +96,7 @@ impl Builder {
                     ))?;
 
                 if let Some(_request_headers) = request_header {
+                    // TODO
                     // req_msg_id = request_header.find('./wsa:MessageID', namespaces)
                     // if req_msg_id is not None:
                     //     relates_to = ElementTree.SubElement(header, 'wsa:RelatesTo')
@@ -156,10 +138,9 @@ impl Builder {
     }
 
     /// WS-Discovery, Section 4.2, Bye message
-    #[expect(unused)]
-    pub fn build_bye(config: &Arc<Config>) -> Result<String, eyre::Report> {
+    pub fn build_bye(config: Arc<Config>) -> Result<String, eyre::Report> {
         let mut builder = Builder {
-            config: Arc::clone(config),
+            config,
             namespaces: HashMap::new(),
         };
 

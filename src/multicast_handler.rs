@@ -6,70 +6,58 @@ use std::time::Duration;
 use color_eyre::{Section, eyre};
 use rand::Rng;
 use socket2::{Domain, InterfaceIndexOrAddress, Socket, Type};
-use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{OnceCell, RwLock};
 use tokio::time::sleep;
-use tokio_util::sync::CancellationToken;
+use tokio::{net::UdpSocket, task::JoinHandle};
+use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use tracing::{Level, event};
 
-use crate::config::Config;
 use crate::constants::{
     self, MULTICAST_UDP_REPEAT, UDP_MAX_DELAY, UDP_MIN_DELAY, UDP_UPPER_DELAY, WSD_HTTP_PORT,
     WSD_MAX_LEN, WSD_MCAST_GRP_V4, WSD_MCAST_GRP_V6, WSD_UDP_PORT,
 };
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
-use crate::soap::builder::MessageType;
 use crate::udp_address::UdpAddress;
 use crate::url_ip_addr::UrlIpAddr;
 use crate::utils::task::spawn_with_name;
 use crate::wsd::http::http_server::WSDHttpServer;
 use crate::wsd::udp::client::WSDClient;
 use crate::wsd::udp::host::WSDHost;
+use crate::{config::Config, constants::UNICAST_UDP_REPEAT};
 
 /// A class for handling multicast traffic on a given interface for a
 /// given address family. It provides multicast sender and receiver sockets
 pub struct MulticastHandler {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    //     # base interface addressing information
-    //     address: NetworkAddress
     /// The address and interface we're bound on
     address: NetworkAddress,
 
-    //     # individual interface-bound sockets for:
-    //     #  - receiving multicast traffic
-    //     #  - sending multicast from a socket bound to WSD port
-    //     #  - sending unicast messages from a random port
-    //     recv_socket: socket.socket
-    //     mc_send_socket: socket.socket
-    //     uc_send_socket: socket.socket
-    recv_socket_wrapper: SocketWithReceivers,
-    mc_send_socket_wrapper: SocketWithReceivers,
-    uc_send_socket_wrapper: SocketWithReceivers,
+    /// receiving multicast traffic
+    recv_socket_wrapper: SocketWithListeners,
+    /// sending multicast from a socket bound to WSD port
+    mc_send_socket_wrapper: SocketWithListeners,
+    /// sending unicast messages from a random port
+    #[expect(unused)]
+    uc_send_socket_wrapper: SocketWithListeners,
 
-    //     # addresses used for communication and data
-    //     multicast_address: UdpAddress
     /// The multicast group on which we broadcast our messages
+    #[expect(unused)]
     multicast_address: UdpAddress,
-    //     listen_address: Tuple
     #[expect(unused)]
     http_listen_address: SocketAddr,
-
-    //     # dictionary that holds INetworkPacketHandlers instances for sockets created above
-    //     message_handlers: Dict[socket.socket, List[INetworkPacketHandler]]
-    // message_handlers: HashMap<Arc<UdpSocket>, Vec<&'nph (dyn NetworkPacketHandler + Sync)>>,
     wsd_host: OnceCell<WSDHost>,
     wsd_client: OnceCell<WSDClient>,
     #[expect(unused)]
     http_server: OnceCell<WSDHttpServer>,
-    unicast: Sender<(Box<[u8]>, SocketAddr)>,
-    multicast: Sender<(MessageType, Box<[u8]>)>,
+    multicast: (JoinHandle<()>, Sender<Box<[u8]>>),
+    #[expect(clippy::type_complexity)]
+    unicast: (JoinHandle<()>, Sender<(Box<[u8]>, SocketAddr)>),
 }
 
 impl MulticastHandler {
-    //     def __init__(self, address: NetworkAddress, aio_loop: asyncio.AbstractEventLoop) -> None:
     pub fn new(
         address: NetworkAddress,
         cancellation_token: CancellationToken,
@@ -100,8 +88,8 @@ impl MulticastHandler {
                     ipv4_address,
                     &address.interface,
                     &recv_socket,
-                    &uc_send_socket,
                     &mc_send_socket,
+                    &uc_send_socket,
                     config,
                 )?;
 
@@ -112,8 +100,8 @@ impl MulticastHandler {
                     ipv6_address,
                     &address.interface,
                     &recv_socket,
-                    &uc_send_socket,
                     &mc_send_socket,
+                    &uc_send_socket,
                     config,
                 )?;
 
@@ -139,116 +127,111 @@ impl MulticastHandler {
             http_listen_address
         );
 
-        // TODO
-        //         # register calbacks for incoming data (also for mc)
-        //         self.aio_loop.add_reader(self.recv_socket.fileno(), self.read_socket, self.recv_socket)
-        //         self.aio_loop.add_reader(self.mc_send_socket.fileno(), self.read_socket, self.mc_send_socket)
-        //         self.aio_loop.add_reader(self.uc_send_socket.fileno(), self.read_socket, self.uc_send_socket)
-
-        let recv_socket_wrapper =
-            SocketWithReceivers::new(UdpSocket::from_std(recv_socket.into())?);
-        let uc_send_socket_wrapper =
-            SocketWithReceivers::new(UdpSocket::from_std(uc_send_socket.into())?);
-        let mc_send_socket_wrapper =
-            SocketWithReceivers::new(UdpSocket::from_std(mc_send_socket.into())?);
+        // receiver for unicast on WSD port
+        let recv_socket_recv_wrapper =
+            SocketWithListeners::new(UdpSocket::from_std(recv_socket.into())?);
+        // sender & receiver for multicast on WSD port
+        let mc_socket_receive_wrapper =
+            SocketWithListeners::new(UdpSocket::from_std(mc_send_socket.into())?);
+        // sender for unicast on WSD port
+        let uc_socket_send_wrapper =
+            SocketWithListeners::new(UdpSocket::from_std(uc_send_socket.into())?);
 
         let multicast = {
-            let socket = Arc::clone(&mc_send_socket_wrapper.socket);
-            let address = multicast_address.network_address.address;
-            let interface = multicast_address.network_address.interface.name.clone();
+            let socket = Arc::clone(&mc_socket_receive_wrapper.socket);
             let multicast_target = multicast_address.transport_address;
 
-            let (sender, mut receiver) = tokio::sync::mpsc::channel::<(MessageType, Box<[u8]>)>(10);
+            let (sender, mut receiver) = tokio::sync::mpsc::channel::<Box<[u8]>>(10);
 
-            {
-                // TODO handle error
-                let name = format!("multicast handler ({})", multicast_target);
-                spawn_with_name(name.as_str(), async move {
-                    loop {
-                        if let Some((message_type, buffer)) = receiver.recv().await {
-                            // TODO this needs to be changed, we're not scheduling, we're sending
-                            event!(
-                                Level::INFO,
-                                "scheduling {} message via {} to {}%{}",
-                                message_type,
-                                interface,
-                                address,
-                                interface,
-                            );
-                            {
-                                let socket = socket.clone();
+            let name = format!("multicast handler ({})", multicast_target);
+            let handle = spawn_with_name(name.as_str(), async move {
+                let tracker = TaskTracker::new();
 
-                                // TODO announce error
-                                let _r = spawn_with_name("message sender", async move {
-                                    // Schedule to send the given message to the given address.
-                                    // Implements SOAP over UDP, Appendix I.
-                                    let mut delta =
-                                        rand::rng().random_range(UDP_MIN_DELAY..=UDP_MAX_DELAY);
+                loop {
+                    let Some(buffer) = receiver.recv().await else {
+                        event!(
+                            Level::INFO,
+                            ?multicast_target,
+                            "All multicast senders gone, shutting down"
+                        );
+                        break;
+                    };
 
-                                    for i in 0..MULTICAST_UDP_REPEAT {
-                                        if i != 0 {
-                                            sleep(Duration::from_millis(delta)).await;
-                                            delta = UDP_UPPER_DELAY.min(delta * 2);
-                                        }
+                    let socket = socket.clone();
 
-                                        match socket.send_to(&buffer, multicast_target).await {
-                                            Ok(_) => {},
-                                            Err(err) => {
-                                                event!(
-                                                    Level::WARN,
-                                                    ?err,
-                                                    target = ?multicast_target,
-                                                    "Failed to send data"
-                                                );
-                                            },
-                                        }
-                                    }
-                                });
+                    spawn_with_name(
+                        "message sender",
+                        tracker.track_future(async move {
+                            // Schedule to send the given message to the given address.
+                            // Implements SOAP over UDP, Appendix I.
+                            let mut delta = rand::rng().random_range(UDP_MIN_DELAY..=UDP_MAX_DELAY);
+
+                            for i in 0..MULTICAST_UDP_REPEAT {
+                                if i != 0 {
+                                    sleep(Duration::from_millis(delta)).await;
+                                    delta = UDP_UPPER_DELAY.min(delta * 2);
+                                }
+
+                                match socket.send_to(&buffer, multicast_target).await {
+                                    Ok(_) => {},
+                                    Err(err) => {
+                                        event!(
+                                            Level::WARN,
+                                            ?err,
+                                            target = ?multicast_target,
+                                            "Failed to send data"
+                                        );
+                                    },
+                                }
                             }
-                        } else {
-                            // receiver gone? :(
-                        }
-                    }
-                })
-                .expect("Failed to launch task");
-            }
+                        }),
+                    );
+                }
 
-            sender
+                tracker.close();
+                tracker.wait().await;
+            });
+
+            (handle, sender)
         };
 
         let unicast = {
-            let socket = Arc::clone(&uc_send_socket_wrapper.socket);
+            let socket = Arc::clone(&uc_socket_send_wrapper.socket);
 
             let (sender, mut receiver) = tokio::sync::mpsc::channel::<(Box<[u8]>, SocketAddr)>(10);
 
-            // TODO failure here is fatal
-            let name = format!("unicast handler ({})", socket.local_addr().unwrap());
-            spawn_with_name(name.as_str(), async move {
+            let socket_name = socket.local_addr().unwrap();
+            let name = format!("unicast handler ({})", socket_name);
+            let handle = spawn_with_name(name.as_str(), async move {
                 loop {
-                    if let Some((buf, target)) = receiver.recv().await {
-                        match socket.send_to(&buf, target).await {
-                            Ok(_) => {},
-                            Err(err) => {
-                                event!(Level::WARN, ?err, target = ?target, "Failed to send data");
-                            },
-                        }
-                    } else {
-                        // receiver gone? :(
+                    let Some((buf, target)) = receiver.recv().await else {
+                        event!(
+                            Level::INFO,
+                            ?socket_name,
+                            "All unicast senders gone, shutting down"
+                        );
+                        break;
+                    };
+
+                    match socket.send_to(&buf, target).await {
+                        Ok(_) => {},
+                        Err(err) => {
+                            event!(Level::WARN, ?err, target = ?target, "Failed to send data");
+                        },
                     }
                 }
-            })
-            .expect("Failed to set up unicast handler");
+            });
 
-            sender
+            (handle, sender)
         };
 
         Ok(Self {
             config: Arc::clone(config),
             cancellation_token,
             address,
-            recv_socket_wrapper,
-            uc_send_socket_wrapper,
-            mc_send_socket_wrapper,
+            recv_socket_wrapper: recv_socket_recv_wrapper,
+            mc_send_socket_wrapper: mc_socket_receive_wrapper,
+            uc_send_socket_wrapper: uc_socket_send_wrapper,
             multicast_address,
             http_listen_address,
             wsd_client: OnceCell::new(),
@@ -259,32 +242,37 @@ impl MulticastHandler {
         })
     }
 
-    //     def cleanup(self) -> None:
-    pub fn cleanup(&mut self) {
-        // Do not tear the client/hosts down. Saying goodbye does not work
-        // because the address is already gone (at least on Linux).
-        // TODO
-        //     for c in WSDClient.instances:
-        //         if c.mch == mch:
-        //             c.cleanup()
-        //             break
-        //     for h in WSDHost.instances:
-        //         if h.mch == mch:
-        //             h.cleanup()
-        //             break
-        //     for s in self.http_servers:
-        //         if s.mch == mch:
-        //             s.server_close()
-        //             self.http_servers.remove(s)
+    pub async fn teardown(self, graceful: bool) {
+        if let Some(host) = self.wsd_host.into_inner() {
+            host.teardown(graceful).await;
 
-        // TODO
-        //         self.aio_loop.remove_reader(self.recv_socket)
-        //         self.aio_loop.remove_reader(self.mc_send_socket)
-        //         self.aio_loop.remove_reader(self.uc_send_socket)
+            // teardown makes the host queue up a goodbye
 
-        //         self.recv_socket.close()
-        //         self.mc_send_socket.close()
-        //         self.uc_send_socket.close()
+            // When we are here we have made an honest try to schedule the goodbye message
+
+            // host is dropped
+        }
+
+        // TODO drop client
+
+        // TODO drop http
+
+        if graceful {
+            // we drop the sender first, which makes the handle go into cleanup mode, and gracefully try to send the lsat messages to the sockets
+
+            // we have to rely on dropping the sender because that is the only way we can have the receiver run to completion
+            // a cancellation token and tokio::select might cause the handle to top before parsing the rest of the messages
+            let (multicast_handle, sender) = self.multicast;
+            drop(sender);
+            let _r = multicast_handle.await;
+
+            let (unicast_handle, sender) = self.unicast;
+            drop(sender);
+            let _r = unicast_handle.await;
+        }
+
+        // since this consumes self, now the sockets etc are closed. We awaited all tasks, and thus are sure that messages were either
+        // sent, or failed to send, but we avoided the 'schedule but shut down too soon' situation.
     }
 
     pub fn handles_address(&self, address: &NetworkAddress) -> bool {
@@ -295,8 +283,8 @@ impl MulticastHandler {
         ipv6_address: Ipv6Addr,
         interface: &Arc<NetworkInterface>,
         recv_socket: &Socket,
-        uc_send_socket: &Socket,
         mc_send_socket: &Socket,
+        uc_send_socket: &Socket,
         config: &Arc<Config>,
     ) -> Result<(UdpAddress, SocketAddrV6), eyre::Report> {
         let idx = interface.index;
@@ -388,8 +376,8 @@ impl MulticastHandler {
         ipv4_address: Ipv4Addr,
         interface: &Arc<NetworkInterface>,
         recv_socket: &Socket,
-        uc_send_socket: &Socket,
         mc_send_socket: &Socket,
+        uc_send_socket: &Socket,
         config: &Arc<Config>,
     ) -> Result<(UdpAddress, SocketAddrV4), eyre::Report> {
         let idx = interface.index;
@@ -435,7 +423,7 @@ impl MulticastHandler {
             }
         }
 
-        // # bind unicast socket to interface address and WSD's udp port
+        // bind unicast socket to interface address and WSD's udp port
         uc_send_socket.bind(&SocketAddrV4::new(ipv4_address, WSD_UDP_PORT.into()).into())?;
 
         if let Err(err) = mc_send_socket.set_multicast_if_v4(&ipv4_address) {
@@ -452,10 +440,6 @@ impl MulticastHandler {
         // # OpenBSD requires the optlen to be sizeof(char) for LOOP and TTL options
         // # (see also https://github.com/python/cpython/issues/67316)
         // TODO openBSD/freebsd case
-
-        // self.mc_send_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, struct.pack('B', 0))
-        // self.mc_send_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, struct.pack('B', args.hoplimit))
-
         if let Err(err) = mc_send_socket.set_multicast_loop_v4(false) {
             event!(
                 Level::ERROR,
@@ -486,74 +470,19 @@ impl MulticastHandler {
         Ok((multicast_address, listen_address))
     }
 
-    //     def read_socket(self, key: socket.socket) -> None:
-
-    #[expect(unused)]
-    fn read_socket(&self, _key: UdpSocket) {
-        //         # TODO: refactor this
-        //         s = None
-        //         if key == self.uc_send_socket:
-        //             s = self.uc_send_socket
-        //         elif key == self.mc_send_socket:
-        //             s = self.mc_send_socket
-        //         elif key == self.recv_socket:
-        //             s = self.recv_socket
-        //         else:
-        //             raise ValueError("Unknown socket passed as key.")
-
-        //         msg, raw_address = s.recvfrom(WSD_MAX_LEN)
-        //         address = UdpAddress(self.address.family, raw_address, self.address.interface)
-        //         if s in self.message_handlers:
-        //             for handler in self.message_handlers[s]:
-        //                 handler.handle_packet(msg.decode('utf-8'), address)
-    }
-
-    //     def send(self, msg: bytes, addr: UdpAddress):
-    #[expect(unused)]
-    async fn send(&self, message: &[u8], address: &UdpAddress) -> Result<(), eyre::Report> {
-        // Request from a client must be answered from a socket that is bound
-        // to the WSD port, i.e. the recv_socket. Messages to multicast
-        // addresses are sent over the dedicated send socket.
-        //         if addr == self.multicast_address:
-        // if address == &self.multicast_address {
-        //     // self.mc_send_socket.sendto(msg, addr.transport_address)
-        //     self.mc_send_socket
-        //         .send_to(message, address.transport_address)?;
-        // } else {
-        //     // else:
-        //     // self.uc_send_socket.sendto(msg, addr.transport_address)
-        //     self.uc_send_socket
-        //         .send_to(message, address.transport_address)?;
-        // }
-
-        if address == &self.multicast_address {
-            self.mc_send_socket_wrapper
-                .socket
-                .send_to(message, address.transport_address)
-                .await?;
-        } else {
-            self.uc_send_socket_wrapper
-                .socket
-                .send_to(message, address.transport_address)
-                .await?;
-        }
-
-        Ok(())
-    }
-
     pub(crate) async fn enable_wsd_host(&mut self) {
         self.wsd_host
             .get_or_init(|| async {
                 // interests:
                 // * recv_socket
 
-                let host = WSDHost::new(
-                    self.cancellation_token.clone(),
+                let host = WSDHost::init(
+                    &self.cancellation_token,
                     Arc::clone(&self.config),
                     self.address.address,
-                    self.recv_socket_wrapper.get_channel().await,
-                    self.unicast.clone(),
-                    self.multicast.clone(),
+                    self.recv_socket_wrapper.get_listener().await,
+                    self.multicast.1.clone(),
+                    self.unicast.1.clone(),
                 )
                 .await;
 
@@ -574,35 +503,41 @@ impl MulticastHandler {
                 // * recv_socket
                 // * mc_send_socket
 
-                // WSDClient::new(
-                //     self.mc_send_socket_wrapper.get_channel().await,
-                //     self.recv_socket_wrapper.get_channel().await,
-                // )
+                let client = WSDClient::init(
+                    &self.cancellation_token,
+                    Arc::clone(&self.config),
+                    self.address.address,
+                    self.recv_socket_wrapper.get_listener().await,
+                    self.mc_send_socket_wrapper.get_listener().await,
+                    self.multicast.1.clone(),
+                    self.unicast.1.clone(),
+                )
+                .await;
 
-                todo!()
+                #[expect(clippy::let_and_return)]
+                client
             })
             .await;
     }
 }
 
-type Channels = Arc<RwLock<Vec<Sender<(Arc<[u8]>, SocketAddr)>>>>;
+type Listeners = Arc<RwLock<Vec<Sender<(Arc<[u8]>, SocketAddr)>>>>;
 
-struct SocketWithReceivers {
+struct SocketWithListeners {
+    listeners: Listeners,
     socket: Arc<UdpSocket>,
-    channels: Channels,
 }
 
-impl SocketWithReceivers {
+impl SocketWithListeners {
     fn new(socket: UdpSocket) -> Self {
         let socket = Arc::new(socket);
 
-        let channels: Channels = Channels::new(RwLock::const_new(vec![]));
+        let channels: Listeners = Listeners::new(RwLock::const_new(vec![]));
 
         {
             let socket = Arc::clone(&socket);
             let channels = Arc::clone(&channels);
 
-            // TODO handle error
             spawn_with_name(
                 format!("socket receiver ({})", socket.local_addr().unwrap()).as_str(),
                 async move {
@@ -642,23 +577,129 @@ impl SocketWithReceivers {
 
                         for channel in &*lock {
                             if let Err(err) = channel.send((Arc::clone(&buffer), from)).await {
-                                event!(Level::ERROR, ?err, "Failed to send data to channel");
+                                event!(Level::ERROR, ?err, socket = ?socket.local_addr().unwrap(), "Failed to send data to channel");
                             }
                         }
                     }
                 },
-            )
-            .expect("Failed to launch receiver");
+            );
         }
 
-        Self { socket, channels }
+        Self {
+            listeners: channels,
+            socket,
+        }
     }
 
-    async fn get_channel(&mut self) -> Receiver<(Arc<[u8]>, SocketAddr)> {
+    async fn get_listener(&mut self) -> Receiver<(Arc<[u8]>, SocketAddr)> {
         let (sender, receiver) = tokio::sync::mpsc::channel::<(Arc<_>, SocketAddr)>(10);
 
-        self.channels.write().await.push(sender);
+        self.listeners.write().await.push(sender);
 
         receiver
     }
 }
+
+trait MessageSplitter {
+    const REPEAT: usize;
+
+    type Message: Send;
+
+    fn split_message(&self, message: Self::Message) -> (SocketAddr, Box<[u8]>);
+}
+
+#[expect(unused)]
+struct MulticastMessageSplitter {
+    target: SocketAddr,
+}
+
+impl MessageSplitter for MulticastMessageSplitter {
+    const REPEAT: usize = MULTICAST_UDP_REPEAT;
+
+    type Message = Box<[u8]>;
+
+    fn split_message(&self, message: Self::Message) -> (SocketAddr, Box<[u8]>) {
+        (self.target, message)
+    }
+}
+
+#[expect(unused)]
+struct UnicastMessageSplitter {}
+
+impl MessageSplitter for UnicastMessageSplitter {
+    const REPEAT: usize = UNICAST_UDP_REPEAT;
+
+    type Message = (SocketAddr, Box<[u8]>);
+
+    fn split_message(&self, message: Self::Message) -> (SocketAddr, Box<[u8]>) {
+        (message.0, message.1)
+    }
+}
+
+struct MessageSender<T: MessageSplitter> {
+    sender: Sender<T::Message>,
+}
+
+#[expect(unused)]
+impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
+    fn new(socket: Arc<UdpSocket>, message_splitter: T) -> Self {
+        let (sender, mut receiver) = tokio::sync::mpsc::channel::<T::Message>(10);
+
+        {
+            let handle = spawn_with_name("sender", async move {
+                let tracker = TaskTracker::new();
+
+                loop {
+                    let Some(buffer) = receiver.recv().await else {
+                        event!(Level::INFO, "All senders gone, shutting down");
+                        break;
+                    };
+
+                    let (to, buffer) = message_splitter.split_message(buffer);
+
+                    let socket = socket.clone();
+
+                    spawn_with_name(
+                        "message sender",
+                        tracker.track_future(async move {
+                            // Schedule to send the given message to the given address.
+                            // Implements SOAP over UDP, Appendix I.
+                            let mut delta = rand::rng().random_range(UDP_MIN_DELAY..=UDP_MAX_DELAY);
+
+                            for i in 0..T::REPEAT {
+                                if i != 0 {
+                                    sleep(Duration::from_millis(delta)).await;
+                                    delta = UDP_UPPER_DELAY.min(delta * 2);
+                                }
+
+                                match socket.send_to(buffer.as_ref(), to).await {
+                                    Ok(_) => {},
+                                    Err(err) => {
+                                        event!(Level::WARN, ?err, "Failed to send data");
+                                    },
+                                }
+                            }
+                        }),
+                    );
+                }
+
+                tracker.close();
+                tracker.wait().await;
+            });
+        };
+
+        Self { sender }
+    }
+
+    fn get_listener(&mut self) -> Sender<T::Message> {
+        self.sender.clone()
+    }
+}
+
+// let recv_socket = Arc::new(UdpSocket::from_std(recv_socket.into())?);
+// let multicast2 = MessageSender::<MulticastMessageSplitter>::new(
+//     Arc::clone(&recv_socket),
+//     MulticastMessageSplitter {
+//         target: multicast_address.transport_address,
+//     },
+// );

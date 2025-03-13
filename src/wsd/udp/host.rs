@@ -7,7 +7,6 @@ use hashbrown::HashSet;
 use quick_xml::NsReader;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
@@ -20,39 +19,32 @@ use crate::utils::task::spawn_with_name;
 static HANDLED_MESSAGES: LazyLock<Arc<RwLock<HashSet<String>>>> =
     LazyLock::new(|| Arc::<RwLock<HashSet<String>>>::new(RwLock::new(HashSet::new())));
 
+/// handles WSD requests coming from UDP datagrams.
 pub(crate) struct WSDHost {
+    cancellation_token: CancellationToken,
     config: Arc<Config>,
     address: IpAddr,
-    // udp_message_handler: WSDUDPMessageHandler<'nph>,
-    #[expect(unused)]
-    listener_handle: JoinHandle<()>,
-    multicast: Sender<(MessageType, Box<[u8]>)>,
+    multicast: Sender<Box<[u8]>>,
 }
 
-// impl WSDHost {
-//     pub(crate) fn new(
-//         multicast_handler: &Arc<MulticastHandler<'nph>>,
-//         config: &Arc<Config>,
-//     ) -> Self {
-//         Self {
-//             // udp_message_handler: WSDUDPMessageHandler::new(multicast_handler, config),
-//         }
-//     }
-// }
 impl WSDHost {
-    pub(crate) async fn new(
-        cancellation_token: CancellationToken,
+    pub(crate) async fn init(
+        cancellation_token: &CancellationToken,
         config: Arc<Config>,
         address: IpAddr,
         mut receiver: Receiver<(Arc<[u8]>, SocketAddr)>,
+        multicast: Sender<Box<[u8]>>,
         unicast: Sender<(Box<[u8]>, SocketAddr)>,
-        multicast: Sender<(MessageType, Box<[u8]>)>,
     ) -> Self {
         let m = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES));
 
+        let cancellation_token = cancellation_token.child_token();
+
         // TODO error handler setup
-        let listener_handle = {
+        {
             let config = Arc::clone(&config);
+
+            let cancellation_token = cancellation_token.clone();
 
             spawn_with_name(format!("wsd host ({})", address).as_str(), async move {
                 loop {
@@ -74,11 +66,20 @@ impl WSDHost {
                         match m.deconstruct_message(&buffer).await {
                             Ok(Some(pieces)) => pieces,
                             Ok(None) => {
+                                event!(
+                                    Level::TRACE,
+                                    "XML Message did not have required elements: {}",
+                                    String::from_utf8_lossy(&buffer)
+                                );
                                 continue;
                             },
-                            Err(_err) => {
-                                // TODO LOG ERROR BETTER
-                                println!("ERROR");
+                            Err(err) => {
+                                event!(
+                                    Level::ERROR,
+                                    ?err,
+                                    "Error while decoding XML: {}",
+                                    String::from_utf8_lossy(&buffer)
+                                );
                                 continue;
                             },
                         };
@@ -95,30 +96,39 @@ impl WSDHost {
                         },
                     };
 
-                    let Ok(response) = response else {
-                        // TODO error?
-                        continue;
+                    let response = match response {
+                        Ok(response) => response,
+                        Err(err) => {
+                            event!(
+                                Level::ERROR,
+                                ?action,
+                                ?err,
+                                "Failure to create XML response"
+                            );
+                            continue;
+                        },
                     };
 
                     if let Err(err) = unicast.send((response.into(), from)).await {
-                        event!(Level::ERROR, ?err, "Failed to broadcast");
+                        event!(Level::ERROR, ?err, to = ?from, "Failed to respond to message");
                     }
                 }
-            })
-            .expect("FAILED TO LAUNCH LISTENER")
+            });
         };
 
-        let s = Self {
+        let host = Self {
+            cancellation_token,
             config,
             address,
-            listener_handle,
             multicast,
         };
 
-        // this shouldn't be an await...
-        s.send_hello().await.unwrap();
+        // TODO is this fatal? What should we do?
+        if let Err(err) = host.send_hello().await {
+            event!(Level::ERROR, ?err, "Failed to send hello");
+        }
 
-        s
+        host
     }
 
     // WS-Discovery, Section 4.1, Hello message
@@ -127,10 +137,40 @@ impl WSDHost {
 
         // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
         // TODO move event to here and write properly
+
+        event!(Level::INFO, "scheduling {} message", MessageType::Hello);
+
         Ok(self
             .multicast
-            .send((MessageType::Hello, hello.into_bytes().into_boxed_slice()))
+            .send(hello.into_bytes().into_boxed_slice())
             .await?)
+    }
+
+    /// WS-Discovery, Section 4.2, Bye message
+    async fn send_bye(&self) -> Result<(), eyre::Report> {
+        let bye = Builder::build_bye(self.config.clone())?;
+
+        // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
+        // TODO move event to here and write properly
+
+        event!(Level::INFO, "scheduling {} message", MessageType::Bye);
+        Ok(self
+            .multicast
+            .send(bye.into_bytes().into_boxed_slice())
+            .await?)
+    }
+
+    // or async drop if you will?
+    pub async fn teardown(self, graceful: bool) {
+        // this makes us stop listeneng for probes & resolves
+        // note that this is a child token, so we only cancel ourselves
+        self.cancellation_token.cancel();
+
+        if graceful {
+            if let Err(err) = self.send_bye().await {
+                event!(Level::DEBUG, ?err, "Failed to schedule bye message");
+            }
+        }
     }
 }
 
@@ -151,41 +191,7 @@ fn handle_resolve(
     builder::Builder::build_resolve_matches(config, address).map(String::into_bytes)
 }
 
-// class WSDHost(WSDUDPMessageHandler):
-//     """Class for handling WSD requests coming from UDP datagrams."""
-
-//     message_number: ClassVar[int] = 0
-//     instances: ClassVar[List['WSDHost']] = []
-
-//     def __init__(self, mch: MulticastHandler) -> None:
-//         super().__init__(mch)
-
-//         WSDHost.instances.append(self)
-
-//         self.mch.add_handler(self.mch.recv_socket, self)
-
-//         self.handlers[WSD_PROBE] = self.handle_probe
-//         self.handlers[WSD_RESOLVE] = self.handle_resolve
-
-//         self.send_hello()
-
-//     def cleanup(self) -> None:
-//         super().cleanup()
-//         WSDHost.instances.remove(self)
-
-//     def teardown(self) -> None:
-//         super().teardown()
-//         self.send_bye()
-
 //     def handle_packet(self, msg: str, src: UdpAddress) -> None:
 //         reply = self.handle_message(msg, src)
 //         if reply:
 //             self.enqueue_datagram(reply, src)
-
-//     def send_bye(self) -> None:
-//         """WS-Discovery, Section 4.2, Bye message"""
-//         bye = ElementTree.Element('wsd:Bye')
-//         self.add_endpoint_reference(bye)
-
-//         msg = self.build_message(WSA_DISCOVERY, WSD_BYE, None, bye)
-//         self.enqueue_datagram(msg, self.mch.multicast_address, msg_type='Bye')

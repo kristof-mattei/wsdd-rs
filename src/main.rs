@@ -17,7 +17,6 @@ mod netlink_address_monitor;
 mod network_address;
 mod network_handler;
 mod network_interface;
-mod network_packet_handler;
 mod parsers;
 mod security;
 mod signal_handlers;
@@ -129,7 +128,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
             let _guard = cancellation_token.drop_guard();
 
             match address_monitor.handle_change().await {
-                Ok(()) => (),
+                Ok(()) => event!(Level::INFO, "Address Monitor stopped listening"),
                 Err(error) => event!(Level::ERROR, ?error, "TODO"),
             }
         });
@@ -142,11 +141,13 @@ async fn start_tasks() -> Result<(), eyre::Report> {
             let _guard = cancellation_token.drop_guard();
 
             match network_handler.handle_change().await {
-                Ok(()) => (),
+                Ok(()) => event!(Level::INFO, "Network handler stopped listening"),
                 Err(error) => {
                     event!(Level::ERROR, ?error, "TODO");
                 },
             }
+
+            network_handler.teardown().await;
         });
     }
 
@@ -234,7 +235,8 @@ async fn start_tasks() -> Result<(), eyre::Report> {
 
     // wait for the task that holds the server to exit gracefully
     // it listens to shutdown_send
-    if timeout(Duration::from_millis(10000), tasks.wait())
+    // TODO restore back to 10_000
+    if timeout(Duration::from_millis(1_000_000), tasks.wait())
         .await
         .is_err()
     {

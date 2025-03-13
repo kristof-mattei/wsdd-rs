@@ -133,9 +133,8 @@ impl NetlinkAddressMonitor {
 
     #[expect(clippy::too_many_lines)]
     pub async fn handle_change(&mut self) -> Result<(), eyre::Report> {
-        // we originally had this on the stack (array) but tokio moves it to the heap because of size
-
         loop {
+            // we originally had this on the stack (array) but tokio moves it to the heap because of size
             let mut buffer = vec![MaybeUninit::<u8>::uninit(); 4096];
 
             let mut buffer_slice = buffer.as_mut_slice();
@@ -161,10 +160,6 @@ impl NetlinkAddressMonitor {
             let mut offset = 0;
 
             while offset < bytes_read {
-                // #[expect(clippy::cast_ptr_alignment)]
-                // let message=
-                //     unsafe { base_ptr.byte_add(offset).cast::<ffi::nlmsghdr>().as_ref() }.unwrap();
-
                 let (message, _suffix) = nlmsghdr::ref_from_prefix(&buffer[offset..])
                     .map_err(|error| eyre::Report::msg(error.to_string()))?;
 
@@ -188,11 +183,7 @@ impl NetlinkAddressMonitor {
                     continue;
                 }
 
-                // // decode ifaddrmsg as in if_addr.h
-                // #[expect(clippy::cast_ptr_alignment)]
-                // let ifaddr_message =
-                //     unsafe { base_ptr.byte_add(offset).cast::<ffi::ifaddrmsg>().as_ref() }.unwrap();
-
+                // decode ifaddrmsg as in if_addr.h
                 let (ifaddr_message, _suffix) = ffi::ifaddrmsg::ref_from_prefix(&buffer[offset..])
                     .map_err(|error| eyre::Report::msg(error.to_string()))?;
 
@@ -292,26 +283,25 @@ impl NetlinkAddressMonitor {
                 };
 
                 let command = if message.nlmsg_type == RTM_NEWADDR {
-                    Some(Command::NewAddress {
+                    Command::NewAddress {
                         address: addr,
                         scope: ifaddr_message.ifa_scope,
                         index: ifaddr_message.ifa_index,
-                    })
+                    }
                 } else if message.nlmsg_type == RTM_DELADDR {
-                    Some(Command::DeleteAddress {
+                    Command::DeleteAddress {
                         address: addr,
                         scope: ifaddr_message.ifa_scope,
                         index: ifaddr_message.ifa_index,
-                    })
+                    }
                 } else {
-                    None
+                    // unreachable because we checked baove
+                    unreachable!()
                 };
 
-                if let Some(command) = command {
-                    if let Err(err) = self.channel.send(command).await {
-                        event!(Level::ERROR, ?err, "Failed to announce command");
-                    };
-                }
+                if let Err(err) = self.channel.send(command).await {
+                    event!(Level::ERROR, ?err, "Failed to announce command");
+                };
 
                 offset += align_to(length, align_of::<nlmsghdr>());
             }
