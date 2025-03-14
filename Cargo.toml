@@ -61,7 +61,7 @@ tracing-subscriber = { version = "0.3.19", features = [
     "time",
     "tracing-log",
 ] }
-uuid = { version = "1.15.1", features = ["v1", "v4", "v5"] }
+uuid = { version = "1.16.0", features = ["v1", "v4", "v5"] }
 zerocopy = { version = "0.8.23", features = ["derive"] }
 
 # OpenSSL for musl
