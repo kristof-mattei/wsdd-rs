@@ -35,14 +35,6 @@ pub struct MulticastHandler {
     /// The address and interface we're bound on
     address: NetworkAddress,
 
-    /// receiving multicast traffic
-    recv_socket_wrapper: SocketWithListeners,
-    /// sending multicast from a socket bound to WSD port
-    mc_send_socket_wrapper: SocketWithListeners,
-    /// sending unicast messages from a random port
-    #[expect(unused)]
-    uc_send_socket_wrapper: SocketWithListeners,
-
     /// The multicast group on which we broadcast our messages
     #[expect(unused)]
     multicast_address: UdpAddress,
@@ -52,9 +44,14 @@ pub struct MulticastHandler {
     wsd_client: OnceCell<WSDClient>,
     #[expect(unused)]
     http_server: OnceCell<WSDHttpServer>,
-    multicast: (JoinHandle<()>, Sender<Box<[u8]>>),
-    #[expect(clippy::type_complexity)]
-    unicast: (JoinHandle<()>, Sender<(Box<[u8]>, SocketAddr)>),
+    /// receiving multicast traffic
+    recv_socket_receiver: MessageReceiver,
+    /// sending multicast from a socket bound to WSD port
+    mc_socket_sender: MessageSender<MulticastMessageSplitter>,
+    /// receiving unicast traffic on the multicast port
+    mc_socket_receiver: MessageReceiver,
+    /// sending unicast messages from a random port
+    uc_socket_sender: MessageSender<UnicastMessageSplitter>,
 }
 
 impl MulticastHandler {
@@ -127,118 +124,35 @@ impl MulticastHandler {
             http_listen_address
         );
 
-        // receiver for unicast on WSD port
-        let recv_socket_recv_wrapper =
-            SocketWithListeners::new(UdpSocket::from_std(recv_socket.into())?);
-        // sender & receiver for multicast on WSD port
-        let mc_socket_receive_wrapper =
-            SocketWithListeners::new(UdpSocket::from_std(mc_send_socket.into())?);
-        // sender for unicast on WSD port
-        let uc_socket_send_wrapper =
-            SocketWithListeners::new(UdpSocket::from_std(uc_send_socket.into())?);
+        let recv_socket = Arc::new(UdpSocket::from_std(recv_socket.into())?);
+        let recv_socket_receiver = MessageReceiver::new(Arc::clone(&recv_socket));
 
-        let multicast = {
-            let socket = Arc::clone(&mc_socket_receive_wrapper.socket);
-            let multicast_target = multicast_address.transport_address;
+        let mc_send_socket = Arc::new(UdpSocket::from_std(mc_send_socket.into())?);
+        let mc_socket_sender = MessageSender::new(
+            Arc::clone(&mc_send_socket),
+            MulticastMessageSplitter {
+                target: multicast_address.transport_address,
+            },
+        );
+        let mc_socket_receiver = MessageReceiver::new(Arc::clone(&mc_send_socket));
 
-            let (sender, mut receiver) = tokio::sync::mpsc::channel::<Box<[u8]>>(10);
-
-            let name = format!("multicast handler ({})", multicast_target);
-            let handle = spawn_with_name(name.as_str(), async move {
-                let tracker = TaskTracker::new();
-
-                loop {
-                    let Some(buffer) = receiver.recv().await else {
-                        event!(
-                            Level::INFO,
-                            ?multicast_target,
-                            "All multicast senders gone, shutting down"
-                        );
-                        break;
-                    };
-
-                    let socket = socket.clone();
-
-                    spawn_with_name(
-                        "message sender",
-                        tracker.track_future(async move {
-                            // Schedule to send the given message to the given address.
-                            // Implements SOAP over UDP, Appendix I.
-                            let mut delta = rand::rng().random_range(UDP_MIN_DELAY..=UDP_MAX_DELAY);
-
-                            for i in 0..MULTICAST_UDP_REPEAT {
-                                if i != 0 {
-                                    sleep(Duration::from_millis(delta)).await;
-                                    delta = UDP_UPPER_DELAY.min(delta * 2);
-                                }
-
-                                match socket.send_to(&buffer, multicast_target).await {
-                                    Ok(_) => {},
-                                    Err(err) => {
-                                        event!(
-                                            Level::WARN,
-                                            ?err,
-                                            target = ?multicast_target,
-                                            "Failed to send data"
-                                        );
-                                    },
-                                }
-                            }
-                        }),
-                    );
-                }
-
-                tracker.close();
-                tracker.wait().await;
-            });
-
-            (handle, sender)
-        };
-
-        let unicast = {
-            let socket = Arc::clone(&uc_socket_send_wrapper.socket);
-
-            let (sender, mut receiver) = tokio::sync::mpsc::channel::<(Box<[u8]>, SocketAddr)>(10);
-
-            let socket_name = socket.local_addr().unwrap();
-            let name = format!("unicast handler ({})", socket_name);
-            let handle = spawn_with_name(name.as_str(), async move {
-                loop {
-                    let Some((buf, target)) = receiver.recv().await else {
-                        event!(
-                            Level::INFO,
-                            ?socket_name,
-                            "All unicast senders gone, shutting down"
-                        );
-                        break;
-                    };
-
-                    match socket.send_to(&buf, target).await {
-                        Ok(_) => {},
-                        Err(err) => {
-                            event!(Level::WARN, ?err, target = ?target, "Failed to send data");
-                        },
-                    }
-                }
-            });
-
-            (handle, sender)
-        };
+        let uc_send_socket = Arc::new(UdpSocket::from_std(uc_send_socket.into())?);
+        let uc_socket_sender =
+            MessageSender::new(Arc::clone(&uc_send_socket), UnicastMessageSplitter {});
 
         Ok(Self {
             config: Arc::clone(config),
             cancellation_token,
             address,
-            recv_socket_wrapper: recv_socket_recv_wrapper,
-            mc_send_socket_wrapper: mc_socket_receive_wrapper,
-            uc_send_socket_wrapper: uc_socket_send_wrapper,
             multicast_address,
             http_listen_address,
             wsd_client: OnceCell::new(),
             wsd_host: OnceCell::new(),
             http_server: OnceCell::new(),
-            multicast,
-            unicast,
+            recv_socket_receiver,
+            mc_socket_sender,
+            mc_socket_receiver,
+            uc_socket_sender,
         })
     }
 
@@ -246,9 +160,7 @@ impl MulticastHandler {
         if let Some(host) = self.wsd_host.into_inner() {
             host.teardown(graceful).await;
 
-            // teardown makes the host queue up a goodbye
-
-            // When we are here we have made an honest try to schedule the goodbye message
+            // graceful teardown makes the host queue up a goodbye, so when we're here we have made an honest try to schedule the goodbye message
 
             // host is dropped
         }
@@ -262,13 +174,11 @@ impl MulticastHandler {
 
             // we have to rely on dropping the sender because that is the only way we can have the receiver run to completion
             // a cancellation token and tokio::select might cause the handle to top before parsing the rest of the messages
-            let (multicast_handle, sender) = self.multicast;
-            drop(sender);
-            let _r = multicast_handle.await;
+            let sender = self.mc_socket_sender;
+            sender.teardown().await;
 
-            let (unicast_handle, sender) = self.unicast;
-            drop(sender);
-            let _r = unicast_handle.await;
+            let sender = self.uc_socket_sender;
+            sender.teardown().await;
         }
 
         // since this consumes self, now the sockets etc are closed. We awaited all tasks, and thus are sure that messages were either
@@ -480,9 +390,9 @@ impl MulticastHandler {
                     &self.cancellation_token,
                     Arc::clone(&self.config),
                     self.address.address,
-                    self.recv_socket_wrapper.get_listener().await,
-                    self.multicast.1.clone(),
-                    self.unicast.1.clone(),
+                    self.recv_socket_receiver.get_listener().await,
+                    self.mc_socket_sender.get_sender(),
+                    self.uc_socket_sender.get_sender(),
                 )
                 .await;
 
@@ -507,10 +417,10 @@ impl MulticastHandler {
                     &self.cancellation_token,
                     Arc::clone(&self.config),
                     self.address.address,
-                    self.recv_socket_wrapper.get_listener().await,
-                    self.mc_send_socket_wrapper.get_listener().await,
-                    self.multicast.1.clone(),
-                    self.unicast.1.clone(),
+                    self.recv_socket_receiver.get_listener().await,
+                    self.mc_socket_receiver.get_listener().await,
+                    self.mc_socket_sender.get_sender(),
+                    self.uc_socket_sender.get_sender(),
                 )
                 .await;
 
@@ -521,22 +431,19 @@ impl MulticastHandler {
     }
 }
 
-type Listeners = Arc<RwLock<Vec<Sender<(Arc<[u8]>, SocketAddr)>>>>;
+type Receivers = Arc<RwLock<Vec<Sender<(SocketAddr, Arc<[u8]>)>>>>;
 
-struct SocketWithListeners {
-    listeners: Listeners,
-    socket: Arc<UdpSocket>,
+struct MessageReceiver {
+    listeners: Receivers,
 }
 
-impl SocketWithListeners {
-    fn new(socket: UdpSocket) -> Self {
-        let socket = Arc::new(socket);
-
-        let channels: Listeners = Listeners::new(RwLock::const_new(vec![]));
+impl MessageReceiver {
+    fn new(socket: Arc<UdpSocket>) -> Self {
+        let listeners: Receivers = Receivers::new(RwLock::const_new(vec![]));
 
         {
             let socket = Arc::clone(&socket);
-            let channels = Arc::clone(&channels);
+            let channels = Arc::clone(&listeners);
 
             spawn_with_name(
                 format!("socket receiver ({})", socket.local_addr().unwrap()).as_str(),
@@ -576,7 +483,7 @@ impl SocketWithListeners {
                         let lock = channels.read().await;
 
                         for channel in &*lock {
-                            if let Err(err) = channel.send((Arc::clone(&buffer), from)).await {
+                            if let Err(err) = channel.send((from, Arc::clone(&buffer))).await {
                                 event!(Level::ERROR, ?err, socket = ?socket.local_addr().unwrap(), "Failed to send data to channel");
                             }
                         }
@@ -585,14 +492,11 @@ impl SocketWithListeners {
             );
         }
 
-        Self {
-            listeners: channels,
-            socket,
-        }
+        Self { listeners }
     }
 
-    async fn get_listener(&mut self) -> Receiver<(Arc<[u8]>, SocketAddr)> {
-        let (sender, receiver) = tokio::sync::mpsc::channel::<(Arc<_>, SocketAddr)>(10);
+    async fn get_listener(&mut self) -> Receiver<(SocketAddr, Arc<[u8]>)> {
+        let (sender, receiver) = tokio::sync::mpsc::channel(10);
 
         self.listeners.write().await.push(sender);
 
@@ -608,7 +512,6 @@ trait MessageSplitter {
     fn split_message(&self, message: Self::Message) -> (SocketAddr, Box<[u8]>);
 }
 
-#[expect(unused)]
 struct MulticastMessageSplitter {
     target: SocketAddr,
 }
@@ -623,7 +526,6 @@ impl MessageSplitter for MulticastMessageSplitter {
     }
 }
 
-#[expect(unused)]
 struct UnicastMessageSplitter {}
 
 impl MessageSplitter for UnicastMessageSplitter {
@@ -637,69 +539,65 @@ impl MessageSplitter for UnicastMessageSplitter {
 }
 
 struct MessageSender<T: MessageSplitter> {
+    handler: JoinHandle<()>,
     sender: Sender<T::Message>,
 }
 
-#[expect(unused)]
 impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
     fn new(socket: Arc<UdpSocket>, message_splitter: T) -> Self {
         let (sender, mut receiver) = tokio::sync::mpsc::channel::<T::Message>(10);
 
-        {
-            let handle = spawn_with_name("sender", async move {
-                let tracker = TaskTracker::new();
+        let handler = spawn_with_name("sender", async move {
+            let tracker = TaskTracker::new();
 
-                loop {
-                    let Some(buffer) = receiver.recv().await else {
-                        event!(Level::INFO, "All senders gone, shutting down");
-                        break;
-                    };
+            loop {
+                let Some(buffer) = receiver.recv().await else {
+                    event!(Level::INFO, "All senders gone, shutting down");
+                    break;
+                };
 
-                    let (to, buffer) = message_splitter.split_message(buffer);
+                let (to, buffer) = message_splitter.split_message(buffer);
 
-                    let socket = socket.clone();
+                let socket = socket.clone();
 
-                    spawn_with_name(
-                        "message sender",
-                        tracker.track_future(async move {
-                            // Schedule to send the given message to the given address.
-                            // Implements SOAP over UDP, Appendix I.
-                            let mut delta = rand::rng().random_range(UDP_MIN_DELAY..=UDP_MAX_DELAY);
+                spawn_with_name(
+                    "message sender",
+                    tracker.track_future(async move {
+                        // Schedule to send the given message to the given address.
+                        // Implements SOAP over UDP, Appendix I.
+                        let mut delta = rand::rng().random_range(UDP_MIN_DELAY..=UDP_MAX_DELAY);
 
-                            for i in 0..T::REPEAT {
-                                if i != 0 {
-                                    sleep(Duration::from_millis(delta)).await;
-                                    delta = UDP_UPPER_DELAY.min(delta * 2);
-                                }
-
-                                match socket.send_to(buffer.as_ref(), to).await {
-                                    Ok(_) => {},
-                                    Err(err) => {
-                                        event!(Level::WARN, ?err, "Failed to send data");
-                                    },
-                                }
+                        for i in 0..T::REPEAT {
+                            if i != 0 {
+                                sleep(Duration::from_millis(delta)).await;
+                                delta = UDP_UPPER_DELAY.min(delta * 2);
                             }
-                        }),
-                    );
-                }
 
-                tracker.close();
-                tracker.wait().await;
-            });
-        };
+                            match socket.send_to(buffer.as_ref(), to).await {
+                                Ok(_) => {},
+                                Err(err) => {
+                                    event!(Level::WARN, ?err, "Failed to send data");
+                                },
+                            }
+                        }
+                    }),
+                );
+            }
 
-        Self { sender }
+            tracker.close();
+            tracker.wait().await;
+        });
+
+        Self { handler, sender }
     }
 
-    fn get_listener(&mut self) -> Sender<T::Message> {
+    fn get_sender(&mut self) -> Sender<T::Message> {
         self.sender.clone()
     }
-}
 
-// let recv_socket = Arc::new(UdpSocket::from_std(recv_socket.into())?);
-// let multicast2 = MessageSender::<MulticastMessageSplitter>::new(
-//     Arc::clone(&recv_socket),
-//     MulticastMessageSplitter {
-//         target: multicast_address.transport_address,
-//     },
-// );
+    async fn teardown(self) {
+        drop(self.sender);
+
+        let _r = self.handler.await;
+    }
+}

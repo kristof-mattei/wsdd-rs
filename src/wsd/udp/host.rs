@@ -32,9 +32,9 @@ impl WSDHost {
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
         address: IpAddr,
-        mut receiver: Receiver<(Arc<[u8]>, SocketAddr)>,
+        mut receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
         multicast: Sender<Box<[u8]>>,
-        unicast: Sender<(Box<[u8]>, SocketAddr)>,
+        unicast: Sender<(SocketAddr, Box<[u8]>)>,
     ) -> Self {
         let m = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES));
 
@@ -57,7 +57,7 @@ impl WSDHost {
                         }
                     };
 
-                    let Some((buffer, from)) = message else {
+                    let Some((from, buffer)) = message else {
                         // the end, but we just got it before the cancellation
                         break;
                     };
@@ -109,7 +109,8 @@ impl WSDHost {
                         },
                     };
 
-                    if let Err(err) = unicast.send((response.into(), from)).await {
+                    // return to sender
+                    if let Err(err) = unicast.send((from, response.into())).await {
                         event!(Level::ERROR, ?err, to = ?from, "Failed to respond to message");
                     }
                 }

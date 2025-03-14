@@ -15,10 +15,10 @@ impl WSDClient {
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
         address: IpAddr,
-        mut receiver: Receiver<(Arc<[u8]>, SocketAddr)>,
-        mut receiver2: Receiver<(Arc<[u8]>, SocketAddr)>,
+        mut receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
+        mut receiver2: Receiver<(SocketAddr, Arc<[u8]>)>,
         multicast: Sender<Box<[u8]>>,
-        unicast: Sender<(Box<[u8]>, SocketAddr)>,
+        unicast: Sender<(SocketAddr, Box<[u8]>)>,
     ) -> Self {
         todo!()
     }
