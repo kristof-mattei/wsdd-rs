@@ -316,7 +316,7 @@ fn get_uuid_from_machine() -> Result<Uuid, eyre::Report> {
         let mut content = String::new();
         file.read_to_string(&mut content).ok()?;
 
-        uuid::Uuid::try_parse(&content).ok()
+        uuid::Uuid::try_parse(content.trim()).ok()
     }
 
     // machine uuid: try machine-id file first but also check for hostid (FreeBSD)
