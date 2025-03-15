@@ -6,6 +6,7 @@ use quick_xml::events::Event;
 use quick_xml::name::ResolveResult::Bound;
 use quick_xml::name::{Namespace, ResolveResult};
 use quick_xml::reader::NsReader;
+use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{Level, event};
 use uuid::Uuid;
@@ -26,8 +27,22 @@ struct Header<'r> {
     action: Option<Cow<'r, str>>,
 }
 
-type ParsedHeader<'r> = Result<Header<'r>, eyre::Report>;
+type ParsedHeader<'r> = Result<Header<'r>, quick_xml::errors::Error>;
 type ParsedProbe<'r> = Result<(), eyre::Report>;
+
+#[derive(Error, Debug)]
+pub enum MessageHandlerError {
+    #[error("Missing Body")]
+    MissingBody,
+    #[error("Missing Message Id")]
+    MissingMessageId,
+    #[error("Missing Action")]
+    MissingAction,
+    #[error("Message already processed")]
+    DuplicateMessage,
+    #[error("Error parsing XML")]
+    XmlError(#[from] quick_xml::errors::Error),
+}
 
 impl MessageHandler {
     pub fn new(handled_messages: Arc<RwLock<MaxSizeDeque<String>>>) -> Self {
@@ -39,7 +54,7 @@ impl MessageHandler {
         &self,
         raw: &'r [u8],
         // src: Option<SocketAddr>,
-    ) -> Result<Option<(Cow<'r, str>, Cow<'r, str>, NsReader<&'r [u8]>)>, eyre::Report> {
+    ) -> Result<(Cow<'r, str>, Cow<'r, str>, NsReader<&'r [u8]>), MessageHandlerError> {
         let mut reader = NsReader::from_reader(raw);
 
         let mut message_id = None;
@@ -70,11 +85,11 @@ impl MessageHandler {
         }
 
         let Some(message_id) = message_id else {
-            return Ok(None);
+            return Err(MessageHandlerError::MissingMessageId);
         };
 
         let Some(action) = action else {
-            return Ok(None);
+            return Err(MessageHandlerError::MissingAction);
         };
 
         // check for duplicates
@@ -82,7 +97,7 @@ impl MessageHandler {
             event!(Level::DEBUG, "known message ({}): dropping it", message_id);
 
             // TODO improve reason
-            return Ok(None);
+            return Err(MessageHandlerError::DuplicateMessage);
         }
 
         let action_method = action.rsplit_once('/').unwrap().1;
@@ -108,7 +123,7 @@ impl MessageHandler {
         // }
 
         if !has_body {
-            return Ok(None);
+            return Err(MessageHandlerError::MissingBody);
         };
 
         event!(
@@ -117,7 +132,7 @@ impl MessageHandler {
             String::from_utf8_lossy(raw)
         );
 
-        Ok(Some((message_id, action, reader)))
+        Ok((message_id, action, reader))
     }
 
     /// Implements SOAP-over-UDP Appendix II Item 2
