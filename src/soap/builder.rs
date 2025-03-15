@@ -1,10 +1,8 @@
 use std::borrow::Cow;
 use std::io::{Cursor, Write};
 use std::net::IpAddr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use color_eyre::eyre;
 use hashbrown::HashMap;
 use quick_xml::Writer;
 use quick_xml::events::{BytesDecl, BytesText, Event};
@@ -35,19 +33,26 @@ impl std::fmt::Display for MessageType {
     }
 }
 
-pub struct Builder {
-    config: Arc<Config>,
+pub struct Builder<'config> {
+    config: &'config Config,
     namespaces: HashMap<&'static str, &'static str>,
 }
 
-impl Builder {
+impl<'config> Builder<'config> {
+    fn new(config: &'config Config) -> Self {
+        Self {
+            config,
+            namespaces: HashMap::new(),
+        }
+    }
+
     fn build_message(
         &mut self,
         to_addr: &str,
         action: &str,
         relates_to: Option<&str>,
         body: Option<&[u8]>,
-    ) -> Result<Vec<u8>, eyre::Report> {
+    ) -> Result<Vec<u8>, quick_xml::errors::Error> {
         let response = self.build_message_tree(to_addr, action, relates_to, body)?;
 
         event!(
@@ -70,7 +75,7 @@ impl Builder {
         action: &str,
         relates_to: Option<&str>,
         body: Option<&[u8]>,
-    ) -> Result<Vec<u8>, eyre::Report> {
+    ) -> Result<Vec<u8>, quick_xml::errors::Error> {
         self.namespaces
             .insert("soap", "http://www.w3.org/2003/05/soap-envelope");
         self.namespaces.insert("wsa", WSA_URI);
@@ -137,11 +142,8 @@ impl Builder {
     }
 
     /// WS-Discovery, Section 4.2, Bye message
-    pub fn build_bye(config: Arc<Config>) -> Result<String, eyre::Report> {
-        let mut builder = Builder {
-            config,
-            namespaces: HashMap::new(),
-        };
+    pub fn build_bye(config: &Config) -> Result<String, quick_xml::errors::Error> {
+        let mut builder = Builder::new(config);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
 
@@ -164,11 +166,8 @@ impl Builder {
     }
 
     /// WS-Discovery, Section 4.1, Hello message
-    pub fn build_hello(config: Arc<Config>, xaddr: IpAddr) -> Result<String, eyre::Report> {
-        let mut builder = Builder {
-            config,
-            namespaces: HashMap::new(),
-        };
+    pub fn build_hello(config: &Config, xaddr: IpAddr) -> Result<String, quick_xml::errors::Error> {
+        let mut builder = Builder::new(config);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
 
@@ -195,14 +194,11 @@ impl Builder {
     }
 
     pub fn build_resolve_matches(
-        config: Arc<Config>,
+        config: &Config,
         address: IpAddr,
         relates_to: &str,
-    ) -> Result<String, eyre::Report> {
-        let mut builder = Builder {
-            config,
-            namespaces: HashMap::new(),
-        };
+    ) -> Result<String, quick_xml::errors::Error> {
+        let mut builder = Builder::new(config);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
 
@@ -237,13 +233,10 @@ impl Builder {
     }
 
     pub fn build_probe_matches(
-        config: Arc<Config>,
+        config: &Config,
         relates_to: &str,
-    ) -> Result<String, eyre::Report> {
-        let mut builder = Builder {
-            config,
-            namespaces: HashMap::new(),
-        };
+    ) -> Result<String, quick_xml::errors::Error> {
+        let mut builder = Builder::new(config);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
 
