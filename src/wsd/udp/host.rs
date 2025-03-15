@@ -9,11 +9,11 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
-use crate::constants;
 use crate::soap::builder::{self, Builder, MessageType};
 use crate::soap::parser::{self, MessageHandler};
 use crate::utils::task::spawn_with_name;
 use crate::{config::Config, max_size_deque::MaxSizeDeque};
+use crate::{constants, soap::parser::MessageHandlerError};
 
 static HANDLED_MESSAGES: LazyLock<Arc<RwLock<MaxSizeDeque<String>>>> =
     LazyLock::new(|| Arc::new(RwLock::new(MaxSizeDeque::new(10))));
@@ -63,22 +63,32 @@ impl WSDHost {
 
                     let (message_id, action, body_reader) =
                         match m.deconstruct_message(&buffer).await {
-                            Ok(Some(pieces)) => pieces,
-                            Ok(None) => {
-                                event!(
-                                    Level::TRACE,
-                                    "XML Message did not have required elements: {}",
-                                    String::from_utf8_lossy(&buffer)
-                                );
-                                continue;
-                            },
-                            Err(err) => {
-                                event!(
-                                    Level::ERROR,
-                                    ?err,
-                                    "Error while decoding XML: {}",
-                                    String::from_utf8_lossy(&buffer)
-                                );
+                            Ok(pieces) => pieces,
+                            Err(error) => {
+                                match error {
+                                    MessageHandlerError::DuplicateMessage => {
+                                        // nothing
+                                    },
+                                    missing @ (MessageHandlerError::MissingAction
+                                    | MessageHandlerError::MissingBody
+                                    | MessageHandlerError::MissingMessageId) => {
+                                        event!(
+                                            Level::TRACE,
+                                            ?missing,
+                                            "XML Message did not have required elements: {}",
+                                            String::from_utf8_lossy(&buffer)
+                                        );
+                                    },
+                                    MessageHandlerError::XmlError(error) => {
+                                        event!(
+                                            Level::ERROR,
+                                            ?error,
+                                            "Error while decoding XML: {}",
+                                            String::from_utf8_lossy(&buffer)
+                                        );
+                                    },
+                                }
+
                                 continue;
                             },
                         };
