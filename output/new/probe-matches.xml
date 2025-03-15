@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope
+    xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+    xmlns:pub="http://schemas.microsoft.com/windows/pub/2005/07"
+    xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+    xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+    xmlns:wsdp="http://schemas.xmlsoap.org/ws/2006/02/devprof"
+>
+    <soap:Header>
+        <wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
+        <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches</wsa:Action>
+        <wsa:MessageID>urn:uuid:6edec669-8a02-4ed1-9c8c-b909efa1372b</wsa:MessageID>
+        <wsa:RelatesTo>urn:uuid:aab54951-c490-4642-896d-df399a53bf90</wsa:RelatesTo>
+        <wsd:AppSequence InstanceId="1742007162" SequenceId="urn:uuid:c514f1c2-18d3-4835-96a0-d6827fd690e0" MessageNumber="2" />
+    </soap:Header>
+    <soap:Body>
+        <wsd:ProbeMatches>
+            <wsd:ProbeMatch>
+                <wsa:EndpointReference>
+                    <wsa:Address>urn:uuid:6bf93afb-f524-4e2e-9fa9-82ac80a366dd</wsa:Address>
+                </wsa:EndpointReference>
+                <wsd:Types>wsdp:Device pub:Computer</wsd:Types>
+                <wsd:MetadataVersion>1</wsd:MetadataVersion>
+            </wsd:ProbeMatch>
+        </wsd:ProbeMatches>
+    </soap:Body>
+</soap:Envelope>
