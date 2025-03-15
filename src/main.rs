@@ -12,6 +12,7 @@ mod constants;
 mod ffi;
 mod ffi_wrapper;
 mod helpers;
+mod max_size_deque;
 mod multicast_handler;
 mod netlink_address_monitor;
 mod network_address;
