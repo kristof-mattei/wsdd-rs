@@ -6,16 +6,19 @@ use std::time::Duration;
 use color_eyre::{Section, eyre};
 use rand::Rng;
 use socket2::{Domain, InterfaceIndexOrAddress, Socket, Type};
+use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{OnceCell, RwLock};
+use tokio::task::JoinHandle;
 use tokio::time::sleep;
-use tokio::{net::UdpSocket, task::JoinHandle};
-use tokio_util::{sync::CancellationToken, task::TaskTracker};
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
 
+use crate::config::Config;
 use crate::constants::{
-    self, MULTICAST_UDP_REPEAT, UDP_MAX_DELAY, UDP_MIN_DELAY, UDP_UPPER_DELAY, WSD_HTTP_PORT,
-    WSD_MAX_LEN, WSD_MCAST_GRP_V4, WSD_MCAST_GRP_V6, WSD_UDP_PORT,
+    self, MULTICAST_UDP_REPEAT, UDP_MAX_DELAY, UDP_MIN_DELAY, UDP_UPPER_DELAY, UNICAST_UDP_REPEAT,
+    WSD_HTTP_PORT, WSD_MAX_LEN, WSD_MCAST_GRP_V4, WSD_MCAST_GRP_V6, WSD_UDP_PORT,
 };
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
@@ -25,7 +28,6 @@ use crate::utils::task::spawn_with_name;
 use crate::wsd::http::http_server::WSDHttpServer;
 use crate::wsd::udp::client::WSDClient;
 use crate::wsd::udp::host::WSDHost;
-use crate::{config::Config, constants::UNICAST_UDP_REPEAT};
 
 /// A class for handling multicast traffic on a given interface for a
 /// given address family. It provides multicast sender and receiver sockets

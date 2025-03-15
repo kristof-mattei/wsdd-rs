@@ -11,7 +11,8 @@ use std::net::IpAddr;
 use std::sync::Arc;
 
 use color_eyre::eyre;
-use tokio_util::{sync::CancellationToken, task::TaskTracker};
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
 
 use crate::config::Config;

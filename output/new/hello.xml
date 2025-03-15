@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery" xmlns:wsx="http://schemas.xmlsoap.org/ws/2004/09/mex" xmlns:wsdp="http://schemas.xmlsoap.org/ws/2006/02/devprof" xmlns:pnpx="http://schemas.microsoft.com/windows/pnpx/2005/10" xmlns:pub="http://schemas.microsoft.com/windows/pub/2005/07">
+<soap:Envelope
+    xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+    xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+    xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+>
     <soap:Header>
         <wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To>
         <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Hello</wsa:Action>
-        <wsa:MessageID>urn:uuid:abc33759-f307-11ef-9b3a-d45ddf1e11a9</wsa:MessageID>
-        <wsd:AppSequence InstanceId="1740439974" SequenceId="urn:uuid:abc3cfb5-f307-11ef-9ea5-d45ddf1e11a9" MessageNumber="0" />
+        <wsa:MessageID>urn:uuid:4bd49b60-318d-47e2-b7e2-11680eb5db23</wsa:MessageID>
+        <wsd:AppSequence InstanceId="1742006761" SequenceId="urn:uuid:8841bcb5-af0e-4426-aea9-8b73947af52b" MessageNumber="0" />
     </soap:Header>
     <soap:Body>
         <wsd:Hello>

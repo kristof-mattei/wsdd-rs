@@ -1,10 +1,8 @@
 use std::borrow::Cow;
 use std::io::{Cursor, Write};
 use std::net::IpAddr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use color_eyre::eyre;
 use hashbrown::HashMap;
 use quick_xml::Writer;
 use quick_xml::events::{BytesDecl, BytesText, Event};
@@ -14,7 +12,8 @@ use uuid::Uuid;
 use crate::config::Config;
 use crate::constants::{
     WSA_ANON, WSA_DISCOVERY, WSA_URI, WSD_BYE, WSD_HELLO, WSD_HTTP_PORT, WSD_PROBE_MATCH,
-    WSD_RESOLVE_MATCH, WSD_TYPE_DEVICE_COMPUTER, WSD_URI, XML_WSA_NAMESPACE, XML_WSD_NAMESPACE,
+    WSD_RESOLVE_MATCH, WSD_TYPE_DEVICE_COMPUTER, WSD_URI, XML_PUB_NAMESPACE, XML_WSA_NAMESPACE,
+    XML_WSD_NAMESPACE, XML_WSDP_NAMESPACE,
 };
 use crate::url_ip_addr::UrlIpAddr;
 
@@ -34,20 +33,27 @@ impl std::fmt::Display for MessageType {
     }
 }
 
-pub struct Builder {
-    config: Arc<Config>,
+pub struct Builder<'config> {
+    config: &'config Config,
     namespaces: HashMap<&'static str, &'static str>,
 }
 
-impl Builder {
+impl<'config> Builder<'config> {
+    fn new(config: &'config Config) -> Self {
+        Self {
+            config,
+            namespaces: HashMap::new(),
+        }
+    }
+
     fn build_message(
         &mut self,
         to_addr: &str,
         action: &str,
-        request_header: Option<&str>,
+        relates_to: Option<&str>,
         body: Option<&[u8]>,
-    ) -> Result<Vec<u8>, eyre::Report> {
-        let response = self.build_message_tree(to_addr, action, request_header, body)?;
+    ) -> Result<Vec<u8>, quick_xml::errors::Error> {
+        let response = self.build_message_tree(to_addr, action, relates_to, body)?;
 
         event!(
             Level::DEBUG,
@@ -67,9 +73,9 @@ impl Builder {
         &mut self,
         to_addr: &str,
         action: &str,
-        request_header: Option<&str>,
+        relates_to: Option<&str>,
         body: Option<&[u8]>,
-    ) -> Result<Vec<u8>, eyre::Report> {
+    ) -> Result<Vec<u8>, quick_xml::errors::Error> {
         self.namespaces
             .insert("soap", "http://www.w3.org/2003/05/soap-envelope");
         self.namespaces.insert("wsa", WSA_URI);
@@ -95,12 +101,10 @@ impl Builder {
                         Uuid::new_v4().urn().to_string().as_str(),
                     ))?;
 
-                if let Some(_request_headers) = request_header {
-                    // TODO
-                    // req_msg_id = request_header.find('./wsa:MessageID', namespaces)
-                    // if req_msg_id is not None:
-                    //     relates_to = ElementTree.SubElement(header, 'wsa:RelatesTo')
-                    //     relates_to.text = req_msg_id.text
+                if let Some(relates_to) = relates_to {
+                    writer
+                        .create_element("wsa:RelatesTo")
+                        .write_text_content(BytesText::new(relates_to))?;
                 }
 
                 self.add_header_elements(writer, action)?;
@@ -138,11 +142,8 @@ impl Builder {
     }
 
     /// WS-Discovery, Section 4.2, Bye message
-    pub fn build_bye(config: Arc<Config>) -> Result<String, eyre::Report> {
-        let mut builder = Builder {
-            config,
-            namespaces: HashMap::new(),
-        };
+    pub fn build_bye(config: &Config) -> Result<String, quick_xml::errors::Error> {
+        let mut builder = Builder::new(config);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
 
@@ -165,11 +166,8 @@ impl Builder {
     }
 
     /// WS-Discovery, Section 4.1, Hello message
-    pub fn build_hello(config: Arc<Config>, xaddr: IpAddr) -> Result<String, eyre::Report> {
-        let mut builder = Builder {
-            config,
-            namespaces: HashMap::new(),
-        };
+    pub fn build_hello(config: &Config, xaddr: IpAddr) -> Result<String, quick_xml::errors::Error> {
+        let mut builder = Builder::new(config);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
 
@@ -196,13 +194,11 @@ impl Builder {
     }
 
     pub fn build_resolve_matches(
-        config: Arc<Config>,
+        config: &Config,
         address: IpAddr,
-    ) -> Result<String, eyre::Report> {
-        let mut builder = Builder {
-            config,
-            namespaces: HashMap::new(),
-        };
+        relates_to: &str,
+    ) -> Result<String, quick_xml::errors::Error> {
+        let mut builder = Builder::new(config);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
 
@@ -229,18 +225,18 @@ impl Builder {
         let message = builder.build_message(
             WSA_ANON,
             WSD_RESOLVE_MATCH,
-            None,
+            Some(relates_to),
             Some(&writer.into_inner().into_inner()),
         )?;
 
         Ok(String::from_utf8(message).unwrap())
     }
 
-    pub fn build_probe_matches(config: Arc<Config>) -> Result<String, eyre::Report> {
-        let mut builder = Builder {
-            config,
-            namespaces: HashMap::new(),
-        };
+    pub fn build_probe_matches(
+        config: &Config,
+        relates_to: &str,
+    ) -> Result<String, quick_xml::errors::Error> {
+        let mut builder = Builder::new(config);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
 
@@ -265,7 +261,7 @@ impl Builder {
         let message = builder.build_message(
             WSA_ANON,
             WSD_PROBE_MATCH,
-            None,
+            Some(relates_to),
             Some(&writer.into_inner().into_inner()),
         )?;
 
@@ -310,6 +306,8 @@ impl Builder {
             .write_text_content(BytesText::new(WSD_TYPE_DEVICE_COMPUTER))?;
 
         self.namespaces.insert("wsd", XML_WSD_NAMESPACE);
+        self.namespaces.insert("wsdp", XML_WSDP_NAMESPACE);
+        self.namespaces.insert("pub", XML_PUB_NAMESPACE);
 
         Ok(writer)
     }

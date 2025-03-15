@@ -44,6 +44,7 @@ libc = "0.2.171"
 quick-xml = "0.37.2"
 rand = "0.9.0"
 socket2 = { version = "0.5.8", features = ["all"] }
+thiserror = "2.0.12"
 tokio = { version = "1.44.1", features = [
     "rt-multi-thread",
     "macros",
