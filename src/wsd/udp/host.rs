@@ -3,21 +3,20 @@ use std::string::String;
 use std::sync::{Arc, LazyLock};
 
 use color_eyre::eyre;
-use hashbrown::HashSet;
 use quick_xml::NsReader;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
-use crate::config::Config;
 use crate::constants;
 use crate::soap::builder::{self, Builder, MessageType};
 use crate::soap::parser::{self, MessageHandler};
 use crate::utils::task::spawn_with_name;
+use crate::{config::Config, max_size_deque::MaxSizeDeque};
 
-static HANDLED_MESSAGES: LazyLock<Arc<RwLock<HashSet<String>>>> =
-    LazyLock::new(|| Arc::<RwLock<HashSet<String>>>::new(RwLock::new(HashSet::new())));
+static HANDLED_MESSAGES: LazyLock<Arc<RwLock<MaxSizeDeque<String>>>> =
+    LazyLock::new(|| Arc::new(RwLock::new(MaxSizeDeque::new(10))));
 
 /// handles WSD requests coming from UDP datagrams.
 pub(crate) struct WSDHost {

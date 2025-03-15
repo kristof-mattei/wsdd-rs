@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use color_eyre::eyre;
-use hashbrown::HashSet;
 use quick_xml::events::Event;
 use quick_xml::name::ResolveResult::Bound;
 use quick_xml::name::{Namespace, ResolveResult};
@@ -16,7 +15,7 @@ use crate::constants::{
 };
 
 pub struct MessageHandler {
-    handled_messages: Arc<RwLock<HashSet<String>>>,
+    handled_messages: Arc<RwLock<MaxSizeDeque<String>>>,
 }
 
 struct Header<'r> {
@@ -28,7 +27,7 @@ type ParsedHeader<'r> = Result<Header<'r>, eyre::Report>;
 type ParsedProbe<'r> = Result<(), eyre::Report>;
 
 impl MessageHandler {
-    pub fn new(handled_messages: Arc<RwLock<HashSet<String>>>) -> Self {
+    pub fn new(handled_messages: Arc<RwLock<MaxSizeDeque<String>>>) -> Self {
         Self { handled_messages }
     }
 
@@ -119,13 +118,19 @@ impl MessageHandler {
 
     /// Implements SOAP-over-UDP Appendix II Item 2
     async fn is_duplicated_msg(&self, message_id: &str) -> bool {
-        if self.handled_messages.read().await.contains(message_id) {
+        if self
+            .handled_messages
+            .read()
+            .await
+            .iter()
+            .any(|m| m == message_id)
+        {
             true
         } else {
             self.handled_messages
                 .write()
                 .await
-                .insert(message_id.to_owned());
+                .push_back(message_id.to_owned());
 
             false
         }
