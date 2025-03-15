@@ -11,12 +11,10 @@ use tokio::sync::RwLock;
 use tracing::{Level, event};
 use uuid::Uuid;
 
-use crate::{
-    constants::{
-        WSA_URI, WSD_TYPE_DEVICE, XML_SOAP_NAMESPACE, XML_WSA_NAMESPACE, XML_WSD_NAMESPACE,
-    },
-    max_size_deque::MaxSizeDeque,
+use crate::constants::{
+    WSA_URI, WSD_TYPE_DEVICE, XML_SOAP_NAMESPACE, XML_WSA_NAMESPACE, XML_WSD_NAMESPACE,
 };
+use crate::max_size_deque::MaxSizeDeque;
 
 pub struct MessageHandler {
     handled_messages: Arc<RwLock<MaxSizeDeque<String>>>,

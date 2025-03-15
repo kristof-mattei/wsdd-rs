@@ -1,4 +1,5 @@
-use std::collections::{VecDeque, vec_deque::Iter};
+use std::collections::VecDeque;
+use std::collections::vec_deque::Iter;
 
 use delegate::delegate;
 

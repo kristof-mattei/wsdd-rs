@@ -11,13 +11,13 @@ use quick_xml::events::{BytesDecl, BytesText, Event};
 use tracing::{Level, event};
 use uuid::Uuid;
 
+use crate::config::Config;
 use crate::constants::{
     WSA_ANON, WSA_DISCOVERY, WSA_URI, WSD_BYE, WSD_HELLO, WSD_HTTP_PORT, WSD_PROBE_MATCH,
-    WSD_RESOLVE_MATCH, WSD_TYPE_DEVICE_COMPUTER, WSD_URI, XML_WSA_NAMESPACE, XML_WSD_NAMESPACE,
-    XML_WSDP_NAMESPACE,
+    WSD_RESOLVE_MATCH, WSD_TYPE_DEVICE_COMPUTER, WSD_URI, XML_PUB_NAMESPACE, XML_WSA_NAMESPACE,
+    XML_WSD_NAMESPACE, XML_WSDP_NAMESPACE,
 };
 use crate::url_ip_addr::UrlIpAddr;
-use crate::{config::Config, constants::XML_PUB_NAMESPACE};
 
 static MESSAGES_BUILT: AtomicU64 = AtomicU64::new(0);
 
