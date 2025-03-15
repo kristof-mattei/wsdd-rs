@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope
+    xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+    xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+    xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+    xmlns:wsx="http://schemas.xmlsoap.org/ws/2004/09/mex"
+    xmlns:wsdp="http://schemas.xmlsoap.org/ws/2006/02/devprof"
+    xmlns:pnpx="http://schemas.microsoft.com/windows/pnpx/2005/10"
+    xmlns:pub="http://schemas.microsoft.com/windows/pub/2005/07"
+>
+    <soap:Header>
+        <wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To>
+        <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Bye</wsa:Action>
+        <wsa:MessageID>urn:uuid:6e90ac26-013c-11f0-aecd-d45ddf1e11a9</wsa:MessageID>
+        <wsd:AppSequence InstanceId="1742001935" SequenceId="urn:uuid:6e90aee0-013c-11f0-9a88-d45ddf1e11a9" MessageNumber="1" />
+    </soap:Header>
+    <soap:Body>
+        <wsd:Bye>
+            <wsa:EndpointReference>
+                <wsa:Address>urn:uuid:6bf93afb-f524-4e2e-9fa9-82ac80a366dd</wsa:Address>
+            </wsa:EndpointReference>
+        </wsd:Bye>
+    </soap:Body>
+</soap:Envelope>

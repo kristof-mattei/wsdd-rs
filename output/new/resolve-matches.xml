@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope
+    xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+    xmlns:pub="http://schemas.microsoft.com/windows/pub/2005/07"
+    xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+    xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+    xmlns:wsdp="http://schemas.xmlsoap.org/ws/2006/02/devprof"
+>
+    <soap:Header>
+        <wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
+        <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ResolveMatches</wsa:Action>
+        <wsa:MessageID>urn:uuid:3c744914-005a-4dad-9357-c3e417bff857</wsa:MessageID>
+        <wsa:RelatesTo>urn:uuid:f5ba2be1-8d95-4797-ae4a-c3de0879b47c</wsa:RelatesTo>
+        <wsd:AppSequence InstanceId="1742007025" SequenceId="urn:uuid:7de23164-d795-4fb3-81f3-58ff10bfa0d0" MessageNumber="1" />
+    </soap:Header>
+    <soap:Body>
+        <wsd:ResolveMatches>
+            <wsd:ResolveMatch>
+                <wsa:EndpointReference>
+                    <wsa:Address>urn:uuid:6bf93afb-f524-4e2e-9fa9-82ac80a366dd</wsa:Address>
+                </wsa:EndpointReference>
+                <wsd:Types>wsdp:Device pub:Computer</wsd:Types>
+                <wsd:XAddrs>http://192.168.12.5:5357/6bf93afb-f524-4e2e-9fa9-82ac80a366dd</wsd:XAddrs>
+                <wsd:MetadataVersion>1</wsd:MetadataVersion>
+            </wsd:ResolveMatch>
+        </wsd:ResolveMatches>
+    </soap:Body>
+</soap:Envelope>
