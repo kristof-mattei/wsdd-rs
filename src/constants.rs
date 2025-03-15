@@ -28,11 +28,9 @@ pub const XML_WSA_NAMESPACE: &str = WSA_URI;
 pub const XML_WSD_NAMESPACE: &str = WSD_URI;
 #[expect(unused)]
 pub const XML_WSX_NAMESPACE: &str = "http://schemas.xmlsoap.org/ws/2004/09/mex";
-#[expect(unused)]
 pub const XML_WSDP_NAMESPACE: &str = WSDP_URI;
 #[expect(unused)]
 pub const XML_PNPX_NAMESPACE: &str = "http://schemas.microsoft.com/windows/pnpx/2005/10";
-#[expect(unused)]
 pub const XML_PUB_NAMESPACE: &str = "http://schemas.microsoft.com/windows/pub/2005/07";
 
 // WSD_MAX_KNOWN_MESSAGES: int = 10

@@ -85,10 +85,16 @@ impl WSDHost {
 
                     // handle based on action
                     let response = match action.as_ref() {
-                        constants::WSD_PROBE => handle_probe(Arc::clone(&config), body_reader),
-                        constants::WSD_RESOLVE => {
-                            handle_resolve(Arc::clone(&config), address, config.uuid, body_reader)
+                        constants::WSD_PROBE => {
+                            handle_probe(Arc::clone(&config), &message_id, body_reader)
                         },
+                        constants::WSD_RESOLVE => handle_resolve(
+                            Arc::clone(&config),
+                            address,
+                            config.uuid,
+                            &message_id,
+                            body_reader,
+                        ),
                         _ => {
                             event!(Level::DEBUG, "unhandled action {}/{}", action, message_id);
                             continue;
@@ -174,21 +180,26 @@ impl WSDHost {
     }
 }
 
-fn handle_probe(config: Arc<Config>, mut reader: NsReader<&[u8]>) -> Result<Vec<u8>, eyre::Report> {
+fn handle_probe(
+    config: Arc<Config>,
+    relates_to: &str,
+    mut reader: NsReader<&[u8]>,
+) -> Result<Vec<u8>, eyre::Report> {
     parser::parse_probe_body(&mut reader)?;
 
-    builder::Builder::build_probe_matches(config).map(String::into_bytes)
+    builder::Builder::build_probe_matches(config, relates_to).map(String::into_bytes)
 }
 
 fn handle_resolve(
     config: Arc<Config>,
     address: IpAddr,
     target_uuid: uuid::Uuid,
+    relates_to: &str,
     mut reader: NsReader<&[u8]>,
 ) -> Result<Vec<u8>, eyre::Report> {
     parser::parse_resolve_body(&mut reader, target_uuid)?;
 
-    builder::Builder::build_resolve_matches(config, address).map(String::into_bytes)
+    builder::Builder::build_resolve_matches(config, address, relates_to).map(String::into_bytes)
 }
 
 //     def handle_packet(self, msg: str, src: UdpAddress) -> None:
