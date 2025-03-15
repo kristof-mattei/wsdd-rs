@@ -81,6 +81,7 @@ impl MessageHandler {
         if self.is_duplicated_msg(message_id.as_ref()).await {
             event!(Level::DEBUG, "known message ({}): dropping it", message_id);
 
+            // TODO improve reason
             return Ok(None);
         }
 
