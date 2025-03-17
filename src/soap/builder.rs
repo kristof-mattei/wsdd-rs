@@ -8,12 +8,13 @@ use quick_xml::Writer;
 use quick_xml::events::{BytesDecl, BytesText, Event};
 use tracing::{Level, event};
 use uuid::Uuid;
+use uuid::fmt::Urn;
 
 use crate::config::Config;
 use crate::constants::{
-    WSA_ANON, WSA_DISCOVERY, WSA_URI, WSD_BYE, WSD_HELLO, WSD_HTTP_PORT, WSD_PROBE_MATCH,
-    WSD_RESOLVE_MATCH, WSD_TYPE_DEVICE_COMPUTER, WSD_URI, XML_PUB_NAMESPACE, XML_WSA_NAMESPACE,
-    XML_WSD_NAMESPACE, XML_WSDP_NAMESPACE,
+    WSA_ANON, WSA_DISCOVERY, WSA_URI, WSD_BYE, WSD_HELLO, WSD_HTTP_PORT, WSD_PROBE,
+    WSD_PROBE_MATCH, WSD_RESOLVE, WSD_RESOLVE_MATCH, WSD_TYPE_DEVICE, WSD_TYPE_DEVICE_COMPUTER,
+    WSD_URI, XML_PUB_NAMESPACE, XML_WSA_NAMESPACE, XML_WSD_NAMESPACE, XML_WSDP_NAMESPACE,
 };
 use crate::url_ip_addr::UrlIpAddr;
 
@@ -22,6 +23,7 @@ static MESSAGES_BUILT: AtomicU64 = AtomicU64::new(0);
 pub enum MessageType {
     Hello,
     Bye,
+    Probe,
 }
 
 impl std::fmt::Display for MessageType {
@@ -29,6 +31,7 @@ impl std::fmt::Display for MessageType {
         match self {
             MessageType::Hello => write!(f, "Hello"),
             MessageType::Bye => write!(f, "Bye"),
+            MessageType::Probe => write!(f, "Probe"),
         }
     }
 }
@@ -52,13 +55,13 @@ impl<'config> Builder<'config> {
         action: &str,
         relates_to: Option<&str>,
         body: Option<&[u8]>,
-    ) -> Result<Vec<u8>, quick_xml::errors::Error> {
+    ) -> Result<(Vec<u8>, Urn), quick_xml::errors::Error> {
         let response = self.build_message_tree(to_addr, action, relates_to, body)?;
 
         event!(
             Level::DEBUG,
             "constructed xml for WSD message: {}",
-            String::from_utf8_lossy(&response).as_ref()
+            String::from_utf8_lossy(&response.0).as_ref()
         );
 
         Ok(response)
@@ -75,10 +78,12 @@ impl<'config> Builder<'config> {
         action: &str,
         relates_to: Option<&str>,
         body: Option<&[u8]>,
-    ) -> Result<Vec<u8>, quick_xml::errors::Error> {
+    ) -> Result<(Vec<u8>, Urn), quick_xml::errors::Error> {
         self.namespaces
             .insert("soap", "http://www.w3.org/2003/05/soap-envelope");
         self.namespaces.insert("wsa", WSA_URI);
+
+        let message_id = Uuid::new_v4().urn();
 
         let mut header_and_body = Writer::new(Cursor::new(Vec::new()));
 
@@ -97,9 +102,7 @@ impl<'config> Builder<'config> {
                 // and MS uses v4
                 writer
                     .create_element("wsa:MessageID")
-                    .write_text_content(BytesText::new(
-                        Uuid::new_v4().urn().to_string().as_str(),
-                    ))?;
+                    .write_text_content(BytesText::new(&message_id.to_string()))?;
 
                 if let Some(relates_to) = relates_to {
                     writer
@@ -138,7 +141,7 @@ impl<'config> Builder<'config> {
                     .write_all(&header_and_body.into_inner().into_inner())
             })?;
 
-        Ok(envelope.into_inner().into_inner())
+        Ok((envelope.into_inner().into_inner(), message_id))
     }
 
     /// WS-Discovery, Section 4.2, Bye message
@@ -162,7 +165,7 @@ impl<'config> Builder<'config> {
             Some(&writer.into_inner().into_inner()),
         )?;
 
-        Ok(String::from_utf8(message).unwrap())
+        Ok(String::from_utf8(message.0).unwrap())
     }
 
     /// WS-Discovery, Section 4.1, Hello message
@@ -190,7 +193,60 @@ impl<'config> Builder<'config> {
             Some(&writer.into_inner().into_inner()),
         )?;
 
-        Ok(String::from_utf8(message).unwrap())
+        Ok(String::from_utf8(message.0).unwrap())
+    }
+
+    // WS-Discovery, Section 4.3, Probe message
+    pub fn build_probe(config: &Config) -> Result<(String, Urn), quick_xml::errors::Error> {
+        let mut builder = Builder::new(config);
+
+        let mut writer = Writer::new(Cursor::new(Vec::new()));
+
+        // xml, i = self.build_message_tree(WSA_DISCOVERY, WSD_PROBE, None, probe)
+
+        writer
+            .create_element("wsd:Probe")
+            .write_inner_content(|writer| {
+                builder.add_types(writer, WSD_TYPE_DEVICE)?;
+
+                Ok(())
+            })?;
+
+        let message = builder.build_message(
+            WSA_DISCOVERY,
+            WSD_PROBE,
+            None,
+            Some(&writer.into_inner().into_inner()),
+        )?;
+
+        Ok((String::from_utf8(message.0).unwrap(), message.1))
+    }
+
+    // WS-Discovery, Section 6.1, Resolve message
+    pub fn build_resolve(
+        config: &Config,
+        endpoint: &str,
+    ) -> Result<(String, Urn), quick_xml::errors::Error> {
+        let mut builder = Builder::new(config);
+
+        let mut writer = Writer::new(Cursor::new(Vec::new()));
+
+        writer
+            .create_element("wsd:Resolve")
+            .write_inner_content(|writer| {
+                builder.add_endpoint_reference(writer, Some(endpoint))?;
+
+                Ok(())
+            })?;
+
+        let message = builder.build_message(
+            WSA_DISCOVERY,
+            WSD_RESOLVE,
+            None,
+            Some(&writer.into_inner().into_inner()),
+        )?;
+
+        Ok((String::from_utf8(message.0).unwrap(), message.1))
     }
 
     pub fn build_resolve_matches(
@@ -229,7 +285,7 @@ impl<'config> Builder<'config> {
             Some(&writer.into_inner().into_inner()),
         )?;
 
-        Ok(String::from_utf8(message).unwrap())
+        Ok(String::from_utf8(message.0).unwrap())
     }
 
     pub fn build_probe_matches(
@@ -265,7 +321,7 @@ impl<'config> Builder<'config> {
             Some(&writer.into_inner().into_inner()),
         )?;
 
-        Ok(String::from_utf8(message).unwrap())
+        Ok(String::from_utf8(message.0).unwrap())
     }
 
     fn add_header_elements<'element, 'result>(
