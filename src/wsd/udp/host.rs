@@ -1,34 +1,31 @@
 use std::net::{IpAddr, SocketAddr};
 use std::string::String;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
+use std::time::Duration;
 
 use color_eyre::eyre;
 use quick_xml::NsReader;
-use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
+use super::HANDLED_MESSAGES;
 use crate::config::Config;
 use crate::constants;
-use crate::max_size_deque::MaxSizeDeque;
 use crate::soap::builder::{self, Builder, MessageType};
 use crate::soap::parser::{self, MessageHandler, MessageHandlerError};
 use crate::utils::task::spawn_with_name;
 
-static HANDLED_MESSAGES: LazyLock<Arc<RwLock<MaxSizeDeque<String>>>> =
-    LazyLock::new(|| Arc::new(RwLock::new(MaxSizeDeque::new(10))));
-
 /// handles WSD requests coming from UDP datagrams.
-pub(crate) struct WSDHost {
+pub struct WSDHost {
+    address: IpAddr,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    address: IpAddr,
     multicast: Sender<Box<[u8]>>,
 }
 
 impl WSDHost {
-    pub(crate) async fn init(
+    pub async fn init(
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
         address: IpAddr,
@@ -47,14 +44,20 @@ impl WSDHost {
         );
 
         let host = Self {
+            address,
             cancellation_token,
             config,
-            address,
             multicast,
         };
 
-        // TODO is this fatal? What should we do?
+        // avoid packet storm when hosts come up by delaying initial hello
+        tokio::time::sleep(Duration::from_millis(rand::random_range(
+            0..=constants::APP_MAX_DELAY,
+        )))
+        .await;
+
         if let Err(err) = host.send_hello().await {
+            // TODO is this fatal? What should we do?
             event!(Level::ERROR, ?err, "Failed to send hello");
         }
 
@@ -82,10 +85,11 @@ impl WSDHost {
         // TODO move event to here and write properly
         event!(Level::INFO, "scheduling {} message", MessageType::Hello);
 
-        Ok(self
-            .multicast
+        self.multicast
             .send(hello.into_bytes().into_boxed_slice())
-            .await?)
+            .await?;
+
+        Ok(())
     }
 
     /// WS-Discovery, Section 4.2, Bye message
