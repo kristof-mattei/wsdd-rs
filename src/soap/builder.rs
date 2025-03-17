@@ -210,7 +210,7 @@ impl<'config> Builder<'config> {
                     .write_inner_content(|writer| {
                         builder.add_endpoint_reference(writer, None)?;
 
-                        builder.add_types(writer)?;
+                        builder.add_types(writer, WSD_TYPE_DEVICE_COMPUTER)?;
 
                         builder.add_xaddr(writer, address)?;
 
@@ -248,7 +248,7 @@ impl<'config> Builder<'config> {
                     .write_inner_content(|writer| {
                         builder.add_endpoint_reference(writer, None)?;
 
-                        builder.add_types(writer)?;
+                        builder.add_types(writer, WSD_TYPE_DEVICE_COMPUTER)?;
 
                         builder.add_metadata_version(writer)?;
 
@@ -297,13 +297,14 @@ impl<'config> Builder<'config> {
     fn add_types<'element, 'result>(
         &mut self,
         element: &'element mut Writer<Cursor<Vec<u8>>>,
+        types: &str,
     ) -> Result<&'result mut Writer<Cursor<Vec<u8>>>, std::io::Error>
     where
         'element: 'result,
     {
         let writer = element
             .create_element("wsd:Types")
-            .write_text_content(BytesText::new(WSD_TYPE_DEVICE_COMPUTER))?;
+            .write_text_content(BytesText::new(types))?;
 
         self.namespaces.insert("wsd", XML_WSD_NAMESPACE);
         self.namespaces.insert("wsdp", XML_WSDP_NAMESPACE);
