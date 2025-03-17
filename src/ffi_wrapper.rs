@@ -24,7 +24,7 @@ macro_rules! syscall {
 
 #[expect(unused)]
 /// Caller must ensure `T` is the correct type for `opt` and `val`.
-pub(crate) unsafe fn setsockopt<F: AsFd, T>(
+pub unsafe fn setsockopt<F: AsFd, T>(
     fd: F,
     opt: c_int,
     val: c_int,

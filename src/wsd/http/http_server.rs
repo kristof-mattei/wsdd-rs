@@ -1,8 +1,8 @@
-pub(crate) struct WSDHttpServer {
+pub struct WSDHttpServer {
     // multicast_handler: Arc<MulticastHandler<'nph>>,
 }
 // impl<'nph> WSDHttpServer<'nph> {
-//     pub(crate) fn new(multicast_handler: &Arc<MulticastHandler<'nph>>) -> Self {
+//     pub fn new(multicast_handler: &Arc<MulticastHandler<'nph>>) -> Self {
 //         Self {
 //             multicast_handler: Arc::clone(multicast_handler),
 //         }

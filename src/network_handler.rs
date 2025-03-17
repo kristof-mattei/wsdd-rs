@@ -342,7 +342,7 @@ impl NetworkHandler {
         }
     }
 
-    pub(crate) fn set_active(&mut self) {
+    pub fn set_active(&mut self) {
         self.active = true;
     }
 }
