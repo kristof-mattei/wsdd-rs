@@ -92,6 +92,7 @@ pub const UDP_MAX_DELAY: u64 = 250;
 // UDP_UPPER_DELAY: int = 500
 pub const UDP_UPPER_DELAY: u64 = 500;
 
-// # servers must recond in 4 seconds after probe arrives
-// PROBE_TIMEOUT: int = 4
+// # servers must respond in 4 seconds after probe arrives
+pub const PROBE_TIMEOUT: u128 = 4000;
 // MAX_STARTUP_PROBE_DELAY: int = 3
+pub const APP_MAX_DELAY: u64 = 500;
