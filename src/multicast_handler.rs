@@ -46,13 +46,13 @@ pub struct MulticastHandler {
     wsd_client: OnceCell<WSDClient>,
     #[expect(unused)]
     http_server: OnceCell<WSDHttpServer>,
-    /// receiving multicast traffic
+    /// receiving multicast traffic on the WSD Port
     recv_socket_receiver: MessageReceiver,
-    /// sending multicast from a socket bound to WSD port
+    /// sending multicast from a socket bound to random / user provided port
     mc_socket_sender: MessageSender<MulticastMessageSplitter>,
-    /// receiving unicast traffic on the multicast port
+    /// receiving unicast traffic on the random / user provided port
     mc_socket_receiver: MessageReceiver,
-    /// sending unicast messages from a random port
+    /// sending unicast messages from the WSD Port
     uc_socket_sender: MessageSender<UnicastMessageSplitter>,
 }
 
@@ -212,30 +212,18 @@ impl MulticastHandler {
             interface,
         );
 
-        // v6: member_request = { multicast_addr, intf_idx }
-        // mreq = (socket.inet_pton(self.address.family, WSD_MCAST_GRP_V6) + struct.pack('@I', idx))
-        // self.recv_socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
         // TODO handle error
         recv_socket
             .join_multicast_v6(&constants::WSD_MCAST_GRP_V6, idx)
             .unwrap();
 
-        // self.recv_socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
         // TODO error
         recv_socket.set_only_v6(true).unwrap();
 
-        // Could anyone ask the Linux folks for the rationale for this!?
-        // if platform.system() == 'Linux':
-        //     try:
-        //         # supported starting from Linux 4.20
-        //         IPV6_MULTICAST_ALL = 29
-        //         self.recv_socket.setsockopt(socket.IPPROTO_IPV6, IPV6_MULTICAST_ALL, 0)
-
         // TODO error
+        // https://github.com/torvalds/linux/commit/15033f0457dca569b284bef0c8d3ad55fb37eacb
         if let Err(err) = recv_socket.set_multicast_all_v6(false) {
-            // except OSError as e:
-            //  logger.warning('cannot unset all_multicast: {}'.format(e))
-            event!(Level::WARN, ?err, "cannot unset all_multicast");
+            event!(Level::WARN, ?err, "cannot unset IPV6_MULTICAST_ALL");
         }
 
         // bind to network interface, i.e. scope and handle OS differences,
@@ -382,7 +370,7 @@ impl MulticastHandler {
         Ok((multicast_address, listen_address))
     }
 
-    pub(crate) async fn enable_wsd_host(&mut self) {
+    pub async fn enable_wsd_host(&mut self) {
         self.wsd_host
             .get_or_init(|| async {
                 // interests:
@@ -404,11 +392,7 @@ impl MulticastHandler {
             .await;
     }
 
-    pub(crate) fn enable_http_server(&self) {
-        // http_server = Some(WSDHttpServer::new(&multicast_handler));
-    }
-
-    pub(crate) async fn enable_wsd_client(&mut self) {
+    pub async fn enable_wsd_client(&mut self) {
         self.wsd_client
             .get_or_init(|| async {
                 // interests:
@@ -420,7 +404,6 @@ impl MulticastHandler {
                     Arc::clone(&self.config),
                     self.address.address,
                     self.recv_socket_receiver.get_listener().await,
-                    self.mc_socket_receiver.get_listener().await,
                     self.mc_socket_sender.get_sender(),
                     self.uc_socket_sender.get_sender(),
                 )
@@ -430,6 +413,10 @@ impl MulticastHandler {
                 client
             })
             .await;
+    }
+
+    pub fn enable_http_server(&self) {
+        // http_server = Some(WSDHttpServer::new(&multicast_handler));
     }
 }
 
