@@ -1,3 +1,4 @@
+pub mod generic;
 pub mod probe;
 pub mod resolve;
 
@@ -162,6 +163,7 @@ fn parse_header<'r>(reader: &mut NsReader<&'r [u8]>) -> ParsedHeader<'r> {
         match reader.read_resolved_event()? {
             (Bound(Namespace(ns)), Event::Start(e)) => {
                 if ns == WSA_URI.as_bytes() {
+                    // header items can be in any order, as per SOAP 1.1 and 1.2
                     if e.name().local_name().as_ref() == b"MessageID" {
                         message_id = Some(reader.read_text(e.to_end().name())?);
                     } else if e.name().local_name().as_ref() == b"Action" {
