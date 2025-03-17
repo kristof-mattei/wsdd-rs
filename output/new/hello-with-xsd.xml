@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.w3.org/2003/05/soap-envelope http://www.w3.org/2003/05/soap-envelope
+                        http://schemas.xmlsoap.org/ws/2005/04/discovery http://schemas.xmlsoap.org/ws/2005/04/discovery/ws-discovery.xsd"
+    xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+    xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+    xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+>
+    <soap:Header>
+        <wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To>
+        <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Hello</wsa:Action>
+        <wsa:MessageID>urn:uuid:4bd49b60-318d-47e2-b7e2-11680eb5db23</wsa:MessageID>
+        <wsd:AppSequence InstanceId="1742006761" SequenceId="urn:uuid:8841bcb5-af0e-4426-aea9-8b73947af52b" MessageNumber="0" />
+    </soap:Header>
+    <soap:Body>
+        <wsd:Hello>
+            <wsa:EndpointReference>
+                <wsa:Address>urn:uuid:6bf93afb-f524-4e2e-9fa9-82ac80a366dd</wsa:Address>
+            </wsa:EndpointReference>
+            <wsd:XAddrs>http://192.168.12.5:5357/6bf93afb-f524-4e2e-9fa9-82ac80a366dd</wsd:XAddrs>
+            <wsd:MetadataVersion>1</wsd:MetadataVersion>
+        </wsd:Hello>
+    </soap:Body>
+</soap:Envelope>
