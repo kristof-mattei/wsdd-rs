@@ -144,32 +144,11 @@ impl<'config> Builder<'config> {
         Ok((envelope.into_inner().into_inner(), message_id))
     }
 
-    /// WS-Discovery, Section 4.2, Bye message
-    pub fn build_bye(config: &Config) -> Result<String, quick_xml::errors::Error> {
-        let mut builder = Builder::new(config);
-
-        let mut writer = Writer::new(Cursor::new(Vec::new()));
-
-        writer
-            .create_element("wsd:Bye")
-            .write_inner_content(|writer| {
-                builder.add_endpoint_reference(writer, None)?;
-
-                Ok(())
-            })?;
-
-        let message = builder.build_message(
-            WSA_DISCOVERY,
-            WSD_BYE,
-            None,
-            Some(&writer.into_inner().into_inner()),
-        )?;
-
-        Ok(String::from_utf8(message.0).unwrap())
-    }
-
     /// WS-Discovery, Section 4.1, Hello message
-    pub fn build_hello(config: &Config, xaddr: IpAddr) -> Result<String, quick_xml::errors::Error> {
+    pub fn build_hello(
+        config: &Config,
+        xaddr: IpAddr,
+    ) -> Result<Vec<u8>, quick_xml::errors::Error> {
         let mut builder = Builder::new(config);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
@@ -193,11 +172,35 @@ impl<'config> Builder<'config> {
             Some(&writer.into_inner().into_inner()),
         )?;
 
-        Ok(String::from_utf8(message.0).unwrap())
+        Ok(message.0)
+    }
+
+    /// WS-Discovery, Section 4.2, Bye message
+    pub fn build_bye(config: &Config) -> Result<Vec<u8>, quick_xml::errors::Error> {
+        let mut builder = Builder::new(config);
+
+        let mut writer = Writer::new(Cursor::new(Vec::new()));
+
+        writer
+            .create_element("wsd:Bye")
+            .write_inner_content(|writer| {
+                builder.add_endpoint_reference(writer, None)?;
+
+                Ok(())
+            })?;
+
+        let message = builder.build_message(
+            WSA_DISCOVERY,
+            WSD_BYE,
+            None,
+            Some(&writer.into_inner().into_inner()),
+        )?;
+
+        Ok(message.0)
     }
 
     // WS-Discovery, Section 4.3, Probe message
-    pub fn build_probe(config: &Config) -> Result<(String, Urn), quick_xml::errors::Error> {
+    pub fn build_probe(config: &Config) -> Result<(Vec<u8>, Urn), quick_xml::errors::Error> {
         let mut builder = Builder::new(config);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
@@ -219,14 +222,14 @@ impl<'config> Builder<'config> {
             Some(&writer.into_inner().into_inner()),
         )?;
 
-        Ok((String::from_utf8(message.0).unwrap(), message.1))
+        Ok((message.0, message.1))
     }
 
     // WS-Discovery, Section 6.1, Resolve message
     pub fn build_resolve(
         config: &Config,
         endpoint: &str,
-    ) -> Result<(String, Urn), quick_xml::errors::Error> {
+    ) -> Result<(Vec<u8>, Urn), quick_xml::errors::Error> {
         let mut builder = Builder::new(config);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
@@ -246,14 +249,14 @@ impl<'config> Builder<'config> {
             Some(&writer.into_inner().into_inner()),
         )?;
 
-        Ok((String::from_utf8(message.0).unwrap(), message.1))
+        Ok((message.0, message.1))
     }
 
     pub fn build_resolve_matches(
         config: &Config,
         address: IpAddr,
         relates_to: &str,
-    ) -> Result<String, quick_xml::errors::Error> {
+    ) -> Result<Vec<u8>, quick_xml::errors::Error> {
         let mut builder = Builder::new(config);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
@@ -285,13 +288,13 @@ impl<'config> Builder<'config> {
             Some(&writer.into_inner().into_inner()),
         )?;
 
-        Ok(String::from_utf8(message.0).unwrap())
+        Ok(message.0)
     }
 
     pub fn build_probe_matches(
         config: &Config,
         relates_to: &str,
-    ) -> Result<String, quick_xml::errors::Error> {
+    ) -> Result<Vec<u8>, quick_xml::errors::Error> {
         let mut builder = Builder::new(config);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
@@ -321,7 +324,7 @@ impl<'config> Builder<'config> {
             Some(&writer.into_inner().into_inner()),
         )?;
 
-        Ok(String::from_utf8(message.0).unwrap())
+        Ok(message.0)
     }
 
     fn add_header_elements<'element, 'result>(

@@ -85,9 +85,7 @@ impl WSDHost {
         // TODO move event to here and write properly
         event!(Level::INFO, "scheduling {} message", MessageType::Hello);
 
-        self.multicast
-            .send(hello.into_bytes().into_boxed_slice())
-            .await?;
+        self.multicast.send(hello.into_boxed_slice()).await?;
 
         Ok(())
     }
@@ -100,10 +98,7 @@ impl WSDHost {
         // TODO move event to here and write properly
         event!(Level::INFO, "scheduling {} message", MessageType::Bye);
 
-        Ok(self
-            .multicast
-            .send(bye.into_bytes().into_boxed_slice())
-            .await?)
+        Ok(self.multicast.send(bye.into_boxed_slice()).await?)
     }
 }
 
@@ -114,7 +109,7 @@ fn handle_probe(
 ) -> Result<Vec<u8>, eyre::Report> {
     parser::probe::parse_probe_body(&mut reader)?;
 
-    Ok(builder::Builder::build_probe_matches(config, relates_to).map(String::into_bytes)?)
+    Ok(builder::Builder::build_probe_matches(config, relates_to)?)
 }
 
 fn handle_resolve(
@@ -126,10 +121,9 @@ fn handle_resolve(
 ) -> Result<Vec<u8>, eyre::Report> {
     parser::resolve::parse_resolve_body(&mut reader, target_uuid)?;
 
-    Ok(
-        builder::Builder::build_resolve_matches(config, address, relates_to)
-            .map(String::into_bytes)?,
-    )
+    Ok(builder::Builder::build_resolve_matches(
+        config, address, relates_to,
+    )?)
 }
 
 fn spawn_receiver_loop(

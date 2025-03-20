@@ -8,6 +8,7 @@ use quick_xml::NsReader;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
+use url::{Host, Url};
 use uuid::fmt::Urn;
 
 use super::HANDLED_MESSAGES;
@@ -81,9 +82,7 @@ impl WSDClient {
         // TODO move event to here and write properly
         event!(Level::INFO, "scheduling {} message", MessageType::Probe);
 
-        self.multicast
-            .send(probe.into_bytes().into_boxed_slice())
-            .await?;
+        self.multicast.send(probe.into_boxed_slice()).await?;
 
         Ok(())
     }
@@ -116,19 +115,27 @@ fn now() -> u128 {
 //         super().teardown()
 //         self.remove_outdated_probes()
 
-fn __extract_xaddr(bound_to: IpAddr, xaddrs: &str) -> Option<&str> {
+fn __extract_xaddr(bound_to: IpAddr, xaddrs: &str) -> Option<url::Url> {
     for addr in xaddrs.trim().split(' ') {
-        if bound_to.is_ipv6() && true {
+        let Ok(addr) = Url::parse(addr) else {
+            continue;
+        };
+
+        if bound_to.is_ipv6() {
             //      if (self.mch.address.family == socket.AF_INET6) and ('//[fe80::' in addr):
             //          # use first link-local address for IPv6
-            return Some(addr);
+            match addr.host() {
+                Some(Host::Ipv6(ipv6)) if ipv6.is_unicast_link_local() => {
+                    return Some(addr);
+                },
+                _ => continue,
+            }
         } else if bound_to.is_ipv4() {
             //  use first (and very likely the only) IPv4 address
             return Some(addr);
         }
     }
 
-    //  return None
     None
 }
 
@@ -148,9 +155,7 @@ async fn handle_hello<'reader>(
         event!(Level::INFO, "Hello without XAddrs, sending resolve");
         let (message, _) = Builder::build_resolve(config, &endpoint)?;
 
-        multicast
-            .send(message.into_bytes().into_boxed_slice())
-            .await?;
+        multicast.send(message.into_boxed_slice()).await?;
 
         return Ok(());
     };
@@ -231,10 +236,13 @@ async fn handle_hello<'reader>(
 //         return endpoint, xaddrs
 
 //     def perform_metadata_exchange(self, endpoint, xaddr: str):
-fn perform_metadata_exchange(endpoint: &str, xaddr: &str) -> Result<(), eyre::Report> {
-    //         if not (xaddr.startswith('http://') or xaddr.startswith('https://')):
-    //             logger.debug('invalid XAddr: {}'.format(xaddr))
-    //             return
+fn perform_metadata_exchange(_endpoint: &str, xaddr: Url) -> Result<(), eyre::Report> {
+    let scheme = xaddr.scheme();
+
+    if !matches!(scheme, "http" | "https") {
+        event!(Level::DEBUG, "invalid XAddr: {}", xaddr);
+        return Ok(());
+    }
 
     //         host = None
     //         url = xaddr
@@ -287,7 +295,7 @@ fn spawn_receiver_loop(
     address: IpAddr,
     mut multicast_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
     multicast: Sender<Box<[u8]>>,
-    unicast: Sender<(SocketAddr, Box<[u8]>)>,
+    _unicast: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
     let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES));
 
@@ -302,7 +310,7 @@ fn spawn_receiver_loop(
                 }
             };
 
-            let Some((from, buffer)) = message else {
+            let Some((_from, buffer)) = message else {
                 // the end, but we just got it before the cancellation
                 break;
             };
