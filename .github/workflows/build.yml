@@ -23,7 +23,7 @@ env:
   REGISTRY: ghcr.io
   # github.repository as <account>/<repo>
   IMAGE_NAME: ${{ github.repository }}
-  RUSTFLAGS: --deny=warnings
+  RUSTFLAGS: --deny=warnings --cfg tokio_unstable
 
 concurrency:
   # each new commit to a PR runs this workflow
