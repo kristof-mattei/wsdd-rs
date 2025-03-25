@@ -37,7 +37,7 @@ clap = { version = "4.5.32", features = ["cargo", "string", "derive"] }
 color-eyre = { git = "https://github.com/eyre-rs/eyre", rev = "c4ee249f7c51dc6452e8704ae8d117d90d6eeebc" }
 console-subscriber = "0.4.1"
 const_format = { version = "0.2.34", features = ["fmt", "rust_1_83"] }
-delegate = "0.13.2"
+delegate = "0.13.3"
 dotenvy = "0.15.7"
 hashbrown = "0.15.2"
 libc = "0.2.171"
