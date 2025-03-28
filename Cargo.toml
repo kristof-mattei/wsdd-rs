@@ -33,15 +33,15 @@ let_underscore_drop = { level = "deny", priority = 127 }
 non_ascii_idents = { level = "deny", priority = 127 }
 
 [dependencies]
-clap = { version = "4.5.32", features = ["cargo", "string", "derive"] }
+clap = { version = "4.5.34", features = ["cargo", "string", "derive"] }
 color-eyre = { git = "https://github.com/eyre-rs/eyre", rev = "c4ee249f7c51dc6452e8704ae8d117d90d6eeebc" }
 console-subscriber = "0.4.1"
 const_format = { version = "0.2.34", features = ["fmt", "rust_1_83"] }
-delegate = "0.13.2"
+delegate = "0.13.3"
 dotenvy = "0.15.7"
 hashbrown = "0.15.2"
 libc = "0.2.171"
-quick-xml = "0.37.2"
+quick-xml = "0.37.3"
 rand = "0.9.0"
 reqwest = "0.12.15"
 socket2 = { version = "0.5.8", features = ["all"] }
@@ -66,7 +66,7 @@ tracing-subscriber = { version = "0.3.19", features = [
 ] }
 url = "2.5.4"
 uuid = { version = "1.16.0", features = ["v1", "v4", "v5"] }
-zerocopy = { version = "0.8.23", features = ["derive"] }
+zerocopy = { version = "0.8.24", features = ["derive"] }
 
 # OpenSSL for musl
 [target.'cfg(all(any(target_arch="x86_64", target_arch="aarch64"), target_os="linux", target_env="musl"))'.dependencies]
