@@ -233,7 +233,7 @@ impl NetworkHandler {
             multicast_handler.enable_wsd_host().await;
 
             if !self.config.no_http {
-                multicast_handler.enable_http_server();
+                multicast_handler.enable_http_server().await;
             }
         }
 

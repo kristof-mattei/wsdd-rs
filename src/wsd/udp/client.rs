@@ -9,6 +9,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 use url::{Host, Url};
+use uuid::Uuid;
 use uuid::fmt::Urn;
 
 use super::HANDLED_MESSAGES;
@@ -17,6 +18,8 @@ use crate::constants::{self, APP_MAX_DELAY, PROBE_TIMEOUT};
 use crate::soap::builder::{Builder, MessageType};
 use crate::soap::parser::{self, MessageHandler, MessageHandlerError};
 use crate::utils::task::spawn_with_name;
+use crate::wsd::device;
+use crate::wsd::device::WSDDiscoveredDevice;
 
 #[expect(dead_code)]
 pub(crate) struct WSDClient {
@@ -153,7 +156,7 @@ async fn handle_hello<'reader>(
         xaddrs
     } else {
         event!(Level::INFO, "Hello without XAddrs, sending resolve");
-        let (message, _) = Builder::build_resolve(config, &endpoint)?;
+        let (message, _) = Builder::build_resolve(config, endpoint)?;
 
         multicast.send(message.into_boxed_slice()).await?;
 
@@ -166,10 +169,11 @@ async fn handle_hello<'reader>(
 
     event!(Level::INFO, "Hello from {} on {}", endpoint, xaddr);
 
-    perform_metadata_exchange(&endpoint, xaddr)?;
+    perform_metadata_exchange(config, endpoint, xaddr).await?;
 
     Ok(())
 }
+
 //     def handle_bye(self, header: ElementTree.Element, body: ElementTree.Element) -> Optional[WSDMessage]:
 //         bye_path = 'wsd:Bye'
 //         endpoint, _ = self.extract_endpoint_metadata(body, bye_path)
@@ -236,7 +240,11 @@ async fn handle_hello<'reader>(
 //         return endpoint, xaddrs
 
 //     def perform_metadata_exchange(self, endpoint, xaddr: str):
-fn perform_metadata_exchange(_endpoint: &str, xaddr: Url) -> Result<(), eyre::Report> {
+async fn perform_metadata_exchange(
+    config: &Config,
+    endpoint: Uuid,
+    xaddr: Url,
+) -> Result<(), eyre::Report> {
     let scheme = xaddr.scheme();
 
     if !matches!(scheme, "http" | "https") {
@@ -250,33 +258,77 @@ fn perform_metadata_exchange(_endpoint: &str, xaddr: Url) -> Result<(), eyre::Re
     //             host = '[{}]'.format(url.partition('[')[2].partition(']')[0])
     //             url = url.replace(']', '%{}]'.format(self.mch.address.interface))
 
-    //         body = self.build_getmetadata_message(endpoint)
-    //         request = urllib.request.Request(url, data=body.encode('utf-8'), method='POST')
-    //         request.add_header('Content-Type', 'application/soap+xml')
-    //         request.add_header('User-Agent', 'wsdd')
+    let body = build_getmetadata_message(config, endpoint)?;
+
+    let client = reqwest::Client::new();
+    let builder = client
+        .post(xaddr.clone())
+        .header("Content-Type", "application/soap+xml")
+        .header("User-Agent", "wsdd");
+
     //         if host is not None:
     //             request.add_header('Host', host)
 
-    //         try:
-    //             with urllib.request.urlopen(request, None, args.metadata_timeout) as stream:
-    //                 self.handle_metadata(stream.read(), endpoint, xaddr)
-    //         except urllib.error.URLError as e:
-    //             logger.warning('could not fetch metadata from: {} {}'.format(url, e))
-    //         except TimeoutError:
-    //             logger.warning('metadata exchange with {} timed out'.format(url))
+    #[expect(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_sign_loss)]
+    let timeout = (config.metadata_timeout * 1000f32) as u64;
+
+    let response = builder
+        .body(body)
+        .timeout(Duration::from_millis(timeout))
+        .send()
+        .await;
+
+    match response {
+        Ok(response) => {
+            let response = response.text().await?;
+
+            handle_metadata(response, endpoint, xaddr).await?;
+        },
+        Err(error) => {
+            let url = error.url().map(ToString::to_string);
+            let url = url.as_deref().unwrap_or("Failed to get URL from error");
+
+            if error.is_timeout() {
+                event!(Level::WARN, "metadata exchange with {} timed out", url);
+            } else {
+                event!(
+                    Level::WARN,
+                    "could not fetch metadata from: {} {:?}",
+                    url,
+                    error
+                );
+            }
+        },
+    };
+
     Ok(())
 }
 
-//     def build_getmetadata_message(self, endpoint) -> str:
-//         tree, _ = self.build_message_tree(endpoint, WSD_GET, None, None)
-//         return self.xml_to_str(tree)
+fn build_getmetadata_message(
+    config: &Config,
+    endpoint: Uuid,
+) -> Result<Vec<u8>, quick_xml::errors::Error> {
+    let message = Builder::build_get(config, endpoint)?;
+
+    Ok(message)
+}
 
 //     def handle_metadata(self, meta: str, endpoint: str, xaddr: str) -> None:
-//         device_uuid = str(uuid.UUID(endpoint))
-//         if device_uuid in WSDDiscoveredDevice.instances:
-//             WSDDiscoveredDevice.instances[device_uuid].update(meta, xaddr, self.mch.address.interface)
-//         else:
-//             WSDDiscoveredDevice.instances[device_uuid] = WSDDiscoveredDevice(meta, xaddr, self.mch.address.interface)
+async fn handle_metadata(meta: String, endpoint: Uuid, xaddr: Url) -> Result<(), eyre::Report> {
+    let device_uuid = endpoint;
+
+    match device::INSTANCES.write().await.entry(device_uuid) {
+        hashbrown::hash_map::Entry::Occupied(mut occupied_entry) => {
+            occupied_entry.get_mut().update(meta, xaddr);
+        },
+        hashbrown::hash_map::Entry::Vacant(vacant_entry) => {
+            vacant_entry.insert(WSDDiscoveredDevice::new(meta, xaddr));
+        },
+    }
+
+    Ok(())
+}
 
 //     def add_header_elements(self, header: ElementTree.Element, extra: Any) -> None:
 //         action_str = extra

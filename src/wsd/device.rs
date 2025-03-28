@@ -1,5 +1,14 @@
-#[expect(unused)]
+use std::sync::LazyLock;
+
+use tokio::sync::RwLock;
+use url::Url;
+use uuid::Uuid;
+
+pub static INSTANCES: std::sync::LazyLock<RwLock<hashbrown::HashMap<Uuid, WSDDiscoveredDevice>>> =
+    LazyLock::new(|| RwLock::new(hashbrown::HashMap::new()));
+
 pub struct WSDDiscoveredDevice {}
+
 // class WSDDiscoveredDevice:
 
 //     # a dict of discovered devices with their UUID as key
@@ -11,14 +20,23 @@ pub struct WSDDiscoveredDevice {}
 //     last_seen: float
 //     types: Set[str]
 
-//     def __init__(self, xml_str: str, xaddr: str, interface: NetworkInterface) -> None:
-//         self.last_seen = 0.0
-//         self.addresses = {}
-//         self.props = {}
-//         self.display_name = ''
-//         self.types = set()
+impl WSDDiscoveredDevice {
+    pub fn new(meta: String, xaddr: Url) -> Self {
+        //         self.last_seen = 0.0
+        //         self.addresses = {}
+        //         self.props = {}
+        //         self.display_name = ''
+        //         self.types = set()
 
-//         self.update(xml_str, xaddr, interface)
+        let mut s = Self {};
+
+        s.update(meta, xaddr);
+
+        s
+    }
+
+    pub fn update(&mut self, _meta: String, _xaddr: Url) {}
+}
 
 //     def update(self, xml_str: str, xaddr: str, interface: NetworkInterface) -> None:
 //         try:

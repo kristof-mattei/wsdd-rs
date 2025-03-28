@@ -1,13 +1,26 @@
+use std::sync::Arc;
+
+use tokio_util::sync::CancellationToken;
+
+use crate::config::Config;
+
+#[expect(unused)]
 pub struct WSDHttpServer {
-    // multicast_handler: Arc<MulticastHandler<'nph>>,
+    cancellation_token: CancellationToken,
+    config: Arc<Config>,
 }
-// impl<'nph> WSDHttpServer<'nph> {
-//     pub fn new(multicast_handler: &Arc<MulticastHandler<'nph>>) -> Self {
-//         Self {
-//             multicast_handler: Arc::clone(multicast_handler),
-//         }
-//     }
-// }
+
+impl WSDHttpServer {
+    pub(crate) fn init(
+        cancellation_token: CancellationToken,
+        config: Arc<Config>,
+    ) -> WSDHttpServer {
+        Self {
+            cancellation_token,
+            config,
+        }
+    }
+}
 
 // class WSDHttpServer(http.server.HTTPServer):
 //     """ HTTP server both with IPv6 support and WSD handling """
