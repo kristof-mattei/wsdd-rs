@@ -48,6 +48,7 @@ pub const WSD_HELLO: &str = concatcp!(WSD_URI, "/Hello");
 // WSD_BYE: str = WSD_URI + '/Bye'
 pub const WSD_BYE: &str = concatcp!(WSD_URI, "/Bye");
 // WSD_GET: str = 'http://schemas.xmlsoap.org/ws/2004/09/transfer/Get'
+pub const WSD_GET: &str = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Get";
 // WSD_GET_RESPONSE: str = 'http://schemas.xmlsoap.org/ws/2004/09/transfer/GetResponse'
 
 // WSD_TYPE_DEVICE: str = 'wsdp:Device'
@@ -65,6 +66,7 @@ pub const WSD_MCAST_GRP_V6: Ipv6Addr = Ipv6Addr::new(65282, 0, 0, 0, 0, 0, 0, 12
 
 // WSA_ANON: str = WSA_URI + '/role/anonymous'
 pub const WSA_ANON: &str = concatcp!(WSA_URI, "/role/anonymous");
+
 // WSA_DISCOVERY: str = 'urn:schemas-xmlsoap-org:ws:2005:04:discovery'
 pub const WSA_DISCOVERY: &str = "urn:schemas-xmlsoap-org:ws:2005:04:discovery";
 

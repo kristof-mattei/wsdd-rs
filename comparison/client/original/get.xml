@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope
+    xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+    xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+    xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+    xmlns:wsx="http://schemas.xmlsoap.org/ws/2004/09/mex"
+    xmlns:wsdp="http://schemas.xmlsoap.org/ws/2006/02/devprof"
+    xmlns:pnpx="http://schemas.microsoft.com/windows/pnpx/2005/10"
+    xmlns:pub="http://schemas.microsoft.com/windows/pub/2005/07"
+>
+    <soap:Header>
+        <wsa:To>urn:uuid:d6b92844-8911-4f59-8bdb-c9dadbb1a5bc</wsa:To>
+        <wsa:Action>http://schemas.xmlsoap.org/ws/2004/09/transfer/Get</wsa:Action>
+        <wsa:MessageID>urn:uuid:ed0725fd-074b-11f0-b15f-d45ddf1e11a9</wsa:MessageID>
+        <wsa:ReplyTo>
+            <wsa:Address>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:Address>
+        </wsa:ReplyTo>
+        <wsa:From>
+            <wsa:Address>urn:uuid:6bf93afb-f524-4e2e-9fa9-82ac80a366dd</wsa:Address>
+        </wsa:From>
+    </soap:Header>
+    <soap:Body />
+</soap:Envelope>

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::str::FromStr;
 
 use quick_xml::NsReader;
 use quick_xml::events::Event;
@@ -6,6 +7,8 @@ use quick_xml::name::Namespace;
 use quick_xml::name::ResolveResult::Bound;
 use thiserror::Error;
 use tracing::{Level, event};
+use uuid::Uuid;
+use uuid::fmt::Urn;
 
 use crate::constants::{XML_WSA_NAMESPACE, XML_WSD_NAMESPACE};
 
@@ -17,6 +20,8 @@ pub enum GenericParsingError<'e> {
     MissingElement(&'e str),
     #[error("Invalid element order")]
     InvalidElementOrder,
+    #[error("Invalid UUID")]
+    InvalidUuid(#[from] uuid::Error),
 }
 
 pub fn extract_endpoint_reference_address<'reader, 'raw, 'error>(
@@ -60,7 +65,7 @@ pub fn extract_endpoint_reference_address<'reader, 'raw, 'error>(
 
 pub fn extract_endpoint_metadata<'reader, 'raw, 'error>(
     reader: &'reader mut NsReader<&'raw [u8]>,
-) -> Result<(Cow<'raw, str>, Option<Cow<'raw, str>>), GenericParsingError<'error>> {
+) -> Result<(Uuid, Option<Cow<'raw, str>>), GenericParsingError<'error>> {
     //         addr_path = 'wsa:EndpointReference/wsa:Address'
 
     //         endpoint = body.findtext(prefix + addr_path, namespaces=namespaces)
@@ -110,6 +115,8 @@ pub fn extract_endpoint_metadata<'reader, 'raw, 'error>(
             "wsa:EndpointReference/wsa:Address",
         ));
     };
+
+    let endpoint = Urn::from_str(&endpoint)?.into_uuid();
 
     Ok((endpoint, xaddrs))
 }

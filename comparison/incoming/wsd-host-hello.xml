@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope
+    xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+    xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+    xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+    xmlns:wsdp="http://schemas.xmlsoap.org/ws/2006/02/devprof"
+>
+    <soap:Header>
+        <wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To>
+        <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Hello</wsa:Action>
+        <wsa:MessageID>urn:uuid:c6643c5c-b038-4ff2-a33e-52b3d082ac19</wsa:MessageID>
+        <wsd:AppSequence InstanceId="7" SequenceId="urn:uuid:a2f92f83-42ba-4927-b782-a51293878e9f" MessageNumber="52"></wsd:AppSequence>
+    </soap:Header>
+    <soap:Body>
+        <wsd:Hello>
+            <wsa:EndpointReference>
+                <wsa:Address>urn:uuid:d6b92844-8911-4f59-8bdb-c9dadbb1a5bc</wsa:Address>
+            </wsa:EndpointReference>
+            <wsd:Types>wsdp:Device</wsd:Types>
+            <wsd:XAddrs>http://192.168.12.56:5357/d6b92844-8911-4f59-8bdb-c9dadbb1a5bc/</wsd:XAddrs>
+            <wsd:MetadataVersion>24</wsd:MetadataVersion>
+        </wsd:Hello>
+    </soap:Body>
+</soap:Envelope>

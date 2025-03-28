@@ -293,7 +293,7 @@ fn to_listen(listen: &str) -> Result<PortOrSocket, String> {
 }
 
 fn gethostname() -> Result<String, std::io::Error> {
-    let mut buffer = [0u8; 255 /* POSIX LIMIT */ + 1 /* for the \n */];
+    let mut buffer = [0u8; 255 /* POSIX LIMIT */ + 1 /* for the \0 */];
 
     let length = unsafe { libc::gethostname(buffer.as_mut_ptr().cast(), buffer.len()) };
 

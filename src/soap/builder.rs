@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::io::{Cursor, Write};
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -12,7 +11,7 @@ use uuid::fmt::Urn;
 
 use crate::config::Config;
 use crate::constants::{
-    WSA_ANON, WSA_DISCOVERY, WSA_URI, WSD_BYE, WSD_HELLO, WSD_HTTP_PORT, WSD_PROBE,
+    WSA_ANON, WSA_DISCOVERY, WSA_URI, WSD_BYE, WSD_GET, WSD_HELLO, WSD_HTTP_PORT, WSD_PROBE,
     WSD_PROBE_MATCH, WSD_RESOLVE, WSD_RESOLVE_MATCH, WSD_TYPE_DEVICE, WSD_TYPE_DEVICE_COMPUTER,
     WSD_URI, XML_PUB_NAMESPACE, XML_WSA_NAMESPACE, XML_WSD_NAMESPACE, XML_WSDP_NAMESPACE,
 };
@@ -36,6 +35,9 @@ impl std::fmt::Display for MessageType {
     }
 }
 
+type ExtraHeadersCallback =
+    fn(&mut Builder, &mut Writer<Cursor<Vec<u8>>>) -> Result<(), std::io::Error>;
+
 pub struct Builder<'config> {
     config: &'config Config,
     namespaces: HashMap<&'static str, &'static str>,
@@ -54,9 +56,11 @@ impl<'config> Builder<'config> {
         to_addr: &str,
         action: &str,
         relates_to: Option<&str>,
+        add_extra_headers: Option<ExtraHeadersCallback>,
         body: Option<&[u8]>,
     ) -> Result<(Vec<u8>, Urn), quick_xml::errors::Error> {
-        let response = self.build_message_tree(to_addr, action, relates_to, body)?;
+        let response =
+            self.build_message_tree(to_addr, action, relates_to, add_extra_headers, body)?;
 
         event!(
             Level::DEBUG,
@@ -77,6 +81,7 @@ impl<'config> Builder<'config> {
         to_addr: &str,
         action: &str,
         relates_to: Option<&str>,
+        add_extra_headers: Option<ExtraHeadersCallback>,
         body: Option<&[u8]>,
     ) -> Result<(Vec<u8>, Urn), quick_xml::errors::Error> {
         self.namespaces
@@ -110,18 +115,24 @@ impl<'config> Builder<'config> {
                         .write_text_content(BytesText::new(relates_to))?;
                 }
 
-                self.add_header_elements(writer, action)?;
+                if let Some(add_extra_headers) = add_extra_headers {
+                    add_extra_headers(self, writer)?;
+                };
 
                 Ok(())
             })?;
 
-        header_and_body
-            .create_element("soap:Body")
-            .write_inner_content(|writer| {
-                writer.get_mut().write_all(body.unwrap_or(&[]))?;
+        let body_writer = header_and_body.create_element("soap:Body");
+
+        if let Some(body) = body {
+            body_writer.write_inner_content(|writer| {
+                writer.get_mut().write_all(body)?;
 
                 Ok(())
             })?;
+        } else {
+            body_writer.write_empty()?;
+        }
 
         let mut envelope = Writer::new(Cursor::new(Vec::<u8>::new()));
 
@@ -169,6 +180,8 @@ impl<'config> Builder<'config> {
             WSA_DISCOVERY,
             WSD_HELLO,
             None,
+            #[expect(clippy::redundant_closure_for_method_calls)]
+            Some(|builder, element| builder.add_wsd_host_header_elements(element)),
             Some(&writer.into_inner().into_inner()),
         )?;
 
@@ -193,6 +206,8 @@ impl<'config> Builder<'config> {
             WSA_DISCOVERY,
             WSD_BYE,
             None,
+            #[expect(clippy::redundant_closure_for_method_calls)]
+            Some(|builder, element| builder.add_wsd_host_header_elements(element)),
             Some(&writer.into_inner().into_inner()),
         )?;
 
@@ -219,6 +234,8 @@ impl<'config> Builder<'config> {
             WSA_DISCOVERY,
             WSD_PROBE,
             None,
+            #[expect(clippy::redundant_closure_for_method_calls)]
+            Some(|builder, element| builder.add_wsd_host_header_elements(element)),
             Some(&writer.into_inner().into_inner()),
         )?;
 
@@ -228,7 +245,7 @@ impl<'config> Builder<'config> {
     // WS-Discovery, Section 6.1, Resolve message
     pub fn build_resolve(
         config: &Config,
-        endpoint: &str,
+        endpoint: Uuid,
     ) -> Result<(Vec<u8>, Urn), quick_xml::errors::Error> {
         let mut builder = Builder::new(config);
 
@@ -246,6 +263,8 @@ impl<'config> Builder<'config> {
             WSA_DISCOVERY,
             WSD_RESOLVE,
             None,
+            #[expect(clippy::redundant_closure_for_method_calls)]
+            Some(|builder, element| builder.add_wsd_host_header_elements(element)),
             Some(&writer.into_inner().into_inner()),
         )?;
 
@@ -285,6 +304,8 @@ impl<'config> Builder<'config> {
             WSA_ANON,
             WSD_RESOLVE_MATCH,
             Some(relates_to),
+            #[expect(clippy::redundant_closure_for_method_calls)]
+            Some(|builder, element| builder.add_wsd_host_header_elements(element)),
             Some(&writer.into_inner().into_inner()),
         )?;
 
@@ -321,25 +342,23 @@ impl<'config> Builder<'config> {
             WSA_ANON,
             WSD_PROBE_MATCH,
             Some(relates_to),
+            #[expect(clippy::redundant_closure_for_method_calls)]
+            Some(|builder, element| builder.add_wsd_host_header_elements(element)),
             Some(&writer.into_inner().into_inner()),
         )?;
 
         Ok(message.0)
     }
 
-    fn add_header_elements<'element, 'result>(
+    fn add_wsd_host_header_elements(
         &mut self,
-        element: &'element mut Writer<Cursor<Vec<u8>>>,
-        _action: &str,
-    ) -> Result<&'result mut Writer<Cursor<Vec<u8>>>, std::io::Error>
-    where
-        'element: 'result,
-    {
+        writer: &mut Writer<Cursor<Vec<u8>>>,
+    ) -> Result<(), std::io::Error> {
         let wsd_instance_id = self.config.wsd_instance_id.to_string();
         let urn = Uuid::new_v4().urn().to_string();
         let message_number = MESSAGES_BUILT.fetch_add(1, Ordering::SeqCst).to_string();
 
-        let writer = element
+        writer
             .create_element("wsd:AppSequence")
             .with_attributes([
                 ("InstanceId", wsd_instance_id.as_str()),
@@ -350,18 +369,46 @@ impl<'config> Builder<'config> {
 
         self.namespaces.insert("wsd", XML_WSD_NAMESPACE);
 
-        Ok(writer)
+        Ok(())
     }
 
-    fn add_types<'element, 'result>(
+    fn add_wsd_client_get_header_elements(
         &mut self,
-        element: &'element mut Writer<Cursor<Vec<u8>>>,
+        writer: &mut Writer<Cursor<Vec<u8>>>,
+    ) -> Result<(), std::io::Error> {
+        writer
+            .create_element("wsa:ReplyTo")
+            .write_inner_content(|writer| {
+                writer
+                    .create_element("wsa:Address")
+                    .write_text_content(BytesText::new(WSA_ANON))?;
+
+                Ok(())
+            })?;
+
+        writer
+            .create_element("wsa:From")
+            .write_inner_content(|writer| {
+                writer
+                    .create_element("wsa:Address")
+                    .write_text_content(BytesText::new(
+                        self.config.uuid.urn().to_string().as_str(),
+                    ))?;
+
+                Ok(())
+            })?;
+
+        self.namespaces.insert("wsa", XML_WSA_NAMESPACE);
+
+        Ok(())
+    }
+
+    fn add_types(
+        &mut self,
+        writer: &mut Writer<Cursor<Vec<u8>>>,
         types: &str,
-    ) -> Result<&'result mut Writer<Cursor<Vec<u8>>>, std::io::Error>
-    where
-        'element: 'result,
-    {
-        let writer = element
+    ) -> Result<(), std::io::Error> {
+        writer
             .create_element("wsd:Types")
             .write_text_content(BytesText::new(types))?;
 
@@ -369,29 +416,19 @@ impl<'config> Builder<'config> {
         self.namespaces.insert("wsdp", XML_WSDP_NAMESPACE);
         self.namespaces.insert("pub", XML_PUB_NAMESPACE);
 
-        Ok(writer)
+        Ok(())
     }
 
-    fn add_endpoint_reference<'element, 'result>(
+    fn add_endpoint_reference(
         &mut self,
-        element: &'element mut Writer<Cursor<Vec<u8>>>,
-        endpoint: Option<&str>,
-    ) -> Result<&'result mut Writer<Cursor<Vec<u8>>>, std::io::Error>
-    where
-        'element: 'result,
-    {
-        let endpoint = endpoint.map_or_else(
-            || {
-                let urn = self.config.uuid.urn().to_string();
-
-                Cow::Owned(urn)
-            },
-            Cow::Borrowed,
-        );
+        writer: &mut Writer<Cursor<Vec<u8>>>,
+        endpoint: Option<Uuid>,
+    ) -> Result<(), std::io::Error> {
+        let endpoint = endpoint.unwrap_or(self.config.uuid).urn().to_string();
 
         let text = BytesText::new(endpoint.as_ref());
 
-        let writer = element
+        writer
             .create_element("wsa:EndpointReference")
             .write_inner_content(|writer| {
                 writer
@@ -403,17 +440,14 @@ impl<'config> Builder<'config> {
 
         self.namespaces.insert("wsa", XML_WSA_NAMESPACE);
 
-        Ok(writer)
+        Ok(())
     }
 
-    fn add_xaddr<'element, 'result>(
+    fn add_xaddr(
         &mut self,
-        element: &'element mut Writer<Cursor<Vec<u8>>>,
+        writer: &mut Writer<Cursor<Vec<u8>>>,
         ip_addr: IpAddr,
-    ) -> Result<&'result mut Writer<Cursor<Vec<u8>>>, std::io::Error>
-    where
-        'element: 'result,
-    {
+    ) -> Result<(), std::io::Error> {
         let address = format!(
             "http://{}:{}/{}",
             UrlIpAddr::from(ip_addr),
@@ -423,31 +457,43 @@ impl<'config> Builder<'config> {
 
         let text = BytesText::new(&address);
 
-        let writer = element
+        writer
             .create_element("wsd:XAddrs")
             .write_text_content(text)?;
 
         self.namespaces.insert("wsd", XML_WSD_NAMESPACE);
 
-        Ok(writer)
+        Ok(())
     }
 
-    fn add_metadata_version<'element, 'result>(
+    fn add_metadata_version(
         &mut self,
-        element: &'element mut Writer<Cursor<Vec<u8>>>,
-    ) -> Result<&'result mut Writer<Cursor<Vec<u8>>>, std::io::Error>
-    where
-        'element: 'result,
-    {
+        writer: &mut Writer<Cursor<Vec<u8>>>,
+    ) -> Result<(), std::io::Error> {
         let text = BytesText::new("1");
 
-        let writer = element
+        writer
             .create_element("wsd:MetadataVersion")
             .write_text_content(text)?;
 
         self.namespaces.insert("wsd", WSD_URI);
 
-        Ok(writer)
+        Ok(())
+    }
+
+    pub fn build_get(config: &Config, endpoint: Uuid) -> Result<Vec<u8>, quick_xml::Error> {
+        let mut builder = Builder::new(config);
+
+        builder
+            .build_message(
+                endpoint.as_urn().to_string().as_str(),
+                WSD_GET,
+                None,
+                #[expect(clippy::redundant_closure_for_method_calls)]
+                Some(|builder, element| builder.add_wsd_client_get_header_elements(element)),
+                None,
+            )
+            .map(|(m, _)| m)
     }
 
     // def handle_probe(self, header: ElementTree.Element, body: ElementTree.Element) -> Optional[WSDMessage]:

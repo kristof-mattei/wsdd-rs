@@ -67,6 +67,46 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Debug executable 'wsdd-rs' with --interface enp4s0 -4 --discovery",
+            "cargo": {
+                "args": ["build", "--bin=wsdd-rs", "--package=wsdd-rs"],
+                "filter": {
+                    "name": "wsdd-rs",
+                    "kind": "bin"
+                }
+            },
+            "args": ["--interface", "enp4s0", "-4", "--discovery"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
+            },
+            "internalConsoleOptions": "neverOpen",
+            "terminal": "integrated"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'wsdd-rs' with --interface enp4s0 -4 --no-host --discovery",
+            "cargo": {
+                "args": ["build", "--bin=wsdd-rs", "--package=wsdd-rs"],
+                "filter": {
+                    "name": "wsdd-rs",
+                    "kind": "bin"
+                }
+            },
+            "args": ["--interface", "enp4s0", "-4", "--no-host", "--discovery"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
+            },
+            "internalConsoleOptions": "neverOpen",
+            "terminal": "integrated"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "Debug executable 'wsdd-rs' with --interface lo",
             "cargo": {
                 "args": ["build", "--bin=wsdd-rs", "--package=wsdd-rs"],
