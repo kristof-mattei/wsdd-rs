@@ -44,7 +44,6 @@ pub struct MulticastHandler {
     http_listen_address: SocketAddr,
     wsd_host: OnceCell<WSDHost>,
     wsd_client: OnceCell<WSDClient>,
-    #[expect(unused)]
     http_server: OnceCell<WSDHttpServer>,
     /// receiving multicast traffic on the WSD Port
     recv_socket_receiver: MessageReceiver,
@@ -420,8 +419,7 @@ impl MulticastHandler {
         self.http_server
             .get_or_init(|| async {
                 let server =
-                    WSDHttpServer::init(self.cancellation_token.clone(), Arc::clone(&self.config))
-                        .await;
+                    WSDHttpServer::init(self.cancellation_token.clone(), Arc::clone(&self.config));
 
                 #[expect(clippy::let_and_return)]
                 server
