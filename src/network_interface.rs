@@ -66,7 +66,7 @@ pub fn if_indextoname(index: u32) -> Result<String, eyre::Report> {
 
     if result.is_null() {
         return Err(eyre::Report::new(Error::last_os_error()).wrap_err("if_indextoname failed"));
-    };
+    }
 
     let ifname = CStr::from_bytes_until_nul(&buffer)
         .expect("We used oversized buffer, so not finding a null is impossible")

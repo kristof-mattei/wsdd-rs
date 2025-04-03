@@ -301,7 +301,7 @@ impl NetlinkAddressMonitor {
 
                 if let Err(err) = self.channel.send(command).await {
                     event!(Level::ERROR, ?err, "Failed to announce command");
-                };
+                }
 
                 offset += align_to(length, align_of::<nlmsghdr>());
             }

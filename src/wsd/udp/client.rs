@@ -309,7 +309,7 @@ async fn perform_metadata_exchange(
                 );
             }
         },
-    };
+    }
 
     Ok(())
 }
@@ -425,7 +425,7 @@ fn spawn_receiver_loop(
             } {
                 event!(Level::ERROR, ?action, ?err, "Failure to parse XML");
                 continue;
-            };
+            }
         }
     });
 }
