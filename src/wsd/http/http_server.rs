@@ -2,20 +2,23 @@ use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 
-use crate::config::Config;
+use crate::{config::Config, network_address::NetworkAddress};
 
 #[expect(unused)]
 pub struct WSDHttpServer {
+    address: NetworkAddress,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
 }
 
 impl WSDHttpServer {
     pub(crate) fn init(
+        address: NetworkAddress,
         cancellation_token: CancellationToken,
         config: Arc<Config>,
     ) -> WSDHttpServer {
         Self {
+            address,
             cancellation_token,
             config,
         }

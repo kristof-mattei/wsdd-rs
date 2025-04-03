@@ -73,6 +73,15 @@ impl WSDClient {
         client
     }
 
+    #[expect(clippy::unused_async)]
+    pub async fn teardown(self, graceful: bool) {
+        self.cancellation_token.cancel();
+
+        if graceful {
+            // ??
+        }
+    }
+
     // WS-Discovery, Section 4.3, Probe message
     async fn send_probe(&mut self) -> Result<(), eyre::Report> {
         self.remove_outdated_probes();
@@ -344,14 +353,14 @@ async fn handle_metadata(meta: String, endpoint: Uuid, xaddr: Url) -> Result<(),
 fn spawn_receiver_loop(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    address: IpAddr,
+    bound_to: IpAddr,
     mut multicast_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
     multicast: Sender<Box<[u8]>>,
     _unicast: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
     let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES));
 
-    spawn_with_name(format!("wsd host ({})", address).as_str(), async move {
+    spawn_with_name(format!("wsd host ({})", bound_to).as_str(), async move {
         loop {
             let message = tokio::select! {
                 () = cancellation_token.cancelled() => {
@@ -402,7 +411,7 @@ fn spawn_receiver_loop(
             // handle based on action
             if let Err(err) = match action.as_ref() {
                 constants::WSD_HELLO => {
-                    handle_hello(&config, address, &multicast, body_reader).await
+                    handle_hello(&config, bound_to, &multicast, body_reader).await
                 },
                 // constants::WSD_BYE => handle_bye(&config, &message_id, body_reader),
                 // constants::WSD_PROBE_MATCH => handle_probe_match(&config, &message_id, body_reader),

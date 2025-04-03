@@ -191,8 +191,16 @@ impl NetworkHandler {
 
         // Use interface only if it's in the list of user-provided interface names
         if !self.config.interface.is_empty()
-            && !self.config.interface.contains(&address.interface.name)
-            && !self.config.interface.contains(&address.address.to_string())
+            && !self
+                .config
+                .interface
+                .iter()
+                .any(|i| i == &*address.interface.name)
+            && !self
+                .config
+                .interface
+                .iter()
+                .any(|i| i == &*address.address.to_string())
         {
             return false;
         }

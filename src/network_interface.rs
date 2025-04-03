@@ -7,21 +7,26 @@ use libc::IF_NAMESIZE;
 
 #[derive(Eq, Clone)]
 pub struct NetworkInterface {
-    pub name: String,
+    pub name: Box<str>,
     pub index: u32,
     scope: u8,
 }
 
 impl NetworkInterface {
     pub fn new(name: impl Into<String>, scope: u8) -> Result<Self, eyre::Report> {
-        let name = name.into();
+        let name: String = name.into();
 
         let index = if_nametoindex(&name)?;
 
-        Ok(Self { name, index, scope })
+        Ok(Self {
+            name: name.into(),
+            index,
+            scope,
+        })
     }
 
     pub fn new_with_index(name: impl Into<String>, scope: u8, index: u32) -> Self {
+        let name = name.into();
         Self {
             name: name.into(),
             index,
