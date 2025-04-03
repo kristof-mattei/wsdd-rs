@@ -168,6 +168,11 @@ impl MulticastHandler {
         }
 
         // TODO drop client
+        if let Some(client) = self.wsd_client.into_inner() {
+            client.teardown(graceful).await;
+
+            // client is dropped
+        }
 
         // TODO drop http
 
@@ -418,8 +423,11 @@ impl MulticastHandler {
     pub async fn enable_http_server(&self) {
         self.http_server
             .get_or_init(|| async {
-                let server =
-                    WSDHttpServer::init(self.cancellation_token.clone(), Arc::clone(&self.config));
+                let server = WSDHttpServer::init(
+                    self.address.clone(),
+                    self.cancellation_token.clone(),
+                    Arc::clone(&self.config),
+                );
 
                 #[expect(clippy::let_and_return)]
                 server
