@@ -299,7 +299,7 @@ fn gethostname() -> Result<String, std::io::Error> {
 
     if length == -1 {
         return Err(Error::last_os_error());
-    };
+    }
 
     let hostname = CStr::from_bytes_until_nul(&buffer)
         .expect("We used oversized buffer, so not finding a null is impossible")

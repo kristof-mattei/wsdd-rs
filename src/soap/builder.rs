@@ -117,7 +117,7 @@ impl<'config> Builder<'config> {
 
                 if let Some(add_extra_headers) = add_extra_headers {
                     add_extra_headers(self, writer)?;
-                };
+                }
 
                 Ok(())
             })?;

@@ -184,7 +184,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
 
             // TODO error more gracefully
             std::process::exit(3);
-        };
+        }
     }
 
     if config.chroot.is_some() && (unsafe { libc::getuid() == 0 || libc::getgid() == 0 }) {

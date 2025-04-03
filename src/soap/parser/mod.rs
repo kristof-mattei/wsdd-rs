@@ -121,7 +121,7 @@ impl MessageHandler {
 
         if !has_body {
             return Err(MessageHandlerError::MissingBody);
-        };
+        }
 
         event!(
             Level::DEBUG,

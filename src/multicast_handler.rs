@@ -298,13 +298,13 @@ impl MulticastHandler {
             event!(Level::ERROR, ?err, multi_addr = ?WSD_MCAST_GRP_V4, ifindex = ?idx, "could not join multicast group");
 
             return Err(eyre::Report::msg("could not join multicast group"));
-        };
+        }
 
         if let Err(err) = recv_socket.set_multicast_all_v4(false) {
             event!(Level::ERROR, ?err, "could not unset IP_MULTICAST_ALL");
 
             return Err(eyre::Report::msg("could not unset IP_MULTICAST_ALL"));
-        };
+        }
 
         let socket_addr = SocketAddrV4::new(WSD_MCAST_GRP_V4, WSD_UDP_PORT.into());
 
