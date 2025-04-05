@@ -49,7 +49,7 @@ rand = "0.9.0"
 reqwest = "0.12.15"
 socket2 = { version = "0.5.9", features = ["all"] }
 thiserror = "2.0.12"
-tokio = { version = "1.44.1", features = [
+tokio = { version = "1.44.2", features = [
     "rt-multi-thread",
     "macros",
     "time",
