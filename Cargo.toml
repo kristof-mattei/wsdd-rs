@@ -45,7 +45,7 @@ dotenvy = "0.15.7"
 hashbrown = "0.15.2"
 libc = "0.2.172"
 quick-xml = "0.37.4"
-rand = "0.9.0"
+rand = "0.9.1"
 reqwest = "0.12.15"
 socket2 = { version = "0.5.9", features = ["all"] }
 thiserror = "2.0.12"
