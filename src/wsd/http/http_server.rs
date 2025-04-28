@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 
-use crate::{config::Config, network_address::NetworkAddress};
+use crate::config::Config;
+use crate::network_address::NetworkAddress;
 
 #[expect(unused)]
 pub struct WSDHttpServer {
