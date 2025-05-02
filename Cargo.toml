@@ -37,7 +37,7 @@ non_ascii_idents = { level = "deny", priority = 127 }
 
 [dependencies]
 clap = { version = "4.5.37", features = ["cargo", "string", "derive"] }
-color-eyre = { git = "https://github.com/eyre-rs/eyre", rev = "c4ee249f7c51dc6452e8704ae8d117d90d6eeebc" }
+color-eyre = "0.6.4"
 console-subscriber = "0.4.1"
 const_format = { version = "0.2.34", features = ["fmt", "rust_1_83"] }
 delegate = "0.13.3"
