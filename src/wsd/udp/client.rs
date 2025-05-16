@@ -408,6 +408,7 @@ fn spawn_receiver_loop(
                     },
                 };
 
+            #[expect(clippy::single_match_else)]
             // handle based on action
             if let Err(err) = match action.as_ref() {
                 constants::WSD_HELLO => {
