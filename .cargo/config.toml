@@ -1,5 +1,2 @@
 [build]
 rustflags = ["--cfg", "tokio_unstable"]
-
-[target.aarch64-unknown-linux-musl]
-linker = "aarch64-linux-gnu-gcc"
