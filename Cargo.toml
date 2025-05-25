@@ -53,7 +53,7 @@ rand = "0.9.1"
 reqwest = "0.12.15"
 socket2 = { version = "0.5.9", features = ["all"] }
 thiserror = "2.0.12"
-tokio = { version = "1.45.0", features = [
+tokio = { version = "1.45.1", features = [
     "rt-multi-thread",
     "macros",
     "time",
@@ -72,7 +72,7 @@ tracing-subscriber = { version = "0.3.19", features = [
     "tracing-log",
 ] }
 url = "2.5.4"
-uuid = { version = "1.16.0", features = ["v1", "v4", "v5"] }
+uuid = { version = "1.17.0", features = ["v1", "v4", "v5"] }
 zerocopy = { version = "0.8.25", features = ["derive"] }
 
 # OpenSSL for musl
