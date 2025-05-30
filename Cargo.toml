@@ -41,7 +41,7 @@ non_ascii_idents = { level = "deny", priority = 127 }
 
 [dependencies]
 clap = { version = "4.5.39", features = ["cargo", "string", "derive"] }
-color-eyre = "0.6.4"
+color-eyre = "0.6.5"
 console-subscriber = "0.4.1"
 const_format = { version = "0.2.34", features = ["fmt", "rust_1_83"] }
 delegate = "0.13.3"
