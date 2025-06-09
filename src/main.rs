@@ -1,9 +1,7 @@
-#![allow(clippy::needless_lifetimes)]
-#![allow(clippy::needless_pass_by_value)]
-#![allow(clippy::unused_self)]
-#![allow(clippy::manual_let_else)]
-#![allow(clippy::unnecessary_wraps)]
-#![allow(clippy::too_many_lines)]
+#![expect(clippy::needless_lifetimes)]
+#![expect(clippy::needless_pass_by_value)]
+#![expect(clippy::unused_self)]
+#![expect(clippy::manual_let_else)]
 mod address_monitor;
 mod api_server;
 mod cli;
