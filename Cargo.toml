@@ -50,7 +50,7 @@ hashbrown = "0.15.4"
 libc = "0.2.172"
 quick-xml = "0.37.5"
 rand = "0.9.1"
-reqwest = "0.12.19"
+reqwest = "0.12.20"
 socket2 = { version = "0.5.10", features = ["all"] }
 thiserror = "2.0.12"
 tokio = { version = "1.45.1", features = [
