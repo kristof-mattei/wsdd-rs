@@ -47,7 +47,7 @@ const_format = { version = "0.2.34", features = ["fmt", "rust_1_83"] }
 delegate = "0.13.3"
 dotenvy = "0.15.7"
 hashbrown = "0.15.4"
-libc = "0.2.172"
+libc = "0.2.173"
 quick-xml = "0.37.5"
 rand = "0.9.1"
 reqwest = "0.12.20"
