@@ -42,7 +42,7 @@ pub unsafe fn setsockopt<F: AsFd, T>(
     .map(|_| ())
 }
 
-#[allow(unused)]
+#[expect(unused)]
 pub fn set_up_handler(signum: c_int, handler: extern "C" fn(_: c_int)) -> Result<(), eyre::Report> {
     let sa = sigaction {
         sa_sigaction: handler as usize,
@@ -52,7 +52,7 @@ pub fn set_up_handler(signum: c_int, handler: extern "C" fn(_: c_int)) -> Result
         sa_restorer: None,
     };
 
-    if unsafe { sigaction(signum, &sa, null_mut()) } == -1 {
+    if unsafe { sigaction(signum, &raw const sa, null_mut()) } == -1 {
         return Err(wrap_and_report!(
             Level::ERROR,
             Error::last_os_error(),
