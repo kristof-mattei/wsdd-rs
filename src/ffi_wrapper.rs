@@ -12,7 +12,7 @@ use crate::wrap_and_report;
 
 macro_rules! syscall {
     ($fn: ident ( $($arg: expr),* $(,)* ) , $err: literal) => {{
-        #[allow(unused_unsafe)]
+        #[expect(unused_unsafe)]
         let res = unsafe { libc::$fn($($arg, )*) };
         if res == $err {
             Err(std::io::Error::last_os_error())
