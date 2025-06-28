@@ -54,7 +54,7 @@ hashbrown = { version = "0.15.4", default-features = false, features = [
     "equivalent",
 ] }
 libc = "0.2.174"
-quick-xml = "0.37.5"
+quick-xml = "0.38.0"
 rand = "0.9.1"
 reqwest = "0.12.20"
 socket2 = { version = "0.5.10", features = ["all"] }
