@@ -563,7 +563,7 @@ impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
 
                 let (to, buffer) = message_splitter.split_message(buffer);
 
-                let socket = socket.clone();
+                let socket = Arc::clone(&socket);
 
                 spawn_with_name(
                     "message sender",

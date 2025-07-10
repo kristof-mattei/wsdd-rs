@@ -141,7 +141,7 @@ impl NetworkHandler {
         ifa_index: u32,
     ) -> Result<Arc<NetworkInterface>, String> {
         let interface = match self.interfaces.entry(ifa_index) {
-            Entry::Occupied(occupied_entry) => occupied_entry.get().clone(),
+            Entry::Occupied(occupied_entry) => Arc::clone(occupied_entry.get()),
             Entry::Vacant(vacant_entry) => {
                 let if_name = match network_interface::if_indextoname(ifa_index) {
                     Ok(if_name) => if_name,
@@ -159,11 +159,11 @@ impl NetworkHandler {
                     },
                 };
 
-                vacant_entry
-                    .insert(Arc::new(NetworkInterface::new_with_index(
-                        if_name, ifa_scope, ifa_index,
-                    )))
-                    .clone()
+                let entry = vacant_entry.insert(Arc::new(NetworkInterface::new_with_index(
+                    if_name, ifa_scope, ifa_index,
+                )));
+
+                Arc::clone(entry)
             },
         };
 
