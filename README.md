@@ -33,3 +33,9 @@ XSD validation:
 I _think_ we can merge `recv_socket` & `uc_send_socket` in the future.
 
 `mc_send_socket` receives messages in `WSDClient`, unsure why
+
+## License
+
+MIT, see [LICENSE](./LICENSE)
+
+`SPDX-License-Identifier: MIT`

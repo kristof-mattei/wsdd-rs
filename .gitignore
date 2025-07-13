@@ -3,3 +3,6 @@
 /profiling
 /reports
 /target
+
+# samply output
+/profile.json
