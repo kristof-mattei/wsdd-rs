@@ -1,5 +1,6 @@
 {
   "name": "wsdd-rs",
+  "type": "module",
   "version": "0.0.0-development",
   "description": "It's written in Rust!",
   "main": "src/main.rs",

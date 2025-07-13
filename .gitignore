@@ -1,10 +1,5 @@
+/.mypy_cache
+/node_modules
+/profiling
+/reports
 /target
-.mypy_cache
-
-.cr-release-packages
-.cr-index
-
-node_modules/
-reports/
-profiling/
-NEXTVERSION
