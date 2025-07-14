@@ -52,7 +52,7 @@ clap = { version = "4.5.41", features = ["cargo", "string", "derive"] }
 color-eyre = "0.6.5"
 console-subscriber = "0.4.1"
 const_format = { version = "0.2.34", features = ["fmt", "rust_1_83"] }
-delegate = "0.13.3"
+delegate = "0.13.4"
 dotenvy = "0.15.7"
 hashbrown = { version = "0.15.4", default-features = false, features = [
     "default-hasher",
