@@ -30,7 +30,7 @@ impl<T> MaxSizeDeque<T> {
         self.inner.push_back(value);
     }
 
-    #[expect(unused)]
+    #[expect(unused, reason = "WIP")]
     pub fn push_front(&mut self, value: T) {
         if self.inner.len() > self.max_size {
             self.inner.pop_back();

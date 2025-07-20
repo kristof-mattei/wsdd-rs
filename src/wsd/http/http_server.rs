@@ -5,7 +5,7 @@ use tokio_util::sync::CancellationToken;
 use crate::config::Config;
 use crate::network_address::NetworkAddress;
 
-#[expect(unused)]
+#[expect(unused, reason = "WIP")]
 pub struct WSDHttpServer {
     address: NetworkAddress,
     cancellation_token: CancellationToken,

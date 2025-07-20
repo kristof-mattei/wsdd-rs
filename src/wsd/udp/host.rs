@@ -70,10 +70,8 @@ impl WSDHost {
         // note that this is a child token, so we only cancel ourselves
         self.cancellation_token.cancel();
 
-        if graceful {
-            if let Err(err) = self.send_bye().await {
-                event!(Level::DEBUG, ?err, "Failed to schedule bye message");
-            }
+        if graceful && let Err(err) = self.send_bye().await {
+            event!(Level::DEBUG, ?err, "Failed to schedule bye message");
         }
     }
 
@@ -137,12 +135,15 @@ fn spawn_receiver_loop(
 
     spawn_with_name(format!("wsd host ({})", address).as_str(), async move {
         loop {
-            let message = tokio::select! {
-                () = cancellation_token.cancelled() => {
-                    break;
-                },
-                message = receiver.recv() => {
-                    message
+            #[expect(clippy::pattern_type_mismatch, reason = "Tokio macro")]
+            let message = {
+                tokio::select! {
+                    () = cancellation_token.cancelled() => {
+                        break;
+                    },
+                    message = receiver.recv() => {
+                        message
+                    }
                 }
             };
 

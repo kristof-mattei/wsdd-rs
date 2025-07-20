@@ -1,7 +1,7 @@
-#![expect(clippy::needless_lifetimes)]
-#![expect(clippy::needless_pass_by_value)]
-#![expect(clippy::unused_self)]
-#![expect(clippy::manual_let_else)]
+#![expect(clippy::needless_lifetimes, reason = "WIP")]
+#![expect(clippy::needless_pass_by_value, reason = "WIP")]
+#![expect(clippy::unused_self, reason = "WIP")]
+#![expect(clippy::manual_let_else, reason = "WIP")]
 mod address_monitor;
 mod api_server;
 mod cli;
@@ -36,8 +36,8 @@ use security::{chroot, drop_privileges};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::{EnvFilter, Layer};
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::{EnvFilter, Layer as _};
 
 use crate::cli::parse_cli;
 
@@ -156,7 +156,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     //     api_server = ApiServer(aio_loop, args.listen, nm)
     // ApiServer::new(listen, )
     // };
-    if let Some(chroot_path) = &config.chroot {
+    if let &Some(ref chroot_path) = &config.chroot {
         if let Err(err) = chroot(chroot_path) {
             event!(
                 Level::ERROR,
@@ -166,6 +166,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
             );
 
             // TODO error more gracefully
+            #[expect(clippy::exit, reason = "Daemonize failed, all we can do is die")]
             std::process::exit(2);
         } else {
             event!(
@@ -176,16 +177,23 @@ async fn start_tasks() -> Result<(), eyre::Report> {
         }
     }
 
-    if let &Some((uid, gid)) = &config.user {
-        if let Err(reason) = drop_privileges(uid, gid) {
-            event!(Level::ERROR, ?uid, ?gid, reason, "Drop privileges failed");
+    if let &Some((uid, gid)) = &config.user
+        && let Err(reason) = drop_privileges(uid, gid)
+    {
+        event!(Level::ERROR, ?uid, ?gid, reason, "Drop privileges failed");
 
-            // TODO error more gracefully
-            std::process::exit(3);
-        }
+        // TODO error more gracefully
+        #[expect(clippy::exit, reason = "Daemonize failed, all we can do is die")]
+        std::process::exit(3);
     }
 
-    if config.chroot.is_some() && (unsafe { libc::getuid() == 0 || libc::getgid() == 0 }) {
+    if config.chroot.is_some()
+        &&
+        // SAFETY: libc call
+        (unsafe { libc::getuid() == 0 } ||
+            // SAFETY: libc call
+            unsafe { libc::getgid() == 0 })
+    {
         event!(
             Level::WARN,
             "chrooted but running as root, consider -u option"
@@ -213,18 +221,21 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     // * ctrl + c (SIGINT)
     // * a message on the shutdown channel, sent either by the server task or
     // another task when they complete (which means they failed)
-    tokio::select! {
-        _ = signal_handlers::wait_for_sigint() => {
-            // we completed because ...
-            event!(Level::WARN, message = "CTRL+C detected, stopping all tasks");
-        },
-        _ = signal_handlers::wait_for_sigterm() => {
-            // we completed because ...
-            event!(Level::WARN, message = "Sigterm detected, stopping all tasks");
-        },
-        () = cancellation_token.cancelled() => {
-            event!(Level::WARN, "Underlying task stopped, stopping all others tasks");
-        },
+    #[expect(clippy::pattern_type_mismatch, reason = "Tokio")]
+    {
+        tokio::select! {
+            _ = signal_handlers::wait_for_sigint() => {
+                // we completed because ...
+                event!(Level::WARN, message = "CTRL+C detected, stopping all tasks");
+            },
+            _ = signal_handlers::wait_for_sigterm() => {
+                // we completed because ...
+                event!(Level::WARN, message = "Sigterm detected, stopping all tasks");
+            },
+            () = cancellation_token.cancelled() => {
+                event!(Level::WARN, "Underlying task stopped, stopping all others tasks");
+            },
+        }
     }
 
     // backup, in case we forgot a dropguard somewhere

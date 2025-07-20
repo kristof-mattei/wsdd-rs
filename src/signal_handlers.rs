@@ -8,7 +8,7 @@ pub async fn wait_for_sigterm() -> Option<()> {
         .await
 }
 
-#[expect(unused)]
+#[expect(unused, reason = "WIP")]
 /// Waits forever for a SIGUSR1
 pub async fn wait_for_sigusr1() -> Option<()> {
     signal(SignalKind::user_defined1())

@@ -51,8 +51,6 @@ url = "2.5.4"
 uuid = { version = "1.17.0", features = ["v1", "v4", "v5"] }
 zerocopy = { version = "0.8.26", features = ["derive"] }
 
-
-
 [lints.clippy]
 # don't stop from compiling / running
 all = "warn"
@@ -92,7 +90,8 @@ cfg_not_test = { level = "deny", priority = 127 }
 clone_on_ref_ptr = { level = "deny", priority = 127 }
 create_dir = { level = "deny", priority = 127 }
 dbg_macro = { level = "deny", priority = 127 }
-decimal_literal_representation = { level = "deny", priority = 127 }
+# Debatable
+# decimal_literal_representation = { level = "deny", priority = 127 }
 # Debatable
 # default_numeric_fallback = { level = "deny", priority = 127 }
 default_union_representation = { level = "deny", priority = 127 }
@@ -137,7 +136,7 @@ mod_module_files = { level = "deny", priority = 127 }
 # module_name_repetitions = { level = "deny", priority = 127 }
 modulo_arithmetic = { level = "deny", priority = 127 }
 multiple_inherent_impl = { level = "deny", priority = 127 }
-multiple_unsafe_ops_per_block = { level = "deny", priority = 127 }
+# multiple_unsafe_ops_per_block = { level = "deny", priority = 127 }
 mutex_atomic = { level = "deny", priority = 127 }
 mutex_integer = { level = "deny", priority = 127 }
 needless_raw_strings = { level = "deny", priority = 127 }

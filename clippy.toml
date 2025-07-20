@@ -1,1 +1,12 @@
-absolute-paths-allowed-crates = ["std"]
+absolute-paths-allowed-crates = [
+    "color_eyre",
+    "clap",
+    "crate",
+    "hashbrown",
+    "tokio",
+    "tokio_util",
+    "tracing",
+    "tracing_subscriber",
+    "std",
+    "quick_xml",
+]
