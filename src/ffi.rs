@@ -1,6 +1,10 @@
-#![expect(clippy::struct_field_names)]
-#![expect(non_snake_case)]
-#![expect(unused)]
+#![expect(clippy::struct_field_names, reason = "WIP")]
+#![expect(non_snake_case, reason = "WIP")]
+#![expect(unused, reason = "WIP")]
+// #![expect(
+//     non_camel_case_types,
+//     reason = "to match the original header definition"
+// )]
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 /// Alignment of `rtattr`. `rtattr`'s `align_of()` is 2, but in a message received there's more because there's extra info in there

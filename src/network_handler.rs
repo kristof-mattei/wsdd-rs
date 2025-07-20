@@ -65,12 +65,15 @@ impl NetworkHandler {
 
     pub async fn handle_change(&mut self) -> Result<(), eyre::Report> {
         loop {
-            let command = tokio::select! {
-                () = self.cancellation_token.cancelled() => {
-                    break;
-                },
-                command = self.receiver.recv() => {
-                    command
+            #[expect(clippy::pattern_type_mismatch, reason = "Tokio")]
+            let command = {
+                tokio::select! {
+                    () = self.cancellation_token.cancelled() => {
+                        break;
+                    },
+                    command = self.receiver.recv() => {
+                        command
+                    }
                 }
             };
 
@@ -328,7 +331,7 @@ impl NetworkHandler {
 
     /// Get the MCI for the address, its family and the interface.
     /// adress must be given as a string.
-    #[expect(unused)]
+    #[expect(unused, reason = "WIP")]
     fn get_mch_by_address(&mut self, address: &NetworkAddress) -> Option<&MulticastHandler> {
         self.multicast_handlers
             .iter()

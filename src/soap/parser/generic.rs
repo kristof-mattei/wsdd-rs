@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::str::FromStr;
+use std::str::FromStr as _;
 
 use quick_xml::NsReader;
 use quick_xml::events::Event;
@@ -96,6 +96,8 @@ pub fn extract_endpoint_metadata<'reader, 'raw, 'error>(
 
                     // stop for another function to continue reading
                     break;
+                } else {
+                    // Ignore
                 }
             },
             (_, Event::Eof) => {

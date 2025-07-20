@@ -3,8 +3,8 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV
 use std::sync::Arc;
 use std::time::Duration;
 
-use color_eyre::{Section, eyre};
-use rand::Rng;
+use color_eyre::{Section as _, eyre};
+use rand::Rng as _;
 use socket2::{Domain, InterfaceIndexOrAddress, Socket, Type};
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -38,9 +38,9 @@ pub struct MulticastHandler {
     address: NetworkAddress,
 
     /// The multicast group on which we broadcast our messages
-    #[expect(unused)]
+    #[expect(unused, reason = "WIP")]
     multicast_address: UdpAddress,
-    #[expect(unused)]
+    #[expect(unused, reason = "WIP")]
     http_listen_address: SocketAddr,
     wsd_host: OnceCell<WSDHost>,
     wsd_client: OnceCell<WSDClient>,
@@ -50,7 +50,7 @@ pub struct MulticastHandler {
     /// sending multicast from a socket bound to random / user provided port
     mc_socket_sender: MessageSender<MulticastMessageSplitter>,
     /// receiving unicast traffic on the random / user provided port
-    #[expect(unused)]
+    #[expect(unused, reason = "WIP")]
     mc_socket_receiver: MessageReceiver,
     /// sending unicast messages from the WSD Port
     uc_socket_sender: MessageSender<UnicastMessageSplitter>,
@@ -210,7 +210,7 @@ impl MulticastHandler {
             SocketAddrV6::new(
                 constants::WSD_MCAST_GRP_V6,
                 constants::WSD_UDP_PORT.into(),
-                0x575Cu32,
+                0x575C_u32,
                 idx,
             )
             .into(),
@@ -391,7 +391,6 @@ impl MulticastHandler {
                 )
                 .await;
 
-                #[expect(clippy::let_and_return)]
                 host
             })
             .await;
@@ -414,7 +413,6 @@ impl MulticastHandler {
                 )
                 .await;
 
-                #[expect(clippy::let_and_return)]
                 client
             })
             .await;
@@ -429,7 +427,6 @@ impl MulticastHandler {
                     Arc::clone(&self.config),
                 );
 
-                #[expect(clippy::let_and_return)]
                 server
             })
             .await;
@@ -453,6 +450,8 @@ impl MessageReceiver {
             spawn_with_name(
                 format!("socket receiver ({})", socket.local_addr().unwrap()).as_str(),
                 async move {
+                    #[expect(clippy::infinite_loop, reason = "Endless task")]
+                    // TODO await cancellation token
                     loop {
                         let mut buffer = vec![MaybeUninit::<u8>::uninit(); WSD_MAX_LEN];
 
@@ -483,6 +482,7 @@ impl MessageReceiver {
 
                         let buffer = Arc::<[_]>::from(buffer);
 
+                        // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
                         let buffer = unsafe { buffer.assume_init() };
 
                         let lock = channels.read().await;

@@ -71,6 +71,8 @@ impl MessageHandler {
                         } else if e.name().local_name().as_ref() == b"Body" {
                             has_body = true;
                             break;
+                        } else {
+                            // ...
                         }
                     }
                 },
@@ -168,6 +170,8 @@ fn parse_header<'r>(reader: &mut NsReader<&'r [u8]>) -> ParsedHeader<'r> {
                         message_id = Some(reader.read_text(e.to_end().name())?);
                     } else if e.name().local_name().as_ref() == b"Action" {
                         action = Some(reader.read_text(e.to_end().name())?);
+                    } else {
+                        // Not a match, continue
                     }
                 }
             },

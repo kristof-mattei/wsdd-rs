@@ -1,4 +1,4 @@
-#![expect(dead_code)]
+#![expect(unused, reason = "WIP")]
 use std::ffi::{CStr, CString};
 use std::io::Error;
 
@@ -13,7 +13,7 @@ pub struct NetworkInterface {
 }
 
 impl NetworkInterface {
-    pub fn new(name: impl Into<String>, scope: u8) -> Result<Self, eyre::Report> {
+    pub fn new<I: Into<String>>(name: I, scope: u8) -> Result<Self, eyre::Report> {
         let name: String = name.into();
 
         let index = if_nametoindex(&name)?;
@@ -25,7 +25,7 @@ impl NetworkInterface {
         })
     }
 
-    pub fn new_with_index(name: impl Into<String>, scope: u8, index: u32) -> Self {
+    pub fn new_with_index<I: Into<String>>(name: I, scope: u8, index: u32) -> Self {
         let name = name.into();
         Self {
             name: name.into(),
@@ -50,6 +50,7 @@ impl PartialEq for NetworkInterface {
 fn if_nametoindex(name: &str) -> Result<u32, eyre::Report> {
     let name = CString::new(name).expect("Couldn't convert name to CString");
 
+    // SAFETY: libc call
     let result = unsafe { libc::if_nametoindex(name.as_ptr().cast()) };
 
     if result == 0 {
@@ -60,8 +61,9 @@ fn if_nametoindex(name: &str) -> Result<u32, eyre::Report> {
 }
 
 pub fn if_indextoname(index: u32) -> Result<String, eyre::Report> {
-    let mut buffer = vec![0u8; IF_NAMESIZE];
+    let mut buffer = vec![0_u8; IF_NAMESIZE];
 
+    // SAFETY: libc call
     let result = unsafe { libc::if_indextoname(index, buffer.as_mut_ptr().cast()) };
 
     if result.is_null() {

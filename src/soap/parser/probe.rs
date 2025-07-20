@@ -49,6 +49,8 @@ fn parse_probe<'raw>(reader: &mut NsReader<&'raw [u8]>) -> ParsedProbe {
                     && e.name().local_name().as_ref() == b"Types"
                 {
                     types = Some(reader.read_text(e.to_end().name())?);
+                } else {
+                    // Ignore
                 }
             },
             (_, Event::Eof) => {

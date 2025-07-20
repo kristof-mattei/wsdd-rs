@@ -6,7 +6,7 @@ pub struct UrlIpAddr {
 
 impl std::fmt::Display for UrlIpAddr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.ip_addr {
+        match self.ip_addr {
             IpAddr::V4(ipv4_addr) => write!(f, "{}", ipv4_addr),
             IpAddr::V6(ipv6_addr) => write!(f, "[{}]", ipv6_addr),
         }

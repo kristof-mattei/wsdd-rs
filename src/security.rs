@@ -18,13 +18,20 @@ pub fn parse_userspec(user_spec: &str) -> Result<(u32, u32), String> {
 }
 
 fn getpwname(user: &str) -> Result<u32, String> {
-    unsafe { *libc::__errno_location() = 0 };
-
     let u = CString::new(user).unwrap();
+
+    // SAFETY: libc call, needed before calling `getpwnam`
+    unsafe {
+        *libc::__errno_location() = 0;
+    }
+
+    // SAFETY: libc call
     let result = unsafe { libc::getpwnam(u.as_ptr()) };
 
+    // SAFETY: when `Some(_)` the contents are a valid passwd preference
     match unsafe { result.as_ref() } {
         None => {
+            // SAFETY: libc call
             if unsafe { *libc::__errno_location() } == 0 {
                 Err(format!("User '{}' not found in /etc/passwd", user))
             } else {
@@ -36,13 +43,20 @@ fn getpwname(user: &str) -> Result<u32, String> {
 }
 
 fn getgrname(group: &str) -> Result<u32, String> {
-    unsafe { *libc::__errno_location() = 0 };
-
     let g = CString::new(group).unwrap();
+
+    // SAFETY: libc call, needed before calling `getgrnam`
+    unsafe {
+        *libc::__errno_location() = 0;
+    }
+
+    // SAFETY: libc call
     let result = unsafe { libc::getgrnam(g.as_ptr()) };
 
+    // SAFETY: when `Some(_)` the contents are a valid group reference
     match unsafe { result.as_ref() } {
         None => {
+            // SAFETY: libc call
             if unsafe { *libc::__errno_location() } == 0 {
                 Err(format!("Group {} not found in /etc/passwd", group))
             } else {
@@ -54,14 +68,16 @@ fn getgrname(group: &str) -> Result<u32, String> {
 }
 
 pub fn drop_privileges(uid: u32, gid: u32) -> Result<(), String> {
+    // SAFETY: libc call
     if unsafe { -1 == setgid(gid) || -1 == setegid(gid) } {
-        Err(format!("setgid/setegid failed: {}", Error::last_os_error()))?;
+        return Err(format!("setgid/setegid failed: {}", Error::last_os_error()));
     }
 
     event!(Level::DEBUG, "Switched gid to {}", gid);
 
+    // SAFETY: libc call
     if unsafe { -1 == setuid(uid) || -1 == seteuid(uid) } {
-        Err(format!("setuid/seteuid failed: {}", Error::last_os_error()))?;
+        return Err(format!("setuid/seteuid failed: {}", Error::last_os_error()));
     }
 
     event!(Level::DEBUG, "Switched uid to {}", uid);
@@ -82,12 +98,14 @@ pub fn chroot(root: &Path) -> Result<(), eyre::Report> {
         .map(|root| CString::new(root).expect("Couldn't convert path to string"))
         .expect("Couldn't convert string to CString");
 
-    let result = unsafe { libc::chroot(path.as_ptr().cast()) };
+    // SAFETY: libc call
+    let result = unsafe { libc::chroot(path.as_ptr()) };
 
     if result == -1 {
         return Err(eyre::Report::new(Error::last_os_error()).wrap_err("chroot failed"));
     }
 
+    // SAFETY: libc call
     let result = unsafe { libc::chdir(c"/".as_ptr()) };
 
     if result == -1 {

@@ -1,4 +1,4 @@
-use std::io::{Cursor, Write};
+use std::io::{Cursor, Write as _};
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -27,7 +27,7 @@ pub enum MessageType {
 
 impl std::fmt::Display for MessageType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
+        match *self {
             MessageType::Hello => write!(f, "Hello"),
             MessageType::Bye => write!(f, "Bye"),
             MessageType::Probe => write!(f, "Probe"),
@@ -180,7 +180,10 @@ impl<'config> Builder<'config> {
             WSA_DISCOVERY,
             WSD_HELLO,
             None,
-            #[expect(clippy::redundant_closure_for_method_calls)]
+            #[expect(
+                clippy::redundant_closure_for_method_calls,
+                reason = "lifetimes aren't passed when using function pointer"
+            )]
             Some(|builder, element| builder.add_wsd_host_header_elements(element)),
             Some(&writer.into_inner().into_inner()),
         )?;
@@ -206,7 +209,10 @@ impl<'config> Builder<'config> {
             WSA_DISCOVERY,
             WSD_BYE,
             None,
-            #[expect(clippy::redundant_closure_for_method_calls)]
+            #[expect(
+                clippy::redundant_closure_for_method_calls,
+                reason = "lifetimes aren't passed when using function pointer"
+            )]
             Some(|builder, element| builder.add_wsd_host_header_elements(element)),
             Some(&writer.into_inner().into_inner()),
         )?;
@@ -234,7 +240,10 @@ impl<'config> Builder<'config> {
             WSA_DISCOVERY,
             WSD_PROBE,
             None,
-            #[expect(clippy::redundant_closure_for_method_calls)]
+            #[expect(
+                clippy::redundant_closure_for_method_calls,
+                reason = "lifetimes aren't passed when using function pointer"
+            )]
             Some(|builder, element| builder.add_wsd_host_header_elements(element)),
             Some(&writer.into_inner().into_inner()),
         )?;
@@ -263,7 +272,10 @@ impl<'config> Builder<'config> {
             WSA_DISCOVERY,
             WSD_RESOLVE,
             None,
-            #[expect(clippy::redundant_closure_for_method_calls)]
+            #[expect(
+                clippy::redundant_closure_for_method_calls,
+                reason = "lifetimes aren't passed when using function pointer"
+            )]
             Some(|builder, element| builder.add_wsd_host_header_elements(element)),
             Some(&writer.into_inner().into_inner()),
         )?;
@@ -304,7 +316,10 @@ impl<'config> Builder<'config> {
             WSA_ANON,
             WSD_RESOLVE_MATCH,
             Some(relates_to),
-            #[expect(clippy::redundant_closure_for_method_calls)]
+            #[expect(
+                clippy::redundant_closure_for_method_calls,
+                reason = "lifetimes aren't passed when using function pointer"
+            )]
             Some(|builder, element| builder.add_wsd_host_header_elements(element)),
             Some(&writer.into_inner().into_inner()),
         )?;
@@ -342,7 +357,10 @@ impl<'config> Builder<'config> {
             WSA_ANON,
             WSD_PROBE_MATCH,
             Some(relates_to),
-            #[expect(clippy::redundant_closure_for_method_calls)]
+            #[expect(
+                clippy::redundant_closure_for_method_calls,
+                reason = "lifetimes aren't passed when using function pointer"
+            )]
             Some(|builder, element| builder.add_wsd_host_header_elements(element)),
             Some(&writer.into_inner().into_inner()),
         )?;
@@ -489,7 +507,10 @@ impl<'config> Builder<'config> {
                 endpoint.as_urn().to_string().as_str(),
                 WSD_GET,
                 None,
-                #[expect(clippy::redundant_closure_for_method_calls)]
+                #[expect(
+                    clippy::redundant_closure_for_method_calls,
+                    reason = "lifetimes aren't passed when using function pointer"
+                )]
                 Some(|builder, element| builder.add_wsd_client_get_header_elements(element)),
                 None,
             )

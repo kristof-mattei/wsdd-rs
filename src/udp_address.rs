@@ -6,7 +6,7 @@ use crate::network_interface::NetworkInterface;
 
 #[derive(Eq)]
 pub struct UdpAddress {
-    #[expect(unused)]
+    #[expect(unused, reason = "WIP")]
     pub network_address: NetworkAddress,
     // _transport_address: Tuple
     pub transport_address: SocketAddr,

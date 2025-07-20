@@ -1,8 +1,7 @@
 use core::str;
 use std::env;
 use std::ffi::{CStr, OsString};
-use std::fs::File;
-use std::io::{Error, Read};
+use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -16,7 +15,7 @@ use crate::config::{Config, PortOrSocket};
 use crate::constants::WSDD_VERSION;
 use crate::security::parse_userspec;
 
-#[expect(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines, reason = "WIP")]
 fn build_clap_matcher() -> Command {
     let mut command = command!()
         .disable_version_flag(true)
@@ -175,6 +174,8 @@ where
         // print('wsdd - web service discovery daemon, v{}'.format(wsdd_version))
         println!("wsdd-rs - web service discovery daemon, v{}", WSDD_VERSION);
         // sys.exit(0)
+
+        #[expect(clippy::exit, reason = "TODO")]
         std::process::exit(0);
     }
 
@@ -220,7 +221,7 @@ where
 
         hostname
             .rsplit_once('.')
-            .map(|(_l, r)| r.to_string())
+            .map(|(_l, r)| r.to_owned())
             .unwrap_or(hostname)
     };
 
@@ -284,7 +285,7 @@ fn to_listen(listen: &str) -> Result<PortOrSocket, String> {
 
     if all_numeric {
         let listen =
-            (listen.parse::<u16>()).map_err(|_| "number too large to fit in u16".to_string())?;
+            (listen.parse::<u16>()).map_err(|_| "number too large to fit in u16".to_owned())?;
 
         Ok(PortOrSocket::Port(listen))
     } else {
@@ -293,8 +294,9 @@ fn to_listen(listen: &str) -> Result<PortOrSocket, String> {
 }
 
 fn gethostname() -> Result<String, std::io::Error> {
-    let mut buffer = [0u8; 255 /* POSIX LIMIT */ + 1 /* for the \0 */];
+    let mut buffer = [0_u8; 255 /* POSIX LIMIT */ + 1 /* for the \0 */];
 
+    // SAFETY: libc call
     let length = unsafe { libc::gethostname(buffer.as_mut_ptr().cast(), buffer.len()) };
 
     if length == -1 {
@@ -311,10 +313,7 @@ fn gethostname() -> Result<String, std::io::Error> {
 
 fn get_uuid_from_machine() -> Result<Uuid, eyre::Report> {
     fn read_uuid_from_file(path: &Path) -> Option<uuid::Uuid> {
-        let mut file = File::open(path).ok()?;
-
-        let mut content = String::new();
-        file.read_to_string(&mut content).ok()?;
+        let content = std::fs::read_to_string(path).ok()?;
 
         uuid::Uuid::try_parse(content.trim()).ok()
     }
