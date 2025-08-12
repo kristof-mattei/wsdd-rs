@@ -12,7 +12,7 @@ repository = "https://github.com/kristof-mattei/wsdd-rs"
 include = ["src/**", "/LICENSE", "/LICENSE-*"]
 
 [dependencies]
-clap = { version = "4.5.44", features = ["cargo", "string", "derive"] }
+clap = { version = "4.5.45", features = ["cargo", "string", "derive"] }
 color-eyre = "0.6.5"
 console-subscriber = "0.4.1"
 const_format = { version = "0.2.34", features = ["fmt", "rust_1_83"] }
