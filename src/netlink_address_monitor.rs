@@ -11,6 +11,7 @@ use libc::{
     NLM_F_REQUEST, RTM_DELADDR, RTM_GETADDR, RTM_NEWADDR, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR,
     RTMGRP_LINK,
 };
+use socket2::SockAddrStorage;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
@@ -19,6 +20,18 @@ use zerocopy::{FromBytes as _, Immutable, IntoBytes};
 use crate::config::Config;
 use crate::ffi::{self, NLMSG_ALIGNTO, ifaddrmsg, nlmsghdr, rtattr};
 use crate::network_handler::Command;
+
+#[expect(clippy::cast_possible_truncation, reason = "Compile-time checked")]
+const SIZE_OF_SOCKADDR_NL: u32 = const {
+    const SIZE: usize = size_of::<libc::sockaddr_nl>();
+
+    assert!(
+        SIZE <= u32::MAX as usize,
+        "`socketaddr_nl`'s size needs to fit in a `u32`"
+    );
+
+    SIZE as u32
+};
 
 pub struct NetlinkAddressMonitor {
     cancellation_token: CancellationToken,
@@ -65,23 +78,28 @@ impl NetlinkAddressMonitor {
 
         // SAFETY: this is how to do it as per the API docs
         let ((), socket_addr) = unsafe {
-            socket2::SockAddr::try_init(|addr_storage, len| {
-                let sockaddr_nl = &mut *addr_storage.cast::<libc::sockaddr_nl>();
+            socket2::SockAddr::try_init(
+                |addr_storage: *mut SockAddrStorage, len: *mut libc::socklen_t| {
+                    const {
+                        assert!(
+                            size_of::<libc::sockaddr_nl>() <= size_of::<SockAddrStorage>(),
+                            "allocated space not large enough"
+                        );
+                    }
 
-                sockaddr_nl.nl_family = libc::AF_NETLINK.try_into().unwrap();
-                sockaddr_nl.nl_pid = 0;
-                sockaddr_nl.nl_groups = rtm_groups.try_into().unwrap();
+                    // SAFETY: see `SockAddr::try_init` for guarantees that `addr_storage` is zeroed
+                    let sockaddr_nl = &mut *addr_storage.cast::<libc::sockaddr_nl>();
 
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    reason = "size_of socketaddr_nl < socketlen_t"
-                )]
-                {
-                    *len = std::mem::size_of::<libc::sockaddr_nl>() as libc::socklen_t;
-                }
+                    sockaddr_nl.nl_family = libc::AF_NETLINK.try_into().unwrap();
+                    sockaddr_nl.nl_pid = 0;
+                    sockaddr_nl.nl_groups = rtm_groups.cast_unsigned();
 
-                Ok(())
-            })
+                    // SAFETY: `len` is initialized and `non-null`
+                    *len = SIZE_OF_SOCKADDR_NL;
+
+                    Ok(())
+                },
+            )
         }?;
 
         socket.bind(&socket_addr)?;
@@ -121,23 +139,28 @@ impl NetlinkAddressMonitor {
 
         // SAFETY: this is how to do it as per the API docs
         let ((), socket_addr) = unsafe {
-            socket2::SockAddr::try_init(|addr_storage, len| {
-                let sockaddr_nl = &mut *addr_storage.cast::<libc::sockaddr_nl>();
+            socket2::SockAddr::try_init(
+                |addr_storage: *mut SockAddrStorage, len: *mut libc::socklen_t| {
+                    const {
+                        assert!(
+                            size_of::<libc::sockaddr_nl>() <= size_of::<SockAddrStorage>(),
+                            "allocated space not large enough"
+                        );
+                    }
 
-                sockaddr_nl.nl_family = libc::AF_NETLINK.try_into().unwrap();
-                sockaddr_nl.nl_pid = 0;
-                sockaddr_nl.nl_groups = 0;
+                    // SAFETY: see `SockAddr::try_init` for guarantees that `addr_storage` is zeroed
+                    let sockaddr_nl = &mut *addr_storage.cast::<libc::sockaddr_nl>();
 
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    reason = "size_of socketaddr_nl < socketlen_t"
-                )]
-                {
-                    *len = std::mem::size_of::<libc::sockaddr_nl>() as libc::socklen_t;
-                }
+                    sockaddr_nl.nl_family = libc::AF_NETLINK.try_into().unwrap();
+                    sockaddr_nl.nl_pid = 0;
+                    sockaddr_nl.nl_groups = 0;
 
-                Ok(())
-            })
+                    // SAFETY: `len` is initialized and `non-null`
+                    *len = SIZE_OF_SOCKADDR_NL;
+
+                    Ok(())
+                },
+            )
         }?;
 
         socket2::SockRef::from(&self.socket).send_to(request.as_bytes(), &socket_addr)?;
