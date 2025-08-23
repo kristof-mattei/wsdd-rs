@@ -51,7 +51,7 @@ tracing-subscriber = { version = "0.3.19", features = [
     "time",
     "tracing-log",
 ] }
-url = "2.5.6"
+url = "2.5.7"
 uuid = { version = "1.18.0", features = ["v1", "v4", "v5"] }
 zerocopy = { version = "0.8.26", features = ["derive"] }
 
