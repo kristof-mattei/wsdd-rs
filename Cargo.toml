@@ -32,7 +32,7 @@ reqwest = { version = "0.12.23", default-features = false, features = [
     "rustls-tls",
 ] }
 socket2 = { version = "0.6.0", features = ["all"] }
-thiserror = "2.0.15"
+thiserror = "2.0.16"
 tokio = { version = "1.47.1", features = [
     "rt-multi-thread",
     "macros",
@@ -51,7 +51,7 @@ tracing-subscriber = { version = "0.3.19", features = [
     "time",
     "tracing-log",
 ] }
-url = "2.5.6"
+url = "2.5.7"
 uuid = { version = "1.18.0", features = ["v1", "v4", "v5"] }
 zerocopy = { version = "0.8.26", features = ["derive"] }
 
