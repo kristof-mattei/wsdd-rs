@@ -27,7 +27,7 @@ const SIZE_OF_SOCKADDR_NL: u32 = const {
 
     assert!(
         SIZE <= u32::MAX as usize,
-        "`socketaddr_nl`'s size needs to fit in a `u32`"
+        "`sockaddr_nl`'s size needs to fit in a `u32`"
     );
 
     SIZE as u32
