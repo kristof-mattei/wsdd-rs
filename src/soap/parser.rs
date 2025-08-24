@@ -13,11 +13,15 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{Level, event};
 
-use crate::constants::{WSA_URI, XML_SOAP_NAMESPACE};
 use crate::max_size_deque::MaxSizeDeque;
+use crate::{
+    constants::{WSA_URI, XML_SOAP_NAMESPACE},
+    network_address::NetworkAddress,
+};
 
 pub struct MessageHandler {
     handled_messages: Arc<RwLock<MaxSizeDeque<String>>>,
+    network_address: NetworkAddress,
 }
 
 struct Header<'r> {
@@ -42,8 +46,14 @@ pub enum MessageHandlerError {
 }
 
 impl MessageHandler {
-    pub fn new(handled_messages: Arc<RwLock<MaxSizeDeque<String>>>) -> Self {
-        Self { handled_messages }
+    pub fn new(
+        handled_messages: Arc<RwLock<MaxSizeDeque<String>>>,
+        network_address: NetworkAddress,
+    ) -> Self {
+        Self {
+            handled_messages,
+            network_address,
+        }
     }
 
     /// Handle a WSD message
@@ -71,6 +81,8 @@ impl MessageHandler {
                         } else if e.name().local_name().as_ref() == b"Body" {
                             has_body = true;
                             break;
+                        } else {
+                            // ...
                         }
                     }
                 },
@@ -102,10 +114,9 @@ impl MessageHandler {
         // if let Some(src) = src {
         event!(
             Level::INFO,
-            "GONE GONE - - \"{} {} UDP\" - -",
-            // "{}({}) - - \"{} {} UDP\" - -",
-            // src.transport_address,
-            // src.network_address.interface,
+            "{}({}) - - \"{} {} UDP\" - -",
+            self.network_address.address,
+            self.network_address.interface,
             action_method,
             message_id
         );
@@ -168,6 +179,8 @@ fn parse_header<'r>(reader: &mut NsReader<&'r [u8]>) -> ParsedHeader<'r> {
                         message_id = Some(reader.read_text(e.to_end().name())?);
                     } else if e.name().local_name().as_ref() == b"Action" {
                         action = Some(reader.read_text(e.to_end().name())?);
+                    } else {
+                        // Not a match, continue
                     }
                 }
             },

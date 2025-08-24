@@ -1,24 +1,37 @@
 use std::io::Error;
 use std::mem::MaybeUninit;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::os::fd::FromRawFd;
+use std::os::fd::FromRawFd as _;
 use std::sync::Arc;
 
-use color_eyre::eyre::{self};
+use color_eyre::eyre;
 use libc::{
     AF_INET, AF_INET6, AF_PACKET, IFA_ADDRESS, IFA_F_DADFAILED, IFA_F_DEPRECATED,
     IFA_F_HOMEADDRESS, IFA_F_TENTATIVE, IFA_FLAGS, IFA_LABEL, IFA_LOCAL, NETLINK_ROUTE, NLM_F_DUMP,
     NLM_F_REQUEST, RTM_DELADDR, RTM_GETADDR, RTM_NEWADDR, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR,
     RTMGRP_LINK,
 };
+use socket2::SockAddrStorage;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
-use zerocopy::{FromBytes, Immutable, IntoBytes};
+use zerocopy::{FromBytes as _, Immutable, IntoBytes};
 
 use crate::config::Config;
 use crate::ffi::{self, NLMSG_ALIGNTO, ifaddrmsg, nlmsghdr, rtattr};
 use crate::network_handler::Command;
+
+#[expect(clippy::cast_possible_truncation, reason = "Compile-time checked")]
+const SIZE_OF_SOCKADDR_NL: u32 = const {
+    const SIZE: usize = size_of::<libc::sockaddr_nl>();
+
+    assert!(
+        SIZE <= u32::MAX as usize,
+        "`sockaddr_nl`'s size needs to fit in a `u32`"
+    );
+
+    SIZE as u32
+};
 
 pub struct NetlinkAddressMonitor {
     cancellation_token: CancellationToken,
@@ -51,26 +64,37 @@ impl NetlinkAddressMonitor {
         }
 
         let raw_socket_fd =
+            // SAFETY: libc call
             unsafe { libc::socket(libc::AF_NETLINK, libc::SOCK_RAW, NETLINK_ROUTE) };
 
         if raw_socket_fd < 0 {
             return Err(Error::last_os_error());
         }
 
+        // SAFETY: `raw_socket_fd` is a raw socket
         let socket = unsafe { socket2::Socket::from_raw_fd(raw_socket_fd) };
 
         socket.set_nonblocking(true)?;
 
-        #[expect(clippy::cast_possible_truncation)]
+        // SAFETY: this is how to do it as per the API docs
         let ((), socket_addr) = unsafe {
             socket2::SockAddr::try_init(|addr_storage, len| {
+                const {
+                    assert!(
+                        size_of::<libc::sockaddr_nl>() <= size_of::<SockAddrStorage>(),
+                        "allocated space not large enough"
+                    );
+                }
+
+                // SAFETY: see `SockAddr::try_init` for guarantees that `addr_storage` is zeroed
                 let sockaddr_nl = &mut *addr_storage.cast::<libc::sockaddr_nl>();
 
                 sockaddr_nl.nl_family = libc::AF_NETLINK.try_into().unwrap();
                 sockaddr_nl.nl_pid = 0;
-                sockaddr_nl.nl_groups = rtm_groups.try_into().unwrap();
+                sockaddr_nl.nl_groups = rtm_groups.cast_unsigned();
 
-                *len = std::mem::size_of::<libc::sockaddr_nl>() as libc::socklen_t;
+                // SAFETY: `len` is initialized and `non-null`
+                *len = SIZE_OF_SOCKADDR_NL;
 
                 Ok(())
             })
@@ -111,16 +135,25 @@ impl NetlinkAddressMonitor {
             },
         };
 
-        #[expect(clippy::cast_possible_truncation)]
+        // SAFETY: this is how to do it as per the API docs
         let ((), socket_addr) = unsafe {
             socket2::SockAddr::try_init(|addr_storage, len| {
+                const {
+                    assert!(
+                        size_of::<libc::sockaddr_nl>() <= size_of::<SockAddrStorage>(),
+                        "allocated space not large enough"
+                    );
+                }
+
+                // SAFETY: see `SockAddr::try_init` for guarantees that `addr_storage` is zeroed
                 let sockaddr_nl = &mut *addr_storage.cast::<libc::sockaddr_nl>();
 
                 sockaddr_nl.nl_family = libc::AF_NETLINK.try_into().unwrap();
                 sockaddr_nl.nl_pid = 0;
                 sockaddr_nl.nl_groups = 0;
 
-                *len = std::mem::size_of::<libc::sockaddr_nl>() as libc::socklen_t;
+                // SAFETY: `len` is initialized and `non-null`
+                *len = SIZE_OF_SOCKADDR_NL;
 
                 Ok(())
             })
@@ -131,7 +164,7 @@ impl NetlinkAddressMonitor {
         Ok(())
     }
 
-    #[expect(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines, reason = "WIP")]
     pub async fn handle_change(&mut self) -> Result<(), eyre::Report> {
         loop {
             // we originally had this on the stack (array) but tokio moves it to the heap because of size
@@ -139,12 +172,15 @@ impl NetlinkAddressMonitor {
 
             let mut buffer_slice = buffer.as_mut_slice();
 
-            let bytes_read = tokio::select! {
-                () = self.cancellation_token.cancelled() => {
-                    break;
-                },
-                result = self.socket.recv_buf(&mut buffer_slice) => {
-                    result?
+            #[expect(clippy::pattern_type_mismatch, reason = "Tokio macro")]
+            let bytes_read = {
+                tokio::select! {
+                    () = self.cancellation_token.cancelled() => {
+                        break;
+                    },
+                    result = self.socket.recv_buf(&mut buffer_slice) => {
+                        result?
+                    }
                 }
             };
 
@@ -155,6 +191,7 @@ impl NetlinkAddressMonitor {
 
             let buffer = Arc::<[_]>::from(buffer);
 
+            // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
             let buffer = unsafe { buffer.assume_init() };
 
             let mut offset = 0;
@@ -217,6 +254,7 @@ impl NetlinkAddressMonitor {
 
                 let mut i = offset + size_of::<ifaddrmsg>();
 
+                #[expect(clippy::big_endian_bytes, reason = "We're reading network data")]
                 while i - offset < length {
                     let ifa_header = match ffi::rtattr::ref_from_prefix(&buffer[i..]) {
                         Ok((ifa_header, _suffix)) => ifa_header,
@@ -271,6 +309,8 @@ impl NetlinkAddressMonitor {
                         // unused
                         // original:
                         // _, ifa_flags = struct.unpack_from('HI', buf, i)
+                    } else {
+                        // ...
                     }
 
                     i += align_to(usize::from(ifa_header.rta_len), ffi::RTA_ALIGNTO);
@@ -310,7 +350,7 @@ impl NetlinkAddressMonitor {
         Ok(())
     }
 
-    #[expect(unused)]
+    #[expect(unused, reason = "WIP")]
     fn cleanup() {
         // self.aio_loop.remove_reader(self.socket.fileno())
         // self.socket.close()

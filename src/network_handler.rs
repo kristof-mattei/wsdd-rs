@@ -65,12 +65,15 @@ impl NetworkHandler {
 
     pub async fn handle_change(&mut self) -> Result<(), eyre::Report> {
         loop {
-            let command = tokio::select! {
-                () = self.cancellation_token.cancelled() => {
-                    break;
-                },
-                command = self.receiver.recv() => {
-                    command
+            #[expect(clippy::pattern_type_mismatch, reason = "Tokio")]
+            let command = {
+                tokio::select! {
+                    () = self.cancellation_token.cancelled() => {
+                        break;
+                    },
+                    command = self.receiver.recv() => {
+                        command
+                    }
                 }
             };
 
@@ -141,7 +144,7 @@ impl NetworkHandler {
         ifa_index: u32,
     ) -> Result<Arc<NetworkInterface>, String> {
         let interface = match self.interfaces.entry(ifa_index) {
-            Entry::Occupied(occupied_entry) => occupied_entry.get().clone(),
+            Entry::Occupied(occupied_entry) => Arc::clone(occupied_entry.get()),
             Entry::Vacant(vacant_entry) => {
                 let if_name = match network_interface::if_indextoname(ifa_index) {
                     Ok(if_name) => if_name,
@@ -159,11 +162,11 @@ impl NetworkHandler {
                     },
                 };
 
-                vacant_entry
-                    .insert(Arc::new(NetworkInterface::new_with_index(
-                        if_name, ifa_scope, ifa_index,
-                    )))
-                    .clone()
+                let entry = vacant_entry.insert(Arc::new(NetworkInterface::new_with_index(
+                    if_name, ifa_scope, ifa_index,
+                )));
+
+                Arc::clone(entry)
             },
         };
 
@@ -328,7 +331,7 @@ impl NetworkHandler {
 
     /// Get the MCI for the address, its family and the interface.
     /// adress must be given as a string.
-    #[expect(unused)]
+    #[expect(unused, reason = "WIP")]
     fn get_mch_by_address(&mut self, address: &NetworkAddress) -> Option<&MulticastHandler> {
         self.multicast_handlers
             .iter()

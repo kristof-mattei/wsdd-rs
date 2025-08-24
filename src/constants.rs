@@ -26,10 +26,10 @@ pub const WSDP_URI: &str = "http://schemas.xmlsoap.org/ws/2006/02/devprof";
 pub const XML_SOAP_NAMESPACE: &str = "http://www.w3.org/2003/05/soap-envelope";
 pub const XML_WSA_NAMESPACE: &str = WSA_URI;
 pub const XML_WSD_NAMESPACE: &str = WSD_URI;
-#[expect(unused)]
+#[expect(unused, reason = "WIP")]
 pub const XML_WSX_NAMESPACE: &str = "http://schemas.xmlsoap.org/ws/2004/09/mex";
 pub const XML_WSDP_NAMESPACE: &str = WSDP_URI;
-#[expect(unused)]
+#[expect(unused, reason = "WIP")]
 pub const XML_PNPX_NAMESPACE: &str = "http://schemas.microsoft.com/windows/pnpx/2005/10";
 pub const XML_PUB_NAMESPACE: &str = "http://schemas.microsoft.com/windows/pub/2005/07";
 
@@ -62,7 +62,7 @@ pub const WSD_TYPE_DEVICE_COMPUTER: &str = concatcp!(WSD_TYPE_DEVICE, " ", PUB_C
 // WSD_MCAST_GRP_V4: str = '239.255.255.250'
 pub const WSD_MCAST_GRP_V4: Ipv4Addr = Ipv4Addr::new(239, 255, 255, 250);
 // WSD_MCAST_GRP_V6: str = 'ff02::c'  # link-local
-pub const WSD_MCAST_GRP_V6: Ipv6Addr = Ipv6Addr::new(65282, 0, 0, 0, 0, 0, 0, 12);
+pub const WSD_MCAST_GRP_V6: Ipv6Addr = Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 0xc);
 
 // WSA_ANON: str = WSA_URI + '/role/anonymous'
 pub const WSA_ANON: &str = concatcp!(WSA_URI, "/role/anonymous");

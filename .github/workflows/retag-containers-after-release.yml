@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: Update semantic tags on repo & image after release
 
 on:
@@ -58,40 +59,38 @@ jobs:
           # where to download the archive to
           archive_path=${temp_path}/${file_name}
 
-          # fetch releases
-          curl \
-            --silent \
-            --location \
-            --output ${json_path} \
-            https://api.github.com/repos/google/go-containerregistry/releases/latest
+          url_to_krane=$(wget \
+              --output-document=- \
+              --timeout=10 \
+              --waitretry=3 \
+              --retry-connrefused \
+              --progress=dot:mega \
+              "https://api.github.com/repos/google/go-containerregistry/releases/latest" \
+              | jq \
+                  --raw-output \
+                  ".assets.[] | select(.browser_download_url | contains(\"${file_name}\")) | .browser_download_url")
 
-          url_to_krane=$(cat ${json_path} |\
-            jq \
-              --raw-output \
-              ".assets.[] | select(.browser_download_url | contains(\"${file_name}\")) | .browser_download_url"
-          )
-
-          # Download archive
-          curl \
-            --silent \
-            --location \
-            --output ${archive_path} \
-            $url_to_krane
-
-          cd ${temp_path}
-
-          # extract archive
-          tar \
-            --verbose \
-            --extract \
-            --gunzip \
-            --file ./${file_name}
+          wget \
+            --output-document=- \
+            --timeout=10 \
+            --waitretry=3 \
+            --retry-connrefused \
+            --progress=dot:mega \
+            "${url_to_krane}" \
+            | tar \
+                --directory=${temp_path}/ \
+                --strip-components=0 \
+                --no-overwrite-dir \
+                --extract \
+                --verbose \
+                --gunzip \
+                --file=-
 
           # append to path
           echo "${temp_path}" >> ${GITHUB_PATH}
 
       - name: Log into registry ${{ env.REGISTRY }}
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -119,7 +118,7 @@ jobs:
 
       - name: Set the new TAGs
         id: meta
-        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
           images: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           tags: |

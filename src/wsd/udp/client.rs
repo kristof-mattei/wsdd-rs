@@ -13,15 +13,15 @@ use uuid::Uuid;
 use uuid::fmt::Urn;
 
 use super::HANDLED_MESSAGES;
-use crate::config::Config;
 use crate::constants::{self, APP_MAX_DELAY, PROBE_TIMEOUT};
 use crate::soap::builder::{Builder, MessageType};
 use crate::soap::parser::{self, MessageHandler, MessageHandlerError};
 use crate::utils::task::spawn_with_name;
 use crate::wsd::device;
 use crate::wsd::device::WSDDiscoveredDevice;
+use crate::{config::Config, network_address::NetworkAddress};
 
-#[expect(dead_code)]
+#[expect(unused, reason = "WIP")]
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
@@ -39,17 +39,19 @@ impl WSDClient {
     pub async fn init(
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
-        address: IpAddr,
+        network_address: NetworkAddress,
         mc_send_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
         multicast: Sender<Box<[u8]>>,
         unicast: Sender<(SocketAddr, Box<[u8]>)>,
     ) -> Self {
         let cancellation_token = cancellation_token.child_token();
 
+        let address = network_address.address;
+
         spawn_receiver_loop(
             cancellation_token.clone(),
             Arc::clone(&config),
-            address,
+            network_address,
             mc_send_socket_receiver,
             multicast.clone(),
             unicast,
@@ -73,7 +75,7 @@ impl WSDClient {
         client
     }
 
-    #[expect(clippy::unused_async)]
+    #[expect(clippy::unused_async, reason = "WIP")]
     pub async fn teardown(self, graceful: bool) {
         self.cancellation_token.cancel();
 
@@ -133,18 +135,21 @@ fn __extract_xaddr(bound_to: IpAddr, xaddrs: &str) -> Option<url::Url> {
             continue;
         };
 
-        if bound_to.is_ipv6() {
-            //      if (self.mch.address.family == socket.AF_INET6) and ('//[fe80::' in addr):
-            //          # use first link-local address for IPv6
-            match addr.host() {
-                Some(Host::Ipv6(ipv6)) if ipv6.is_unicast_link_local() => {
-                    return Some(addr);
-                },
-                _ => continue,
-            }
-        } else if bound_to.is_ipv4() {
-            //  use first (and very likely the only) IPv4 address
-            return Some(addr);
+        match bound_to {
+            IpAddr::V6(_) => {
+                //      if (self.mch.address.family == socket.AF_INET6) and ('//[fe80::' in addr):
+                //          # use first link-local address for IPv6
+                match addr.host() {
+                    Some(Host::Ipv6(ipv6)) if ipv6.is_unicast_link_local() => {
+                        return Some(addr);
+                    },
+                    _ => continue,
+                }
+            },
+            IpAddr::V4(_) => {
+                //  use first (and very likely the only) IPv4 address
+                return Some(addr);
+            },
         }
     }
 
@@ -278,9 +283,12 @@ async fn perform_metadata_exchange(
     //         if host is not None:
     //             request.add_header('Host', host)
 
-    #[expect(clippy::cast_possible_truncation)]
-    #[expect(clippy::cast_sign_loss)]
-    let timeout = (config.metadata_timeout * 1000f32) as u64;
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "At the top range `u64::MAX` is still long enough to wait"
+    )]
+    #[expect(clippy::cast_sign_loss, reason = "Negative timeouts aren't timeouts")]
+    let timeout = (config.metadata_timeout * 1000_f32) as u64;
 
     let response = builder
         .body(body)
@@ -353,21 +361,26 @@ async fn handle_metadata(meta: String, endpoint: Uuid, xaddr: Url) -> Result<(),
 fn spawn_receiver_loop(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    bound_to: IpAddr,
+    network_address: NetworkAddress,
     mut multicast_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
     multicast: Sender<Box<[u8]>>,
     _unicast: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
-    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES));
+    let address = network_address.address;
 
-    spawn_with_name(format!("wsd host ({})", bound_to).as_str(), async move {
+    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_address);
+
+    spawn_with_name(format!("wsd host ({})", address).as_str(), async move {
         loop {
-            let message = tokio::select! {
-                () = cancellation_token.cancelled() => {
-                    break;
-                },
-                message = multicast_receiver.recv() => {
-                    message
+            #[expect(clippy::pattern_type_mismatch, reason = "Tokio")]
+            let message = {
+                tokio::select! {
+                    () = cancellation_token.cancelled() => {
+                        break;
+                    },
+                    message = multicast_receiver.recv() => {
+                        message
+                    }
                 }
             };
 
@@ -408,11 +421,11 @@ fn spawn_receiver_loop(
                     },
                 };
 
-            #[expect(clippy::single_match_else)]
             // handle based on action
+            #[expect(clippy::single_match_else, reason = "WIP")]
             if let Err(err) = match action.as_ref() {
                 constants::WSD_HELLO => {
-                    handle_hello(&config, bound_to, &multicast, body_reader).await
+                    handle_hello(&config, address, &multicast, body_reader).await
                 },
                 // constants::WSD_BYE => handle_bye(&config, &message_id, body_reader),
                 // constants::WSD_PROBE_MATCH => handle_probe_match(&config, &message_id, body_reader),

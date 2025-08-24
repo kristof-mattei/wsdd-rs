@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: Build
+name: CI
 
 on:
   push:
@@ -9,23 +9,18 @@ on:
     branches:
       - main
 
-permissions:
-  checks: write
-  contents: read
-  id-token: write
-  issues: write
-  packages: write
-  pull-requests: write
-
 concurrency:
   # each new commit to a PR runs this workflow
   # so we need to avoid a long running older one from overwriting the "pr-<number>-latest"
   group: "${{ github.workflow }} @ ${{ github.ref_name }}"
   cancel-in-progress: true
+
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
-  # set this to true in GitHub variables to enable building the container
-  HAS_CONTAINER: true
+  CARGO_FEATURES: --all-features
   # Use docker.io for Docker Hub if empty
   REGISTRY: ghcr.io
   # github.repository as <account>/<repo>
@@ -38,7 +33,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_container: ${{ steps.determine.outputs.has_container }}
-
     steps:
       - name: Repo has docker container?
         shell: bash
@@ -50,11 +44,15 @@ jobs:
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - &checkout
+        name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           show-progress: false
 
@@ -68,6 +66,8 @@ jobs:
   calculate-version:
     name: Calculate version
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs:
       - changes
       - repo-has-container
@@ -79,28 +79,31 @@ jobs:
       fromJSON(needs.changes.outputs.code) == true
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           show-progress: false
           fetch-depth: 0
 
-      - name: Cache dependencies
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      - &cache_dependencies
+        name: Cache dependencies
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         env:
           CACHE_NAME: cargo-cache-dependencies
         with:
           path: |
             ~/.cargo
             ./target
-          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-cocogitto
+          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-${{ env.GITHUB_JOB }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-
             ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-
 
-      - name: Set up mold
-        uses: rui314/setup-mold@85c79d00377f0d32cdbae595a46de6f7c2fa6599 # v1
+      - &set_up_mold
+        name: Set up mold
+        uses: rui314/setup-mold@7344740a9418dcdcb481c7df83d9fbd1d5072d7d # v1
 
-      - name: Set up toolchain
+      - &set_up_toolchain
+        name: Set up toolchain
         shell: bash
         run: |
           rm ${HOME}/.cargo/bin/cargo-fmt
@@ -114,7 +117,8 @@ jobs:
 
           cargo --version
 
-      - name: Get binstall
+      - &get_binstall
+        name: Get binstall
         shell: bash
         working-directory: /tmp
         run: |
@@ -138,7 +142,7 @@ jobs:
       - name: Install cocogitto to get the next version number
         shell: bash
         run: |
-          cargo binstall --no-confirm cocogitto
+          cargo binstall --github-token ${{ secrets.GITHUB_TOKEN }} --no-confirm cocogitto --pkg-url "{ repo }/releases/download/{ version }/{ name }-{ version }-{ target }.tar.gz" --bin-dir "{ target }/{ bin }{ binary-ext }" --target x86_64-unknown-linux-musl --pkg-fmt tgz --bin cog --strategies crate-meta-data
 
       - name: Calculate next version
         shell: bash
@@ -169,45 +173,18 @@ jobs:
       github.event_name == 'pull_request' &&
       fromJSON(needs.changes.outputs.code) == true
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          show-progress: false
+      - *checkout
 
-      - name: Cache dependencies
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        env:
-          CACHE_NAME: cargo-cache-dependencies
-        with:
-          path: |
-            ~/.cargo
-            ./target
-          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-build
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-
-            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-
+      - *cache_dependencies
 
-      - name: Set up mold
-        uses: rui314/setup-mold@85c79d00377f0d32cdbae595a46de6f7c2fa6599 # v1
+      - *set_up_mold
 
-      - name: Set up toolchain
-        shell: bash
-        run: |
-          rm ${HOME}/.cargo/bin/cargo-fmt
-          rm ${HOME}/.cargo/bin/rust-analyzer
-          rm ${HOME}/.cargo/bin/rustfmt
-
-          rustup self update
-          rustup update
-          rustup show active-toolchain || rustup toolchain install
-          rustup show
-
-          cargo --version
+      - *set_up_toolchain
 
       - name: Build
         shell: bash
         run: |
-          cargo build --all-targets --workspace --verbose
+          cargo build ${{ env.CARGO_FEATURES }} --all-targets --locked --workspace --verbose
 
   cargo-fmt:
     name: Cargo fmt
@@ -218,40 +195,13 @@ jobs:
       github.event_name == 'pull_request' &&
       fromJSON(needs.changes.outputs.code) == true
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          show-progress: false
+      - *checkout
 
-      - name: Cache dependencies
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        env:
-          CACHE_NAME: cargo-cache-dependencies
-        with:
-          path: |
-            ~/.cargo
-            ./target
-          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-fmt
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-
-            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-
+      - *cache_dependencies
 
-      - name: Set up mold
-        uses: rui314/setup-mold@85c79d00377f0d32cdbae595a46de6f7c2fa6599 # v1
+      - *set_up_mold
 
-      - name: Set up toolchain
-        shell: bash
-        run: |
-          rm ${HOME}/.cargo/bin/cargo-fmt
-          rm ${HOME}/.cargo/bin/rust-analyzer
-          rm ${HOME}/.cargo/bin/rustfmt
-
-          rustup self update
-          rustup update
-          rustup show active-toolchain || rustup toolchain install
-          rustup show
-
-          cargo --version
+      - *set_up_toolchain
 
       - name: Install rustfmt
         shell: bash
@@ -269,41 +219,19 @@ jobs:
   cargo-test-and-report:
     name: Cargo test (and report)
     runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
+      id-token: write
+      pull-requests: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          show-progress: false
+      - *checkout
 
-      - name: Cache dependencies
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        env:
-          CACHE_NAME: cargo-cache-dependencies
-        with:
-          path: |
-            ~/.cargo
-            ./target
-          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-test
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-
-            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-
+      - *cache_dependencies
 
-      - name: Set up mold
-        uses: rui314/setup-mold@85c79d00377f0d32cdbae595a46de6f7c2fa6599 # v1
+      - *set_up_mold
 
-      - name: Set up toolchain
-        shell: bash
-        run: |
-          rm ${HOME}/.cargo/bin/cargo-fmt
-          rm ${HOME}/.cargo/bin/rust-analyzer
-          rm ${HOME}/.cargo/bin/rustfmt
-
-          rustup self update
-          rustup update
-          rustup show active-toolchain || rustup toolchain install
-          rustup show
-
-          cargo --version
+      - *set_up_toolchain
 
       - name: Install llvm-tools
         shell: bash
@@ -313,31 +241,12 @@ jobs:
           # restore symlinks
           rustup update
 
-      - name: Get binstall
-        shell: bash
-        working-directory: /tmp
-        run: |
-          archive="cargo-binstall-x86_64-unknown-linux-musl.tgz"
-          wget \
-            --output-document=- \
-            --timeout=10 \
-            --waitretry=3 \
-            --retry-connrefused \
-            --progress=dot:mega \
-            "https://github.com/cargo-bins/cargo-binstall/releases/latest/download/${archive}" \
-            | tar \
-                --directory=${HOME}/.cargo/bin/ \
-                --strip-components=0 \
-                --no-overwrite-dir \
-                --extract \
-                --verbose \
-                --gunzip \
-                --file=-
+      - *get_binstall
 
       - name: Install nextest, custom test runner, with native support for junit and grcov
         shell: bash
         run: |
-          cargo binstall --no-confirm cargo-nextest grcov
+          cargo binstall --github-token ${{ secrets.GITHUB_TOKEN }} --no-confirm cargo-nextest grcov
 
       - name: Build with instrumentation support
         shell: bash
@@ -346,7 +255,7 @@ jobs:
           # build-* ones are not parsed by grcov
           LLVM_PROFILE_FILE: "profiling/build-%p-%m.profraw"
         run: |
-          cargo build --all-targets --all-features --workspace --verbose
+          cargo build ${{ env.CARGO_FEATURES }} --all-targets --locked --workspace --verbose
 
       - name: Run nextest
         shell: bash
@@ -355,7 +264,7 @@ jobs:
           RUSTFLAGS: "${{ env.RUSTFLAGS }} --allow=warnings -Cinstrument-coverage"
           LLVM_PROFILE_FILE: "profiling/profile-%p-%m.profraw"
         run: |
-          cargo nextest run --profile ci --no-fail-fast --all-targets --all-features --workspace
+          cargo nextest run --profile ci --no-fail-fast ${{ env.CARGO_FEATURES }} --all-targets --workspace
         continue-on-error: true
 
       - name: Upload test results
@@ -380,7 +289,7 @@ jobs:
             --source-dir .
 
       - name: Upload coverage results (to Codecov.io)
-        uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24 # v5.4.3
+        uses: codecov/codecov-action@fdcc8476540edceab3de004e990f80d881c6cc00 # v5.5.0
         with:
           disable_search: true
           disable_telem: true
@@ -420,45 +329,18 @@ jobs:
       github.event_name == 'pull_request' &&
       fromJSON(needs.changes.outputs.code) == true
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          show-progress: false
+      - *checkout
 
-      - name: Cache dependencies
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        env:
-          CACHE_NAME: cargo-cache-dependencies
-        with:
-          path: |
-            ~/.cargo
-            ./target
-          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-clippy
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-
-            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-
+      - *cache_dependencies
 
-      - name: Set up mold
-        uses: rui314/setup-mold@85c79d00377f0d32cdbae595a46de6f7c2fa6599 # v1
+      - *set_up_mold
 
-      - name: Set up toolchain
-        shell: bash
-        run: |
-          rm ${HOME}/.cargo/bin/cargo-fmt
-          rm ${HOME}/.cargo/bin/rust-analyzer
-          rm ${HOME}/.cargo/bin/rustfmt
-
-          rustup self update
-          rustup update
-          rustup show active-toolchain || rustup toolchain install
-          rustup show
-
-          cargo --version
+      - *set_up_toolchain
 
       - name: Run Clippy for GitHub Actions report
-        uses: actions-rs-plus/clippy-check@0d83844d8ff1a67b11d384d9dd6adcdcf142a8a7 # v2.2.1
+        uses: actions-rs-plus/clippy-check@fe8905c5766416f0593a503a2230a7c83141a8f0 # v2.3.0
         with:
-          args: --workspace --all-targets --all-features --no-deps
+          args: ${{ env.CARGO_FEATURES }} --all-targets --locked --workspace --verbose
 
   docker-build:
     name: Build Docker container on ${{ matrix.runs-on }} for ${{ matrix.platform }}
@@ -473,49 +355,26 @@ jobs:
     outputs:
       application_name: ${{ steps.variables.outputs.application_name }}
       description: ${{ steps.variables.outputs.description }}
-      full_image_name: ${{ steps.variables.outputs.full_image_name }}
+      full_image_name_remote_registry: ${{ steps.variables.outputs.full_image_name_remote_registry }}
+      full_image_name_local_registry: ${{ steps.variables.outputs.full_image_name_local_registry }}
       registry: ${{ steps.variables.outputs.registry }}
       unique_tag: ${{ steps.variables.outputs.unique_tag }}
     runs-on: ${{ matrix.runs-on }}
+    permissions:
+      contents: read
+      packages: write
     needs:
       - calculate-version
     # if:
     # ... is not needed because calculate-version will not run if we disable building the docker container
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          show-progress: false
+      - *checkout
 
-      - name: Cache dependencies
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        env:
-          CACHE_NAME: cargo-cache-dependencies
-        with:
-          path: |
-            ~/.cargo
-            ./target
-          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-docker
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-
-            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-
+      - *cache_dependencies
 
-      - name: Set up mold
-        uses: rui314/setup-mold@85c79d00377f0d32cdbae595a46de6f7c2fa6599 # v1
+      - *set_up_mold
 
-      - name: Set up toolchain
-        shell: bash
-        run: |
-          rm ${HOME}/.cargo/bin/cargo-fmt
-          rm ${HOME}/.cargo/bin/rust-analyzer
-          rm ${HOME}/.cargo/bin/rustfmt
-
-          rustup self update
-          rustup update
-          rustup show active-toolchain || rustup toolchain install
-          rustup show
-
-          cargo --version
+      - *set_up_toolchain
 
       - name: Get binstall
         shell: bash
@@ -550,7 +409,7 @@ jobs:
       - name: Install cargo-edit to do set-version, and cargo-get to get the description
         shell: bash
         run: |
-          cargo binstall --no-confirm cargo-edit cargo-get
+          cargo binstall --github-token ${{ secrets.GITHUB_TOKEN }} --no-confirm cargo-edit cargo-get
 
       - name: Set the Cargo.toml version before we copy in the data into the Docker container
         shell: bash
@@ -583,10 +442,15 @@ jobs:
           registry=${registry,,}
           echo "registry=${registry}" >> ${GITHUB_OUTPUT}
 
-          # The full image name, which is the registry, the owner and the repo name
+          # The final full image name, which is the registry, the owner and the repo name
           image_name=${{ env.IMAGE_NAME }}
           image_name=${image_name,,}
-          echo "full_image_name=${registry}/${image_name}" >> ${GITHUB_OUTPUT}
+          echo "full_image_name_remote_registry=${registry}/${image_name}" >> ${GITHUB_OUTPUT}
+
+          # The local registry to which we'll push
+          local_registry=localhost:5000
+          local_registry=${local_registry,,}
+          echo "full_image_name_local_registry=${local_registry}/${image_name}" >> ${GITHUB_OUTPUT}
 
           # The application's description, from Cargo.toml
           description=$(cargo get package.description)
@@ -595,7 +459,7 @@ jobs:
       # Extract metadata (tags, labels) for Docker
       # https://github.com/docker/metadata-action
       - name: Extract Docker metadata
-        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         id: meta
         with:
           labels: |
@@ -603,12 +467,12 @@ jobs:
             org.opencontainers.image.revision=${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}
             org.opencontainers.image.source=${{ github.event.pull_request.html_url }}
             org.opencontainers.image.version=pr-${{ github.event.number }}
-          images: ${{ steps.variables.outputs.full_image_name }}
+          images: ${{ steps.variables.outputs.full_image_name_local_registry }}
           tags: |
             type=raw,value=${{ steps.variables.outputs.unique_tag_arch }}
 
       - name: Log into registry ${{ steps.variables.outputs.registry }}
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
         with:
           password: ${{ secrets.GITHUB_TOKEN }}
           registry: ${{ steps.variables.outputs.registry }}
@@ -622,16 +486,14 @@ jobs:
 
       - name: Build Docker image
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
-        env:
-          BUILDX_NO_DEFAULT_ATTESTATIONS: true
         with:
           build-args: |
             APPLICATION_NAME=${{ steps.variables.outputs.application_name }}
           context: .
           # this container is THE PR's artifact, and we will re-tag it
           # once the PR has been accepted
-          cache-from: type=registry,ref=${{ steps.variables.outputs.full_image_name }}:buildcache-${{ runner.arch }}-${{ steps.variables.outputs.application_name }}-${{ matrix.platform }}
-          cache-to: type=registry,ref=${{ steps.variables.outputs.full_image_name }}:buildcache-${{ runner.arch }}-${{ steps.variables.outputs.application_name }}-${{ matrix.platform }},mode=max
+          cache-from: type=registry,ref=${{ steps.variables.outputs.full_image_name_remote_registry }}:buildcache-${{ runner.arch }}-${{ steps.variables.outputs.application_name }}-${{ matrix.platform }}
+          cache-to: type=registry,ref=${{ steps.variables.outputs.full_image_name_remote_registry }}:buildcache-${{ runner.arch }}-${{ steps.variables.outputs.application_name }}-${{ matrix.platform }},mode=max
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=oci,dest=/tmp/${{ steps.variables.outputs.unique_tag_arch }}.tar
           platforms: linux/${{ matrix.platform }}
@@ -650,7 +512,20 @@ jobs:
   docker-publish:
     name: Publish Docker container
     runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:3@sha256:3725021071ec9383eb3d87ddbdff9ed602439b3f7c958c9c2fb941049ea6531d
+        ports:
+          - 5000:5000
+    permissions:
+      attestations: write
+      id-token: write
+      packages: write
     needs:
+      - cargo-build
+      - cargo-clippy-and-report
+      - cargo-fmt
+      - cargo-test-and-report
       - docker-build
     # Check if the event is not triggered by a fork
     if: |
@@ -668,14 +543,14 @@ jobs:
             }
 
       - name: Log into registry ${{ needs.docker-build.outputs.registry }}
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
         with:
           registry: ${{ needs.docker-build.outputs.registry }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Docker metadata
-        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         id: meta
         with:
           labels: |
@@ -683,13 +558,13 @@ jobs:
             org.opencontainers.image.revision=${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}
             org.opencontainers.image.source=${{ github.event.pull_request.html_url }}
             org.opencontainers.image.version=pr-${{ github.event.number }}
-          images: ${{ needs.docker-build.outputs.full_image_name }}
+          images: ${{ needs.docker-build.outputs.full_image_name_local_registry }}
           tags: |
             type=raw,value=${{ needs.docker-build.outputs.unique_tag }}
             type=ref,event=pr,suffix=-latest
 
-      - name: Download artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - name: Download artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         id: artifact
         with:
           merge-multiple: true
@@ -701,30 +576,32 @@ jobs:
         working-directory: ${{ steps.artifact.outputs.download-path }}
         run: |
           docker load --input ./${{ needs.docker-build.outputs.unique_tag }}-amd64.tar
-          docker push ${{ needs.docker-build.outputs.full_image_name }}:${{ needs.docker-build.outputs.unique_tag }}-amd64
+          echo "Pushing amd64:"
+          docker push ${{ needs.docker-build.outputs.full_image_name_local_registry }}:${{ needs.docker-build.outputs.unique_tag }}-amd64
 
           docker load --input ./${{ needs.docker-build.outputs.unique_tag }}-arm64.tar
-          docker push ${{ needs.docker-build.outputs.full_image_name }}:${{ needs.docker-build.outputs.unique_tag }}-arm64
+          echo "Pushing arm64:"
+          docker push ${{ needs.docker-build.outputs.full_image_name_local_registry }}:${{ needs.docker-build.outputs.unique_tag }}-arm64
 
       - name: Create multiplatform image
         shell: bash
         run: |
-          new_labels=()
-          while IFS= read -r label; do
-            new_labels+=(--annotation)
-            new_labels+=("index:${label}")
-          done <<< "${{ steps.meta.outputs.labels }}"
-
           new_tags=()
           while IFS= read -r tag; do
             new_tags+=(--tag)
             new_tags+=(${tag})
           done <<< "${{ steps.meta.outputs.tags }}"
 
+          new_labels=()
+          while IFS= read -r label; do
+            new_labels+=(--annotation)
+            new_labels+=("index:${label}")
+          done <<< "${{ steps.meta.outputs.labels }}"
+
           # merge the amd64 and arm64 containers in a new multiplatform one
           docker buildx imagetools create "${new_tags[@]}" "${new_labels[@]}" \
-            ${{ needs.docker-build.outputs.full_image_name }}:${{ needs.docker-build.outputs.unique_tag }}-amd64 \
-            ${{ needs.docker-build.outputs.full_image_name }}:${{ needs.docker-build.outputs.unique_tag }}-arm64
+            ${{ needs.docker-build.outputs.full_image_name_local_registry }}:${{ needs.docker-build.outputs.unique_tag }}-amd64 \
+            ${{ needs.docker-build.outputs.full_image_name_local_registry }}:${{ needs.docker-build.outputs.unique_tag }}-arm64
 
           for new_tag in $(echo "${{ join(steps.meta.outputs.tags, ' ') }}"); do
             echo "${new_tag}:"
@@ -732,6 +609,33 @@ jobs:
             # empty to get newline
             echo ""
           done
+
+      - name: Get digest of multiplatform image in our local registry
+        shell: bash
+        id: multiplatform_image
+        run: |
+          digest=$(docker buildx imagetools inspect ${{ needs.docker-build.outputs.full_image_name_local_registry }}:${{ needs.docker-build.outputs.unique_tag }} --format "{{json .}}" | jq --raw-output ".manifest.digest")
+
+          echo "digest=${digest}" >> ${GITHUB_OUTPUT}
+
+      - name: Publish to the actual repo
+        shell: bash
+        run: |
+          docker buildx imagetools create \
+            --tag ${{ needs.docker-build.outputs.full_image_name_remote_registry }}:${{ needs.docker-build.outputs.unique_tag }} \
+            ${{ needs.docker-build.outputs.full_image_name_local_registry }}:${{ needs.docker-build.outputs.unique_tag }}
+
+      # note that we use the digest of the local image
+      # these digests don't change after pushing, but
+      # since we deal with tags (mutable), and the way to get a digest is to use the tag, I prefer
+      # sourcing the digest from the local registry we just spun up (trusted)
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        id: attestation
+        with:
+          subject-name: ${{ needs.docker-build.outputs.full_image_name_remote_registry }}
+          subject-digest: ${{ steps.multiplatform_image.outputs.digest }}
+          push-to-registry: true
 
   all-done:
     name: All done
@@ -744,8 +648,8 @@ jobs:
     needs:
       - calculate-version
       - cargo-build
-      - cargo-fmt
       - cargo-clippy-and-report
+      - cargo-fmt
       - cargo-test-and-report
       - docker-build
       - docker-publish

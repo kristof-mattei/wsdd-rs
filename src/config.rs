@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use tracing::{Level, event};
 use uuid::Uuid;
 
-#[expect(clippy::struct_excessive_bools)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Main config, copy from py version"
+)]
 #[derive(Debug, PartialEq)]
 pub struct Config {
     pub interface: Vec<String>,
