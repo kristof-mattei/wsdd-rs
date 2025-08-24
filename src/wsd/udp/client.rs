@@ -13,13 +13,13 @@ use uuid::Uuid;
 use uuid::fmt::Urn;
 
 use super::HANDLED_MESSAGES;
-use crate::config::Config;
 use crate::constants::{self, APP_MAX_DELAY, PROBE_TIMEOUT};
 use crate::soap::builder::{Builder, MessageType};
 use crate::soap::parser::{self, MessageHandler, MessageHandlerError};
 use crate::utils::task::spawn_with_name;
 use crate::wsd::device;
 use crate::wsd::device::WSDDiscoveredDevice;
+use crate::{config::Config, network_address::NetworkAddress};
 
 #[expect(unused, reason = "WIP")]
 pub(crate) struct WSDClient {
@@ -39,17 +39,19 @@ impl WSDClient {
     pub async fn init(
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
-        address: IpAddr,
+        network_address: NetworkAddress,
         mc_send_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
         multicast: Sender<Box<[u8]>>,
         unicast: Sender<(SocketAddr, Box<[u8]>)>,
     ) -> Self {
         let cancellation_token = cancellation_token.child_token();
 
+        let address = network_address.address;
+
         spawn_receiver_loop(
             cancellation_token.clone(),
             Arc::clone(&config),
-            address,
+            network_address,
             mc_send_socket_receiver,
             multicast.clone(),
             unicast,
@@ -359,14 +361,17 @@ async fn handle_metadata(meta: String, endpoint: Uuid, xaddr: Url) -> Result<(),
 fn spawn_receiver_loop(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    bound_to: IpAddr,
+    network_address: NetworkAddress,
     mut multicast_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
     multicast: Sender<Box<[u8]>>,
     _unicast: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
-    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES));
+    let address = network_address.address;
 
-    spawn_with_name(format!("wsd host ({})", bound_to).as_str(), async move {
+    let message_handler =
+        MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_address.clone());
+
+    spawn_with_name(format!("wsd host ({})", address).as_str(), async move {
         loop {
             #[expect(clippy::pattern_type_mismatch, reason = "Tokio")]
             let message = {
@@ -421,7 +426,7 @@ fn spawn_receiver_loop(
             #[expect(clippy::single_match_else, reason = "WIP")]
             if let Err(err) = match action.as_ref() {
                 constants::WSD_HELLO => {
-                    handle_hello(&config, bound_to, &multicast, body_reader).await
+                    handle_hello(&config, address, &multicast, body_reader).await
                 },
                 // constants::WSD_BYE => handle_bye(&config, &message_id, body_reader),
                 // constants::WSD_PROBE_MATCH => handle_probe_match(&config, &message_id, body_reader),
