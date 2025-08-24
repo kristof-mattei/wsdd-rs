@@ -62,7 +62,7 @@ pub const WSD_TYPE_DEVICE_COMPUTER: &str = concatcp!(WSD_TYPE_DEVICE, " ", PUB_C
 // WSD_MCAST_GRP_V4: str = '239.255.255.250'
 pub const WSD_MCAST_GRP_V4: Ipv4Addr = Ipv4Addr::new(239, 255, 255, 250);
 // WSD_MCAST_GRP_V6: str = 'ff02::c'  # link-local
-pub const WSD_MCAST_GRP_V6: Ipv6Addr = Ipv6Addr::new(65282, 0, 0, 0, 0, 0, 0, 12);
+pub const WSD_MCAST_GRP_V6: Ipv6Addr = Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 0xc);
 
 // WSA_ANON: str = WSA_URI + '/role/anonymous'
 pub const WSA_ANON: &str = concatcp!(WSA_URI, "/role/anonymous");
