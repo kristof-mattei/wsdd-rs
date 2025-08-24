@@ -9,7 +9,12 @@
             "request": "launch",
             "name": "Debug executable 'wsdd-rs'",
             "cargo": {
-                "args": ["build", "--bin=wsdd-rs", "--package=wsdd-rs"],
+                "args": [
+                    "build",
+                    "--bin=wsdd-rs",
+                    "--package=wsdd-rs",
+                    "--features=tokio-console"
+                ],
                 "filter": {
                     "name": "wsdd-rs",
                     "kind": "bin"
@@ -29,7 +34,12 @@
             "request": "launch",
             "name": "Debug executable 'wsdd-rs' with incorrect uuid",
             "cargo": {
-                "args": ["build", "--bin=wsdd-rs", "--package=wsdd-rs"],
+                "args": [
+                    "build",
+                    "--bin=wsdd-rs",
+                    "--package=wsdd-rs",
+                    "--features=tokio-console"
+                ],
                 "filter": {
                     "name": "wsdd-rs",
                     "kind": "bin"
@@ -49,7 +59,12 @@
             "request": "launch",
             "name": "Debug executable 'wsdd-rs' with --interface enp4s0 -4",
             "cargo": {
-                "args": ["build", "--bin=wsdd-rs", "--package=wsdd-rs"],
+                "args": [
+                    "build",
+                    "--bin=wsdd-rs",
+                    "--package=wsdd-rs",
+                    "--features=tokio-console"
+                ],
                 "filter": {
                     "name": "wsdd-rs",
                     "kind": "bin"
@@ -69,7 +84,12 @@
             "request": "launch",
             "name": "Debug executable 'wsdd-rs' with --interface enp4s0 -4 --discovery",
             "cargo": {
-                "args": ["build", "--bin=wsdd-rs", "--package=wsdd-rs"],
+                "args": [
+                    "build",
+                    "--bin=wsdd-rs",
+                    "--package=wsdd-rs",
+                    "--features=tokio-console"
+                ],
                 "filter": {
                     "name": "wsdd-rs",
                     "kind": "bin"
@@ -89,7 +109,12 @@
             "request": "launch",
             "name": "Debug executable 'wsdd-rs' with --interface enp4s0 -4 --no-host --discovery",
             "cargo": {
-                "args": ["build", "--bin=wsdd-rs", "--package=wsdd-rs"],
+                "args": [
+                    "build",
+                    "--bin=wsdd-rs",
+                    "--package=wsdd-rs",
+                    "--features=tokio-console"
+                ],
                 "filter": {
                     "name": "wsdd-rs",
                     "kind": "bin"
@@ -109,7 +134,12 @@
             "request": "launch",
             "name": "Debug executable 'wsdd-rs' with --interface lo",
             "cargo": {
-                "args": ["build", "--bin=wsdd-rs", "--package=wsdd-rs"],
+                "args": [
+                    "build",
+                    "--bin=wsdd-rs",
+                    "--package=wsdd-rs",
+                    "--features=tokio-console"
+                ],
                 "filter": {
                     "name": "wsdd-rs",
                     "kind": "bin"
@@ -129,7 +159,12 @@
             "request": "launch",
             "name": "Debug executable 'wsdd-rs' with -h",
             "cargo": {
-                "args": ["build", "--bin=wsdd-rs", "--package=wsdd-rs"],
+                "args": [
+                    "build",
+                    "--bin=wsdd-rs",
+                    "--package=wsdd-rs",
+                    "--features=tokio-console"
+                ],
                 "filter": {
                     "name": "wsdd-rs",
                     "kind": "bin"
