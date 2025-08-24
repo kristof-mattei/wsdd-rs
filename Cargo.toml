@@ -15,7 +15,6 @@ include = ["src/**", "/LICENSE", "/LICENSE-*"]
 default = []
 tokio-console = ["dep:console-subscriber"]
 
-
 [dependencies]
 clap = { version = "4.5.45", features = ["cargo", "string", "derive"] }
 color-eyre = "0.6.5"
