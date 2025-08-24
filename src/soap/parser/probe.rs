@@ -33,7 +33,7 @@ fn parse_probe<'raw>(reader: &mut NsReader<&'raw [u8]>) -> ParsedProbe {
                 {
                     let raw_scopes = reader.read_text(e.to_end().name())?;
 
-                    // THINK: send fault message (see p. 21 in WSD)
+                    // TODO: THINK: send fault message (see p. 21 in WSD)
                     // I don't think this is correct?
                     // scopes MAYBE be ommitted...
                     event!(
@@ -69,6 +69,8 @@ fn parse_probe<'raw>(reader: &mut NsReader<&'raw [u8]>) -> ParsedProbe {
         return Err(ProbeParsingError::MissingTypes);
     };
 
+    // TODO do we want to return the probes and make the host handle the different types
+    // As it is the host responsible for defining the response
     if types.trim() != WSD_TYPE_DEVICE {
         event!(
             Level::DEBUG,
