@@ -368,8 +368,7 @@ fn spawn_receiver_loop(
 ) {
     let address = network_address.address;
 
-    let message_handler =
-        MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_address.clone());
+    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_address);
 
     spawn_with_name(format!("wsd host ({})", address).as_str(), async move {
         loop {
