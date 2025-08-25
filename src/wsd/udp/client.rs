@@ -384,42 +384,44 @@ fn spawn_receiver_loop(
                 }
             };
 
-            let Some((_from, buffer)) = message else {
+            let Some((from, buffer)) = message else {
                 // the end, but we just got it before the cancellation
                 break;
             };
 
-            let (message_id, action, body_reader) =
-                match message_handler.deconstruct_message(&buffer).await {
-                    Ok(pieces) => pieces,
-                    Err(error) => {
-                        match error {
-                            MessageHandlerError::DuplicateMessage => {
-                                // nothing
-                            },
-                            missing @ (MessageHandlerError::MissingAction
-                            | MessageHandlerError::MissingBody
-                            | MessageHandlerError::MissingMessageId) => {
-                                event!(
-                                    Level::TRACE,
-                                    ?missing,
-                                    "XML Message did not have required elements: {}",
-                                    String::from_utf8_lossy(&buffer)
-                                );
-                            },
-                            MessageHandlerError::XmlError(error) => {
-                                event!(
-                                    Level::ERROR,
-                                    ?error,
-                                    "Error while decoding XML: {}",
-                                    String::from_utf8_lossy(&buffer)
-                                );
-                            },
-                        }
+            let (message_id, action, body_reader) = match message_handler
+                .deconstruct_message(&buffer, Some(from))
+                .await
+            {
+                Ok(pieces) => pieces,
+                Err(error) => {
+                    match error {
+                        MessageHandlerError::DuplicateMessage => {
+                            // nothing
+                        },
+                        missing @ (MessageHandlerError::MissingAction
+                        | MessageHandlerError::MissingBody
+                        | MessageHandlerError::MissingMessageId) => {
+                            event!(
+                                Level::TRACE,
+                                ?missing,
+                                "XML Message did not have required elements: {}",
+                                String::from_utf8_lossy(&buffer)
+                            );
+                        },
+                        MessageHandlerError::XmlError(error) => {
+                            event!(
+                                Level::ERROR,
+                                ?error,
+                                "Error while decoding XML: {}",
+                                String::from_utf8_lossy(&buffer)
+                            );
+                        },
+                    }
 
-                        continue;
-                    },
-                };
+                    continue;
+                },
+            };
 
             // handle based on action
             #[expect(clippy::single_match_else, reason = "WIP")]

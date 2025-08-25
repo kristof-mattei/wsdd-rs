@@ -2,8 +2,8 @@ pub mod generic;
 pub mod probe;
 pub mod resolve;
 
-use std::borrow::Cow;
 use std::sync::Arc;
+use std::{borrow::Cow, net::SocketAddr};
 
 use quick_xml::events::Event;
 use quick_xml::name::Namespace;
@@ -60,7 +60,7 @@ impl MessageHandler {
     pub async fn deconstruct_message<'r>(
         &self,
         raw: &'r [u8],
-        // src: Option<SocketAddr>,
+        src: Option<SocketAddr>,
     ) -> Result<(Cow<'r, str>, Cow<'r, str>, NsReader<&'r [u8]>), MessageHandlerError> {
         let mut reader = NsReader::from_reader(raw);
 
@@ -111,24 +111,24 @@ impl MessageHandler {
 
         let action_method = action.rsplit_once('/').unwrap().1;
 
-        // if let Some(src) = src {
-        event!(
-            Level::INFO,
-            "{}({}) - - \"{} {} UDP\" - -",
-            self.network_address.address,
-            self.network_address.interface,
-            action_method,
-            message_id
-        );
-        // } else {
-        //     // http logging is already done by according server
-        //     event!(
-        //         Level::DEBUG,
-        //         "processing WSD {} message ({})",
-        //         action_method,
-        //         message_id
-        //     );
-        // }
+        if let Some(src) = src {
+            event!(
+                Level::INFO,
+                "{}({}) - - \"{} {} UDP\" - -",
+                src,
+                self.network_address.interface,
+                action_method,
+                message_id
+            );
+        } else {
+            // http logging is already done by according server
+            event!(
+                Level::DEBUG,
+                "processing WSD {} message ({})",
+                action_method,
+                message_id
+            );
+        }
 
         if !has_body {
             return Err(MessageHandlerError::MissingBody);
