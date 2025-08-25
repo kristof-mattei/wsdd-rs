@@ -10,11 +10,12 @@ use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
 use super::HANDLED_MESSAGES;
+use crate::config::Config;
 use crate::constants;
+use crate::network_address::NetworkAddress;
 use crate::soap::builder::{self, Builder, MessageType};
 use crate::soap::parser::{self, MessageHandler, MessageHandlerError};
 use crate::utils::task::spawn_with_name;
-use crate::{config::Config, network_address::NetworkAddress};
 
 /// handles WSD requests coming from UDP datagrams.
 pub struct WSDHost {
@@ -156,37 +157,39 @@ fn spawn_receiver_loop(
                 break;
             };
 
-            let (message_id, action, body_reader) =
-                match message_handler.deconstruct_message(&buffer).await {
-                    Ok(pieces) => pieces,
-                    Err(error) => {
-                        match error {
-                            MessageHandlerError::DuplicateMessage => {
-                                // nothing
-                            },
-                            missing @ (MessageHandlerError::MissingAction
-                            | MessageHandlerError::MissingBody
-                            | MessageHandlerError::MissingMessageId) => {
-                                event!(
-                                    Level::TRACE,
-                                    ?missing,
-                                    "XML Message did not have required elements: {}",
-                                    String::from_utf8_lossy(&buffer)
-                                );
-                            },
-                            MessageHandlerError::XmlError(error) => {
-                                event!(
-                                    Level::ERROR,
-                                    ?error,
-                                    "Error while decoding XML: {}",
-                                    String::from_utf8_lossy(&buffer)
-                                );
-                            },
-                        }
+            let (message_id, action, body_reader) = match message_handler
+                .deconstruct_message(&buffer, Some(from))
+                .await
+            {
+                Ok(pieces) => pieces,
+                Err(error) => {
+                    match error {
+                        MessageHandlerError::DuplicateMessage => {
+                            // nothing
+                        },
+                        missing @ (MessageHandlerError::MissingAction
+                        | MessageHandlerError::MissingBody
+                        | MessageHandlerError::MissingMessageId) => {
+                            event!(
+                                Level::TRACE,
+                                ?missing,
+                                "XML Message did not have required elements: {}",
+                                String::from_utf8_lossy(&buffer)
+                            );
+                        },
+                        MessageHandlerError::XmlError(error) => {
+                            event!(
+                                Level::ERROR,
+                                ?error,
+                                "Error while decoding XML: {}",
+                                String::from_utf8_lossy(&buffer)
+                            );
+                        },
+                    }
 
-                        continue;
-                    },
-                };
+                    continue;
+                },
+            };
 
             // handle based on action
             let response = match action.as_ref() {

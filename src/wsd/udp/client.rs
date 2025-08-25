@@ -13,13 +13,14 @@ use uuid::Uuid;
 use uuid::fmt::Urn;
 
 use super::HANDLED_MESSAGES;
+use crate::config::Config;
 use crate::constants::{self, APP_MAX_DELAY, PROBE_TIMEOUT};
+use crate::network_address::NetworkAddress;
 use crate::soap::builder::{Builder, MessageType};
 use crate::soap::parser::{self, MessageHandler, MessageHandlerError};
 use crate::utils::task::spawn_with_name;
 use crate::wsd::device;
 use crate::wsd::device::WSDDiscoveredDevice;
-use crate::{config::Config, network_address::NetworkAddress};
 
 #[expect(unused, reason = "WIP")]
 pub(crate) struct WSDClient {
@@ -61,7 +62,7 @@ impl WSDClient {
             cancellation_token,
             config,
             address,
-            multicast: multicast.clone(),
+            multicast,
             probes: HashMap::new(),
         };
 
@@ -384,42 +385,44 @@ fn spawn_receiver_loop(
                 }
             };
 
-            let Some((_from, buffer)) = message else {
+            let Some((from, buffer)) = message else {
                 // the end, but we just got it before the cancellation
                 break;
             };
 
-            let (message_id, action, body_reader) =
-                match message_handler.deconstruct_message(&buffer).await {
-                    Ok(pieces) => pieces,
-                    Err(error) => {
-                        match error {
-                            MessageHandlerError::DuplicateMessage => {
-                                // nothing
-                            },
-                            missing @ (MessageHandlerError::MissingAction
-                            | MessageHandlerError::MissingBody
-                            | MessageHandlerError::MissingMessageId) => {
-                                event!(
-                                    Level::TRACE,
-                                    ?missing,
-                                    "XML Message did not have required elements: {}",
-                                    String::from_utf8_lossy(&buffer)
-                                );
-                            },
-                            MessageHandlerError::XmlError(error) => {
-                                event!(
-                                    Level::ERROR,
-                                    ?error,
-                                    "Error while decoding XML: {}",
-                                    String::from_utf8_lossy(&buffer)
-                                );
-                            },
-                        }
+            let (message_id, action, body_reader) = match message_handler
+                .deconstruct_message(&buffer, Some(from))
+                .await
+            {
+                Ok(pieces) => pieces,
+                Err(error) => {
+                    match error {
+                        MessageHandlerError::DuplicateMessage => {
+                            // nothing
+                        },
+                        missing @ (MessageHandlerError::MissingAction
+                        | MessageHandlerError::MissingBody
+                        | MessageHandlerError::MissingMessageId) => {
+                            event!(
+                                Level::TRACE,
+                                ?missing,
+                                "XML Message did not have required elements: {}",
+                                String::from_utf8_lossy(&buffer)
+                            );
+                        },
+                        MessageHandlerError::XmlError(error) => {
+                            event!(
+                                Level::ERROR,
+                                ?error,
+                                "Error while decoding XML: {}",
+                                String::from_utf8_lossy(&buffer)
+                            );
+                        },
+                    }
 
-                        continue;
-                    },
-                };
+                    continue;
+                },
+            };
 
             // handle based on action
             #[expect(clippy::single_match_else, reason = "WIP")]
