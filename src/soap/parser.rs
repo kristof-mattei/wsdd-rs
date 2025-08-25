@@ -2,8 +2,9 @@ pub mod generic;
 pub mod probe;
 pub mod resolve;
 
+use std::borrow::Cow;
+use std::net::SocketAddr;
 use std::sync::Arc;
-use std::{borrow::Cow, net::SocketAddr};
 
 use quick_xml::events::Event;
 use quick_xml::name::Namespace;
@@ -13,11 +14,9 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{Level, event};
 
+use crate::constants::{WSA_URI, XML_SOAP_NAMESPACE};
 use crate::max_size_deque::MaxSizeDeque;
-use crate::{
-    constants::{WSA_URI, XML_SOAP_NAMESPACE},
-    network_address::NetworkAddress,
-};
+use crate::network_address::NetworkAddress;
 
 pub struct MessageHandler {
     handled_messages: Arc<RwLock<MaxSizeDeque<String>>>,

@@ -10,11 +10,12 @@ use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
 use super::HANDLED_MESSAGES;
+use crate::config::Config;
 use crate::constants;
+use crate::network_address::NetworkAddress;
 use crate::soap::builder::{self, Builder, MessageType};
 use crate::soap::parser::{self, MessageHandler, MessageHandlerError};
 use crate::utils::task::spawn_with_name;
-use crate::{config::Config, network_address::NetworkAddress};
 
 /// handles WSD requests coming from UDP datagrams.
 pub struct WSDHost {

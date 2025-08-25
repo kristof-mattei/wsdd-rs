@@ -13,13 +13,14 @@ use uuid::Uuid;
 use uuid::fmt::Urn;
 
 use super::HANDLED_MESSAGES;
+use crate::config::Config;
 use crate::constants::{self, APP_MAX_DELAY, PROBE_TIMEOUT};
+use crate::network_address::NetworkAddress;
 use crate::soap::builder::{Builder, MessageType};
 use crate::soap::parser::{self, MessageHandler, MessageHandlerError};
 use crate::utils::task::spawn_with_name;
 use crate::wsd::device;
 use crate::wsd::device::WSDDiscoveredDevice;
-use crate::{config::Config, network_address::NetworkAddress};
 
 #[expect(unused, reason = "WIP")]
 pub(crate) struct WSDClient {
