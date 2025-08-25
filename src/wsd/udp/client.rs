@@ -61,7 +61,7 @@ impl WSDClient {
             cancellation_token,
             config,
             address,
-            multicast: multicast.clone(),
+            multicast,
             probes: HashMap::new(),
         };
 
