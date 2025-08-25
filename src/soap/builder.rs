@@ -268,6 +268,8 @@ impl<'config> Builder<'config> {
                 Ok(())
             })?;
 
+        builder.namespaces.insert("wsd", XML_WSD_NAMESPACE);
+
         let message = builder.build_message(
             WSA_DISCOVERY,
             WSD_RESOLVE,
