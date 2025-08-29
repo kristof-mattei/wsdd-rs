@@ -12,6 +12,7 @@ use tracing::{Level, event};
 use super::HANDLED_MESSAGES;
 use crate::config::Config;
 use crate::constants;
+use crate::network_address::NetworkAddress;
 use crate::soap::builder::{self, Builder, MessageType};
 use crate::soap::parser::{self, MessageHandler, MessageHandlerError};
 use crate::utils::task::spawn_with_name;
@@ -28,17 +29,19 @@ impl WSDHost {
     pub async fn init(
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
-        address: IpAddr,
+        network_address: NetworkAddress,
         receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
         multicast: Sender<Box<[u8]>>,
         unicast: Sender<(SocketAddr, Box<[u8]>)>,
     ) -> Self {
         let cancellation_token = cancellation_token.child_token();
 
+        let address = network_address.address;
+
         spawn_receiver_loop(
             cancellation_token.clone(),
             Arc::clone(&config),
-            address,
+            network_address,
             receiver,
             unicast,
         );
@@ -127,11 +130,13 @@ fn handle_resolve(
 fn spawn_receiver_loop(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    address: IpAddr,
+    network_address: NetworkAddress,
     mut receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
     unicast: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
-    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES));
+    let address = network_address.address;
+
+    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_address);
 
     spawn_with_name(format!("wsd host ({})", address).as_str(), async move {
         loop {
@@ -152,37 +157,39 @@ fn spawn_receiver_loop(
                 break;
             };
 
-            let (message_id, action, body_reader) =
-                match message_handler.deconstruct_message(&buffer).await {
-                    Ok(pieces) => pieces,
-                    Err(error) => {
-                        match error {
-                            MessageHandlerError::DuplicateMessage => {
-                                // nothing
-                            },
-                            missing @ (MessageHandlerError::MissingAction
-                            | MessageHandlerError::MissingBody
-                            | MessageHandlerError::MissingMessageId) => {
-                                event!(
-                                    Level::TRACE,
-                                    ?missing,
-                                    "XML Message did not have required elements: {}",
-                                    String::from_utf8_lossy(&buffer)
-                                );
-                            },
-                            MessageHandlerError::XmlError(error) => {
-                                event!(
-                                    Level::ERROR,
-                                    ?error,
-                                    "Error while decoding XML: {}",
-                                    String::from_utf8_lossy(&buffer)
-                                );
-                            },
-                        }
+            let (message_id, action, body_reader) = match message_handler
+                .deconstruct_message(&buffer, Some(from))
+                .await
+            {
+                Ok(pieces) => pieces,
+                Err(error) => {
+                    match error {
+                        MessageHandlerError::DuplicateMessage => {
+                            // nothing
+                        },
+                        missing @ (MessageHandlerError::MissingAction
+                        | MessageHandlerError::MissingBody
+                        | MessageHandlerError::MissingMessageId) => {
+                            event!(
+                                Level::TRACE,
+                                ?missing,
+                                "XML Message did not have required elements: {}",
+                                String::from_utf8_lossy(&buffer)
+                            );
+                        },
+                        MessageHandlerError::XmlError(error) => {
+                            event!(
+                                Level::ERROR,
+                                ?error,
+                                "Error while decoding XML: {}",
+                                String::from_utf8_lossy(&buffer)
+                            );
+                        },
+                    }
 
-                        continue;
-                    },
-                };
+                    continue;
+                },
+            };
 
             // handle based on action
             let response = match action.as_ref() {

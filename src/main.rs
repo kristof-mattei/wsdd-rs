@@ -25,10 +25,11 @@ mod url_ip_addr;
 mod utils;
 mod wsd;
 
-use std::env;
+use std::env::{self, VarError};
 use std::sync::Arc;
 use std::time::Duration;
 
+use color_eyre::config::HookBuilder;
 use color_eyre::eyre;
 use dotenvy::dotenv;
 use network_handler::NetworkHandler;
@@ -37,44 +38,59 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::{EnvFilter, Layer as _};
 
 use crate::cli::parse_cli;
 
-fn init_tracing(console_subscriber: bool) -> Result<(), eyre::Report> {
-    let main_filter = EnvFilter::builder()
-        .parse(env::var(EnvFilter::DEFAULT_ENV).unwrap_or_else(|_| {
-            format!("INFO,{}=DEBUG", env!("CARGO_PKG_NAME").replace('-', "_"))
-        }))?;
+fn build_filter() -> (EnvFilter, Option<eyre::Report>) {
+    fn build_default_filter() -> EnvFilter {
+        EnvFilter::builder()
+            .parse(format!("INFO,{}=TRACE", env!("CARGO_CRATE_NAME")))
+            .expect("Default filter should always work")
+    }
 
-    let registry = tracing_subscriber::registry()
-        .with(console_subscriber.then(|| {
-            console_subscriber::ConsoleLayer::builder()
-                .with_default_env()
-                .spawn()
-        }))
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_target(false)
-                .and_then(tracing_error::ErrorLayer::default())
-                .with_filter(main_filter),
-        );
+    let (filter, parsing_error) = match env::var(EnvFilter::DEFAULT_ENV) {
+        Ok(user_directive) => match EnvFilter::builder().parse(user_directive) {
+            Ok(filter) => (filter, None),
+            Err(error) => (build_default_filter(), Some(eyre::Report::new(error))),
+        },
+        Err(VarError::NotPresent) => (build_default_filter(), None),
+        Err(error @ VarError::NotUnicode(_)) => {
+            (build_default_filter(), Some(eyre::Report::new(error)))
+        },
+    };
 
-    tracing::subscriber::set_global_default(registry).expect("Unable to set global subscriber");
+    (filter, parsing_error)
+}
 
-    Ok(())
+fn init_tracing(filter: EnvFilter) -> Result<(), eyre::Report> {
+    let registry = tracing_subscriber::registry();
+
+    #[cfg(feature = "tokio-console")]
+    let registry = registry.with(console_subscriber::ConsoleLayer::builder().spawn());
+
+    Ok(registry
+        .with(tracing_subscriber::fmt::layer().with_filter(filter))
+        .with(tracing_error::ErrorLayer::default())
+        .try_init()?)
 }
 
 fn main() -> Result<(), eyre::Report> {
     // set up .env, if it fails, user didn't provide any
     let _r = dotenv();
 
-    color_eyre::config::HookBuilder::default()
-        .capture_span_trace_by_default(false)
+    HookBuilder::default()
+        .capture_span_trace_by_default(true)
+        .display_env_section(false)
         .install()?;
 
-    // TODO this param should come from env / config,
-    init_tracing(true)?;
+    let (env_filter, parsing_error) = build_filter();
+
+    init_tracing(env_filter)?;
+
+    // bubble up the parsing error
+    parsing_error.map_or(Ok(()), Err)?;
 
     // initialize the runtime
     let rt = tokio::runtime::Runtime::new().unwrap();

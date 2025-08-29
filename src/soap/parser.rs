@@ -3,6 +3,7 @@ pub mod probe;
 pub mod resolve;
 
 use std::borrow::Cow;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use quick_xml::events::Event;
@@ -15,9 +16,11 @@ use tracing::{Level, event};
 
 use crate::constants::{WSA_URI, XML_SOAP_NAMESPACE};
 use crate::max_size_deque::MaxSizeDeque;
+use crate::network_address::NetworkAddress;
 
 pub struct MessageHandler {
     handled_messages: Arc<RwLock<MaxSizeDeque<String>>>,
+    network_address: NetworkAddress,
 }
 
 struct Header<'r> {
@@ -42,15 +45,21 @@ pub enum MessageHandlerError {
 }
 
 impl MessageHandler {
-    pub fn new(handled_messages: Arc<RwLock<MaxSizeDeque<String>>>) -> Self {
-        Self { handled_messages }
+    pub fn new(
+        handled_messages: Arc<RwLock<MaxSizeDeque<String>>>,
+        network_address: NetworkAddress,
+    ) -> Self {
+        Self {
+            handled_messages,
+            network_address,
+        }
     }
 
     /// Handle a WSD message
     pub async fn deconstruct_message<'r>(
         &self,
         raw: &'r [u8],
-        // src: Option<SocketAddr>,
+        src: Option<SocketAddr>,
     ) -> Result<(Cow<'r, str>, Cow<'r, str>, NsReader<&'r [u8]>), MessageHandlerError> {
         let mut reader = NsReader::from_reader(raw);
 
@@ -101,25 +110,24 @@ impl MessageHandler {
 
         let action_method = action.rsplit_once('/').unwrap().1;
 
-        // if let Some(src) = src {
-        event!(
-            Level::INFO,
-            "GONE GONE - - \"{} {} UDP\" - -",
-            // "{}({}) - - \"{} {} UDP\" - -",
-            // src.transport_address,
-            // src.network_address.interface,
-            action_method,
-            message_id
-        );
-        // } else {
-        //     // http logging is already done by according server
-        //     event!(
-        //         Level::DEBUG,
-        //         "processing WSD {} message ({})",
-        //         action_method,
-        //         message_id
-        //     );
-        // }
+        if let Some(src) = src {
+            event!(
+                Level::INFO,
+                "{}({}) - - \"{} {} UDP\" - -",
+                src,
+                self.network_address.interface,
+                action_method,
+                message_id
+            );
+        } else {
+            // http logging is already done by according server
+            event!(
+                Level::DEBUG,
+                "processing WSD {} message ({})",
+                action_method,
+                message_id
+            );
+        }
 
         if !has_body {
             return Err(MessageHandlerError::MissingBody);

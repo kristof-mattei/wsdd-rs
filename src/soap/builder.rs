@@ -268,15 +268,13 @@ impl<'config> Builder<'config> {
                 Ok(())
             })?;
 
+        builder.namespaces.insert("wsd", XML_WSD_NAMESPACE);
+
         let message = builder.build_message(
             WSA_DISCOVERY,
             WSD_RESOLVE,
             None,
-            #[expect(
-                clippy::redundant_closure_for_method_calls,
-                reason = "lifetimes aren't passed when using function pointer"
-            )]
-            Some(|builder, element| builder.add_wsd_host_header_elements(element)),
+            None,
             Some(&writer.into_inner().into_inner()),
         )?;
 
