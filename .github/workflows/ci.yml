@@ -52,7 +52,7 @@ jobs:
     steps:
       - &checkout
         name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           show-progress: false
 
@@ -79,28 +79,32 @@ jobs:
       fromJSON(needs.changes.outputs.code) == true
     steps:
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           show-progress: false
           fetch-depth: 0
 
-      - &cache_dependencies
-        name: Cache dependencies
+      - &cache_cargo
+        name: Cache cargo
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         env:
-          CACHE_NAME: cargo-cache-dependencies
+          CACHE_NAME: cargo
         with:
           path: |
-            ~/.cargo
-            ./target
-          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-${{ env.GITHUB_JOB }}
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-${{ github.job }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-
             ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-
 
       - &set_up_mold
         name: Set up mold
-        uses: rui314/setup-mold@7344740a9418dcdcb481c7df83d9fbd1d5072d7d # v1
+        uses: rui314/setup-mold@725a8794d15fc7563f59595bd9556495c0564878 # v1
 
       - &set_up_toolchain
         name: Set up toolchain
@@ -122,7 +126,16 @@ jobs:
         shell: bash
         working-directory: /tmp
         run: |
-          archive="cargo-binstall-x86_64-unknown-linux-musl.tgz"
+          case ${{ runner.arch }} in
+            X64)
+              full_platform="x86_64"
+              ;;
+            ARM64)
+              full_platform="aarch64"
+              ;;
+          esac
+
+          archive="cargo-binstall-${full_platform}-unknown-linux-musl.tgz"
           wget \
             --output-document=- \
             --timeout=10 \
@@ -142,7 +155,15 @@ jobs:
       - name: Install cocogitto to get the next version number
         shell: bash
         run: |
-          cargo binstall --github-token ${{ secrets.GITHUB_TOKEN }} --no-confirm cocogitto --pkg-url "{ repo }/releases/download/{ version }/{ name }-{ version }-{ target }.tar.gz" --bin-dir "{ target }/{ bin }{ binary-ext }" --target x86_64-unknown-linux-musl --pkg-fmt tgz --bin cog --strategies crate-meta-data
+          cargo binstall \
+            --github-token ${{ secrets.GITHUB_TOKEN }} \
+            --no-confirm cocogitto \
+            --pkg-url "{ repo }/releases/download/{ version }/{ name }-{ version }-{ target }.tar.gz" \
+            --bin-dir "{ target }/{ bin }{ binary-ext }" \
+            --target x86_64-unknown-linux-musl \
+            --pkg-fmt tgz \
+            --bin cog \
+            --strategies crate-meta-data
 
       - name: Calculate next version
         shell: bash
@@ -175,7 +196,20 @@ jobs:
     steps:
       - *checkout
 
-      - *cache_dependencies
+      - *cache_cargo
+
+      - &cache_target
+        name: Cache target
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        env:
+          CACHE_NAME: target
+        with:
+          path: |
+            ./target
+          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-${{ github.job }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-
+            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-
 
       - *set_up_mold
 
@@ -197,7 +231,7 @@ jobs:
     steps:
       - *checkout
 
-      - *cache_dependencies
+      - *cache_cargo
 
       - *set_up_mold
 
@@ -227,7 +261,9 @@ jobs:
     steps:
       - *checkout
 
-      - *cache_dependencies
+      - *cache_cargo
+
+      - *cache_target
 
       - *set_up_mold
 
@@ -331,7 +367,9 @@ jobs:
     steps:
       - *checkout
 
-      - *cache_dependencies
+      - *cache_cargo
+
+      - *cache_target
 
       - *set_up_mold
 
@@ -342,16 +380,14 @@ jobs:
         with:
           args: ${{ env.CARGO_FEATURES }} --all-targets --locked --workspace --verbose
 
+  # this name is also used in `publish-crate-after-release.yml`
   docker-build:
-    name: Build Docker container on ${{ matrix.runs-on }} for ${{ matrix.platform }}
+    name: Build Docker container on ${{ matrix.runs-on }}
     strategy:
       matrix:
         runs-on:
           - "ubuntu-latest"
           - "ubuntu-24.04-arm"
-        platform:
-          - "amd64"
-          - "arm64"
     outputs:
       application_name: ${{ steps.variables.outputs.application_name }}
       description: ${{ steps.variables.outputs.description }}
@@ -370,41 +406,13 @@ jobs:
     steps:
       - *checkout
 
-      - *cache_dependencies
+      - *cache_cargo
 
       - *set_up_mold
 
       - *set_up_toolchain
 
-      - name: Get binstall
-        shell: bash
-        working-directory: /tmp
-        run: |
-          case ${{ matrix.runs-on }} in
-            ubuntu-latest)
-              full_platform="x86_64"
-              ;;
-            ubuntu-24.04-arm)
-              full_platform="aarch64"
-              ;;
-          esac
-
-          archive="cargo-binstall-${full_platform}-unknown-linux-musl.tgz"
-          wget \
-            --output-document=- \
-            --timeout=10 \
-            --waitretry=3 \
-            --retry-connrefused \
-            --progress=dot:mega \
-            "https://github.com/cargo-bins/cargo-binstall/releases/latest/download/${archive}" \
-            | tar \
-                --directory=${HOME}/.cargo/bin/ \
-                --strip-components=0 \
-                --no-overwrite-dir \
-                --extract \
-                --verbose \
-                --gunzip \
-                --file=-
+      - *get_binstall
 
       - name: Install cargo-edit to do set-version, and cargo-get to get the description
         shell: bash
@@ -424,10 +432,6 @@ jobs:
           # This is the unique docker tag
           unique_tag=pr-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}
           echo "unique_tag=${unique_tag}" >> ${GITHUB_OUTPUT}
-
-          # but we're only building 1 arch here, so we need to identify that container (we'll merge them later)
-          unique_tag_arch=${unique_tag}-${{ matrix.platform }}
-          echo "unique_tag_arch=${unique_tag_arch}" >> ${GITHUB_OUTPUT}
 
           # The application name, used in the Dockerfile
           application_name=${{ env.IMAGE_NAME }}
@@ -463,13 +467,13 @@ jobs:
         id: meta
         with:
           labels: |
-            org.opencontainers.image.description=${{ steps.variables.outputs.description }} (${{ matrix.platform }})
+            org.opencontainers.image.description=${{ steps.variables.outputs.description }}
             org.opencontainers.image.revision=${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}
             org.opencontainers.image.source=${{ github.event.pull_request.html_url }}
             org.opencontainers.image.version=pr-${{ github.event.number }}
           images: ${{ steps.variables.outputs.full_image_name_local_registry }}
           tags: |
-            type=raw,value=${{ steps.variables.outputs.unique_tag_arch }}
+            type=raw,value=${{ steps.variables.outputs.unique_tag }}
 
       - name: Log into registry ${{ steps.variables.outputs.registry }}
         uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
@@ -492,11 +496,11 @@ jobs:
           context: .
           # this container is THE PR's artifact, and we will re-tag it
           # once the PR has been accepted
-          cache-from: type=registry,ref=${{ steps.variables.outputs.full_image_name_remote_registry }}:buildcache-${{ runner.arch }}-${{ steps.variables.outputs.application_name }}-${{ matrix.platform }}
-          cache-to: type=registry,ref=${{ steps.variables.outputs.full_image_name_remote_registry }}:buildcache-${{ runner.arch }}-${{ steps.variables.outputs.application_name }}-${{ matrix.platform }},mode=max
+          cache-from: type=registry,ref=${{ steps.variables.outputs.full_image_name_remote_registry }}:buildcache-${{ runner.arch }}-${{ steps.variables.outputs.application_name }}
+          cache-to: type=registry,ref=${{ steps.variables.outputs.full_image_name_remote_registry }}:buildcache-${{ runner.arch }}-${{ steps.variables.outputs.application_name }},mode=max
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=oci,dest=/tmp/${{ steps.variables.outputs.unique_tag_arch }}.tar
-          platforms: linux/${{ matrix.platform }}
+          outputs: type=oci,dest=/tmp/${{ steps.variables.outputs.unique_tag }}.tar
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
 
       - name: Upload artifact
@@ -505,8 +509,8 @@ jobs:
           matrix.runs-on == 'ubuntu-latest'
         with:
           if-no-files-found: error
-          name: container-${{ steps.variables.outputs.application_name }}-${{ matrix.platform }}
-          path: /tmp/${{ steps.variables.outputs.unique_tag_arch }}.tar
+          name: container-${{ steps.variables.outputs.application_name }}
+          path: /tmp/${{ steps.variables.outputs.unique_tag }}.tar
           retention-days: 1
 
   docker-publish:
@@ -564,26 +568,20 @@ jobs:
             type=ref,event=pr,suffix=-latest
 
       - name: Download artifacts
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         id: artifact
         with:
-          merge-multiple: true
           path: /tmp/container/
-          pattern: container-${{ needs.docker-build.outputs.application_name }}-*
+          name: container-${{ needs.docker-build.outputs.application_name }}
 
-      - name: Load individual platform images from artifacts & push to registry
+      - name: Load image from artifacts & push to registry
         shell: bash
         working-directory: ${{ steps.artifact.outputs.download-path }}
         run: |
-          docker load --input ./${{ needs.docker-build.outputs.unique_tag }}-amd64.tar
-          echo "Pushing amd64:"
-          docker push ${{ needs.docker-build.outputs.full_image_name_local_registry }}:${{ needs.docker-build.outputs.unique_tag }}-amd64
+          docker load --input ./${{ needs.docker-build.outputs.unique_tag }}.tar
+          docker push ${{ needs.docker-build.outputs.full_image_name_local_registry }}:${{ needs.docker-build.outputs.unique_tag }}
 
-          docker load --input ./${{ needs.docker-build.outputs.unique_tag }}-arm64.tar
-          echo "Pushing arm64:"
-          docker push ${{ needs.docker-build.outputs.full_image_name_local_registry }}:${{ needs.docker-build.outputs.unique_tag }}-arm64
-
-      - name: Create multiplatform image
+      - name: Create image in final destination
         shell: bash
         run: |
           new_tags=()
@@ -598,10 +596,9 @@ jobs:
             new_labels+=("index:${label}")
           done <<< "${{ steps.meta.outputs.labels }}"
 
-          # merge the amd64 and arm64 containers in a new multiplatform one
+          # merge labels & annotations
           docker buildx imagetools create "${new_tags[@]}" "${new_labels[@]}" \
-            ${{ needs.docker-build.outputs.full_image_name_local_registry }}:${{ needs.docker-build.outputs.unique_tag }}-amd64 \
-            ${{ needs.docker-build.outputs.full_image_name_local_registry }}:${{ needs.docker-build.outputs.unique_tag }}-arm64
+            ${{ needs.docker-build.outputs.full_image_name_local_registry }}:${{ needs.docker-build.outputs.unique_tag }}
 
           for new_tag in $(echo "${{ join(steps.meta.outputs.tags, ' ') }}"); do
             echo "${new_tag}:"
@@ -610,9 +607,9 @@ jobs:
             echo ""
           done
 
-      - name: Get digest of multiplatform image in our local registry
+      - name: Get digest of image in our local registry
         shell: bash
-        id: multiplatform_image
+        id: local_image
         run: |
           digest=$(docker buildx imagetools inspect ${{ needs.docker-build.outputs.full_image_name_local_registry }}:${{ needs.docker-build.outputs.unique_tag }} --format "{{json .}}" | jq --raw-output ".manifest.digest")
 
@@ -630,11 +627,11 @@ jobs:
       # since we deal with tags (mutable), and the way to get a digest is to use the tag, I prefer
       # sourcing the digest from the local registry we just spun up (trusted)
       - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         id: attestation
         with:
           subject-name: ${{ needs.docker-build.outputs.full_image_name_remote_registry }}
-          subject-digest: ${{ steps.multiplatform_image.outputs.digest }}
+          subject-digest: ${{ steps.local_image.outputs.digest }}
           push-to-registry: true
 
   all-done:
