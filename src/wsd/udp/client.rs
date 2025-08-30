@@ -159,7 +159,7 @@ fn __extract_xaddr(bound_to: IpAddr, xaddrs: &str) -> Option<url::Url> {
 
 async fn handle_hello<'reader>(
     config: &Config,
-    bound_to: IpAddr,
+    network_address: &NetworkAddress,
     multicast: &Sender<Box<[u8]>>,
     mut reader: NsReader<&'reader [u8]>,
 ) -> Result<(), eyre::Report> {
@@ -171,6 +171,7 @@ async fn handle_hello<'reader>(
         xaddrs
     } else {
         event!(Level::INFO, "Hello without XAddrs, sending resolve");
+
         let (message, _) = Builder::build_resolve(config, endpoint)?;
 
         multicast.send(message.into_boxed_slice()).await?;
@@ -178,13 +179,13 @@ async fn handle_hello<'reader>(
         return Ok(());
     };
 
-    let Some(xaddr) = __extract_xaddr(bound_to, &xaddrs) else {
+    let Some(xaddr) = __extract_xaddr(network_address.address, &xaddrs) else {
         return Ok(());
     };
 
     event!(Level::INFO, "Hello from {} on {}", endpoint, xaddr);
 
-    perform_metadata_exchange(config, endpoint, xaddr).await?;
+    perform_metadata_exchange(config, network_address, endpoint, xaddr).await?;
 
     Ok(())
 }
@@ -257,6 +258,7 @@ async fn handle_hello<'reader>(
 //     def perform_metadata_exchange(self, endpoint, xaddr: str):
 async fn perform_metadata_exchange(
     config: &Config,
+    network_address: &NetworkAddress,
     endpoint: Uuid,
     xaddr: Url,
 ) -> Result<(), eyre::Report> {
@@ -267,22 +269,15 @@ async fn perform_metadata_exchange(
         return Ok(());
     }
 
-    //         host = None
-    //         url = xaddr
-    //         if self.mch.address.family == socket.AF_INET6:
-    //             host = '[{}]'.format(url.partition('[')[2].partition(']')[0])
-    //             url = url.replace(']', '%{}]'.format(self.mch.address.interface))
-
     let body = build_getmetadata_message(config, endpoint)?;
 
-    let client = reqwest::Client::new();
-    let builder = client
+    let client_builder = reqwest::ClientBuilder::new().local_address(network_address.address);
+
+    let builder = client_builder
+        .build()?
         .post(xaddr.clone())
         .header("Content-Type", "application/soap+xml")
         .header("User-Agent", "wsdd");
-
-    //         if host is not None:
-    //             request.add_header('Host', host)
 
     #[expect(
         clippy::cast_possible_truncation,
@@ -367,82 +362,84 @@ fn spawn_receiver_loop(
     multicast: Sender<Box<[u8]>>,
     _unicast: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
-    let address = network_address.address;
+    let message_handler =
+        MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_address.clone());
 
-    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_address);
+    spawn_with_name(
+        format!("wsd host ({})", network_address.address).as_str(),
+        async move {
+            loop {
+                #[expect(clippy::pattern_type_mismatch, reason = "Tokio")]
+                let message = {
+                    tokio::select! {
+                        () = cancellation_token.cancelled() => {
+                            break;
+                        },
+                        message = multicast_receiver.recv() => {
+                            message
+                        }
+                    }
+                };
 
-    spawn_with_name(format!("wsd host ({})", address).as_str(), async move {
-        loop {
-            #[expect(clippy::pattern_type_mismatch, reason = "Tokio")]
-            let message = {
-                tokio::select! {
-                    () = cancellation_token.cancelled() => {
-                        break;
+                let Some((from, buffer)) = message else {
+                    // the end, but we just got it before the cancellation
+                    break;
+                };
+
+                let (message_id, action, body_reader) = match message_handler
+                    .deconstruct_message(&buffer, Some(from))
+                    .await
+                {
+                    Ok(pieces) => pieces,
+                    Err(error) => {
+                        match error {
+                            MessageHandlerError::DuplicateMessage => {
+                                // nothing
+                            },
+                            missing @ (MessageHandlerError::MissingAction
+                            | MessageHandlerError::MissingBody
+                            | MessageHandlerError::MissingMessageId) => {
+                                event!(
+                                    Level::TRACE,
+                                    ?missing,
+                                    "XML Message did not have required elements: {}",
+                                    String::from_utf8_lossy(&buffer)
+                                );
+                            },
+                            MessageHandlerError::XmlError(error) => {
+                                event!(
+                                    Level::ERROR,
+                                    ?error,
+                                    "Error while decoding XML: {}",
+                                    String::from_utf8_lossy(&buffer)
+                                );
+                            },
+                        }
+
+                        continue;
                     },
-                    message = multicast_receiver.recv() => {
-                        message
-                    }
+                };
+
+                // handle based on action
+                #[expect(clippy::single_match_else, reason = "WIP")]
+                if let Err(err) = match action.as_ref() {
+                    constants::WSD_HELLO => {
+                        handle_hello(&config, &network_address, &multicast, body_reader).await
+                    },
+                    // constants::WSD_BYE => handle_bye(&config, &message_id, body_reader),
+                    // constants::WSD_PROBE_MATCH => handle_probe_match(&config, &message_id, body_reader),
+                    // constants::WSD_RESOLVE_MATCH => {
+                    //     handle_resolve_match(&config, &message_id, body_reader)
+                    // },
+                    _ => {
+                        event!(Level::DEBUG, "unhandled action {}/{}", action, message_id);
+                        continue;
+                    },
+                } {
+                    event!(Level::ERROR, ?action, ?err, "Failure to parse XML");
+                    continue;
                 }
-            };
-
-            let Some((from, buffer)) = message else {
-                // the end, but we just got it before the cancellation
-                break;
-            };
-
-            let (message_id, action, body_reader) = match message_handler
-                .deconstruct_message(&buffer, Some(from))
-                .await
-            {
-                Ok(pieces) => pieces,
-                Err(error) => {
-                    match error {
-                        MessageHandlerError::DuplicateMessage => {
-                            // nothing
-                        },
-                        missing @ (MessageHandlerError::MissingAction
-                        | MessageHandlerError::MissingBody
-                        | MessageHandlerError::MissingMessageId) => {
-                            event!(
-                                Level::TRACE,
-                                ?missing,
-                                "XML Message did not have required elements: {}",
-                                String::from_utf8_lossy(&buffer)
-                            );
-                        },
-                        MessageHandlerError::XmlError(error) => {
-                            event!(
-                                Level::ERROR,
-                                ?error,
-                                "Error while decoding XML: {}",
-                                String::from_utf8_lossy(&buffer)
-                            );
-                        },
-                    }
-
-                    continue;
-                },
-            };
-
-            // handle based on action
-            #[expect(clippy::single_match_else, reason = "WIP")]
-            if let Err(err) = match action.as_ref() {
-                constants::WSD_HELLO => {
-                    handle_hello(&config, address, &multicast, body_reader).await
-                },
-                // constants::WSD_BYE => handle_bye(&config, &message_id, body_reader),
-                // constants::WSD_PROBE_MATCH => handle_probe_match(&config, &message_id, body_reader),
-                // constants::WSD_RESOLVE_MATCH => {
-                //     handle_resolve_match(&config, &message_id, body_reader)
-                // },
-                _ => {
-                    event!(Level::DEBUG, "unhandled action {}/{}", action, message_id);
-                    continue;
-                },
-            } {
-                event!(Level::ERROR, ?action, ?err, "Failure to parse XML");
-                continue;
             }
-        }
-    });
+        },
+    );
 }
