@@ -130,6 +130,7 @@ fn build_clap_matcher() -> Command {
             .long("version")
             .help("show version number and exit")
             .action(ArgAction::SetTrue),
+        // TODO ensure not negative, not too high
         Arg::new("metadata-timeout")
             .long("metadata-timeout")
             .help("set timeout for HTTP-based metadata exchange")
