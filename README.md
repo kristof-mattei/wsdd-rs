@@ -32,7 +32,11 @@ XSD validation:
 
 I _think_ we can merge `recv_socket` & `uc_send_socket` in the future.
 
-`mc_send_socket` receives messages in `WSDClient`, unsure why
+`mc_send_socket` receives messages in `WSDClient`, because it sends out a probe over the `mc_send_socket`, and hosts reply FROM 3072 (in our case `uc_send_socket` TO the `mc_send_socket`, that port)
+
+# Questions
+
+- Client mode: Why is it, that when we get a `Hello` without `Xaddr`, to which we respond with a `Resolve`, we get a resolve FROM the host?
 
 ## License
 
