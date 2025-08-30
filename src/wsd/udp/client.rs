@@ -279,16 +279,11 @@ async fn perform_metadata_exchange(
         .header("Content-Type", "application/soap+xml")
         .header("User-Agent", "wsdd");
 
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "At the top range `u64::MAX` is still long enough to wait"
-    )]
-    #[expect(clippy::cast_sign_loss, reason = "Negative timeouts aren't timeouts")]
-    let timeout = (config.metadata_timeout * 1000_f32) as u64;
+    let timeout = config.metadata_timeout;
 
     let response = builder
         .body(body)
-        .timeout(Duration::from_millis(timeout))
+        .timeout(Duration::from_secs_f32(timeout))
         .send()
         .await;
 
