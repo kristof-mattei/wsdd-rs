@@ -478,7 +478,7 @@ impl MessageReceiver {
                         };
 
                         // `recv_buf` tells us that `bytes_read` were read from the socket into our `buffer`, so they're initialized
-                        buffer.shrink_to(bytes_read);
+                        buffer.truncate(bytes_read);
 
                         let buffer = Arc::<[_]>::from(buffer);
 
