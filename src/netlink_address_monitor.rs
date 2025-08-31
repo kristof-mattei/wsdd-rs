@@ -185,7 +185,7 @@ impl NetlinkAddressMonitor {
             };
 
             // `recv_buf` tells us that `bytes_read` were read from the socket into our `buffer`, so they're initialized
-            buffer.shrink_to(bytes_read);
+            buffer.truncate(bytes_read);
 
             event!(Level::DEBUG, "netlink message with {} bytes", bytes_read);
 
