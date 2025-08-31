@@ -55,7 +55,7 @@ impl<'config> Builder<'config> {
         &mut self,
         to_addr: &str,
         action: &str,
-        relates_to: Option<&str>,
+        relates_to: Option<Urn>,
         add_extra_headers: Option<ExtraHeadersCallback>,
         body: Option<&[u8]>,
     ) -> Result<(Vec<u8>, Urn), quick_xml::errors::Error> {
@@ -80,7 +80,7 @@ impl<'config> Builder<'config> {
         &mut self,
         to_addr: &str,
         action: &str,
-        relates_to: Option<&str>,
+        relates_to: Option<Urn>,
         add_extra_headers: Option<ExtraHeadersCallback>,
         body: Option<&[u8]>,
     ) -> Result<(Vec<u8>, Urn), quick_xml::errors::Error> {
@@ -112,7 +112,9 @@ impl<'config> Builder<'config> {
                 if let Some(relates_to) = relates_to {
                     writer
                         .create_element("wsa:RelatesTo")
-                        .write_text_content(BytesText::new(relates_to))?;
+                        .write_text_content(BytesText::new(
+                            relates_to.encode_lower(&mut Uuid::encode_buffer()),
+                        ))?;
                 }
 
                 if let Some(add_extra_headers) = add_extra_headers {
@@ -280,7 +282,7 @@ impl<'config> Builder<'config> {
     pub fn build_resolve_matches(
         config: &Config,
         address: IpAddr,
-        relates_to: &str,
+        relates_to: Urn,
     ) -> Result<Vec<u8>, quick_xml::errors::Error> {
         let mut builder = Builder::new(config);
 
@@ -323,7 +325,7 @@ impl<'config> Builder<'config> {
 
     pub fn build_probe_matches(
         config: &Config,
-        relates_to: &str,
+        relates_to: Urn,
     ) -> Result<Vec<u8>, quick_xml::errors::Error> {
         let mut builder = Builder::new(config);
 

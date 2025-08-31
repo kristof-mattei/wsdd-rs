@@ -5,6 +5,7 @@ use std::time::{Duration, SystemTime};
 use color_eyre::eyre;
 use hashbrown::HashMap;
 use quick_xml::NsReader;
+use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
@@ -17,7 +18,8 @@ use crate::config::Config;
 use crate::constants::{self, APP_MAX_DELAY, PROBE_TIMEOUT};
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::{Builder, MessageType};
-use crate::soap::parser::{self, MessageHandler, MessageHandlerError};
+use crate::soap::parser::generic::extract_endpoint_metadata;
+use crate::soap::parser::{self, HeaderError, MessageHandler, MessageHandlerError};
 use crate::utils::task::spawn_with_name;
 use crate::wsd::device;
 use crate::wsd::device::WSDDiscoveredDevice;
@@ -28,7 +30,7 @@ pub(crate) struct WSDClient {
     config: Arc<Config>,
     address: IpAddr,
     multicast: Sender<Box<[u8]>>,
-    probes: HashMap<Urn, u128>,
+    probes: Arc<RwLock<HashMap<Urn, u128>>>,
 }
 
 /// * `recv_socket_receiver`: used to receive multicast messages on `WSD_PORT`
@@ -49,6 +51,8 @@ impl WSDClient {
 
         let address = network_address.address;
 
+        let probes = Arc::new(RwLock::new(HashMap::<Urn, u128>::new()));
+
         spawn_receiver_loop(
             cancellation_token.clone(),
             Arc::clone(&config),
@@ -57,6 +61,7 @@ impl WSDClient {
             mc_send_socket_receiver,
             multicast.clone(),
             unicast,
+            Arc::clone(&probes),
         );
 
         let mut client = Self {
@@ -64,7 +69,7 @@ impl WSDClient {
             config,
             address,
             multicast,
-            probes: HashMap::new(),
+            probes: Arc::clone(&probes),
         };
 
         // avoid packet storm when hosts come up by delaying initial probe
@@ -88,11 +93,11 @@ impl WSDClient {
 
     // WS-Discovery, Section 4.3, Probe message
     async fn send_probe(&mut self) -> Result<(), eyre::Report> {
-        self.remove_outdated_probes();
+        self.remove_outdated_probes().await;
 
         let (probe, message_id) = Builder::build_probe(&self.config)?;
 
-        self.probes.insert(message_id, now());
+        self.probes.write().await.insert(message_id, now());
 
         // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
         // TODO move event to here and write properly
@@ -103,10 +108,12 @@ impl WSDClient {
         Ok(())
     }
 
-    fn remove_outdated_probes(&mut self) {
+    async fn remove_outdated_probes(&mut self) {
         let now = now();
 
         self.probes
+            .write()
+            .await
             .retain(|_, value| *value + (PROBE_TIMEOUT * 2) > now);
     }
 }
@@ -228,6 +235,30 @@ async fn handle_bye<'reader>(mut reader: NsReader<&'reader [u8]>) -> Result<(), 
 
 //         return None
 
+async fn handle_probe_match<'reader>(
+    _config: &Config,
+    _network_address: &NetworkAddress,
+    relates_to: Option<Urn>,
+    probes: Arc<RwLock<HashMap<Urn, u128>>>,
+    mut reader: NsReader<&'reader [u8]>,
+) -> Result<(), eyre::Report> {
+    let Some(relates_to) = relates_to else {
+        event!(Level::DEBUG, "missing `RelatesTo`");
+        return Ok(());
+    };
+
+    parser::generic::parse_generic_body_paths(&mut reader, &["ProbeMatches", "ProbeMatch"])?;
+
+    if probes.read().await.get(&relates_to).is_none() {
+        event!(Level::DEBUG, %relates_to, "unknown probe");
+        return Ok(());
+    }
+
+    // ...
+
+    Ok(())
+}
+
 //     def build_resolve_message(self, endpoint: str) -> str:
 //         resolve = ElementTree.Element('wsd:Resolve')
 //         self.add_endpoint_reference(resolve, endpoint)
@@ -249,6 +280,36 @@ async fn handle_bye<'reader>(mut reader: NsReader<&'reader [u8]>) -> Result<(), 
 //         self.perform_metadata_exchange(endpoint, xaddr)
 
 //         return None
+async fn handle_resolve_match<'reader>(
+    config: &Config,
+    network_address: &NetworkAddress,
+    mut reader: NsReader<&'reader [u8]>,
+) -> Result<(), eyre::Report> {
+    parser::generic::parse_generic_body_paths(&mut reader, &["ResolveMatches", "ResolveMatch"])?;
+
+    let (endpoint, xaddrs) = extract_endpoint_metadata(&mut reader)?;
+
+    let Some(xaddrs) = xaddrs else {
+        event!(Level::DEBUG, "Resolve match without xaddr");
+
+        return Ok(());
+    };
+
+    let Some(xaddr) = __extract_xaddr(network_address.address, &xaddrs) else {
+        event!(
+            Level::ERROR,
+            "No valid URL in xaddr, but this is a bug in xaddr, where we're too strict"
+        );
+
+        return Ok(());
+    };
+
+    event!(Level::DEBUG, %endpoint, ?xaddr, "Resolve match");
+
+    perform_metadata_exchange(config, network_address, endpoint, xaddr).await?;
+
+    Ok(())
+}
 
 //     def extract_endpoint_metadata(self, body: ElementTree.Element, prefix: str) -> Tuple[Optional[str], Optional[str]]:
 //         prefix = prefix + '/'
@@ -353,6 +414,8 @@ async fn handle_metadata(meta: String, endpoint: Uuid, xaddr: Url) -> Result<(),
 //             addr = ElementTree.SubElement(wsa_from, 'wsa:Address')
 //             addr.text = args.uuid.urn
 
+#[expect(clippy::too_many_arguments, reason = "WIP")]
+#[expect(clippy::too_many_lines, reason = "WIP")]
 fn spawn_receiver_loop(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
@@ -361,6 +424,7 @@ fn spawn_receiver_loop(
     mut mc_send_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
     multicast: Sender<Box<[u8]>>,
     _unicast: Sender<(SocketAddr, Box<[u8]>)>,
+    probes: Arc<RwLock<HashMap<Urn, u128>>>,
 ) {
     let message_handler =
         MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_address.clone());
@@ -389,7 +453,7 @@ fn spawn_receiver_loop(
                     break;
                 };
 
-                let (message_id, action, body_reader) = match message_handler
+                let (header, body_reader) = match message_handler
                     .deconstruct_message(&buffer, Some(from))
                     .await
                 {
@@ -399,9 +463,8 @@ fn spawn_receiver_loop(
                             MessageHandlerError::DuplicateMessage => {
                                 // nothing
                             },
-                            missing @ (MessageHandlerError::MissingAction
-                            | MessageHandlerError::MissingBody
-                            | MessageHandlerError::MissingMessageId) => {
+                            missing @ (MessageHandlerError::MissingHeader
+                            | MessageHandlerError::MissingBody) => {
                                 event!(
                                     Level::TRACE,
                                     ?missing,
@@ -409,7 +472,30 @@ fn spawn_receiver_loop(
                                     String::from_utf8_lossy(&buffer)
                                 );
                             },
-                            MessageHandlerError::XmlError(error) => {
+                            MessageHandlerError::HeaderError(
+                                HeaderError::InvalidMessageId(uuid_error)
+                                | HeaderError::InvalidRelatesTo(uuid_error),
+                            ) => {
+                                event!(
+                                    Level::TRACE,
+                                    ?uuid_error,
+                                    "XML Message Header was malformed: {}",
+                                    String::from_utf8_lossy(&buffer)
+                                );
+                            },
+                            MessageHandlerError::HeaderError(
+                                error
+                                @ (HeaderError::MissingAction | HeaderError::MissingMessageId),
+                            ) => {
+                                event!(
+                                    Level::TRACE,
+                                    %error,
+                                    "XML Message Header is missing pieces: {}",
+                                    String::from_utf8_lossy(&buffer)
+                                );
+                            },
+                            MessageHandlerError::HeaderError(HeaderError::XmlError(error))
+                            | MessageHandlerError::XmlError(error) => {
                                 event!(
                                     Level::ERROR,
                                     ?error,
@@ -424,21 +510,40 @@ fn spawn_receiver_loop(
                 };
 
                 // handle based on action
-                if let Err(err) = match action.as_ref() {
+                if let Err(err) = match &*header.action {
                     constants::WSD_HELLO => {
                         handle_hello(&config, &network_address, &multicast, body_reader).await
                     },
                     constants::WSD_BYE => handle_bye(body_reader).await,
-                    // constants::WSD_PROBE_MATCH => handle_probe_match(&config, &message_id, body_reader),
-                    // constants::WSD_RESOLVE_MATCH => {
-                    //     handle_resolve_match(&config, &message_id, body_reader)
-                    // },
+                    constants::WSD_PROBE_MATCH => {
+                        handle_probe_match(
+                            &config,
+                            &network_address,
+                            header.relates_to,
+                            Arc::clone(&probes),
+                            body_reader,
+                        )
+                        .await
+                    },
+                    constants::WSD_RESOLVE_MATCH => {
+                        handle_resolve_match(&config, &network_address, body_reader).await
+                    },
                     _ => {
-                        event!(Level::DEBUG, "unhandled action {}/{}", action, message_id);
+                        event!(
+                            Level::DEBUG,
+                            "unhandled action {}/{}",
+                            header.action,
+                            header.message_id
+                        );
                         continue;
                     },
                 } {
-                    event!(Level::ERROR, ?action, ?err, "Failure to parse XML");
+                    event!(
+                        Level::ERROR,
+                        action = &*header.action,
+                        ?err,
+                        "Failure to parse XML"
+                    );
                     continue;
                 }
             }
