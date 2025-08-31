@@ -8,13 +8,14 @@ use quick_xml::NsReader;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
+use uuid::fmt::Urn;
 
 use super::HANDLED_MESSAGES;
 use crate::config::Config;
 use crate::constants;
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::{self, Builder, MessageType};
-use crate::soap::parser::{self, MessageHandler, MessageHandlerError};
+use crate::soap::parser::{self, HeaderError, MessageHandler, MessageHandlerError};
 use crate::utils::task::spawn_with_name;
 
 /// handles WSD requests coming from UDP datagrams.
@@ -105,7 +106,7 @@ impl WSDHost {
 
 fn handle_probe(
     config: &Config,
-    relates_to: &str,
+    relates_to: Urn,
     mut reader: NsReader<&[u8]>,
 ) -> Result<Vec<u8>, eyre::Report> {
     parser::probe::parse_probe_body(&mut reader)?;
@@ -117,7 +118,7 @@ fn handle_resolve(
     config: &Config,
     address: IpAddr,
     target_uuid: uuid::Uuid,
-    relates_to: &str,
+    relates_to: Urn,
     mut reader: NsReader<&[u8]>,
 ) -> Result<Vec<u8>, eyre::Report> {
     parser::resolve::parse_resolve_body(&mut reader, target_uuid)?;
@@ -127,6 +128,7 @@ fn handle_resolve(
     )?)
 }
 
+#[expect(clippy::too_many_lines, reason = "WIP")]
 fn spawn_receiver_loop(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
@@ -157,7 +159,7 @@ fn spawn_receiver_loop(
                 break;
             };
 
-            let (message_id, action, body_reader) = match message_handler
+            let (header, body_reader) = match message_handler
                 .deconstruct_message(&buffer, Some(from))
                 .await
             {
@@ -167,9 +169,8 @@ fn spawn_receiver_loop(
                         MessageHandlerError::DuplicateMessage => {
                             // nothing
                         },
-                        missing @ (MessageHandlerError::MissingAction
-                        | MessageHandlerError::MissingBody
-                        | MessageHandlerError::MissingMessageId) => {
+                        missing @ (MessageHandlerError::MissingHeader
+                        | MessageHandlerError::MissingBody) => {
                             event!(
                                 Level::TRACE,
                                 ?missing,
@@ -177,7 +178,29 @@ fn spawn_receiver_loop(
                                 String::from_utf8_lossy(&buffer)
                             );
                         },
-                        MessageHandlerError::XmlError(error) => {
+                        MessageHandlerError::HeaderError(
+                            HeaderError::InvalidMessageId(uuid_error)
+                            | HeaderError::InvalidRelatesTo(uuid_error),
+                        ) => {
+                            event!(
+                                Level::TRACE,
+                                ?uuid_error,
+                                "XML Message Header was malformed: {}",
+                                String::from_utf8_lossy(&buffer)
+                            );
+                        },
+                        MessageHandlerError::HeaderError(
+                            error @ (HeaderError::MissingAction | HeaderError::MissingMessageId),
+                        ) => {
+                            event!(
+                                Level::TRACE,
+                                %error,
+                                "XML Message Header is missing pieces: {}",
+                                String::from_utf8_lossy(&buffer)
+                            );
+                        },
+                        MessageHandlerError::HeaderError(HeaderError::XmlError(error))
+                        | MessageHandlerError::XmlError(error) => {
                             event!(
                                 Level::ERROR,
                                 ?error,
@@ -192,13 +215,22 @@ fn spawn_receiver_loop(
             };
 
             // handle based on action
-            let response = match action.as_ref() {
-                constants::WSD_PROBE => handle_probe(&config, &message_id, body_reader),
-                constants::WSD_RESOLVE => {
-                    handle_resolve(&config, address, config.uuid, &message_id, body_reader)
-                },
+            let response = match &*header.action {
+                constants::WSD_PROBE => handle_probe(&config, header.message_id, body_reader),
+                constants::WSD_RESOLVE => handle_resolve(
+                    &config,
+                    address,
+                    config.uuid,
+                    header.message_id,
+                    body_reader,
+                ),
                 _ => {
-                    event!(Level::DEBUG, "unhandled action {}/{}", action, message_id);
+                    event!(
+                        Level::DEBUG,
+                        "unhandled action {}/{}",
+                        header.action,
+                        header.message_id
+                    );
                     continue;
                 },
             };
@@ -208,7 +240,7 @@ fn spawn_receiver_loop(
                 Err(err) => {
                     event!(
                         Level::ERROR,
-                        ?action,
+                        action = &*header.action,
                         ?err,
                         "Failure to create XML response"
                     );

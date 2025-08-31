@@ -52,7 +52,7 @@ pub fn extract_endpoint_reference_address<'reader, 'raw, 'error>(
     let Some(address) = address else {
         event!(
             Level::DEBUG,
-            "wsa:Hello message lacks wsa:EndpointReference/wsa:Address element. Ignored."
+            "Missing wsa:EndpointReference/wsa:Address element. Ignored."
         );
 
         return Err(GenericParsingError::MissingElement(
@@ -66,13 +66,6 @@ pub fn extract_endpoint_reference_address<'reader, 'raw, 'error>(
 pub fn extract_endpoint_metadata<'reader, 'raw, 'error>(
     reader: &'reader mut NsReader<&'raw [u8]>,
 ) -> Result<(Uuid, Option<Cow<'raw, str>>), GenericParsingError<'error>> {
-    //         addr_path = 'wsa:EndpointReference/wsa:Address'
-
-    //         endpoint = body.findtext(prefix + addr_path, namespaces=namespaces)
-    //         xaddrs = body.findtext(prefix + 'wsd:XAddrs', namespaces=namespaces)
-
-    //         return endpoint, xaddrs
-
     let mut endpoint = None;
     let mut xaddrs = None;
 
@@ -110,12 +103,10 @@ pub fn extract_endpoint_metadata<'reader, 'raw, 'error>(
     let Some(endpoint) = endpoint else {
         event!(
             Level::DEBUG,
-            "wsa:Hello message lacks wsa:EndpointReference/wsa:Address element. Ignored."
+            "Missing wsa:EndpointReference element. Ignored."
         );
 
-        return Err(GenericParsingError::MissingElement(
-            "wsa:EndpointReference/wsa:Address",
-        ));
+        return Err(GenericParsingError::MissingElement("wsa:EndpointReference"));
     };
 
     let endpoint = Urn::from_str(&endpoint)?.into_uuid();
@@ -134,6 +125,36 @@ pub fn parse_generic_body<'reader, 'path, 'raw>(
                     && e.name().local_name().as_ref() == path.as_bytes()
                 {
                     return Ok(());
+                }
+            },
+            (_, Event::Eof) => {
+                break;
+            },
+            _ => (),
+        }
+    }
+
+    Err(GenericParsingError::MissingElement(path))
+}
+
+pub fn parse_generic_body_paths<'reader, 'path, 'raw>(
+    reader: &'reader mut NsReader<&'raw [u8]>,
+    paths: &[&'path str],
+) -> Result<(), GenericParsingError<'path>> {
+    let (path, rest) = match *paths {
+        [first, ref rest @ ..] => (first, rest),
+        [] => {
+            return Ok(());
+        },
+    };
+
+    loop {
+        match reader.read_resolved_event()? {
+            (Bound(Namespace(ns)), Event::Start(e)) => {
+                if ns == XML_WSD_NAMESPACE.as_bytes()
+                    && e.name().local_name().as_ref() == path.as_bytes()
+                {
+                    return parse_generic_body_paths(reader, rest);
                 }
             },
             (_, Event::Eof) => {
