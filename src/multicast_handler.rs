@@ -50,7 +50,6 @@ pub struct MulticastHandler {
     /// sending multicast from a socket bound to random / user provided port
     mc_socket_sender: MessageSender<MulticastMessageSplitter>,
     /// receiving unicast traffic on the random / user provided port
-    #[expect(unused, reason = "WIP")]
     mc_socket_receiver: MessageReceiver,
     /// sending unicast messages from the WSD Port
     uc_socket_sender: MessageSender<UnicastMessageSplitter>,
