@@ -408,6 +408,7 @@ impl MulticastHandler {
                     Arc::clone(&self.config),
                     self.address.clone(),
                     self.recv_socket_receiver.get_listener().await,
+                    self.mc_socket_receiver.get_listener().await,
                     self.mc_socket_sender.get_sender(),
                     self.uc_socket_sender.get_sender(),
                 )

@@ -41,6 +41,7 @@ impl WSDClient {
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
         network_address: NetworkAddress,
+        recv_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
         mc_send_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
         multicast: Sender<Box<[u8]>>,
         unicast: Sender<(SocketAddr, Box<[u8]>)>,
@@ -53,6 +54,7 @@ impl WSDClient {
             cancellation_token.clone(),
             Arc::clone(&config),
             network_address,
+            recv_socket_receiver,
             mc_send_socket_receiver,
             multicast.clone(),
             unicast,
@@ -353,7 +355,8 @@ fn spawn_receiver_loop(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     network_address: NetworkAddress,
-    mut multicast_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
+    mut recv_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
+    mut mc_send_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
     multicast: Sender<Box<[u8]>>,
     _unicast: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
@@ -370,7 +373,10 @@ fn spawn_receiver_loop(
                         () = cancellation_token.cancelled() => {
                             break;
                         },
-                        message = multicast_receiver.recv() => {
+                        message = recv_socket_receiver.recv() => {
+                            message
+                        }
+                        message = mc_send_socket_receiver.recv() => {
                             message
                         }
                     }
