@@ -31,7 +31,6 @@ pub(crate) struct WSDClient {
     probes: HashMap<Urn, u128>,
 }
 
-///
 /// * `recv_socket_receiver`: used to receive multicast messages on `WSD_PORT`
 /// * `mc_send_socket_receiver`: used to receive unicast messages sent directly to us
 /// * `multicast`: use to send multicast messages, from a random port to `WSD_PORT`
@@ -192,14 +191,17 @@ async fn handle_hello<'reader>(
     Ok(())
 }
 
-//     def handle_bye(self, header: ElementTree.Element, body: ElementTree.Element) -> Optional[WSDMessage]:
-//         bye_path = 'wsd:Bye'
-//         endpoint, _ = self.extract_endpoint_metadata(body, bye_path)
-//         device_uuid = str(uuid.UUID(endpoint))
-//         if device_uuid in WSDDiscoveredDevice.instances:
-//             del WSDDiscoveredDevice.instances[device_uuid]
+async fn handle_bye<'reader>(mut reader: NsReader<&'reader [u8]>) -> Result<(), eyre::Report> {
+    parser::generic::parse_generic_body(&mut reader, "Bye")?;
 
-//         return None
+    let (endpoint, _) = parser::generic::extract_endpoint_metadata(&mut reader)?;
+
+    let mut guard = device::INSTANCES.write().await;
+
+    guard.remove(&endpoint);
+
+    Ok(())
+}
 
 //     def handle_probe_match(self, header: ElementTree.Element, body: ElementTree.Element) -> Optional[WSDMessage]:
 //         # do not handle to probematches issued not sent by ourself
@@ -422,12 +424,11 @@ fn spawn_receiver_loop(
                 };
 
                 // handle based on action
-                #[expect(clippy::single_match_else, reason = "WIP")]
                 if let Err(err) = match action.as_ref() {
                     constants::WSD_HELLO => {
                         handle_hello(&config, &network_address, &multicast, body_reader).await
                     },
-                    // constants::WSD_BYE => handle_bye(&config, &message_id, body_reader),
+                    constants::WSD_BYE => handle_bye(body_reader).await,
                     // constants::WSD_PROBE_MATCH => handle_probe_match(&config, &message_id, body_reader),
                     // constants::WSD_RESOLVE_MATCH => {
                     //     handle_resolve_match(&config, &message_id, body_reader)
