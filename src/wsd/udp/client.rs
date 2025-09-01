@@ -21,7 +21,6 @@ use crate::soap::builder::{Builder, MessageType};
 use crate::soap::parser::generic::extract_endpoint_metadata;
 use crate::soap::parser::{self, HeaderError, MessageHandler, MessageHandlerError};
 use crate::utils::task::spawn_with_name;
-use crate::wsd::device;
 use crate::wsd::device::WSDDiscoveredDevice;
 
 #[expect(unused, reason = "WIP")]
@@ -38,9 +37,11 @@ pub(crate) struct WSDClient {
 /// * `multicast`: use to send multicast messages, from a random port to `WSD_PORT`
 /// * `unicast`: used to send unicast messages FROM `WSD_PORT` to ...
 impl WSDClient {
+    #[expect(clippy::too_many_arguments, reason = "WIP")]
     pub async fn init(
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
+        devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
         network_address: NetworkAddress,
         recv_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
         mc_send_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
@@ -56,6 +57,7 @@ impl WSDClient {
         spawn_receiver_loop(
             cancellation_token.clone(),
             Arc::clone(&config),
+            devices,
             network_address,
             recv_socket_receiver,
             mc_send_socket_receiver,
@@ -167,6 +169,7 @@ fn __extract_xaddr(bound_to: IpAddr, xaddrs: &str) -> Option<url::Url> {
 
 async fn handle_hello(
     config: &Config,
+    devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     network_address: &NetworkAddress,
     multicast: &Sender<Box<[u8]>>,
     mut reader: NsReader<&[u8]>,
@@ -193,17 +196,20 @@ async fn handle_hello(
 
     event!(Level::INFO, "Hello from {} on {}", endpoint, xaddr);
 
-    perform_metadata_exchange(config, network_address, endpoint, xaddr).await?;
+    perform_metadata_exchange(config, devices, network_address, endpoint, xaddr).await?;
 
     Ok(())
 }
 
-async fn handle_bye(mut reader: NsReader<&[u8]>) -> Result<(), eyre::Report> {
+async fn handle_bye(
+    devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
+    mut reader: NsReader<&[u8]>,
+) -> Result<(), eyre::Report> {
     parser::generic::parse_generic_body(&mut reader, "Bye")?;
 
     let (endpoint, _) = parser::generic::extract_endpoint_metadata(&mut reader)?;
 
-    let mut guard = device::INSTANCES.write().await;
+    let mut guard = devices.write().await;
 
     guard.remove(&endpoint);
 
@@ -212,6 +218,7 @@ async fn handle_bye(mut reader: NsReader<&[u8]>) -> Result<(), eyre::Report> {
 
 async fn handle_probe_match(
     config: &Config,
+    devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     network_address: &NetworkAddress,
     relates_to: Option<Urn>,
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
@@ -249,13 +256,21 @@ async fn handle_probe_match(
 
     event!(Level::DEBUG, %endpoint, ?xaddr, "Probe match");
 
-    perform_metadata_exchange(config, network_address, endpoint, xaddr).await?;
+    perform_metadata_exchange(
+        config,
+        Arc::clone(&devices),
+        network_address,
+        endpoint,
+        xaddr,
+    )
+    .await?;
 
     Ok(())
 }
 
 async fn handle_resolve_match(
     config: &Config,
+    devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     network_address: &NetworkAddress,
     mut reader: NsReader<&[u8]>,
 ) -> Result<(), eyre::Report> {
@@ -280,13 +295,14 @@ async fn handle_resolve_match(
 
     event!(Level::DEBUG, %endpoint, ?xaddr, "Resolve match");
 
-    perform_metadata_exchange(config, network_address, endpoint, xaddr).await?;
+    perform_metadata_exchange(config, devices, network_address, endpoint, xaddr).await?;
 
     Ok(())
 }
 
 async fn perform_metadata_exchange(
     config: &Config,
+    devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     network_address: &NetworkAddress,
     endpoint: Uuid,
     xaddr: Url,
@@ -320,7 +336,7 @@ async fn perform_metadata_exchange(
         Ok(response) => {
             let response = response.text().await?;
 
-            handle_metadata(response, endpoint, xaddr).await?;
+            handle_metadata(devices, response, endpoint, xaddr).await?;
         },
         Err(error) => {
             let url = error.url().map(ToString::to_string);
@@ -352,10 +368,15 @@ fn build_getmetadata_message(
 }
 
 //     def handle_metadata(self, meta: str, endpoint: str, xaddr: str) -> None:
-async fn handle_metadata(meta: String, endpoint: Uuid, xaddr: Url) -> Result<(), eyre::Report> {
+async fn handle_metadata(
+    devices: Arc<RwLock<hashbrown::HashMap<Uuid, WSDDiscoveredDevice>>>,
+    meta: String,
+    endpoint: Uuid,
+    xaddr: Url,
+) -> Result<(), eyre::Report> {
     let device_uuid = endpoint;
 
-    match device::INSTANCES.write().await.entry(device_uuid) {
+    match devices.write().await.entry(device_uuid) {
         hashbrown::hash_map::Entry::Occupied(mut occupied_entry) => {
             occupied_entry.get_mut().update(meta, xaddr);
         },
@@ -372,6 +393,7 @@ async fn handle_metadata(meta: String, endpoint: Uuid, xaddr: Url) -> Result<(),
 fn spawn_receiver_loop(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
+    devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     network_address: NetworkAddress,
     mut recv_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
     mut mc_send_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
@@ -465,12 +487,20 @@ fn spawn_receiver_loop(
                 // handle based on action
                 if let Err(err) = match &*header.action {
                     constants::WSD_HELLO => {
-                        handle_hello(&config, &network_address, &multicast, body_reader).await
+                        handle_hello(
+                            &config,
+                            Arc::clone(&devices),
+                            &network_address,
+                            &multicast,
+                            body_reader,
+                        )
+                        .await
                     },
-                    constants::WSD_BYE => handle_bye(body_reader).await,
+                    constants::WSD_BYE => handle_bye(Arc::clone(&devices), body_reader).await,
                     constants::WSD_PROBE_MATCH => {
                         handle_probe_match(
                             &config,
+                            Arc::clone(&devices),
                             &network_address,
                             header.relates_to,
                             Arc::clone(&probes),
@@ -480,7 +510,13 @@ fn spawn_receiver_loop(
                         .await
                     },
                     constants::WSD_RESOLVE_MATCH => {
-                        handle_resolve_match(&config, &network_address, body_reader).await
+                        handle_resolve_match(
+                            &config,
+                            Arc::clone(&devices),
+                            &network_address,
+                            body_reader,
+                        )
+                        .await
                     },
                     _ => {
                         event!(
@@ -503,4 +539,76 @@ fn spawn_receiver_loop(
             }
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+    use std::sync::Arc;
+
+    use hashbrown::HashMap;
+    use pretty_assertions::assert_eq;
+    use tokio::sync::RwLock;
+    use uuid::Uuid;
+
+    use crate::test_utils::xml::to_string_pretty;
+    use crate::test_utils::{build_config, build_message_handler_with_network_address};
+    use crate::wsd::udp::client::handle_hello;
+
+    #[tokio::test]
+    async fn handles_hello_without_xaddr() {
+        let (message_handler, client_network_address) =
+            build_message_handler_with_network_address();
+
+        // client
+        let client_endpoint_uuid = Uuid::new_v4();
+        let client_instance_id = "client-instance-id";
+        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+        let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
+
+        // host
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let host_message_id = Uuid::new_v4();
+        let host_instance_id = "host-instance-id";
+        let hello_without_xaddrs = format!(
+            include_str!("../../test/hello-without-xaddrs-template.xml"),
+            host_message_id, host_instance_id
+        );
+
+        let (multicast_sender, mut multicast_receiver) = tokio::sync::mpsc::channel(1);
+
+        let (_, reader) = message_handler
+            .deconstruct_message(
+                hello_without_xaddrs.as_bytes(),
+                Some(SocketAddr::V4(SocketAddrV4::new(host_ip, 5000))),
+            )
+            .await
+            .unwrap();
+
+        handle_hello(
+            &client_config,
+            Arc::clone(&client_devices),
+            &client_network_address,
+            &multicast_sender,
+            reader,
+        )
+        .await
+        .unwrap();
+
+        let expected = format!(
+            include_str!("../../test/resolve-template.xml"),
+            Uuid::nil(),
+            client_endpoint_uuid,
+        );
+
+        let response = {
+            let response = multicast_receiver.try_recv().unwrap();
+
+            to_string_pretty(&response).unwrap()
+        };
+
+        let expected = to_string_pretty(expected.as_bytes()).unwrap();
+
+        assert_eq!(response, expected);
+    }
 }

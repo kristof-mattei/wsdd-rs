@@ -1,11 +1,4 @@
-use std::sync::LazyLock;
-
-use tokio::sync::RwLock;
 use url::Url;
-use uuid::Uuid;
-
-pub static INSTANCES: std::sync::LazyLock<RwLock<hashbrown::HashMap<Uuid, WSDDiscoveredDevice>>> =
-    LazyLock::new(|| RwLock::new(hashbrown::HashMap::new()));
 
 pub struct WSDDiscoveredDevice {}
 

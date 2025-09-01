@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use libc::RT_SCOPE_SITE;
 use tokio::sync::RwLock;
+use uuid::Uuid;
 
 use crate::cli;
 use crate::config::Config;
@@ -56,11 +57,11 @@ pub mod xml {
     }
 }
 
-pub fn build_config(endpoint_uuid: &str, instance_id: &str) -> Config {
+pub fn build_config(endpoint_uuid: Uuid, instance_id: &str) -> Config {
     let mut config = cli::parse_cli_from([
         "-4",
         "--uuid",
-        endpoint_uuid,
+        &endpoint_uuid.to_string(),
         "--hostname",
         "test-host-name",
     ])
@@ -79,5 +80,20 @@ pub fn build_message_handler() -> MessageHandler {
             IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)),
             Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
         ),
+    )
+}
+
+pub fn build_message_handler_with_network_address() -> (MessageHandler, NetworkAddress) {
+    let network_address = NetworkAddress::new(
+        IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)),
+        Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+    );
+
+    (
+        MessageHandler::new(
+            Arc::new(RwLock::new(MaxSizeDeque::new(20))),
+            network_address.clone(),
+        ),
+        network_address,
     )
 }

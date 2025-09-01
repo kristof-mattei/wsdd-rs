@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope
+    xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+    xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+    xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+>
+    <soap:Header>
+        <wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To>
+        <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Hello</wsa:Action>
+        <wsa:MessageID>urn:uuid:{}</wsa:MessageID>
+        <wsd:AppSequence InstanceId="1" MessageNumber="2"></wsd:AppSequence>
+    </soap:Header>
+    <soap:Body>
+        <wsd:Hello>
+            <wsa:EndpointReference>
+                <wsa:Address>urn:uuid:{}</wsa:Address>
+            </wsa:EndpointReference>
+            <wsd:MetadataVersion>0</wsd:MetadataVersion>
+        </wsd:Hello>
+    </soap:Body>
+</soap:Envelope>

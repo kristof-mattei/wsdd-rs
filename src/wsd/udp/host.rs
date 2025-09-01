@@ -262,6 +262,7 @@ mod tests {
     use std::sync::Arc;
 
     use pretty_assertions::assert_eq;
+    use uuid::Uuid;
 
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler};
@@ -271,9 +272,9 @@ mod tests {
     async fn handles_resolve() {
         let message_handler = build_message_handler();
 
-        let message_id = "ba866dfd-8135-11f0-accb-d45ddf1e11a9";
-        let endpoint_uuid = "f3dcd9d5-65ee-46ff-bc74-d151934a30c4";
-        let instance_id = "instance-id";
+        let message_id = Uuid::new_v4();
+        let endpoint_uuid = Uuid::new_v4();
+        let instance_id = "host-instance-id";
 
         let from = Ipv4Addr::new(192, 168, 100, 5);
 
@@ -316,9 +317,9 @@ mod tests {
     async fn handles_probe() {
         let message_handler = build_message_handler();
 
-        let message_id = "ba866dfd-8135-11f0-accb-d45ddf1e11a9";
-        let endpoint_uuid = "f3dcd9d5-65ee-46ff-bc74-d151934a30c4";
-        let instance_id = "instance-id";
+        let message_id = Uuid::new_v4();
+        let endpoint_uuid = Uuid::new_v4();
+        let instance_id = "host-instance-id";
         let from = Ipv4Addr::new(192, 168, 100, 5);
 
         let resolve = format!(include_str!("../../test/probe-template.xml"), message_id);
