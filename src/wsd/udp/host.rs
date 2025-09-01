@@ -1,6 +1,7 @@
 use std::net::{IpAddr, SocketAddr};
 use std::string::String;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use color_eyre::eyre;
@@ -23,6 +24,7 @@ pub struct WSDHost {
     address: IpAddr,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
+    messages_built: Arc<AtomicU64>,
     multicast: Sender<Box<[u8]>>,
 }
 
@@ -30,6 +32,7 @@ impl WSDHost {
     pub async fn init(
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
+        messages_built: Arc<AtomicU64>,
         network_address: NetworkAddress,
         receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
         multicast: Sender<Box<[u8]>>,
@@ -42,6 +45,7 @@ impl WSDHost {
         spawn_receiver_loop(
             cancellation_token.clone(),
             Arc::clone(&config),
+            Arc::clone(&messages_built),
             network_address,
             receiver,
             unicast,
@@ -51,6 +55,7 @@ impl WSDHost {
             address,
             cancellation_token,
             config,
+            messages_built,
             multicast,
         };
 
@@ -81,7 +86,7 @@ impl WSDHost {
 
     // WS-Discovery, Section 4.1, Hello message
     async fn send_hello(&self) -> Result<(), eyre::Report> {
-        let hello = Builder::build_hello(&self.config, self.address)?;
+        let hello = Builder::build_hello(&self.config, &self.messages_built, self.address)?;
 
         // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
         // TODO move event to here and write properly
@@ -94,7 +99,7 @@ impl WSDHost {
 
     /// WS-Discovery, Section 4.2, Bye message
     async fn send_bye(&self) -> Result<(), eyre::Report> {
-        let bye = Builder::build_bye(&self.config)?;
+        let bye = Builder::build_bye(&self.config, &self.messages_built)?;
 
         // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
         // TODO move event to here and write properly
@@ -106,17 +111,23 @@ impl WSDHost {
 
 fn handle_probe(
     config: &Config,
+    messages_built: &AtomicU64,
     relates_to: Urn,
     mut reader: NsReader<&[u8]>,
 ) -> Result<Vec<u8>, eyre::Report> {
     parser::probe::parse_probe_body(&mut reader)?;
 
-    Ok(builder::Builder::build_probe_matches(config, relates_to)?)
+    Ok(builder::Builder::build_probe_matches(
+        config,
+        messages_built,
+        relates_to,
+    )?)
 }
 
 fn handle_resolve(
     config: &Config,
     address: IpAddr,
+    messages_built: &AtomicU64,
     target_uuid: uuid::Uuid,
     relates_to: Urn,
     mut reader: NsReader<&[u8]>,
@@ -124,7 +135,10 @@ fn handle_resolve(
     parser::resolve::parse_resolve_body(&mut reader, target_uuid)?;
 
     Ok(builder::Builder::build_resolve_matches(
-        config, address, relates_to,
+        config,
+        address,
+        messages_built,
+        relates_to,
     )?)
 }
 
@@ -132,6 +146,7 @@ fn handle_resolve(
 fn spawn_receiver_loop(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
+    messages_built: Arc<AtomicU64>,
     network_address: NetworkAddress,
     mut receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
     unicast: Sender<(SocketAddr, Box<[u8]>)>,
@@ -216,10 +231,13 @@ fn spawn_receiver_loop(
 
             // handle based on action
             let response = match &*header.action {
-                constants::WSD_PROBE => handle_probe(&config, header.message_id, body_reader),
+                constants::WSD_PROBE => {
+                    handle_probe(&config, &messages_built, header.message_id, body_reader)
+                },
                 constants::WSD_RESOLVE => handle_resolve(
                     &config,
                     address,
+                    &messages_built,
                     config.uuid,
                     header.message_id,
                     body_reader,
@@ -260,6 +278,7 @@ fn spawn_receiver_loop(
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use pretty_assertions::assert_eq;
     use uuid::Uuid;
@@ -276,6 +295,7 @@ mod tests {
         let host_endpoint_uuid = Uuid::new_v4();
         let host_instance_id = "host-instance-id";
         let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
+        let messages_built = AtomicU64::new(0);
 
         // client
         let client_ip = Ipv4Addr::new(192, 168, 100, 5);
@@ -298,6 +318,7 @@ mod tests {
         let response = handle_resolve(
             &host_config,
             IpAddr::V4(client_ip),
+            &messages_built,
             host_config.uuid,
             header.message_id,
             reader,
@@ -306,7 +327,12 @@ mod tests {
 
         let expected = format!(
             include_str!("../../test/resolve-matches-template.xml"),
-            client_message_id, host_instance_id, host_endpoint_uuid, client_ip, host_endpoint_uuid
+            client_message_id,
+            host_instance_id,
+            messages_built.load(Ordering::SeqCst),
+            host_endpoint_uuid,
+            client_ip,
+            host_endpoint_uuid
         );
 
         let response = to_string_pretty(&response).unwrap();
@@ -323,6 +349,7 @@ mod tests {
         let host_endpoint_uuid = Uuid::new_v4();
         let host_instance_id = "host-instance-id";
         let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
+        let messages_built = AtomicU64::new(0);
 
         // client
         let client_ip = Ipv4Addr::new(192, 168, 100, 5);
@@ -342,11 +369,15 @@ mod tests {
             .unwrap();
 
         // host produces answer
-        let response = handle_probe(&host_config, header.message_id, reader).unwrap();
+        let response =
+            handle_probe(&host_config, &messages_built, header.message_id, reader).unwrap();
 
         let expected = format!(
             include_str!("../../test/probe-matches-template.xml"),
-            client_message_id, host_instance_id, host_endpoint_uuid
+            client_message_id,
+            host_instance_id,
+            messages_built.load(Ordering::SeqCst),
+            host_endpoint_uuid
         );
 
         let response = to_string_pretty(&response).unwrap();

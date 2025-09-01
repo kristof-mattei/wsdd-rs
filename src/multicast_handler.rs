@@ -1,6 +1,7 @@
 use std::mem::MaybeUninit;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use color_eyre::{Section as _, eyre};
@@ -38,6 +39,8 @@ pub struct MulticastHandler {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
+
+    messages_built: Arc<AtomicU64>,
     /// The address and interface we're bound on
     address: NetworkAddress,
 
@@ -150,6 +153,7 @@ impl MulticastHandler {
             cancellation_token,
             address,
             devices: Arc::new(RwLock::new(HashMap::new())),
+            messages_built: Arc::new(AtomicU64::new(0)),
             multicast_address,
             http_listen_address,
             wsd_client: OnceCell::new(),
@@ -388,6 +392,7 @@ impl MulticastHandler {
                 let host = WSDHost::init(
                     &self.cancellation_token,
                     Arc::clone(&self.config),
+                    Arc::clone(&self.messages_built),
                     self.address.clone(),
                     self.recv_socket_receiver.get_listener().await,
                     self.mc_socket_sender.get_sender(),
@@ -411,6 +416,7 @@ impl MulticastHandler {
                     &self.cancellation_token,
                     Arc::clone(&self.config),
                     Arc::clone(&self.devices),
+                    Arc::clone(&self.messages_built),
                     self.address.clone(),
                     self.recv_socket_receiver.get_listener().await,
                     self.mc_socket_receiver.get_listener().await,

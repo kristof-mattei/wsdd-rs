@@ -17,8 +17,6 @@ use crate::constants::{
 };
 use crate::url_ip_addr::UrlIpAddr;
 
-static MESSAGES_BUILT: AtomicU64 = AtomicU64::new(0);
-
 pub enum MessageType {
     Hello,
     Bye,
@@ -38,8 +36,9 @@ impl std::fmt::Display for MessageType {
 type ExtraHeadersCallback =
     fn(&mut Builder, &mut Writer<Cursor<Vec<u8>>>) -> Result<(), std::io::Error>;
 
-pub struct Builder<'config> {
+pub struct Builder<'config, 'm> {
     config: &'config Config,
+    messages_built: &'m AtomicU64,
     namespaces: HashMap<&'static str, &'static str>,
 }
 
@@ -81,10 +80,11 @@ fn sequence_id() -> Urn {
     }
 }
 
-impl<'config> Builder<'config> {
-    fn new(config: &'config Config) -> Self {
+impl<'config, 'm> Builder<'config, 'm> {
+    fn new(config: &'config Config, messages_built: &'m AtomicU64) -> Self {
         Self {
             config,
+            messages_built,
             namespaces: HashMap::new(),
         }
     }
@@ -198,9 +198,10 @@ impl<'config> Builder<'config> {
     /// WS-Discovery, Section 4.1, Hello message
     pub fn build_hello(
         config: &Config,
+        messages_built: &AtomicU64,
         xaddr: IpAddr,
     ) -> Result<Vec<u8>, quick_xml::errors::Error> {
-        let mut builder = Builder::new(config);
+        let mut builder = Builder::new(config, messages_built);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
 
@@ -232,8 +233,11 @@ impl<'config> Builder<'config> {
     }
 
     /// WS-Discovery, Section 4.2, Bye message
-    pub fn build_bye(config: &Config) -> Result<Vec<u8>, quick_xml::errors::Error> {
-        let mut builder = Builder::new(config);
+    pub fn build_bye(
+        config: &Config,
+        messages_built: &AtomicU64,
+    ) -> Result<Vec<u8>, quick_xml::errors::Error> {
+        let mut builder = Builder::new(config, messages_built);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
 
@@ -261,8 +265,11 @@ impl<'config> Builder<'config> {
     }
 
     // WS-Discovery, Section 4.3, Probe message
-    pub fn build_probe(config: &Config) -> Result<(Vec<u8>, Urn), quick_xml::errors::Error> {
-        let mut builder = Builder::new(config);
+    pub fn build_probe(
+        config: &Config,
+        messages_built: &AtomicU64,
+    ) -> Result<(Vec<u8>, Urn), quick_xml::errors::Error> {
+        let mut builder = Builder::new(config, messages_built);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
 
@@ -291,8 +298,9 @@ impl<'config> Builder<'config> {
     pub fn build_resolve(
         config: &Config,
         endpoint: Uuid,
+        messages_built: &AtomicU64,
     ) -> Result<(Vec<u8>, Urn), quick_xml::errors::Error> {
-        let mut builder = Builder::new(config);
+        let mut builder = Builder::new(config, messages_built);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
 
@@ -320,9 +328,10 @@ impl<'config> Builder<'config> {
     pub fn build_resolve_matches(
         config: &Config,
         address: IpAddr,
+        messages_built: &AtomicU64,
         relates_to: Urn,
     ) -> Result<Vec<u8>, quick_xml::errors::Error> {
-        let mut builder = Builder::new(config);
+        let mut builder = Builder::new(config, messages_built);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
 
@@ -363,9 +372,10 @@ impl<'config> Builder<'config> {
 
     pub fn build_probe_matches(
         config: &Config,
+        messages_built: &AtomicU64,
         relates_to: Urn,
     ) -> Result<Vec<u8>, quick_xml::errors::Error> {
-        let mut builder = Builder::new(config);
+        let mut builder = Builder::new(config, messages_built);
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
 
@@ -408,7 +418,10 @@ impl<'config> Builder<'config> {
     ) -> Result<(), std::io::Error> {
         let wsd_instance_id = self.config.wsd_instance_id.to_string();
         let sequence_id = sequence_id().to_string();
-        let message_number = MESSAGES_BUILT.fetch_add(1, Ordering::SeqCst).to_string();
+        let message_number = self
+            .messages_built
+            .fetch_add(1, Ordering::SeqCst)
+            .to_string();
 
         writer
             .create_element("wsd:AppSequence")
@@ -533,8 +546,12 @@ impl<'config> Builder<'config> {
         Ok(())
     }
 
-    pub fn build_get(config: &Config, endpoint: Uuid) -> Result<Vec<u8>, quick_xml::Error> {
-        let mut builder = Builder::new(config);
+    pub fn build_get(
+        config: &Config,
+        endpoint: Uuid,
+        messages_built: &AtomicU64,
+    ) -> Result<Vec<u8>, quick_xml::Error> {
+        let mut builder = Builder::new(config, messages_built);
 
         builder
             .build_message(
