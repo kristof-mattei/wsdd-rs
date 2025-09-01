@@ -647,4 +647,61 @@ mod tests {
 
         assert_eq!(response, expected);
     }
+
+    #[tokio::test]
+    async fn handles_hello_with_xaddr() {
+        let (message_handler, network_address) = build_message_handler_with_network_address();
+
+        // client
+        let client_endpoint_id = Uuid::new_v4();
+        let client_instance_id = "client-instance-id";
+        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+        let client_messages_built = AtomicU64::new(0);
+
+        // host
+        let host_ip = Ipv4Addr::new(192, 168, 100, 10);
+        let host_message_id = Uuid::new_v4();
+        let host_instance_id = "host-instance-id";
+        let host_endpoint_uuid = Uuid::new_v4();
+        let resolve = format!(
+            include_str!("../../test/hello-template.xml"),
+            host_message_id, host_instance_id, host_endpoint_uuid, host_ip, host_endpoint_uuid
+        );
+
+        let (multicast_sender, mut multicast_receiver) = tokio::sync::mpsc::channel(1);
+
+        let config = Arc::new(build_config(client_endpoint_id, client_instance_id));
+
+        let (_, reader) = message_handler
+            .deconstruct_message(
+                resolve.as_bytes(),
+                Some(SocketAddr::V4(SocketAddrV4::new(host_ip, 5000))),
+            )
+            .await
+            .unwrap();
+
+        handle_hello(
+            &config,
+            Arc::clone(&client_devices),
+            &client_messages_built,
+            &network_address,
+            &multicast_sender,
+            reader,
+        )
+        .await
+        .unwrap();
+
+        // let expected = format!(
+        //     include_str!("../../test/resolve-template.xml"),
+        //     Uuid::nil(),
+        //     client_endpoint_id,
+        // );
+
+        // we expect to resolve to be sent
+        multicast_receiver.try_recv().unwrap_err();
+
+        // let expected = to_string_pretty(expected.as_bytes()).unwrap();
+
+        // assert_eq!(response, expected);
+    }
 }
