@@ -295,7 +295,7 @@ mod tests {
         let host_endpoint_uuid = Uuid::new_v4();
         let host_instance_id = "host-instance-id";
         let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
-        let messages_built = AtomicU64::new(0);
+        let host_messages_built = AtomicU64::new(0);
 
         // client
         let client_ip = Ipv4Addr::new(192, 168, 100, 5);
@@ -318,7 +318,7 @@ mod tests {
         let response = handle_resolve(
             &host_config,
             IpAddr::V4(client_ip),
-            &messages_built,
+            &host_messages_built,
             host_config.uuid,
             header.message_id,
             reader,
@@ -329,7 +329,7 @@ mod tests {
             include_str!("../../test/resolve-matches-template.xml"),
             client_message_id,
             host_instance_id,
-            messages_built.load(Ordering::SeqCst) - 1,
+            host_messages_built.load(Ordering::SeqCst) - 1,
             host_endpoint_uuid,
             client_ip,
             host_endpoint_uuid
@@ -349,7 +349,7 @@ mod tests {
         let host_endpoint_uuid = Uuid::new_v4();
         let host_instance_id = "host-instance-id";
         let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
-        let messages_built = AtomicU64::new(0);
+        let host_messages_built = AtomicU64::new(0);
 
         // client
         let client_ip = Ipv4Addr::new(192, 168, 100, 5);
@@ -369,14 +369,19 @@ mod tests {
             .unwrap();
 
         // host produces answer
-        let response =
-            handle_probe(&host_config, &messages_built, header.message_id, reader).unwrap();
+        let response = handle_probe(
+            &host_config,
+            &host_messages_built,
+            header.message_id,
+            reader,
+        )
+        .unwrap();
 
         let expected = format!(
             include_str!("../../test/probe-matches-template.xml"),
             client_message_id,
             host_instance_id,
-            messages_built.load(Ordering::SeqCst) - 1,
+            host_messages_built.load(Ordering::SeqCst) - 1,
             host_endpoint_uuid
         );
 
