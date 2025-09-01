@@ -255,3 +255,94 @@ fn spawn_receiver_loop(
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
+    use std::sync::Arc;
+
+    use pretty_assertions::assert_eq;
+
+    use crate::test_utils::xml::to_string_pretty;
+    use crate::test_utils::{build_config, build_message_handler};
+    use crate::wsd::udp::host::{handle_probe, handle_resolve};
+
+    #[tokio::test]
+    async fn handles_resolve() {
+        let message_handler = build_message_handler();
+
+        let message_id = "ba866dfd-8135-11f0-accb-d45ddf1e11a9";
+        let endpoint_uuid = "f3dcd9d5-65ee-46ff-bc74-d151934a30c4";
+        let instance_id = "instance-id";
+
+        let from = Ipv4Addr::new(192, 168, 100, 5);
+
+        let resolve = format!(
+            include_str!("../../test/resolve-template.xml"),
+            message_id, endpoint_uuid,
+        );
+
+        let config = Arc::new(build_config(endpoint_uuid, instance_id));
+
+        let (header, reader) = message_handler
+            .deconstruct_message(
+                resolve.as_bytes(),
+                Some(SocketAddr::V4(SocketAddrV4::new(from, 5000))),
+            )
+            .await
+            .unwrap();
+
+        let response = handle_resolve(
+            &config,
+            IpAddr::V4(from),
+            config.uuid,
+            header.message_id,
+            reader,
+        )
+        .unwrap();
+
+        let expected = format!(
+            include_str!("../../test/resolve-matches-template.xml"),
+            message_id, instance_id, endpoint_uuid, from, endpoint_uuid
+        );
+
+        let response = to_string_pretty(&response).unwrap();
+        let expected = to_string_pretty(expected.as_bytes()).unwrap();
+
+        assert_eq!(response, expected);
+    }
+
+    #[tokio::test]
+    async fn handles_probe() {
+        let message_handler = build_message_handler();
+
+        let message_id = "ba866dfd-8135-11f0-accb-d45ddf1e11a9";
+        let endpoint_uuid = "f3dcd9d5-65ee-46ff-bc74-d151934a30c4";
+        let instance_id = "instance-id";
+        let from = Ipv4Addr::new(192, 168, 100, 5);
+
+        let resolve = format!(include_str!("../../test/probe-template.xml"), message_id);
+
+        let config = Arc::new(build_config(endpoint_uuid, instance_id));
+
+        let (header, reader) = message_handler
+            .deconstruct_message(
+                resolve.as_bytes(),
+                Some(SocketAddr::V4(SocketAddrV4::new(from, 5000))),
+            )
+            .await
+            .unwrap();
+
+        let response = handle_probe(&config, header.message_id, reader).unwrap();
+
+        let expected = format!(
+            include_str!("../../test/probe-matches-template.xml"),
+            message_id, instance_id, endpoint_uuid
+        );
+
+        let response = to_string_pretty(&response).unwrap();
+        let expected = to_string_pretty(expected.as_bytes()).unwrap();
+
+        assert_eq!(response, expected);
+    }
+}

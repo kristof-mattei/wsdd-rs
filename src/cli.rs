@@ -154,7 +154,7 @@ pub fn parse_cli() -> Result<Config, eyre::Error> {
     parse_cli_from(env::args_os())
 }
 
-fn parse_cli_from<I, T>(from: I) -> Result<Config, eyre::Error>
+pub fn parse_cli_from<I, T>(from: I) -> Result<Config, eyre::Error>
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
@@ -264,7 +264,6 @@ where
             .get_one("source-port")
             .copied()
             .expect("source-port has a default"),
-
         wsd_instance_id: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Before epoch? Time travel?")

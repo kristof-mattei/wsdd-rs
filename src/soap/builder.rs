@@ -43,6 +43,44 @@ pub struct Builder<'config> {
     namespaces: HashMap<&'static str, &'static str>,
 }
 
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::cfg_not_test,
+        reason = "Adding in the ability to control UUID generation seems excessive"
+    )
+)]
+fn generate_message_id() -> Urn {
+    #[cfg(test)]
+    {
+        Uuid::nil().urn()
+    }
+
+    #[cfg(not(test))]
+    {
+        Uuid::new_v4().urn()
+    }
+}
+
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::cfg_not_test,
+        reason = "Adding in the ability to control UUID generation seems excessive"
+    )
+)]
+fn sequence_id() -> Urn {
+    #[cfg(test)]
+    {
+        Uuid::nil().urn()
+    }
+
+    #[cfg(not(test))]
+    {
+        Uuid::new_v4().urn()
+    }
+}
+
 impl<'config> Builder<'config> {
     fn new(config: &'config Config) -> Self {
         Self {
@@ -88,7 +126,7 @@ impl<'config> Builder<'config> {
             .insert("soap", "http://www.w3.org/2003/05/soap-envelope");
         self.namespaces.insert("wsa", WSA_URI);
 
-        let message_id = Uuid::new_v4().urn();
+        let message_id = generate_message_id();
 
         let mut header_and_body = Writer::new(Cursor::new(Vec::new()));
 
@@ -369,14 +407,14 @@ impl<'config> Builder<'config> {
         writer: &mut Writer<Cursor<Vec<u8>>>,
     ) -> Result<(), std::io::Error> {
         let wsd_instance_id = self.config.wsd_instance_id.to_string();
-        let urn = Uuid::new_v4().urn().to_string();
+        let sequence_id = sequence_id().to_string();
         let message_number = MESSAGES_BUILT.fetch_add(1, Ordering::SeqCst).to_string();
 
         writer
             .create_element("wsd:AppSequence")
             .with_attributes([
                 ("InstanceId", wsd_instance_id.as_str()),
-                ("SequenceId", urn.as_str()),
+                ("SequenceId", sequence_id.as_str()),
                 ("MessageNumber", &message_number),
             ])
             .write_empty()?;
