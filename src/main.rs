@@ -20,6 +20,7 @@ mod parsers;
 mod security;
 mod signal_handlers;
 mod soap;
+mod test_utils;
 mod udp_address;
 mod url_ip_addr;
 mod utils;

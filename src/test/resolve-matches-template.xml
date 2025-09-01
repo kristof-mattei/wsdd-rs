@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope
+    xmlns:pub="http://schemas.microsoft.com/windows/pub/2005/07"
+    xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+    xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+    xmlns:wsdp="http://schemas.xmlsoap.org/ws/2006/02/devprof"
+    xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+>
+    <soap:Header>
+        <wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
+        <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ResolveMatches</wsa:Action>
+        <wsa:MessageID>urn:uuid:00000000-0000-0000-0000-000000000000</wsa:MessageID>
+        <wsa:RelatesTo>urn:uuid:{}</wsa:RelatesTo>
+        <wsd:AppSequence InstanceId="{}" SequenceId="urn:uuid:00000000-0000-0000-0000-000000000000" MessageNumber="0" />
+    </soap:Header>
+    <soap:Body>
+        <wsd:ResolveMatches>
+            <wsd:ResolveMatch>
+                <wsa:EndpointReference>
+                    <wsa:Address>urn:uuid:{}</wsa:Address>
+                </wsa:EndpointReference>
+                <wsd:Types>wsdp:Device pub:Computer</wsd:Types>
+                <wsd:XAddrs>http://{}:5357/{}</wsd:XAddrs>
+                <wsd:MetadataVersion>1</wsd:MetadataVersion>
+            </wsd:ResolveMatch>
+        </wsd:ResolveMatches>
+    </soap:Body>
+</soap:Envelope>

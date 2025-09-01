@@ -60,7 +60,8 @@ uuid = { version = "1.18.0", features = ["v1", "v4", "v5"] }
 zerocopy = { version = "0.8.26", features = ["derive"] }
 
 [dev-dependencies]
-pretty_assertions = "=1.4.1"
+pretty_assertions = "1.4.1"
+xml-rs = "1.0.0"
 
 [lints.clippy]
 # don't stop from compiling / running

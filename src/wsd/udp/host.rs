@@ -255,3 +255,143 @@ fn spawn_receiver_loop(
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
+        sync::Arc,
+    };
+
+    use libc::RT_SCOPE_SITE;
+    use pretty_assertions::assert_eq;
+    use tokio::sync::RwLock;
+
+    use crate::{
+        cli,
+        max_size_deque::MaxSizeDeque,
+        network_address::NetworkAddress,
+        network_interface::NetworkInterface,
+        soap::parser::MessageHandler,
+        test_utils,
+        wsd::udp::host::{handle_probe, handle_resolve},
+    };
+
+    #[tokio::test]
+    async fn handles_resolve() {
+        let message_handler = MessageHandler::new(
+            Arc::new(RwLock::new(MaxSizeDeque::new(20))),
+            NetworkAddress::new(
+                IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)),
+                Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+            ),
+        );
+
+        let message_id = "ba866dfd-8135-11f0-accb-d45ddf1e11a9";
+        let endpoint_uuid = "f3dcd9d5-65ee-46ff-bc74-d151934a30c4";
+        let instance_id = "instance-id";
+        let from = Ipv4Addr::new(192, 168, 100, 5);
+
+        let resolve = format!(
+            include_str!("../../test/resolve-template.xml"),
+            message_id, endpoint_uuid,
+        );
+
+        let config = Arc::new({
+            let mut config = cli::parse_cli_from([
+                "-4",
+                "--uuid",
+                endpoint_uuid,
+                "--hostname",
+                "test-host-name",
+            ])
+            .unwrap();
+
+            // instance ID is not settable with commandline
+            config.wsd_instance_id = Box::from(instance_id);
+
+            config
+        });
+
+        let (header, reader) = message_handler
+            .deconstruct_message(
+                resolve.as_bytes(),
+                Some(SocketAddr::V4(SocketAddrV4::new(from, 5000))),
+            )
+            .await
+            .unwrap();
+
+        let response = handle_resolve(
+            &config,
+            IpAddr::V4(from),
+            config.uuid,
+            header.message_id,
+            reader,
+        )
+        .unwrap();
+
+        let expected = format!(
+            include_str!("../../test/resolve-matches-template.xml"),
+            message_id, instance_id, endpoint_uuid, from, endpoint_uuid
+        );
+
+        let response = test_utils::to_string_pretty(&response).unwrap();
+        let expected = test_utils::to_string_pretty(expected.as_bytes()).unwrap();
+
+        assert_eq!(response, expected);
+    }
+
+    #[tokio::test]
+    async fn handles_probe() {
+        let message_handler = MessageHandler::new(
+            Arc::new(RwLock::new(MaxSizeDeque::new(20))),
+            NetworkAddress::new(
+                IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)),
+                Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+            ),
+        );
+
+        let message_id = "ba866dfd-8135-11f0-accb-d45ddf1e11a9";
+        let endpoint_uuid = "f3dcd9d5-65ee-46ff-bc74-d151934a30c4";
+        let instance_id = "instance-id";
+        let from = Ipv4Addr::new(192, 168, 100, 5);
+
+        let resolve = format!(include_str!("../../test/probe-template.xml"), message_id);
+
+        let config = Arc::new({
+            let mut config = cli::parse_cli_from([
+                "-4",
+                "--uuid",
+                endpoint_uuid,
+                "--hostname",
+                "test-host-name",
+            ])
+            .unwrap();
+
+            // instance ID is not settable with commandline
+            config.wsd_instance_id = Box::from(instance_id);
+
+            config
+        });
+
+        let (header, reader) = message_handler
+            .deconstruct_message(
+                resolve.as_bytes(),
+                Some(SocketAddr::V4(SocketAddrV4::new(from, 5000))),
+            )
+            .await
+            .unwrap();
+
+        let response = handle_probe(&config, header.message_id, reader).unwrap();
+
+        let expected = format!(
+            include_str!("../../test/probe-matches-template.xml"),
+            message_id, instance_id, endpoint_uuid
+        );
+
+        let response = test_utils::to_string_pretty(&response).unwrap();
+        let expected = test_utils::to_string_pretty(expected.as_bytes()).unwrap();
+
+        assert_eq!(response, expected);
+    }
+}
