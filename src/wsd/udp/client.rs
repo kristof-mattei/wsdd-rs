@@ -165,11 +165,11 @@ fn __extract_xaddr(bound_to: IpAddr, xaddrs: &str) -> Option<url::Url> {
     None
 }
 
-async fn handle_hello<'reader>(
+async fn handle_hello(
     config: &Config,
     network_address: &NetworkAddress,
     multicast: &Sender<Box<[u8]>>,
-    mut reader: NsReader<&'reader [u8]>,
+    mut reader: NsReader<&[u8]>,
 ) -> Result<(), eyre::Report> {
     parser::generic::parse_generic_body(&mut reader, "Hello")?;
 
@@ -198,7 +198,7 @@ async fn handle_hello<'reader>(
     Ok(())
 }
 
-async fn handle_bye<'reader>(mut reader: NsReader<&'reader [u8]>) -> Result<(), eyre::Report> {
+async fn handle_bye(mut reader: NsReader<&[u8]>) -> Result<(), eyre::Report> {
     parser::generic::parse_generic_body(&mut reader, "Bye")?;
 
     let (endpoint, _) = parser::generic::extract_endpoint_metadata(&mut reader)?;
@@ -210,37 +210,13 @@ async fn handle_bye<'reader>(mut reader: NsReader<&'reader [u8]>) -> Result<(), 
     Ok(())
 }
 
-//     def handle_probe_match(self, header: ElementTree.Element, body: ElementTree.Element) -> Optional[WSDMessage]:
-//         # do not handle to probematches issued not sent by ourself
-//         rel_msg = header.findtext('wsa:RelatesTo', None, namespaces)
-//         if rel_msg not in self.probes:
-//             logger.debug("unknown probe {}".format(rel_msg))
-//             return None
-
-//         # if XAddrs are missing, issue resolve request
-//         pm_path = 'wsd:ProbeMatches/wsd:ProbeMatch'
-//         endpoint, xaddrs = self.extract_endpoint_metadata(body, pm_path)
-//         if not xaddrs:
-//             logger.debug('probe match without XAddrs, sending resolve')
-//             msg = self.build_resolve_message(str(endpoint))
-//             self.enqueue_datagram(msg, self.mch.multicast_address)
-//             return None
-
-//         xaddr = self.__extract_xaddr(xaddrs)
-//         if xaddr is None:
-//             return None
-
-//         logger.debug('probe match for {} on {}'.format(endpoint, xaddr))
-//         self.perform_metadata_exchange(endpoint, xaddr)
-
-//         return None
-
-async fn handle_probe_match<'reader>(
-    _config: &Config,
-    _network_address: &NetworkAddress,
+async fn handle_probe_match(
+    config: &Config,
+    network_address: &NetworkAddress,
     relates_to: Option<Urn>,
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
-    mut reader: NsReader<&'reader [u8]>,
+    multicast: &Sender<Box<[u8]>>,
+    mut reader: NsReader<&[u8]>,
 ) -> Result<(), eyre::Report> {
     let Some(relates_to) = relates_to else {
         event!(Level::DEBUG, "missing `RelatesTo`");
@@ -249,41 +225,39 @@ async fn handle_probe_match<'reader>(
 
     parser::generic::parse_generic_body_paths(&mut reader, &["ProbeMatches", "ProbeMatch"])?;
 
+    // do not handle to probematches issued not sent by ourself
     if probes.read().await.get(&relates_to).is_none() {
         event!(Level::DEBUG, %relates_to, "unknown probe");
         return Ok(());
     }
 
-    // ...
+    let (endpoint, xaddrs) = extract_endpoint_metadata(&mut reader)?;
+
+    let Some(xaddrs) = xaddrs else {
+        event!(Level::INFO, "probe match without XAddrs, sending resolve");
+
+        let (message, _) = Builder::build_resolve(config, endpoint)?;
+
+        multicast.send(message.into_boxed_slice()).await?;
+
+        return Ok(());
+    };
+
+    let Some(xaddr) = __extract_xaddr(network_address.address, &xaddrs) else {
+        return Ok(());
+    };
+
+    event!(Level::DEBUG, %endpoint, ?xaddr, "Probe match");
+
+    perform_metadata_exchange(config, network_address, endpoint, xaddr).await?;
 
     Ok(())
 }
 
-//     def build_resolve_message(self, endpoint: str) -> str:
-//         resolve = ElementTree.Element('wsd:Resolve')
-//         self.add_endpoint_reference(resolve, endpoint)
-
-//         return self.build_message(WSA_DISCOVERY, WSD_RESOLVE, None, resolve)
-
-//     def handle_resolve_match(self, header: ElementTree.Element, body: ElementTree.Element) -> Optional[WSDMessage]:
-//         rm_path = 'wsd:ResolveMatches/wsd:ResolveMatch'
-//         endpoint, xaddrs = self.extract_endpoint_metadata(body, rm_path)
-//         if not endpoint or not xaddrs:
-//             logger.debug('resolve match without endpoint/xaddr')
-//             return None
-
-//         xaddr = self.__extract_xaddr(xaddrs)
-//         if xaddr is None:
-//             return None
-
-//         logger.debug('resolve match for {} on {}'.format(endpoint, xaddr))
-//         self.perform_metadata_exchange(endpoint, xaddr)
-
-//         return None
-async fn handle_resolve_match<'reader>(
+async fn handle_resolve_match(
     config: &Config,
     network_address: &NetworkAddress,
-    mut reader: NsReader<&'reader [u8]>,
+    mut reader: NsReader<&[u8]>,
 ) -> Result<(), eyre::Report> {
     parser::generic::parse_generic_body_paths(&mut reader, &["ResolveMatches", "ResolveMatch"])?;
 
@@ -311,16 +285,6 @@ async fn handle_resolve_match<'reader>(
     Ok(())
 }
 
-//     def extract_endpoint_metadata(self, body: ElementTree.Element, prefix: str) -> Tuple[Optional[str], Optional[str]]:
-//         prefix = prefix + '/'
-//         addr_path = 'wsa:EndpointReference/wsa:Address'
-
-//         endpoint = body.findtext(prefix + addr_path, namespaces=namespaces)
-//         xaddrs = body.findtext(prefix + 'wsd:XAddrs', namespaces=namespaces)
-
-//         return endpoint, xaddrs
-
-//     def perform_metadata_exchange(self, endpoint, xaddr: str):
 async fn perform_metadata_exchange(
     config: &Config,
     network_address: &NetworkAddress,
@@ -402,17 +366,6 @@ async fn handle_metadata(meta: String, endpoint: Uuid, xaddr: Url) -> Result<(),
 
     Ok(())
 }
-
-//     def add_header_elements(self, header: ElementTree.Element, extra: Any) -> None:
-//         action_str = extra
-//         if action_str == WSD_GET:
-//             reply_to = ElementTree.SubElement(header, 'wsa:ReplyTo')
-//             addr = ElementTree.SubElement(reply_to, 'wsa:Address')
-//             addr.text = WSA_ANON
-
-//             wsa_from = ElementTree.SubElement(header, 'wsa:From')
-//             addr = ElementTree.SubElement(wsa_from, 'wsa:Address')
-//             addr.text = args.uuid.urn
 
 #[expect(clippy::too_many_arguments, reason = "WIP")]
 #[expect(clippy::too_many_lines, reason = "WIP")]
@@ -521,6 +474,7 @@ fn spawn_receiver_loop(
                             &network_address,
                             header.relates_to,
                             Arc::clone(&probes),
+                            &multicast,
                             body_reader,
                         )
                         .await
