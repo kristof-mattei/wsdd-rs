@@ -1,9 +1,11 @@
 use std::mem::MaybeUninit;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use color_eyre::{Section as _, eyre};
+use hashbrown::HashMap;
 use rand::Rng as _;
 use socket2::{Domain, InterfaceIndexOrAddress, Socket, Type};
 use tokio::net::UdpSocket;
@@ -14,6 +16,7 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
+use uuid::Uuid;
 
 use crate::config::Config;
 use crate::constants::{
@@ -25,6 +28,7 @@ use crate::network_interface::NetworkInterface;
 use crate::udp_address::UdpAddress;
 use crate::url_ip_addr::UrlIpAddr;
 use crate::utils::task::spawn_with_name;
+use crate::wsd::device::WSDDiscoveredDevice;
 use crate::wsd::http::http_server::WSDHttpServer;
 use crate::wsd::udp::client::WSDClient;
 use crate::wsd::udp::host::WSDHost;
@@ -34,6 +38,9 @@ use crate::wsd::udp::host::WSDHost;
 pub struct MulticastHandler {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
+    devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
+
+    messages_built: Arc<AtomicU64>,
     /// The address and interface we're bound on
     address: NetworkAddress,
 
@@ -145,6 +152,8 @@ impl MulticastHandler {
             config: Arc::clone(config),
             cancellation_token,
             address,
+            devices: Arc::new(RwLock::new(HashMap::new())),
+            messages_built: Arc::new(AtomicU64::new(0)),
             multicast_address,
             http_listen_address,
             wsd_client: OnceCell::new(),
@@ -383,6 +392,7 @@ impl MulticastHandler {
                 let host = WSDHost::init(
                     &self.cancellation_token,
                     Arc::clone(&self.config),
+                    Arc::clone(&self.messages_built),
                     self.address.clone(),
                     self.recv_socket_receiver.get_listener().await,
                     self.mc_socket_sender.get_sender(),
@@ -405,6 +415,8 @@ impl MulticastHandler {
                 let client = WSDClient::init(
                     &self.cancellation_token,
                     Arc::clone(&self.config),
+                    Arc::clone(&self.devices),
+                    Arc::clone(&self.messages_built),
                     self.address.clone(),
                     self.recv_socket_receiver.get_listener().await,
                     self.mc_socket_receiver.get_listener().await,
