@@ -1,5 +1,4 @@
 use std::net::{IpAddr, SocketAddr};
-use std::string::String;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
@@ -16,7 +15,7 @@ use crate::config::Config;
 use crate::constants;
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::{self, Builder, MessageType};
-use crate::soap::parser::{self, HeaderError, MessageHandler, MessageHandlerError};
+use crate::soap::parser::{self, MessageHandler};
 use crate::utils::task::spawn_with_name;
 
 /// handles WSD requests coming from UDP datagrams.
@@ -142,7 +141,6 @@ fn handle_resolve(
     )?)
 }
 
-#[expect(clippy::too_many_lines, reason = "WIP")]
 fn spawn_receiver_loop(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
@@ -180,50 +178,7 @@ fn spawn_receiver_loop(
             {
                 Ok(pieces) => pieces,
                 Err(error) => {
-                    match error {
-                        MessageHandlerError::DuplicateMessage => {
-                            // nothing
-                        },
-                        missing @ (MessageHandlerError::MissingHeader
-                        | MessageHandlerError::MissingBody) => {
-                            event!(
-                                Level::TRACE,
-                                ?missing,
-                                "XML Message did not have required elements: {}",
-                                String::from_utf8_lossy(&buffer)
-                            );
-                        },
-                        MessageHandlerError::HeaderError(
-                            HeaderError::InvalidMessageId(uuid_error)
-                            | HeaderError::InvalidRelatesTo(uuid_error),
-                        ) => {
-                            event!(
-                                Level::TRACE,
-                                ?uuid_error,
-                                "XML Message Header was malformed: {}",
-                                String::from_utf8_lossy(&buffer)
-                            );
-                        },
-                        MessageHandlerError::HeaderError(
-                            error @ (HeaderError::MissingAction | HeaderError::MissingMessageId),
-                        ) => {
-                            event!(
-                                Level::TRACE,
-                                %error,
-                                "XML Message Header is missing pieces: {}",
-                                String::from_utf8_lossy(&buffer)
-                            );
-                        },
-                        MessageHandlerError::HeaderError(HeaderError::XmlError(error))
-                        | MessageHandlerError::XmlError(error) => {
-                            event!(
-                                Level::ERROR,
-                                ?error,
-                                "Error while decoding XML: {}",
-                                String::from_utf8_lossy(&buffer)
-                            );
-                        },
-                    }
+                    error.log(&buffer);
 
                     continue;
                 },
