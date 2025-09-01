@@ -47,6 +47,54 @@ pub enum MessageHandlerError {
     #[error("Header Error")]
     HeaderError(#[from] HeaderError),
 }
+impl MessageHandlerError {
+    #[track_caller]
+    pub(crate) fn log(&self, buffer: &[u8]) {
+        match &self {
+            &&MessageHandlerError::DuplicateMessage => {
+                // nothing
+            },
+            missing @ &&(MessageHandlerError::MissingHeader | MessageHandlerError::MissingBody) => {
+                event!(
+                    Level::TRACE,
+                    ?missing,
+                    message = &*String::from_utf8_lossy(buffer),
+                    "XML Message did not have required elements",
+                );
+            },
+            &&MessageHandlerError::HeaderError(
+                HeaderError::InvalidMessageId(ref uuid_error)
+                | HeaderError::InvalidRelatesTo(ref uuid_error),
+            ) => {
+                event!(
+                    Level::TRACE,
+                    ?uuid_error,
+                    message = &*String::from_utf8_lossy(buffer),
+                    "XML Message Header was malformed",
+                );
+            },
+            &&MessageHandlerError::HeaderError(
+                ref error @ (HeaderError::MissingAction | HeaderError::MissingMessageId),
+            ) => {
+                event!(
+                    Level::TRACE,
+                    %error,
+                    message = &*String::from_utf8_lossy(buffer),
+                    "XML Message Header is missing pieces",
+                );
+            },
+            &&MessageHandlerError::HeaderError(HeaderError::XmlError(ref error))
+            | &&MessageHandlerError::XmlError(ref error) => {
+                event!(
+                    Level::ERROR,
+                    ?error,
+                    message = &*String::from_utf8_lossy(buffer),
+                    "Error while decoding XML",
+                );
+            },
+        }
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum HeaderError {
