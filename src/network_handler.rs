@@ -96,7 +96,7 @@ impl NetworkHandler {
                         },
                     };
 
-                    self.handle_new_address(NetworkAddress::new(address, &interface))
+                    self.handle_new_address(NetworkAddress::new(address, Arc::clone(&interface)))
                         .await;
                 },
                 Command::DeleteAddress {
@@ -111,8 +111,11 @@ impl NetworkHandler {
                         },
                     };
 
-                    self.handle_deleted_address(NetworkAddress::new(address, &interface))
-                        .await;
+                    self.handle_deleted_address(NetworkAddress::new(
+                        address,
+                        Arc::clone(&interface),
+                    ))
+                    .await;
                 },
             }
         }

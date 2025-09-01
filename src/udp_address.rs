@@ -14,7 +14,7 @@ pub struct UdpAddress {
 }
 
 impl UdpAddress {
-    pub fn new(transport_address: SocketAddr, interface: &Arc<NetworkInterface>) -> Self {
+    pub fn new(transport_address: SocketAddr, interface: Arc<NetworkInterface>) -> Self {
         let network_address = NetworkAddress::new(transport_address.ip(), interface);
 
         Self {

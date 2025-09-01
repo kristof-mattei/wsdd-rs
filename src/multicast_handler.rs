@@ -84,7 +84,7 @@ impl MulticastHandler {
             IpAddr::V4(ipv4_address) => {
                 let (multicast_address, listen_address) = MulticastHandler::init_v4(
                     ipv4_address,
-                    &address.interface,
+                    Arc::clone(&address.interface),
                     &recv_socket,
                     &mc_send_socket,
                     &uc_send_socket,
@@ -96,7 +96,7 @@ impl MulticastHandler {
             IpAddr::V6(ipv6_address) => {
                 let (multicast_address, listen_address) = MulticastHandler::init_v6(
                     ipv6_address,
-                    &address.interface,
+                    Arc::clone(&address.interface),
                     &recv_socket,
                     &mc_send_socket,
                     &uc_send_socket,
@@ -197,7 +197,7 @@ impl MulticastHandler {
 
     fn init_v6(
         ipv6_address: Ipv6Addr,
-        interface: &Arc<NetworkInterface>,
+        interface: Arc<NetworkInterface>,
         recv_socket: &Socket,
         mc_send_socket: &Socket,
         uc_send_socket: &Socket,
@@ -278,7 +278,7 @@ impl MulticastHandler {
 
     fn init_v4(
         ipv4_address: Ipv4Addr,
-        interface: &Arc<NetworkInterface>,
+        interface: Arc<NetworkInterface>,
         recv_socket: &Socket,
         mc_send_socket: &Socket,
         uc_send_socket: &Socket,
