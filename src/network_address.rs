@@ -10,11 +10,8 @@ pub struct NetworkAddress {
 }
 
 impl NetworkAddress {
-    pub fn new(address: IpAddr, interface: &Arc<NetworkInterface>) -> Self {
-        Self {
-            address,
-            interface: Arc::clone(interface),
-        }
+    pub fn new(address: IpAddr, interface: Arc<NetworkInterface>) -> Self {
+        Self { address, interface }
     }
 
     // """ return true if the (interface) address can be used for creating (link-local) multicasting sockets  """
