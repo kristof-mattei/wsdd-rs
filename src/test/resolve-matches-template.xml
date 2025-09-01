@@ -11,7 +11,7 @@
         <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ResolveMatches</wsa:Action>
         <wsa:MessageID>urn:uuid:00000000-0000-0000-0000-000000000000</wsa:MessageID>
         <wsa:RelatesTo>urn:uuid:{}</wsa:RelatesTo>
-        <wsd:AppSequence InstanceId="{}" SequenceId="urn:uuid:00000000-0000-0000-0000-000000000000" MessageNumber="0" />
+        <wsd:AppSequence InstanceId="{}" SequenceId="urn:uuid:00000000-0000-0000-0000-000000000000" MessageNumber="{}" />
     </soap:Header>
     <soap:Body>
         <wsd:ResolveMatches>

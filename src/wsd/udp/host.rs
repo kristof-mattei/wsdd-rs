@@ -278,7 +278,7 @@ fn spawn_receiver_loop(
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
-    use std::sync::atomic::AtomicU64;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use pretty_assertions::assert_eq;
     use uuid::Uuid;
@@ -289,35 +289,37 @@ mod tests {
 
     #[tokio::test]
     async fn handles_resolve() {
-        let message_handler = build_message_handler();
+        let host_message_handler = build_message_handler();
 
-        let message_id = Uuid::new_v4();
-        let endpoint_uuid = Uuid::new_v4();
-        let instance_id = "host-instance-id";
+        // host
+        let host_endpoint_uuid = Uuid::new_v4();
+        let host_instance_id = "host-instance-id";
+        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
         let messages_built = AtomicU64::new(0);
 
-        let from = Ipv4Addr::new(192, 168, 100, 5);
-
+        // client
+        let client_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let client_message_id = Uuid::new_v4();
         let resolve = format!(
             include_str!("../../test/resolve-template.xml"),
-            message_id, endpoint_uuid,
+            client_message_id, host_endpoint_uuid,
         );
 
-        let config = Arc::new(build_config(endpoint_uuid, instance_id));
-
-        let (header, reader) = message_handler
+        // host receives client's probe
+        let (header, reader) = host_message_handler
             .deconstruct_message(
                 resolve.as_bytes(),
-                Some(SocketAddr::V4(SocketAddrV4::new(from, 5000))),
+                Some(SocketAddr::V4(SocketAddrV4::new(client_ip, 5000))),
             )
             .await
             .unwrap();
 
+        // host produces answer
         let response = handle_resolve(
-            &config,
-            IpAddr::V4(from),
+            &host_config,
+            IpAddr::V4(client_ip),
             &messages_built,
-            config.uuid,
+            host_config.uuid,
             header.message_id,
             reader,
         )
@@ -325,7 +327,12 @@ mod tests {
 
         let expected = format!(
             include_str!("../../test/resolve-matches-template.xml"),
-            message_id, instance_id, endpoint_uuid, from, endpoint_uuid
+            client_message_id,
+            host_instance_id,
+            messages_built.load(Ordering::SeqCst) - 1,
+            host_endpoint_uuid,
+            client_ip,
+            host_endpoint_uuid
         );
 
         let response = to_string_pretty(&response).unwrap();
@@ -338,29 +345,39 @@ mod tests {
     async fn handles_probe() {
         let message_handler = build_message_handler();
 
-        let message_id = Uuid::new_v4();
-        let endpoint_uuid = Uuid::new_v4();
-        let instance_id = "host-instance-id";
-        let from = Ipv4Addr::new(192, 168, 100, 5);
+        // host
+        let host_endpoint_uuid = Uuid::new_v4();
+        let host_instance_id = "host-instance-id";
+        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
         let messages_built = AtomicU64::new(0);
 
-        let resolve = format!(include_str!("../../test/probe-template.xml"), message_id);
+        // client
+        let client_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let client_message_id = Uuid::new_v4();
+        let probe = format!(
+            include_str!("../../test/probe-template.xml"),
+            client_message_id
+        );
 
-        let config = Arc::new(build_config(endpoint_uuid, instance_id));
-
+        // host receives client's probe
         let (header, reader) = message_handler
             .deconstruct_message(
-                resolve.as_bytes(),
-                Some(SocketAddr::V4(SocketAddrV4::new(from, 5000))),
+                probe.as_bytes(),
+                Some(SocketAddr::V4(SocketAddrV4::new(client_ip, 5000))),
             )
             .await
             .unwrap();
 
-        let response = handle_probe(&config, &messages_built, header.message_id, reader).unwrap();
+        // host produces answer
+        let response =
+            handle_probe(&host_config, &messages_built, header.message_id, reader).unwrap();
 
         let expected = format!(
             include_str!("../../test/probe-matches-template.xml"),
-            message_id, instance_id, endpoint_uuid
+            client_message_id,
+            host_instance_id,
+            messages_built.load(Ordering::SeqCst) - 1,
+            host_endpoint_uuid
         );
 
         let response = to_string_pretty(&response).unwrap();
