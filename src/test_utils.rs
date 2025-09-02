@@ -83,9 +83,11 @@ pub fn build_message_handler() -> MessageHandler {
     )
 }
 
-pub fn build_message_handler_with_network_address() -> (MessageHandler, NetworkAddress) {
+pub fn build_message_handler_with_network_address(
+    ip_address: IpAddr,
+) -> (MessageHandler, NetworkAddress) {
     let network_address = NetworkAddress::new(
-        IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)),
+        ip_address,
         Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
     );
 

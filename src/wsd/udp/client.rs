@@ -349,7 +349,7 @@ async fn perform_metadata_exchange(
         .build()?
         .post(xaddr.clone())
         .header("Content-Type", "application/soap+xml")
-        .header("User-Agent", "wsdd");
+        .header("User-Agent", "wsdd-rs");
 
     let timeout = config.metadata_timeout;
 
@@ -370,14 +370,9 @@ async fn perform_metadata_exchange(
             let url = url.as_deref().unwrap_or("Failed to get URL from error");
 
             if error.is_timeout() {
-                event!(Level::WARN, "metadata exchange with {} timed out", url);
+                event!(Level::WARN, url, "metadata exchange timed out");
             } else {
-                event!(
-                    Level::WARN,
-                    "could not fetch metadata from: {} {:?}",
-                    url,
-                    error
-                );
+                event!(Level::WARN, ?error, url, "could not fetch metadata",);
             }
         },
     }
@@ -530,11 +525,12 @@ fn spawn_receiver_loop(
 
 #[cfg(test)]
 mod tests {
-    use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
     use std::sync::atomic::AtomicU64;
 
     use hashbrown::HashMap;
+    use mockito::ServerOpts;
     use pretty_assertions::assert_eq;
     use tokio::sync::RwLock;
     use uuid::Uuid;
@@ -546,7 +542,7 @@ mod tests {
     #[tokio::test]
     async fn handles_hello_without_xaddr() {
         let (message_handler, client_network_address) =
-            build_message_handler_with_network_address();
+            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
 
         // client
         let client_endpoint_uuid = Uuid::new_v4();
@@ -559,7 +555,6 @@ mod tests {
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
         let host_message_id = Uuid::new_v4();
         let host_endpoint_uuid = Uuid::new_v4();
-        // let host_instance_id = "host-instance-id";
         let hello_without_xaddrs = format!(
             include_str!("../../test/hello-without-xaddrs-template.xml"),
             host_message_id, host_endpoint_uuid
@@ -601,5 +596,102 @@ mod tests {
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(response, expected);
+    }
+
+    #[tokio::test]
+    async fn handles_hello_with_xaddr() {
+        let (message_handler, network_address) =
+            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::LOCALHOST));
+
+        // client
+        let client_endpoint_id = Uuid::new_v4();
+        let client_instance_id = "client-instance-id";
+        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+        let client_messages_built = AtomicU64::new(0);
+
+        // host
+        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
+            // a host in IPv4 form ensures we bind to an IPv4 address
+            host: "127.0.0.1",
+            // random port
+            port: 0,
+            assert_on_drop: true,
+        })
+        .await;
+
+        let IpAddr::V4(host_ip) = server.socket_address().ip() else {
+            panic!("Invalid test setup");
+        };
+        let host_port = server.socket_address().port();
+        let host_message_id = Uuid::new_v4();
+        let host_instance_id = "host-instance-id";
+        let host_endpoint_uuid = Uuid::new_v4();
+
+        let expected_get = format!(
+            include_str!("../../test/get-template.xml"),
+            host_endpoint_uuid, client_endpoint_id
+        );
+
+        let metadata = "hello, world";
+
+        let mock = server
+            .mock("POST", &*format!("/{}", host_endpoint_uuid))
+            .with_status(200)
+            .with_body_from_request(move |request| {
+                assert_eq!(
+                    to_string_pretty(expected_get.as_bytes()).unwrap(),
+                    to_string_pretty(request.body().unwrap()).unwrap()
+                );
+
+                metadata.into()
+            })
+            .create_async()
+            .await;
+
+        let resolve = format!(
+            include_str!("../../test/hello-template.xml"),
+            host_message_id,
+            host_instance_id,
+            host_endpoint_uuid,
+            host_ip,
+            host_port,
+            host_endpoint_uuid
+        );
+
+        let (multicast_sender, mut multicast_receiver) = tokio::sync::mpsc::channel(1);
+
+        let config = Arc::new(build_config(client_endpoint_id, client_instance_id));
+
+        let (_, reader) = message_handler
+            .deconstruct_message(
+                resolve.as_bytes(),
+                Some(SocketAddr::V4(SocketAddrV4::new(host_ip, 5000))),
+            )
+            .await
+            .unwrap();
+
+        handle_hello(
+            &config,
+            Arc::clone(&client_devices),
+            &client_messages_built,
+            &network_address,
+            &multicast_sender,
+            reader,
+        )
+        .await
+        .unwrap();
+
+        // we expect no resolve to be sent
+        multicast_receiver.try_recv().unwrap_err();
+
+        // ensure the mock is hit
+        mock.assert_async().await;
+
+        assert!(
+            client_devices
+                .read()
+                .await
+                .contains_key(&host_endpoint_uuid)
+        );
     }
 }
