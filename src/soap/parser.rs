@@ -50,11 +50,11 @@ pub enum MessageHandlerError {
 impl MessageHandlerError {
     #[track_caller]
     pub(crate) fn log(&self, buffer: &[u8]) {
-        match &self {
-            &&MessageHandlerError::DuplicateMessage => {
+        match self {
+            &MessageHandlerError::DuplicateMessage => {
                 // nothing
             },
-            missing @ &&(MessageHandlerError::MissingHeader | MessageHandlerError::MissingBody) => {
+            missing @ &(MessageHandlerError::MissingHeader | MessageHandlerError::MissingBody) => {
                 event!(
                     Level::TRACE,
                     ?missing,
@@ -62,7 +62,7 @@ impl MessageHandlerError {
                     "XML Message did not have required elements",
                 );
             },
-            &&MessageHandlerError::HeaderError(
+            &MessageHandlerError::HeaderError(
                 HeaderError::InvalidMessageId(ref uuid_error)
                 | HeaderError::InvalidRelatesTo(ref uuid_error),
             ) => {
@@ -73,7 +73,7 @@ impl MessageHandlerError {
                     "XML Message Header was malformed",
                 );
             },
-            &&MessageHandlerError::HeaderError(
+            &MessageHandlerError::HeaderError(
                 ref error @ (HeaderError::MissingAction | HeaderError::MissingMessageId),
             ) => {
                 event!(
@@ -83,8 +83,8 @@ impl MessageHandlerError {
                     "XML Message Header is missing pieces",
                 );
             },
-            &&MessageHandlerError::HeaderError(HeaderError::XmlError(ref error))
-            | &&MessageHandlerError::XmlError(ref error) => {
+            &MessageHandlerError::HeaderError(HeaderError::XmlError(ref error))
+            | &MessageHandlerError::XmlError(ref error) => {
                 event!(
                     Level::ERROR,
                     ?error,
