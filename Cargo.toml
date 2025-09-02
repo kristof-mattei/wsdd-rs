@@ -56,7 +56,7 @@ tracing-subscriber = { version = "0.3.20", features = [
     "tracing-log",
 ] }
 url = "2.5.7"
-uuid = { version = "1.18.0", features = ["v1", "v4", "v5"] }
+uuid = { version = "1.18.1", features = ["v1", "v4", "v5"] }
 zerocopy = { version = "0.8.26", features = ["derive"] }
 
 [dev-dependencies]
