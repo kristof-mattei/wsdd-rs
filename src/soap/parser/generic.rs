@@ -24,8 +24,8 @@ pub enum GenericParsingError<'e> {
     InvalidUuid(#[from] uuid::Error),
 }
 
-pub fn extract_endpoint_reference_address<'reader, 'raw, 'error>(
-    reader: &'reader mut NsReader<&'raw [u8]>,
+pub fn extract_endpoint_reference_address<'raw, 'error>(
+    reader: &mut NsReader<&'raw [u8]>,
 ) -> Result<Cow<'raw, str>, GenericParsingError<'error>> {
     let mut address = None;
 
@@ -63,8 +63,8 @@ pub fn extract_endpoint_reference_address<'reader, 'raw, 'error>(
     Ok(address)
 }
 
-pub fn extract_endpoint_metadata<'reader, 'raw, 'error>(
-    reader: &'reader mut NsReader<&'raw [u8]>,
+pub fn extract_endpoint_metadata<'raw, 'error>(
+    reader: &mut NsReader<&'raw [u8]>,
 ) -> Result<(Uuid, Option<Cow<'raw, str>>), GenericParsingError<'error>> {
     let mut endpoint = None;
     let mut xaddrs = None;
@@ -114,8 +114,8 @@ pub fn extract_endpoint_metadata<'reader, 'raw, 'error>(
     Ok((endpoint, xaddrs))
 }
 
-pub fn parse_generic_body<'reader, 'path, 'raw>(
-    reader: &'reader mut NsReader<&'raw [u8]>,
+pub fn parse_generic_body<'path>(
+    reader: &mut NsReader<&[u8]>,
     path: &'path str,
 ) -> Result<(), GenericParsingError<'path>> {
     loop {
@@ -137,8 +137,8 @@ pub fn parse_generic_body<'reader, 'path, 'raw>(
     Err(GenericParsingError::MissingElement(path))
 }
 
-pub fn parse_generic_body_paths<'reader, 'path, 'raw>(
-    reader: &'reader mut NsReader<&'raw [u8]>,
+pub fn parse_generic_body_paths<'path>(
+    reader: &mut NsReader<&[u8]>,
     paths: &[&'path str],
 ) -> Result<(), GenericParsingError<'path>> {
     let (path, rest) = match *paths {
