@@ -46,8 +46,8 @@ pub struct NetworkHandler {
 
 #[derive(Error, Debug)]
 pub enum NetworkHandlerError {
-    #[error("interface detection failed")]
-    InterfaceDetectionFailed,
+    #[error("Interface Detection Failed")]
+    InterfaceDetectionFailed(std::io::Error),
 }
 
 /// Observes changes of network addresses, handles addition and removal of
@@ -158,17 +158,16 @@ impl NetworkHandler {
             Entry::Vacant(vacant_entry) => {
                 let if_name = match network_interface::if_indextoname(ifa_index) {
                     Ok(if_name) => if_name,
-                    Err(err) => {
+                    Err(error) => {
                         // accept this exception (which should not occur)
-
                         event!(
                             Level::ERROR,
                             ifa_idx = ifa_index,
-                            ?err,
+                            ?error,
                             "interface detection failed",
                         );
 
-                        return Err(NetworkHandlerError::InterfaceDetectionFailed);
+                        return Err(NetworkHandlerError::InterfaceDetectionFailed(error));
                     },
                 };
 
