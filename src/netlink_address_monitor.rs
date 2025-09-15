@@ -258,8 +258,8 @@ impl NetlinkAddressMonitor {
                 while i - offset < length {
                     let ifa_header = match ffi::rtattr::ref_from_prefix(&buffer[i..]) {
                         Ok((ifa_header, _suffix)) => ifa_header,
-                        Err(err) => {
-                            event!(Level::ERROR, ?err, "Error mapping buffer to `rtattr`");
+                        Err(error) => {
+                            event!(Level::ERROR, ?error, "Error mapping buffer to `rtattr`");
 
                             // TODO use thiserror
                             return Err(eyre::Report::msg(
@@ -339,8 +339,8 @@ impl NetlinkAddressMonitor {
                     unreachable!()
                 };
 
-                if let Err(err) = self.channel.send(command).await {
-                    event!(Level::ERROR, ?err, "Failed to announce command");
+                if let Err(error) = self.channel.send(command).await {
+                    event!(Level::ERROR, ?error, "Failed to announce command");
                 }
 
                 offset += align_to(length, align_of::<nlmsghdr>());
