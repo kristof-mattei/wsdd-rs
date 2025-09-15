@@ -23,7 +23,7 @@ pub enum ProbeParsingError {
     MissingProbeElement,
 }
 
-fn parse_probe<'raw>(reader: &mut NsReader<&'raw [u8]>) -> ParsedProbe {
+fn parse_probe(reader: &mut NsReader<&[u8]>) -> ParsedProbe {
     let mut types = None;
 
     loop {
@@ -85,7 +85,7 @@ fn parse_probe<'raw>(reader: &mut NsReader<&'raw [u8]>) -> ParsedProbe {
 }
 
 /// This takes in a reader that is stopped at the body tag.
-pub fn parse_probe_body<'raw>(reader: &mut NsReader<&'raw [u8]>) -> ParsedProbe {
+pub fn parse_probe_body(reader: &mut NsReader<&[u8]>) -> ParsedProbe {
     loop {
         match reader.read_resolved_event()? {
             (Bound(Namespace(ns)), Event::Start(e)) => {
