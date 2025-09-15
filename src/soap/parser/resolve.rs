@@ -21,7 +21,7 @@ pub enum ResolveParsingError {
     AddressDoesntMatch,
 }
 
-fn parse_resolve<'raw>(reader: &mut NsReader<&'raw [u8]>, target_uuid: Uuid) -> ParsedResolve {
+fn parse_resolve(reader: &mut NsReader<&[u8]>, target_uuid: Uuid) -> ParsedResolve {
     let mut addr = None;
 
     let mut resolve_depth = 0;
@@ -104,10 +104,7 @@ fn parse_resolve<'raw>(reader: &mut NsReader<&'raw [u8]>, target_uuid: Uuid) -> 
 }
 
 /// This takes in a reader that is stopped at the body tag.
-pub fn parse_resolve_body<'raw>(
-    reader: &mut NsReader<&'raw [u8]>,
-    target_uuid: Uuid,
-) -> ParsedResolve {
+pub fn parse_resolve_body(reader: &mut NsReader<&[u8]>, target_uuid: Uuid) -> ParsedResolve {
     loop {
         match reader.read_resolved_event()? {
             (Bound(Namespace(ns)), Event::Start(e)) => {
