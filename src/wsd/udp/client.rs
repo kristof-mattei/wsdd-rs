@@ -335,7 +335,7 @@ async fn perform_metadata_exchange(
     let scheme = xaddr.scheme();
 
     if !matches!(scheme, "http" | "https") {
-        event!(Level::DEBUG, "invalid XAddr: {}", xaddr);
+        event!(Level::DEBUG, %xaddr, "invalid XAddr");
         return Ok(());
     }
 
@@ -410,10 +410,11 @@ async fn handle_metadata(
 }
 
 #[expect(clippy::too_many_arguments, reason = "WIP")]
-fn spawn_receiver_loop(
+async fn listen_forever(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
+    message_handler: MessageHandler,
     messages_built: Arc<AtomicU64>,
     network_address: NetworkAddress,
     mut recv_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
@@ -422,101 +423,130 @@ fn spawn_receiver_loop(
     _unicast: Sender<(SocketAddr, Box<[u8]>)>,
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
 ) {
+    loop {
+        #[expect(clippy::pattern_type_mismatch, reason = "Tokio")]
+        let message = {
+            tokio::select! {
+                () = cancellation_token.cancelled() => {
+                    break;
+                },
+                message = recv_socket_receiver.recv() => {
+                    message
+                }
+                message = mc_send_socket_receiver.recv() => {
+                    message
+                }
+            }
+        };
+
+        let Some((from, buffer)) = message else {
+            // the end, but we just got it before the cancellation
+            break;
+        };
+
+        let (header, body_reader) = match message_handler
+            .deconstruct_message(&buffer, Some(from))
+            .await
+        {
+            Ok(pieces) => pieces,
+            Err(error) => {
+                error.log(&buffer);
+
+                continue;
+            },
+        };
+
+        // handle based on action
+        if let Err(err) = match &*header.action {
+            constants::WSD_HELLO => {
+                handle_hello(
+                    &config,
+                    Arc::clone(&devices),
+                    &messages_built,
+                    &network_address,
+                    &multicast,
+                    body_reader,
+                )
+                .await
+            },
+            constants::WSD_BYE => handle_bye(Arc::clone(&devices), body_reader).await,
+            constants::WSD_PROBE_MATCH => {
+                handle_probe_match(
+                    &config,
+                    Arc::clone(&devices),
+                    &messages_built,
+                    &network_address,
+                    header.relates_to,
+                    Arc::clone(&probes),
+                    &multicast,
+                    body_reader,
+                )
+                .await
+            },
+            constants::WSD_RESOLVE_MATCH => {
+                handle_resolve_match(
+                    &config,
+                    Arc::clone(&devices),
+                    &messages_built,
+                    &network_address,
+                    body_reader,
+                )
+                .await
+            },
+            _ => {
+                event!(
+                    Level::DEBUG,
+                    "unhandled action {}/{}",
+                    header.action,
+                    header.message_id
+                );
+                continue;
+            },
+        } {
+            event!(
+                Level::ERROR,
+                action = &*header.action,
+                ?err,
+                "Failure to parse XML"
+            );
+            continue;
+        }
+    }
+}
+
+#[expect(clippy::too_many_arguments, reason = "WIP")]
+fn spawn_receiver_loop(
+    cancellation_token: CancellationToken,
+    config: Arc<Config>,
+    devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
+    messages_built: Arc<AtomicU64>,
+    network_address: NetworkAddress,
+    recv_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
+    mc_send_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
+    multicast: Sender<Box<[u8]>>,
+    unicast: Sender<(SocketAddr, Box<[u8]>)>,
+    probes: Arc<RwLock<HashMap<Urn, u128>>>,
+) {
     let message_handler =
         MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_address.clone());
 
     spawn_with_name(
-        format!("wsd host ({})", network_address.address).as_str(),
+        format!("wsd client ({})", network_address.address).as_str(),
         async move {
-            loop {
-                #[expect(clippy::pattern_type_mismatch, reason = "Tokio")]
-                let message = {
-                    tokio::select! {
-                        () = cancellation_token.cancelled() => {
-                            break;
-                        },
-                        message = recv_socket_receiver.recv() => {
-                            message
-                        }
-                        message = mc_send_socket_receiver.recv() => {
-                            message
-                        }
-                    }
-                };
-
-                let Some((from, buffer)) = message else {
-                    // the end, but we just got it before the cancellation
-                    break;
-                };
-
-                let (header, body_reader) = match message_handler
-                    .deconstruct_message(&buffer, Some(from))
-                    .await
-                {
-                    Ok(pieces) => pieces,
-                    Err(error) => {
-                        error.log(&buffer);
-
-                        continue;
-                    },
-                };
-
-                // handle based on action
-                if let Err(err) = match &*header.action {
-                    constants::WSD_HELLO => {
-                        handle_hello(
-                            &config,
-                            Arc::clone(&devices),
-                            &messages_built,
-                            &network_address,
-                            &multicast,
-                            body_reader,
-                        )
-                        .await
-                    },
-                    constants::WSD_BYE => handle_bye(Arc::clone(&devices), body_reader).await,
-                    constants::WSD_PROBE_MATCH => {
-                        handle_probe_match(
-                            &config,
-                            Arc::clone(&devices),
-                            &messages_built,
-                            &network_address,
-                            header.relates_to,
-                            Arc::clone(&probes),
-                            &multicast,
-                            body_reader,
-                        )
-                        .await
-                    },
-                    constants::WSD_RESOLVE_MATCH => {
-                        handle_resolve_match(
-                            &config,
-                            Arc::clone(&devices),
-                            &messages_built,
-                            &network_address,
-                            body_reader,
-                        )
-                        .await
-                    },
-                    _ => {
-                        event!(
-                            Level::DEBUG,
-                            "unhandled action {}/{}",
-                            header.action,
-                            header.message_id
-                        );
-                        continue;
-                    },
-                } {
-                    event!(
-                        Level::ERROR,
-                        action = &*header.action,
-                        ?err,
-                        "Failure to parse XML"
-                    );
-                    continue;
-                }
-            }
+            listen_forever(
+                cancellation_token,
+                config,
+                devices,
+                message_handler,
+                messages_built,
+                network_address,
+                recv_socket_receiver,
+                mc_send_socket_receiver,
+                multicast,
+                unicast,
+                probes,
+            )
+            .await;
         },
     );
 }

@@ -141,12 +141,95 @@ fn handle_resolve(
     )?)
 }
 
+async fn listen_forever(
+    address: IpAddr,
+    cancellation_token: CancellationToken,
+    config: Arc<Config>,
+    message_handler: MessageHandler,
+    messages_built: Arc<AtomicU64>,
+    mut receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
+    unicast: Sender<(SocketAddr, Box<[u8]>)>,
+) {
+    loop {
+        #[expect(clippy::pattern_type_mismatch, reason = "Tokio macro")]
+        let message = {
+            tokio::select! {
+                () = cancellation_token.cancelled() => {
+                    break;
+                },
+                message = receiver.recv() => {
+                    message
+                }
+            }
+        };
+
+        let Some((from, buffer)) = message else {
+            // the end, but we just got it before the cancellation
+            break;
+        };
+
+        let (header, body_reader) = match message_handler
+            .deconstruct_message(&buffer, Some(from))
+            .await
+        {
+            Ok(pieces) => pieces,
+            Err(error) => {
+                error.log(&buffer);
+
+                continue;
+            },
+        };
+
+        // handle based on action
+        let response = match &*header.action {
+            constants::WSD_PROBE => {
+                handle_probe(&config, &messages_built, header.message_id, body_reader)
+            },
+            constants::WSD_RESOLVE => handle_resolve(
+                &config,
+                address,
+                &messages_built,
+                config.uuid,
+                header.message_id,
+                body_reader,
+            ),
+            _ => {
+                event!(
+                    Level::DEBUG,
+                    "unhandled action {}/{}",
+                    header.action,
+                    header.message_id
+                );
+                continue;
+            },
+        };
+
+        let response = match response {
+            Ok(response) => response,
+            Err(error) => {
+                event!(
+                    Level::ERROR,
+                    action = &*header.action,
+                    ?error,
+                    "Failure to create XML response"
+                );
+                continue;
+            },
+        };
+
+        // return to sender
+        if let Err(error) = unicast.send((from, response.into())).await {
+            event!(Level::ERROR, ?error, to = ?from, "Failed to respond to message");
+        }
+    }
+}
+
 fn spawn_receiver_loop(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     messages_built: Arc<AtomicU64>,
     network_address: NetworkAddress,
-    mut receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
+    receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
     unicast: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
     let address = network_address.address;
@@ -154,78 +237,16 @@ fn spawn_receiver_loop(
     let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_address);
 
     spawn_with_name(format!("wsd host ({})", address).as_str(), async move {
-        loop {
-            #[expect(clippy::pattern_type_mismatch, reason = "Tokio macro")]
-            let message = {
-                tokio::select! {
-                    () = cancellation_token.cancelled() => {
-                        break;
-                    },
-                    message = receiver.recv() => {
-                        message
-                    }
-                }
-            };
-
-            let Some((from, buffer)) = message else {
-                // the end, but we just got it before the cancellation
-                break;
-            };
-
-            let (header, body_reader) = match message_handler
-                .deconstruct_message(&buffer, Some(from))
-                .await
-            {
-                Ok(pieces) => pieces,
-                Err(error) => {
-                    error.log(&buffer);
-
-                    continue;
-                },
-            };
-
-            // handle based on action
-            let response = match &*header.action {
-                constants::WSD_PROBE => {
-                    handle_probe(&config, &messages_built, header.message_id, body_reader)
-                },
-                constants::WSD_RESOLVE => handle_resolve(
-                    &config,
-                    address,
-                    &messages_built,
-                    config.uuid,
-                    header.message_id,
-                    body_reader,
-                ),
-                _ => {
-                    event!(
-                        Level::DEBUG,
-                        "unhandled action {}/{}",
-                        header.action,
-                        header.message_id
-                    );
-                    continue;
-                },
-            };
-
-            let response = match response {
-                Ok(response) => response,
-                Err(err) => {
-                    event!(
-                        Level::ERROR,
-                        action = &*header.action,
-                        ?err,
-                        "Failure to create XML response"
-                    );
-                    continue;
-                },
-            };
-
-            // return to sender
-            if let Err(err) = unicast.send((from, response.into())).await {
-                event!(Level::ERROR, ?err, to = ?from, "Failed to respond to message");
-            }
-        }
+        listen_forever(
+            address,
+            cancellation_token,
+            config,
+            message_handler,
+            messages_built,
+            receiver,
+            unicast,
+        )
+        .await;
     });
 }
 
