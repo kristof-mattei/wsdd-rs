@@ -141,7 +141,7 @@ pub fn parse_generic_body_paths<'path>(
     reader: &mut NsReader<&[u8]>,
     paths: &[&'path str],
 ) -> Result<(), GenericParsingError<'path>> {
-    let [first, ref rest @ ..] = *paths else {
+    let [path, ref rest @ ..] = *paths else {
         return Ok(());
     };
 
@@ -149,7 +149,7 @@ pub fn parse_generic_body_paths<'path>(
         match reader.read_resolved_event()? {
             (Bound(Namespace(ns)), Event::Start(e)) => {
                 if ns == XML_WSD_NAMESPACE.as_bytes()
-                    && e.name().local_name().as_ref() == first.as_bytes()
+                    && e.name().local_name().as_ref() == path.as_bytes()
                 {
                     return parse_generic_body_paths(reader, rest);
                 }
@@ -161,5 +161,5 @@ pub fn parse_generic_body_paths<'path>(
         }
     }
 
-    Err(GenericParsingError::MissingElement(first))
+    Err(GenericParsingError::MissingElement(path))
 }
