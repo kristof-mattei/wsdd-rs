@@ -235,30 +235,30 @@ impl MulticastHandler {
 
         // TODO error
         // https://github.com/torvalds/linux/commit/15033f0457dca569b284bef0c8d3ad55fb37eacb
-        if let Err(err) = recv_socket.set_multicast_all_v6(false) {
-            event!(Level::WARN, ?err, "cannot unset IPV6_MULTICAST_ALL");
+        if let Err(error) = recv_socket.set_multicast_all_v6(false) {
+            event!(Level::WARN, ?error, "cannot unset IPV6_MULTICAST_ALL");
         }
 
         // bind to network interface, i.e. scope and handle OS differences,
         // see Stevens: Unix Network Programming, Section 21.6, last paragraph
         let socket_addr = SocketAddrV6::new(WSD_MCAST_GRP_V6, WSD_UDP_PORT.into(), 0, idx);
 
-        if let Err(err) = recv_socket.bind(&socket_addr.into()) {
-            event!(Level::WARN, "Failed to bind to {}: {}", socket_addr, err);
+        if let Err(error) = recv_socket.bind(&socket_addr.into()) {
+            event!(Level::WARN, ?error, %socket_addr, "Failed to bind to socket");
 
-            let socket_addr = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, idx);
+            let fallback = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, idx);
 
-            if let Err(err) = recv_socket.bind(&socket_addr.into()) {
+            if let Err(error) = recv_socket.bind(&fallback.into()) {
                 event!(
                     Level::ERROR,
-                    "Fallback also failed to bind to {}: {}",
-                    socket_addr,
-                    err
+                    ?error,
+                    %fallback,
+                    "Fallback also failed to bind",
                 );
 
                 return Err(eyre::Report::msg(format!(
                     "Fallback also failed to bind to {}",
-                    socket_addr
+                    fallback
                 )));
             }
         }
@@ -300,38 +300,38 @@ impl MulticastHandler {
             interface,
         );
 
-        if let Err(err) =
+        if let Err(error) =
             recv_socket.join_multicast_v4_n(&WSD_MCAST_GRP_V4, &InterfaceIndexOrAddress::Index(idx))
         {
-            event!(Level::ERROR, ?err, multi_addr = ?WSD_MCAST_GRP_V4, ifindex = ?idx, "could not join multicast group");
+            event!(Level::ERROR, ?error, multi_addr = ?WSD_MCAST_GRP_V4, ifindex = ?idx, "could not join multicast group");
 
             return Err(eyre::Report::msg("could not join multicast group"));
         }
 
-        if let Err(err) = recv_socket.set_multicast_all_v4(false) {
-            event!(Level::ERROR, ?err, "could not unset IP_MULTICAST_ALL");
+        if let Err(error) = recv_socket.set_multicast_all_v4(false) {
+            event!(Level::ERROR, ?error, "could not unset IP_MULTICAST_ALL");
 
             return Err(eyre::Report::msg("could not unset IP_MULTICAST_ALL"));
         }
 
         let socket_addr = SocketAddrV4::new(WSD_MCAST_GRP_V4, WSD_UDP_PORT.into());
 
-        if let Err(err) = recv_socket.bind(&socket_addr.into()) {
-            event!(Level::WARN, "Failed to bind to {}: {}", socket_addr, err);
+        if let Err(error) = recv_socket.bind(&socket_addr.into()) {
+            event!(Level::WARN, ?error, %socket_addr, "Failed to bind to socket");
 
-            let socket_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, WSD_UDP_PORT.into());
+            let fallback = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, WSD_UDP_PORT.into());
 
-            if let Err(err) = recv_socket.bind(&socket_addr.into()) {
+            if let Err(error) = recv_socket.bind(&fallback.into()) {
                 event!(
                     Level::ERROR,
-                    ?err,
-                    "Fallback also failed to bind to {}",
-                    socket_addr,
+                    ?error,
+                    %fallback,
+                    "Fallback also failed to bind",
                 );
 
                 return Err(eyre::Report::msg(format!(
                     "Fallback also failed to bind to {}",
-                    socket_addr
+                    fallback
                 )));
             }
         }
@@ -339,39 +339,39 @@ impl MulticastHandler {
         // bind unicast socket to interface address and WSD's udp port
         uc_send_socket.bind(&SocketAddrV4::new(ipv4_address, WSD_UDP_PORT.into()).into())?;
 
-        if let Err(err) = mc_send_socket.set_multicast_if_v4(&ipv4_address) {
+        if let Err(error) = mc_send_socket.set_multicast_if_v4(&ipv4_address) {
             event!(
                 Level::ERROR,
-                ?err,
+                ?error,
                 "Failed to set IPPROTO_IP -> IP_MULTICAST_IF on socket"
             );
 
-            return Err(eyre::Report::from(err)
+            return Err(eyre::Report::from(error)
                 .with_note(|| "Failed to set IPPROTO_IP -> IP_MULTICAST_IF on socket"));
         }
 
         // # OpenBSD requires the optlen to be sizeof(char) for LOOP and TTL options
         // # (see also https://github.com/python/cpython/issues/67316)
         // TODO openBSD/freebsd case
-        if let Err(err) = mc_send_socket.set_multicast_loop_v4(false) {
+        if let Err(error) = mc_send_socket.set_multicast_loop_v4(false) {
             event!(
                 Level::ERROR,
-                ?err,
+                ?error,
                 "Failed to set IPPROTO_IP -> IP_MULTICAST_LOOP on socket"
             );
 
-            return Err(eyre::Report::from(err)
+            return Err(eyre::Report::from(error)
                 .with_note(|| "Failed to set IPPROTO_IP -> IP_MULTICAST_LOOP on socket"));
         }
 
-        if let Err(err) = mc_send_socket.set_multicast_ttl_v4(config.hoplimit.into()) {
+        if let Err(error) = mc_send_socket.set_multicast_ttl_v4(config.hoplimit.into()) {
             event!(
                 Level::ERROR,
-                ?err,
+                ?error,
                 "Failed to set IPPROTO_IP -> IP_MULTICAST_TTL on socket"
             );
 
-            return Err(eyre::Report::from(err)
+            return Err(eyre::Report::from(error)
                 .with_note(|| "Failed to set IPPROTO_IP -> IP_MULTICAST_TTL on socket"));
         }
 
@@ -451,6 +451,51 @@ struct MessageReceiver {
     listeners: Receivers,
 }
 
+type Channels = Arc<RwLock<Vec<Sender<(SocketAddr, Arc<[u8]>)>>>>;
+
+async fn socket_receiver(socket: Arc<UdpSocket>, channels: Channels) {
+    #[expect(clippy::infinite_loop, reason = "Endless task")]
+    // TODO await cancellation token
+    loop {
+        let mut buffer = vec![MaybeUninit::<u8>::uninit(); WSD_MAX_LEN];
+
+        let (bytes_read, from) = match socket.recv_buf_from(&mut buffer.as_mut_slice()).await {
+            Ok(read) => read,
+            Err(error) => {
+                let local_addr = socket.local_addr().map_or_else(
+                    |err| format!("Failed to get local socket address: {:?}", err),
+                    |addr| addr.to_string(),
+                );
+
+                event!(
+                    Level::ERROR,
+                    ?error,
+                    local_addr,
+                    "Failed to read from socket"
+                );
+
+                continue;
+            },
+        };
+
+        // `recv_buf` tells us that `bytes_read` were read from the socket into our `buffer`, so they're initialized
+        buffer.truncate(bytes_read);
+
+        let buffer = Arc::<[_]>::from(buffer);
+
+        // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
+        let buffer = unsafe { buffer.assume_init() };
+
+        let lock = channels.read().await;
+
+        for channel in &*lock {
+            if let Err(error) = channel.send((from, Arc::clone(&buffer))).await {
+                event!(Level::ERROR, ?error, socket = ?socket.local_addr().unwrap(), "Failed to send data to channel");
+            }
+        }
+    }
+}
+
 impl MessageReceiver {
     fn new(socket: Arc<UdpSocket>) -> Self {
         let listeners: Receivers = Receivers::new(RwLock::const_new(vec![]));
@@ -459,46 +504,7 @@ impl MessageReceiver {
 
         spawn_with_name(
             format!("socket receiver ({})", socket.local_addr().unwrap()).as_str(),
-            async move {
-                #[expect(clippy::infinite_loop, reason = "Endless task")]
-                // TODO await cancellation token
-                loop {
-                    let mut buffer = vec![MaybeUninit::<u8>::uninit(); WSD_MAX_LEN];
-
-                    let (bytes_read, from) = match socket
-                        .recv_buf_from(&mut buffer.as_mut_slice())
-                        .await
-                    {
-                        Ok(read) => read,
-                        Err(err) => {
-                            let local_addr = socket.local_addr().map_or_else(
-                                |err| format!("Failed to get local socket address: {:?}", err),
-                                |addr| addr.to_string(),
-                            );
-
-                            event!(Level::ERROR, ?err, local_addr, "Failed to read from socket");
-
-                            continue;
-                        },
-                    };
-
-                    // `recv_buf` tells us that `bytes_read` were read from the socket into our `buffer`, so they're initialized
-                    buffer.truncate(bytes_read);
-
-                    let buffer = Arc::<[_]>::from(buffer);
-
-                    // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
-                    let buffer = unsafe { buffer.assume_init() };
-
-                    let lock = channels.read().await;
-
-                    for channel in &*lock {
-                        if let Err(err) = channel.send((from, Arc::clone(&buffer))).await {
-                            event!(Level::ERROR, ?err, socket = ?socket.local_addr().unwrap(), "Failed to send data to channel");
-                        }
-                    }
-                }
-            },
+            socket_receiver(socket, channels),
         );
 
         Self { listeners }
@@ -552,6 +558,30 @@ struct MessageSender<T: MessageSplitter> {
     sender: Sender<T::Message>,
 }
 
+async fn repeatedly_send_buffer<T: MessageSplitter>(
+    socket: Arc<UdpSocket>,
+    buffer: Box<[u8]>,
+    to: SocketAddr,
+) {
+    // Schedule to send the given message to the given address.
+    // Implements SOAP over UDP, Appendix I.
+    let mut delta = rand::rng().random_range(UDP_MIN_DELAY..=UDP_MAX_DELAY);
+
+    for i in 0..T::REPEAT {
+        if i != 0 {
+            sleep(Duration::from_millis(delta)).await;
+            delta = UDP_UPPER_DELAY.min(delta * 2);
+        }
+
+        match socket.send_to(buffer.as_ref(), to).await {
+            Ok(_) => {},
+            Err(error) => {
+                event!(Level::WARN, ?error, "Failed to send data");
+            },
+        }
+    }
+}
+
 impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
     fn new(socket: Arc<UdpSocket>, message_splitter: T) -> Self {
         let (sender, mut receiver) = tokio::sync::mpsc::channel::<T::Message>(10);
@@ -572,23 +602,7 @@ impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
                 spawn_with_name(
                     "message sender",
                     tracker.track_future(async move {
-                        // Schedule to send the given message to the given address.
-                        // Implements SOAP over UDP, Appendix I.
-                        let mut delta = rand::rng().random_range(UDP_MIN_DELAY..=UDP_MAX_DELAY);
-
-                        for i in 0..T::REPEAT {
-                            if i != 0 {
-                                sleep(Duration::from_millis(delta)).await;
-                                delta = UDP_UPPER_DELAY.min(delta * 2);
-                            }
-
-                            match socket.send_to(buffer.as_ref(), to).await {
-                                Ok(_) => {},
-                                Err(err) => {
-                                    event!(Level::WARN, ?err, "Failed to send data");
-                                },
-                            }
-                        }
+                        repeatedly_send_buffer::<T>(socket, buffer, to).await;
                     }),
                 );
             }

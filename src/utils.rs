@@ -19,7 +19,7 @@ where
 {
     match handle.await {
         Ok(Ok(result)) => Ok(result),
-        Ok(Err(err)) => Err(err.into()),
-        Err(err) => Err(err.into()),
+        Ok(Err(error)) => Err(error.into()),
+        Err(error) => Err(error.into()),
     }
 }

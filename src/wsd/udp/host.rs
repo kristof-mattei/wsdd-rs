@@ -64,9 +64,9 @@ impl WSDHost {
         )))
         .await;
 
-        if let Err(err) = host.send_hello().await {
+        if let Err(error) = host.send_hello().await {
             // TODO is this fatal? What should we do?
-            event!(Level::ERROR, ?err, "Failed to send hello");
+            event!(Level::ERROR, ?error, "Failed to send hello");
         }
 
         host
@@ -78,8 +78,8 @@ impl WSDHost {
         // note that this is a child token, so we only cancel ourselves
         self.cancellation_token.cancel();
 
-        if graceful && let Err(err) = self.send_bye().await {
-            event!(Level::DEBUG, ?err, "Failed to schedule bye message");
+        if graceful && let Err(error) = self.send_bye().await {
+            event!(Level::DEBUG, ?error, "Failed to schedule bye message");
         }
     }
 

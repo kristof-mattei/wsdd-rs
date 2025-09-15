@@ -82,8 +82,8 @@ impl WSDClient {
         // avoid packet storm when hosts come up by delaying initial probe
         tokio::time::sleep(Duration::from_millis(rand::random_range(0..=APP_MAX_DELAY))).await;
 
-        if let Err(err) = client.send_probe().await {
-            event!(Level::ERROR, ?err, "Failed to send probe");
+        if let Err(error) = client.send_probe().await {
+            event!(Level::ERROR, ?error, "Failed to send probe");
         }
 
         client

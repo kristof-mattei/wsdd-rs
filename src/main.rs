@@ -170,10 +170,10 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     // ApiServer::new(listen, )
     // };
     if let &Some(ref chroot_path) = &config.chroot {
-        if let Err(err) = chroot(chroot_path) {
+        if let Err(error) = chroot(chroot_path) {
             event!(
                 Level::ERROR,
-                ?err,
+                ?error,
                 "could not chroot to {}",
                 chroot_path.display()
             );
