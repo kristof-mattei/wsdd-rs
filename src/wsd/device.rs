@@ -28,6 +28,7 @@ impl WSDDiscoveredDevice {
         s
     }
 
+    #[expect(clippy::unused_self, reason = "WIP")]
     pub fn update(&mut self, _meta: String, _xaddr: Url) {}
 }
 
