@@ -455,59 +455,51 @@ impl MessageReceiver {
     fn new(socket: Arc<UdpSocket>) -> Self {
         let listeners: Receivers = Receivers::new(RwLock::const_new(vec![]));
 
-        {
-            let socket = Arc::clone(&socket);
-            let channels = Arc::clone(&listeners);
+        let channels = Arc::clone(&listeners);
 
-            spawn_with_name(
-                format!("socket receiver ({})", socket.local_addr().unwrap()).as_str(),
-                async move {
-                    #[expect(clippy::infinite_loop, reason = "Endless task")]
-                    // TODO await cancellation token
-                    loop {
-                        let mut buffer = vec![MaybeUninit::<u8>::uninit(); WSD_MAX_LEN];
+        spawn_with_name(
+            format!("socket receiver ({})", socket.local_addr().unwrap()).as_str(),
+            async move {
+                #[expect(clippy::infinite_loop, reason = "Endless task")]
+                // TODO await cancellation token
+                loop {
+                    let mut buffer = vec![MaybeUninit::<u8>::uninit(); WSD_MAX_LEN];
 
-                        let (bytes_read, from) = match socket
-                            .recv_buf_from(&mut buffer.as_mut_slice())
-                            .await
-                        {
-                            Ok(read) => read,
-                            Err(err) => {
-                                let local_addr = socket.local_addr().map_or_else(
-                                    |err| format!("Failed to get local socket address: {:?}", err),
-                                    |addr| addr.to_string(),
-                                );
+                    let (bytes_read, from) = match socket
+                        .recv_buf_from(&mut buffer.as_mut_slice())
+                        .await
+                    {
+                        Ok(read) => read,
+                        Err(err) => {
+                            let local_addr = socket.local_addr().map_or_else(
+                                |err| format!("Failed to get local socket address: {:?}", err),
+                                |addr| addr.to_string(),
+                            );
 
-                                event!(
-                                    Level::ERROR,
-                                    ?err,
-                                    local_addr,
-                                    "Failed to read from socket"
-                                );
+                            event!(Level::ERROR, ?err, local_addr, "Failed to read from socket");
 
-                                continue;
-                            },
-                        };
+                            continue;
+                        },
+                    };
 
-                        // `recv_buf` tells us that `bytes_read` were read from the socket into our `buffer`, so they're initialized
-                        buffer.truncate(bytes_read);
+                    // `recv_buf` tells us that `bytes_read` were read from the socket into our `buffer`, so they're initialized
+                    buffer.truncate(bytes_read);
 
-                        let buffer = Arc::<[_]>::from(buffer);
+                    let buffer = Arc::<[_]>::from(buffer);
 
-                        // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
-                        let buffer = unsafe { buffer.assume_init() };
+                    // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
+                    let buffer = unsafe { buffer.assume_init() };
 
-                        let lock = channels.read().await;
+                    let lock = channels.read().await;
 
-                        for channel in &*lock {
-                            if let Err(err) = channel.send((from, Arc::clone(&buffer))).await {
-                                event!(Level::ERROR, ?err, socket = ?socket.local_addr().unwrap(), "Failed to send data to channel");
-                            }
+                    for channel in &*lock {
+                        if let Err(err) = channel.send((from, Arc::clone(&buffer))).await {
+                            event!(Level::ERROR, ?err, socket = ?socket.local_addr().unwrap(), "Failed to send data to channel");
                         }
                     }
-                },
-            );
-        }
+                }
+            },
+        );
 
         Self { listeners }
     }
