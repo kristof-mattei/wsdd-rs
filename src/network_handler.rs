@@ -11,6 +11,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 
 use color_eyre::eyre;
+use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
@@ -41,6 +42,12 @@ pub struct NetworkHandler {
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
     multicast_handlers: Vec<MulticastHandler>,
     receiver: tokio::sync::mpsc::Receiver<Command>,
+}
+
+#[derive(Error, Debug)]
+pub enum NetworkHandlerError {
+    #[error("Interface Detection Failed")]
+    InterfaceDetectionFailed(std::io::Error),
 }
 
 /// Observes changes of network addresses, handles addition and removal of
@@ -91,7 +98,7 @@ impl NetworkHandler {
                 } => {
                     let interface = match self.add_interface(scope, index) {
                         Ok(interface) => interface,
-                        Err(_) => {
+                        Err(_error) => {
                             return Ok(());
                         },
                     };
@@ -106,7 +113,7 @@ impl NetworkHandler {
                 } => {
                     let interface = match self.add_interface(scope, index) {
                         Ok(interface) => interface,
-                        Err(_) => {
+                        Err(_error) => {
                             return Ok(());
                         },
                     };
@@ -145,23 +152,22 @@ impl NetworkHandler {
         &mut self,
         ifa_scope: u8,
         ifa_index: u32,
-    ) -> Result<Arc<NetworkInterface>, String> {
+    ) -> Result<Arc<NetworkInterface>, NetworkHandlerError> {
         let interface = match self.interfaces.entry(ifa_index) {
             Entry::Occupied(occupied_entry) => Arc::clone(occupied_entry.get()),
             Entry::Vacant(vacant_entry) => {
                 let if_name = match network_interface::if_indextoname(ifa_index) {
                     Ok(if_name) => if_name,
-                    Err(err) => {
+                    Err(error) => {
                         // accept this exception (which should not occur)
-
                         event!(
                             Level::ERROR,
                             ifa_idx = ifa_index,
-                            ?err,
+                            ?error,
                             "interface detection failed",
                         );
 
-                        return Err("interface detection failed".into());
+                        return Err(NetworkHandlerError::InterfaceDetectionFailed(error));
                     },
                 };
 
