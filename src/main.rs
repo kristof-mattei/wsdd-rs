@@ -1,4 +1,3 @@
-#![expect(clippy::manual_let_else, reason = "WIP")]
 mod address_monitor;
 mod api_server;
 mod cli;

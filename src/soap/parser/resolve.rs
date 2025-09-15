@@ -104,10 +104,7 @@ fn parse_resolve(reader: &mut NsReader<&[u8]>, target_uuid: Uuid) -> ParsedResol
 }
 
 /// This takes in a reader that is stopped at the body tag.
-pub fn parse_resolve_body(
-    reader: &mut NsReader<&[u8]>,
-    target_uuid: Uuid,
-) -> ParsedResolve {
+pub fn parse_resolve_body(reader: &mut NsReader<&[u8]>, target_uuid: Uuid) -> ParsedResolve {
     loop {
         match reader.read_resolved_event()? {
             (Bound(Namespace(ns)), Event::Start(e)) => {

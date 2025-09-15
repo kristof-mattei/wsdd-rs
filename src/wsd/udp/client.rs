@@ -184,9 +184,7 @@ async fn handle_hello(
 
     let (endpoint, xaddrs) = parser::generic::extract_endpoint_metadata(&mut reader)?;
 
-    let xaddrs = if let Some(xaddrs) = xaddrs {
-        xaddrs
-    } else {
+    let Some(xaddrs) = xaddrs else {
         event!(Level::INFO, "Hello without XAddrs, sending resolve");
 
         let (message, _) = Builder::build_resolve(config, endpoint, messages_built)?;
