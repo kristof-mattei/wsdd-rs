@@ -13,7 +13,7 @@ pub struct NetworkInterface {
 }
 
 impl NetworkInterface {
-    pub fn new<I: Into<String>>(name: I, scope: u8) -> Result<Self, eyre::Report> {
+    pub fn new<I: Into<String>>(name: I, scope: u8) -> Result<Self, std::io::Error> {
         let name: String = name.into();
 
         let index = if_nametoindex(&name)?;
@@ -47,27 +47,27 @@ impl PartialEq for NetworkInterface {
     }
 }
 
-fn if_nametoindex(name: &str) -> Result<u32, eyre::Report> {
+fn if_nametoindex(name: &str) -> Result<u32, std::io::Error> {
     let name = CString::new(name).expect("Couldn't convert name to CString");
 
     // SAFETY: libc call
     let result = unsafe { libc::if_nametoindex(name.as_ptr().cast()) };
 
     if result == 0 {
-        Err(eyre::Report::new(Error::last_os_error()).wrap_err("if_nametoindex failed"))
+        Err(Error::last_os_error())
     } else {
         Ok(result)
     }
 }
 
-pub fn if_indextoname(index: u32) -> Result<String, eyre::Report> {
+pub fn if_indextoname(index: u32) -> Result<String, std::io::Error> {
     let mut buffer = vec![0_u8; IF_NAMESIZE];
 
     // SAFETY: libc call
     let result = unsafe { libc::if_indextoname(index, buffer.as_mut_ptr().cast()) };
 
     if result.is_null() {
-        return Err(eyre::Report::new(Error::last_os_error()).wrap_err("if_indextoname failed"));
+        return Err(Error::last_os_error());
     }
 
     let ifname = CStr::from_bytes_until_nul(&buffer)

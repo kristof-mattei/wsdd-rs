@@ -141,11 +141,8 @@ pub fn parse_generic_body_paths<'path>(
     reader: &mut NsReader<&[u8]>,
     paths: &[&'path str],
 ) -> Result<(), GenericParsingError<'path>> {
-    let (path, rest) = match *paths {
-        [first, ref rest @ ..] => (first, rest),
-        [] => {
-            return Ok(());
-        },
+    let [path, ref rest @ ..] = *paths else {
+        return Ok(());
     };
 
     loop {
