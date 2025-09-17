@@ -168,13 +168,6 @@ where
     let mut command = build_clap_matcher();
     let matches = command.try_get_matches_from_mut(from)?;
 
-    // def parse_args() -> None:
-    //     global args, logger
-
-    //     parser = argparse.ArgumentParser()
-
-    //     args = parser.parse_args(sys.argv[1:])
-
     // if args.version:
     // TODO use clap's built-in
     if let Some(ValueSource::CommandLine) = matches.value_source("version") {
@@ -210,12 +203,10 @@ where
     //     logging.basicConfig(level=log_level, format=fmt)
     //     logger = logging.getLogger('wsdd')
 
-    //     if not args.interface:
     let interfaces: Vec<String> = if let Some(interfaces) = matches.get_many::<String>("interface")
     {
         interfaces.cloned().collect::<Vec<_>>()
     } else {
-        // logger.warning('no interface given, using all interfaces')
         event!(Level::WARN, "no interface given, using all interfaces");
 
         vec![]
@@ -227,8 +218,8 @@ where
         let hostname = gethostname()?;
 
         hostname
-            .rsplit_once('.')
-            .map(|(_l, r)| r.to_owned())
+            .split_once('.')
+            .map(|(first, _rest)| first.to_owned())
             .unwrap_or(hostname)
     };
 
@@ -299,20 +290,19 @@ fn to_listen(listen: &str) -> Result<PortOrSocket, String> {
     }
 }
 
-fn gethostname() -> Result<String, std::io::Error> {
+fn gethostname() -> Result<String, eyre::Report> {
     let mut buffer = [0_u8; 255 /* POSIX LIMIT */ + 1 /* for the \0 */];
 
     // SAFETY: libc call
     let length = unsafe { libc::gethostname(buffer.as_mut_ptr().cast(), buffer.len()) };
 
     if length == -1 {
-        return Err(Error::last_os_error());
+        return Err(Error::last_os_error().into());
     }
 
     let hostname = CStr::from_bytes_until_nul(&buffer)
         .expect("We used oversized buffer, so not finding a null is impossible")
-        .to_str()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+        .to_str()?;
 
     Ok(String::from(hostname))
 }
