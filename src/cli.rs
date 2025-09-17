@@ -297,7 +297,7 @@ fn get_uuid_from_machine() -> Result<Uuid, eyre::Report> {
         None => uuid::Uuid::new_v5(&Uuid::NAMESPACE_DNS, gethostname()?.as_bytes()),
     };
 
-    event!(Level::INFO, "using pre-defined UUID {}", uuid);
+    event!(Level::INFO, %uuid, "using pre-defined UUID");
 
     Ok(uuid)
 }

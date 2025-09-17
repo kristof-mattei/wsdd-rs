@@ -38,6 +38,6 @@ pub enum PortOrSocket {
 
 impl Config {
     pub fn log(&self) {
-        event!(Level::INFO, "{:?}", self);
+        event!(Level::INFO, ?self);
     }
 }
