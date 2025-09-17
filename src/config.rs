@@ -27,7 +27,7 @@ pub struct Config {
     pub discovery: bool,
     pub listen: Option<PortOrSocket>,
     pub no_host: bool,
-    pub metadata_timeout: f32,
+    pub metadata_timeout: Duration,
     pub source_port: u16,
 
     pub wsd_instance_id: Box<str>,
