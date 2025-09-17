@@ -4,10 +4,7 @@ use std::time::Duration;
 use tracing::{Level, event};
 use uuid::Uuid;
 
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "Main config, copy from py version"
-)]
+#[expect(clippy::struct_excessive_bools, reason = "Main config")]
 #[derive(Debug, PartialEq)]
 pub struct Config {
     pub interface: Vec<String>,
@@ -21,7 +18,7 @@ pub struct Config {
     pub no_http: bool,
     pub ipv4only: bool,
     pub ipv6only: bool,
-    // pub  shortlog: bool,
+    // pub shortlog: bool,
     pub preserve_case: bool,
     pub chroot: Option<PathBuf>,
     pub user: Option<(u32, u32)>,
@@ -30,7 +27,6 @@ pub struct Config {
     pub no_host: bool,
     pub metadata_timeout: Duration,
     pub source_port: u16,
-
     pub wsd_instance_id: Box<str>,
 }
 
@@ -42,6 +38,6 @@ pub enum PortOrSocket {
 
 impl Config {
     pub fn log(&self) {
-        event!(Level::INFO, "{:?}", self);
+        event!(Level::INFO, ?self);
     }
 }

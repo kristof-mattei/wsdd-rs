@@ -3,8 +3,6 @@ use std::num::NonZeroU16;
 
 use const_format::concatcp;
 
-pub const WSDD_VERSION: &str = "0.8";
-
 // # constants for WSD XML/SOAP parsing
 // WSA_URI: str = 'http://schemas.xmlsoap.org/ws/2004/08/addressing'
 pub const WSA_URI: &str = "http://schemas.xmlsoap.org/ws/2004/08/addressing";

@@ -32,6 +32,31 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Debug executable 'wsdd-rs' with --version",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=wsdd-rs",
+                    "--package=wsdd-rs",
+                    "--features=tokio-console"
+                ],
+                "filter": {
+                    "name": "wsdd-rs",
+                    "kind": "bin"
+                }
+            },
+            "args": ["-V"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
+            },
+            "internalConsoleOptions": "neverOpen",
+            "terminal": "integrated"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "Debug executable 'wsdd-rs' with incorrect uuid",
             "cargo": {
                 "args": [
