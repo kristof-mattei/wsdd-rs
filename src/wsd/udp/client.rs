@@ -349,11 +349,9 @@ async fn perform_metadata_exchange(
         .header("Content-Type", "application/soap+xml")
         .header("User-Agent", "wsdd-rs");
 
-    let timeout = config.metadata_timeout;
-
     let response = builder
         .body(body)
-        .timeout(Duration::from_secs_f32(timeout))
+        .timeout(config.metadata_timeout)
         .send()
         .await;
 

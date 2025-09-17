@@ -3,7 +3,7 @@ use std::env;
 use std::ffi::{CStr, OsString};
 use std::io::Error;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clap::parser::ValueSource;
 use clap::{Arg, ArgAction, Command, command, value_parser};
@@ -134,7 +134,7 @@ fn build_clap_matcher() -> Command {
         Arg::new("metadata-timeout")
             .long("metadata-timeout")
             .help("set timeout for HTTP-based metadata exchange")
-            .value_parser(clap::value_parser!(f32))
+            .value_parser(float_to_duration_parser)
             .default_value("2.0"),
         Arg::new("source-port")
             .long("source-port")
@@ -150,11 +150,17 @@ fn build_clap_matcher() -> Command {
     command
 }
 
-pub fn parse_cli() -> Result<Config, eyre::Error> {
+fn float_to_duration_parser(value: &str) -> Result<Duration, String> {
+    let value = value.parse::<f32>().map_err(|error| error.to_string())?;
+
+    Duration::try_from_secs_f32(value).map_err(|error| error.to_string())
+}
+
+pub fn parse_cli() -> Result<Config, eyre::Report> {
     parse_cli_from(env::args_os())
 }
 
-pub fn parse_cli_from<I, T>(from: I) -> Result<Config, eyre::Error>
+pub fn parse_cli_from<I, T>(from: I) -> Result<Config, eyre::Report>
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
