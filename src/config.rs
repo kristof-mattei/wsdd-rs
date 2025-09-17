@@ -18,7 +18,14 @@ pub struct Config {
     pub no_http: bool,
     pub ipv4only: bool,
     pub ipv6only: bool,
-    // pub shortlog: bool,
+    //     if args.shortlog:
+    //         fmt = '%(levelname)s: %(message)s'
+    //     else:
+    //         fmt = '%(asctime)s:%(name)s %(levelname)s(pid %(process)d): %(message)s'
+
+    //     logging.basicConfig(level=log_level, format=fmt)
+    //     logger = logging.getLogger('wsdd')
+    pub shortlog: bool,
     pub preserve_case: bool,
     pub chroot: Option<PathBuf>,
     pub user: Option<(u32, u32)>,
