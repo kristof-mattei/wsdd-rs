@@ -16,7 +16,7 @@ use crate::constants::WSDD_VERSION;
 use crate::security::parse_userspec;
 
 #[expect(clippy::too_many_lines, reason = "WIP")]
-fn build_clap_matcher() -> Command {
+fn build_clap_command() -> Command {
     let mut command = command!()
         .disable_version_flag(true)
         .color(clap::ColorChoice::Always);
@@ -165,7 +165,7 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    let mut command = build_clap_matcher();
+    let mut command = build_clap_command();
     let matches = command.try_get_matches_from_mut(from)?;
 
     // if args.version:
