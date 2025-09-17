@@ -46,12 +46,12 @@ fn build_clap_command() -> Command {
             .long("uuid")
             .help("UUID for the target device")
             .value_parser(value_parser!(Uuid)),
-        // Arg::new("verbose")
-        //     .short('v')
-        //     .long("verbose")
-        //     .help("increase verbosity")
-        //     .default_value("0")
-        //     .action(ArgAction::Count),
+        Arg::new("verbose")
+            .short('v')
+            .long("verbose")
+            .help("increase verbosity")
+            .default_value("0")
+            .action(ArgAction::Count),
         Arg::new("domain")
             .short('d')
             .long("domain")
@@ -223,7 +223,12 @@ where
             .unwrap_or(hostname)
     };
 
-    //     if not args.uuid:
+    let verbosity = match get_user_cli_value::<u8>(&matches, "verbose") {
+        None | Some(&0) => Level::WARN,
+        Some(&1) => Level::INFO,
+        Some(_) => Level::DEBUG,
+    };
+
     let uuid = match get_user_cli_value::<Uuid>(&matches, "uuid") {
         Some(uuid) => Ok(*uuid),
         None => get_uuid_from_machine(),
@@ -235,7 +240,7 @@ where
         interface: interfaces,
         hoplimit: *matches.get_one("hoplimit").expect("hoplimit has a default"),
         uuid,
-        // verbose,
+        verbosity,
         domain: matches.get_one("domain").cloned(),
         hostname,
         workgroup: matches
