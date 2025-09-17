@@ -89,7 +89,7 @@ fn build_clap_command() -> Command {
             Arg::new("no-http")
                 .short('t')
                 .long("no-http")
-                .help("disable http service (for debugging).arg( e.g.)")
+                .help("disable http service (e.g. for debugging)")
                 .action(ArgAction::SetTrue),
         )
         .arg(
