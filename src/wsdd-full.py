@@ -326,12 +326,16 @@ class MulticastHandler:
     def read_socket(self, key: socket.socket) -> None:
         # TODO: refactor this
         s = None
+        t = None
         if key == self.uc_send_socket:
             s = self.uc_send_socket
+            t = "uc_send_socket"
         elif key == self.mc_send_socket:
             s = self.mc_send_socket
+            t = "mc_send_socket"
         elif key == self.recv_socket:
             s = self.recv_socket
+            t = "recv_socket"
         else:
             raise ValueError("Unknown socket passed as key.")
 
@@ -339,6 +343,7 @@ class MulticastHandler:
         address = UdpAddress(self.address.family, raw_address, self.address.interface)
         if s in self.message_handlers:
             for handler in self.message_handlers[s]:
+                logger.error(("Message arrived {} {}".format(t, str(self.address.transport_str))))
                 handler.handle_packet(msg.decode('utf-8'), address)
 
     def send(self, msg: bytes, addr: UdpAddress):
@@ -852,6 +857,8 @@ class WSDClient(WSDUDPMessageHandler):
 
         host = None
         url = xaddr
+
+        url = url.replace("diskstation", "diskstation.apps.mattei.io")
         if self.mch.address.family == socket.AF_INET6:
             host = '[{}]'.format(url.partition('[')[2].partition(']')[0])
             url = url.replace(']', '%{}]'.format(self.mch.address.interface))
@@ -863,6 +870,8 @@ class WSDClient(WSDUDPMessageHandler):
         if host is not None:
             request.add_header('Host', host)
 
+        print("!!!!!!!!!!!!!!!!!!!!!!!! " + str(body))
+        print("!!!!!!!!!!!!!!!!!!!!!!!! " + str(request))
         try:
             with urllib.request.urlopen(request, None, args.metadata_timeout) as stream:
                 self.handle_metadata(stream.read(), endpoint, xaddr)

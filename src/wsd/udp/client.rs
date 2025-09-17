@@ -146,6 +146,8 @@ fn now() -> u128 {
 //         self.remove_outdated_probes()
 
 fn __extract_xaddr(bound_to: IpAddr, xaddrs: &str) -> Option<url::Url> {
+    event!(Level::ERROR, ?xaddrs);
+
     for addr in xaddrs.trim().split(' ') {
         let Ok(addr) = Url::parse(addr) else {
             continue;
@@ -330,13 +332,24 @@ async fn perform_metadata_exchange(
     messages_built: &AtomicU64,
     network_address: &NetworkAddress,
     endpoint: Uuid,
-    xaddr: Url,
+    mut xaddr: Url,
 ) -> Result<(), eyre::Report> {
     let scheme = xaddr.scheme();
 
     if !matches!(scheme, "http" | "https") {
         event!(Level::DEBUG, %xaddr, "invalid XAddr");
         return Ok(());
+    }
+
+    let host = xaddr.host().and_then(|h| match h {
+        Host::Domain(d) if d.contains("diskstation") => {
+            Some(d.replace("diskstation", "diskstation.apps.mattei.io"))
+        },
+        Host::Domain(_) | Host::Ipv4(_) | Host::Ipv6(_) => None,
+    });
+
+    if let Some(new_host) = host {
+        let _r = xaddr.set_host(Some(&*new_host));
     }
 
     let body = build_getmetadata_message(config, endpoint, messages_built)?;
