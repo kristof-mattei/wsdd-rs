@@ -12,22 +12,20 @@ use tracing::{Level, event};
 use uuid::Uuid;
 
 use crate::config::{Config, PortOrSocket};
-use crate::constants::WSDD_VERSION;
 use crate::security::parse_userspec;
 
 #[expect(clippy::too_many_lines, reason = "WIP")]
 fn build_clap_command() -> Command {
     let mut command = command!()
         .disable_version_flag(true)
-        .color(clap::ColorChoice::Always);
+        .color(clap::ColorChoice::Always)
+        .long_version(format!(
+            "- Web Service Discovery Daemon, v{}",
+            env!("CARGO_PKG_VERSION")
+        ))
+        .version(format!("v{}", env!("CARGO_PKG_VERSION")));
 
     // TODO: How do we return a specific error (e.g. 3 for the user spec's value parser) when an error occurs?
-
-    // let hostname = gethostname();
-    // let hostname_p1 = hostname
-    //     .split_once('.')
-    //     .map(|(l, _)| l)
-    //     .unwrap_or(&hostname);
 
     let commands = [
         Arg::new("interface")
@@ -129,8 +127,7 @@ fn build_clap_command() -> Command {
             .short('V')
             .long("version")
             .help("show version number and exit")
-            .action(ArgAction::SetTrue),
-        // TODO ensure not negative, not too high
+            .action(ArgAction::Version),
         Arg::new("metadata-timeout")
             .long("metadata-timeout")
             .help("set timeout for HTTP-based metadata exchange")
@@ -167,33 +164,6 @@ where
 {
     let mut command = build_clap_command();
     let matches = command.try_get_matches_from_mut(from)?;
-
-    // if args.version:
-    // TODO use clap's built-in
-    if let Some(ValueSource::CommandLine) = matches.value_source("version") {
-        // print('wsdd - web service discovery daemon, v{}'.format(wsdd_version))
-        println!("wsdd-rs - web service discovery daemon, v{}", WSDD_VERSION);
-        // sys.exit(0)
-
-        #[expect(clippy::exit, reason = "TODO")]
-        std::process::exit(0);
-    }
-
-    // let verbose = matches.get_count("verbose");
-
-    // // if args.verbose == 1:
-    // if verbose == 1 {
-    //     // log_level = logging.INFO
-
-    //     // elif args.verbose > 1:
-    // } else if verbose > 1 {
-    //     // log_level = logging.DEBUG
-    //     // asyncio.get_event_loop().set_debug(True)
-    //     // logging.getLogger("asyncio").setLevel(logging.DEBUG)
-    //     // else:
-    // } else {
-    //     // log_level = logging.WARNING
-    // }
 
     //     if args.shortlog:
     //         fmt = '%(levelname)s: %(message)s'
