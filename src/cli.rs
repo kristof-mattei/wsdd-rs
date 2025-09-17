@@ -89,7 +89,7 @@ fn build_clap_command() -> Command {
             Arg::new("no-http")
                 .short('t')
                 .long("no-http")
-                .help("disable http service (for debugging, e.g.)")
+                .help("disable http service (e.g. for debugging)")
                 .action(ArgAction::SetTrue),
         )
         .arg(
@@ -198,14 +198,6 @@ where
     let mut command = build_clap_command();
     let matches = command.try_get_matches_from_mut(from)?;
 
-    //     if args.shortlog:
-    //         fmt = '%(levelname)s: %(message)s'
-    //     else:
-    //         fmt = '%(asctime)s:%(name)s %(levelname)s(pid %(process)d): %(message)s'
-
-    //     logging.basicConfig(level=log_level, format=fmt)
-    //     logger = logging.getLogger('wsdd')
-
     let interfaces: Vec<String> = if let Some(interfaces) = matches.get_many::<String>("interface")
     {
         interfaces.cloned().collect::<Vec<_>>()
@@ -254,7 +246,7 @@ where
         no_http: matches.get_one("no-http").copied().unwrap_or(false),
         ipv4only: matches.get_one("ipv4only").copied().unwrap_or(false),
         ipv6only: matches.get_one("ipv6only").copied().unwrap_or(false),
-        // shortlog: matches.get_one("shortlog").copied().unwrap_or(false),
+        shortlog: matches.get_one("shortlog").copied().unwrap_or(false),
         preserve_case: matches.get_one("preserve-case").copied().unwrap_or(false),
         chroot: matches.get_one("chroot").cloned(),
         user: matches.get_one("user").copied(),
