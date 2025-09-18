@@ -172,15 +172,12 @@ impl NetlinkAddressMonitor {
 
             let mut buffer_slice = buffer.as_mut_slice();
 
-            #[expect(clippy::pattern_type_mismatch, reason = "Tokio macro")]
-            let bytes_read = {
-                tokio::select! {
-                    () = self.cancellation_token.cancelled() => {
-                        break;
-                    },
-                    result = self.socket.recv_buf(&mut buffer_slice) => {
-                        result?
-                    }
+            let bytes_read = tokio::select! {
+                () = self.cancellation_token.cancelled() => {
+                    break;
+                },
+                result = self.socket.recv_buf(&mut buffer_slice) => {
+                    result?
                 }
             };
 
