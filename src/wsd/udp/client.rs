@@ -422,18 +422,15 @@ async fn listen_forever(
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
 ) {
     loop {
-        #[expect(clippy::pattern_type_mismatch, reason = "Tokio")]
-        let message = {
-            tokio::select! {
-                () = cancellation_token.cancelled() => {
-                    break;
-                },
-                message = recv_socket_receiver.recv() => {
-                    message
-                }
-                message = mc_send_socket_receiver.recv() => {
-                    message
-                }
+        let message = tokio::select! {
+            () = cancellation_token.cancelled() => {
+                break;
+            },
+            message = recv_socket_receiver.recv() => {
+                message
+            }
+            message = mc_send_socket_receiver.recv() => {
+                message
             }
         };
 

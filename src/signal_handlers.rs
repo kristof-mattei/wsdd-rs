@@ -1,27 +1,15 @@
 use tokio::signal::unix::{SignalKind, signal};
 
 /// Waits forever for a SIGTERM
-pub async fn wait_for_sigterm() -> Option<()> {
-    signal(SignalKind::terminate())
-        .expect("Failed to register SIGTERM handler")
-        .recv()
-        .await
-}
+pub async fn wait_for_sigterm() -> Result<(), std::io::Error> {
+    signal(SignalKind::terminate())?.recv().await;
 
-#[expect(unused, reason = "WIP")]
-/// Waits forever for a SIGUSR1
-pub async fn wait_for_sigusr1() -> Option<()> {
-    signal(SignalKind::user_defined1())
-        .expect("Failed to register SIGUSR1 handler")
-        .recv()
-        .await
+    Ok(())
 }
 
 /// Waits forever for a SIGINT
-pub async fn wait_for_sigint() -> Option<()> {
-    tokio::signal::ctrl_c()
-        .await
-        .expect("Failed to register SIGINT (CTRL+C) handler");
+pub async fn wait_for_sigint() -> Result<(), std::io::Error> {
+    tokio::signal::ctrl_c().await?;
 
-    Some(())
+    Ok(())
 }

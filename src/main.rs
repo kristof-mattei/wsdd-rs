@@ -98,6 +98,7 @@ fn main() -> Result<(), eyre::Report> {
     result
 }
 
+#[expect(clippy::too_many_lines, reason = "WIP")]
 async fn start_tasks() -> Result<(), eyre::Report> {
     let config = Arc::new(parse_cli().inspect_err(|error| {
         // this prints the error in color and exits
@@ -234,21 +235,26 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     // * ctrl + c (SIGINT)
     // * a message on the shutdown channel, sent either by the server task or
     // another task when they complete (which means they failed)
-    #[expect(clippy::pattern_type_mismatch, reason = "Tokio")]
-    {
-        tokio::select! {
-            _ = signal_handlers::wait_for_sigint() => {
+    tokio::select! {
+        result = signal_handlers::wait_for_sigterm() => {
+            if let Err(error) = result {
+                event!(Level::ERROR, ?error, "Failed to register SIGERM handler, aborting");
+            } else {
                 // we completed because ...
-                event!(Level::WARN, message = "CTRL+C detected, stopping all tasks");
-            },
-            _ = signal_handlers::wait_for_sigterm() => {
+                event!(Level::WARN, "Sigterm detected, stopping all tasks");
+            }
+        },
+        result = signal_handlers::wait_for_sigint() => {
+            if let Err(error) = result {
+                event!(Level::ERROR, ?error, "Failed to register CTRL+C handler, aborting");
+            } else {
                 // we completed because ...
-                event!(Level::WARN, message = "Sigterm detected, stopping all tasks");
-            },
-            () = cancellation_token.cancelled() => {
-                event!(Level::WARN, "Underlying task stopped, stopping all others tasks");
-            },
-        }
+                event!(Level::WARN, "CTRL+C detected, stopping all tasks");
+            }
+        },
+        () = cancellation_token.cancelled() => {
+            event!(Level::WARN, "Underlying task stopped, stopping all others tasks");
+        },
     }
 
     // backup, in case we forgot a dropguard somewhere

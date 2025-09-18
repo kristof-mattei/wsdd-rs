@@ -151,15 +151,12 @@ async fn listen_forever(
     unicast: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
     loop {
-        #[expect(clippy::pattern_type_mismatch, reason = "Tokio macro")]
-        let message = {
-            tokio::select! {
-                () = cancellation_token.cancelled() => {
-                    break;
-                },
-                message = receiver.recv() => {
-                    message
-                }
+        let message = tokio::select! {
+            () = cancellation_token.cancelled() => {
+                break;
+            },
+            message = receiver.recv() => {
+                message
             }
         };
 
