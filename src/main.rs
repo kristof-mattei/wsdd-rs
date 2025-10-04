@@ -98,6 +98,24 @@ fn main() -> Result<(), eyre::Report> {
     result
 }
 
+fn print_header() {
+    const NAME: &str = env!("CARGO_PKG_NAME");
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+    event!(
+        Level::INFO,
+        "{} v{} - built for {}-{}",
+        NAME,
+        VERSION,
+        std::env::var("TARGETARCH")
+            .as_deref()
+            .unwrap_or("unknown-arch"),
+        std::env::var("TARGETVARIANT")
+            .as_deref()
+            .unwrap_or("base variant")
+    );
+}
+
 #[expect(clippy::too_many_lines, reason = "WIP")]
 async fn start_tasks() -> Result<(), eyre::Report> {
     let config = Arc::new(parse_cli().inspect_err(|error| {
@@ -110,21 +128,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
         }
     })?);
 
-    let name = env!("CARGO_PKG_NAME");
-    let version = env!("CARGO_PKG_VERSION");
-
-    event!(
-        Level::INFO,
-        "{} v{} - built for {}-{}",
-        name,
-        version,
-        std::env::var("TARGETARCH")
-            .as_deref()
-            .unwrap_or("unknown-arch"),
-        std::env::var("TARGETVARIANT")
-            .as_deref()
-            .unwrap_or("base variant")
-    );
+    print_header();
 
     config.log();
 
@@ -158,7 +162,9 @@ async fn start_tasks() -> Result<(), eyre::Report> {
 
             match address_monitor.handle_change().await {
                 Ok(()) => event!(Level::INFO, "Address Monitor stopped listening"),
-                Err(error) => event!(Level::ERROR, ?error, "TODO"),
+                Err(error) => {
+                    event!(Level::ERROR, ?error, "TODO");
+                },
             }
         });
     }
