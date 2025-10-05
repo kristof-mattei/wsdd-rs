@@ -46,7 +46,7 @@ impl WSDClient {
         config: Arc<Config>,
         devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
         messages_built: Arc<AtomicU64>,
-        network_address: NetworkAddress,
+        bound_to: NetworkAddress,
         recv_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
         mc_send_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
         multicast: Sender<Box<[u8]>>,
@@ -54,7 +54,7 @@ impl WSDClient {
     ) -> Self {
         let cancellation_token = cancellation_token.child_token();
 
-        let address = network_address.address;
+        let address = bound_to.address;
 
         let probes = Arc::new(RwLock::new(HashMap::<Urn, u128>::new()));
 
@@ -63,7 +63,7 @@ impl WSDClient {
             Arc::clone(&config),
             devices,
             Arc::clone(&messages_built),
-            network_address,
+            bound_to,
             recv_socket_receiver,
             mc_send_socket_receiver,
             multicast.clone(),
@@ -177,7 +177,7 @@ async fn handle_hello(
     config: &Config,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     messages_built: &AtomicU64,
-    network_address: &NetworkAddress,
+    bound_to: &NetworkAddress,
     multicast: &Sender<Box<[u8]>>,
     mut reader: NsReader<&[u8]>,
 ) -> Result<(), eyre::Report> {
@@ -195,21 +195,13 @@ async fn handle_hello(
         return Ok(());
     };
 
-    let Some(xaddr) = __extract_xaddr(network_address.address, &xaddrs) else {
+    let Some(xaddr) = __extract_xaddr(bound_to.address, &xaddrs) else {
         return Ok(());
     };
 
     event!(Level::INFO, "Hello from {} on {}", endpoint, xaddr);
 
-    perform_metadata_exchange(
-        config,
-        devices,
-        messages_built,
-        network_address,
-        endpoint,
-        xaddr,
-    )
-    .await?;
+    perform_metadata_exchange(config, devices, messages_built, bound_to, endpoint, xaddr).await?;
 
     Ok(())
 }
@@ -240,7 +232,7 @@ async fn handle_probe_match(
     config: &Config,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     messages_built: &AtomicU64,
-    network_address: &NetworkAddress,
+    bound_to: &NetworkAddress,
     relates_to: Option<Urn>,
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
     multicast: &Sender<Box<[u8]>>,
@@ -277,7 +269,7 @@ async fn handle_probe_match(
         return Ok(());
     };
 
-    let Some(xaddr) = __extract_xaddr(network_address.address, &xaddrs) else {
+    let Some(xaddr) = __extract_xaddr(bound_to.address, &xaddrs) else {
         return Ok(());
     };
 
@@ -287,7 +279,7 @@ async fn handle_probe_match(
         config,
         Arc::clone(&devices),
         messages_built,
-        network_address,
+        bound_to,
         endpoint,
         xaddr,
     )
@@ -300,7 +292,7 @@ async fn handle_resolve_match(
     config: &Config,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     messages_built: &AtomicU64,
-    network_address: &NetworkAddress,
+    bound_to: &NetworkAddress,
     mut reader: NsReader<&[u8]>,
 ) -> Result<(), eyre::Report> {
     parser::generic::parse_generic_body_paths(
@@ -319,7 +311,7 @@ async fn handle_resolve_match(
         return Ok(());
     };
 
-    let Some(xaddr) = __extract_xaddr(network_address.address, &xaddrs) else {
+    let Some(xaddr) = __extract_xaddr(bound_to.address, &xaddrs) else {
         event!(
             Level::ERROR,
             "No valid URL in xaddr, but this is a bug in xaddr, where we're too strict"
@@ -330,15 +322,7 @@ async fn handle_resolve_match(
 
     event!(Level::DEBUG, %endpoint, ?xaddr, "Resolve match");
 
-    perform_metadata_exchange(
-        config,
-        devices,
-        messages_built,
-        network_address,
-        endpoint,
-        xaddr,
-    )
-    .await?;
+    perform_metadata_exchange(config, devices, messages_built, bound_to, endpoint, xaddr).await?;
 
     Ok(())
 }
@@ -347,7 +331,7 @@ async fn perform_metadata_exchange(
     config: &Config,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     messages_built: &AtomicU64,
-    network_address: &NetworkAddress,
+    bound_to: &NetworkAddress,
     endpoint: Uuid,
     xaddr: Url,
 ) -> Result<(), eyre::Report> {
@@ -360,7 +344,7 @@ async fn perform_metadata_exchange(
 
     let body = build_getmetadata_message(config, endpoint, messages_built)?;
 
-    let client_builder = reqwest::ClientBuilder::new().local_address(network_address.address);
+    let client_builder = reqwest::ClientBuilder::new().local_address(bound_to.address);
 
     let builder = client_builder
         .build()?
@@ -378,7 +362,7 @@ async fn perform_metadata_exchange(
         Ok(response) => {
             let response = response.bytes().await?;
 
-            handle_metadata(devices, &response, endpoint, xaddr, network_address).await?;
+            handle_metadata(devices, &response, endpoint, xaddr, bound_to).await?;
         },
         Err(error) => {
             let url = error.url().map(ToString::to_string);
@@ -410,18 +394,16 @@ async fn handle_metadata(
     meta: &Bytes,
     endpoint: Uuid,
     xaddr: Url,
-    network_address: &NetworkAddress,
+    bound_to: &NetworkAddress,
 ) -> Result<(), eyre::Report> {
     let device_uuid = endpoint;
 
     match devices.write().await.entry(device_uuid) {
         hashbrown::hash_map::Entry::Occupied(mut occupied_entry) => {
-            occupied_entry
-                .get_mut()
-                .update(meta, xaddr, network_address)?;
+            occupied_entry.get_mut().update(meta, xaddr, bound_to)?;
         },
         hashbrown::hash_map::Entry::Vacant(vacant_entry) => {
-            vacant_entry.insert(WSDDiscoveredDevice::new(meta, xaddr, network_address)?);
+            vacant_entry.insert(WSDDiscoveredDevice::new(meta, xaddr, bound_to)?);
         },
     }
 
@@ -435,7 +417,7 @@ async fn listen_forever(
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     message_handler: MessageHandler,
     messages_built: Arc<AtomicU64>,
-    network_address: NetworkAddress,
+    bound_to: NetworkAddress,
     mut recv_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
     mut mc_send_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
     multicast: Sender<Box<[u8]>>,
@@ -479,7 +461,7 @@ async fn listen_forever(
                     &config,
                     Arc::clone(&devices),
                     &messages_built,
-                    &network_address,
+                    &bound_to,
                     &multicast,
                     body_reader,
                 )
@@ -491,7 +473,7 @@ async fn listen_forever(
                     &config,
                     Arc::clone(&devices),
                     &messages_built,
-                    &network_address,
+                    &bound_to,
                     header.relates_to,
                     Arc::clone(&probes),
                     &multicast,
@@ -504,7 +486,7 @@ async fn listen_forever(
                     &config,
                     Arc::clone(&devices),
                     &messages_built,
-                    &network_address,
+                    &bound_to,
                     body_reader,
                 )
                 .await
@@ -536,18 +518,17 @@ fn spawn_receiver_loop(
     config: Arc<Config>,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     messages_built: Arc<AtomicU64>,
-    network_address: NetworkAddress,
+    bound_to: NetworkAddress,
     recv_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
     mc_send_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
     multicast: Sender<Box<[u8]>>,
     unicast: Sender<(SocketAddr, Box<[u8]>)>,
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
 ) {
-    let message_handler =
-        MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_address.clone());
+    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to.clone());
 
     spawn_with_name(
-        format!("wsd client ({})", network_address.address).as_str(),
+        format!("wsd client ({})", bound_to.address).as_str(),
         async move {
             listen_forever(
                 cancellation_token,
@@ -555,7 +536,7 @@ fn spawn_receiver_loop(
                 devices,
                 message_handler,
                 messages_built,
-                network_address,
+                bound_to,
                 recv_socket_receiver,
                 mc_send_socket_receiver,
                 multicast,
@@ -644,7 +625,7 @@ mod tests {
 
     #[tokio::test]
     async fn handles_hello_with_xaddr() {
-        let (message_handler, network_address) =
+        let (message_handler, bound_to) =
             build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::LOCALHOST));
 
         // client
@@ -723,7 +704,7 @@ mod tests {
             &config,
             Arc::clone(&client_devices),
             &client_messages_built,
-            &network_address,
+            &bound_to,
             &multicast_sender,
             reader,
         )
