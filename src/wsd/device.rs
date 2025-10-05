@@ -232,7 +232,7 @@ where
             XmlEvent::StartElement { name, .. } => {
                 if name.namespace_ref() == Some(namespace) {
                     let text = read_text(reader, &name)?;
-                    let text = text.unwrap_or_else(String::new);
+                    let text = text.unwrap_or_default();
 
                     // add to bag
                     let tag_name = name.local_name;
