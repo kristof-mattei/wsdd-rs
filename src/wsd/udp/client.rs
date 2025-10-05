@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::{Duration, SystemTime};
 
+use bytes::Bytes;
 use color_eyre::eyre;
 use hashbrown::HashMap;
 use quick_xml::NsReader;
@@ -16,7 +17,7 @@ use uuid::fmt::Urn;
 
 use super::HANDLED_MESSAGES;
 use crate::config::Config;
-use crate::constants::{self, APP_MAX_DELAY, PROBE_TIMEOUT};
+use crate::constants::{self, APP_MAX_DELAY, PROBE_TIMEOUT, XML_WSD_NAMESPACE};
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::{Builder, MessageType};
 use crate::soap::parser::generic::extract_endpoint_metadata;
@@ -180,7 +181,7 @@ async fn handle_hello(
     multicast: &Sender<Box<[u8]>>,
     mut reader: NsReader<&[u8]>,
 ) -> Result<(), eyre::Report> {
-    parser::generic::parse_generic_body(&mut reader, "Hello")?;
+    parser::generic::parse_generic_body(&mut reader, XML_WSD_NAMESPACE, "Hello")?;
 
     let (endpoint, xaddrs) = parser::generic::extract_endpoint_metadata(&mut reader)?;
 
@@ -217,13 +218,19 @@ async fn handle_bye(
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     mut reader: NsReader<&[u8]>,
 ) -> Result<(), eyre::Report> {
-    parser::generic::parse_generic_body(&mut reader, "Bye")?;
+    parser::generic::parse_generic_body(&mut reader, XML_WSD_NAMESPACE, "Bye")?;
 
     let (endpoint, _) = parser::generic::extract_endpoint_metadata(&mut reader)?;
 
     let mut guard = devices.write().await;
 
-    guard.remove(&endpoint);
+    if guard.remove(&endpoint).is_none() {
+        event!(
+            Level::INFO,
+            ?endpoint,
+            "Tried to remove device but we didn't have a record of said UUID"
+        );
+    }
 
     Ok(())
 }
@@ -244,7 +251,13 @@ async fn handle_probe_match(
         return Ok(());
     };
 
-    parser::generic::parse_generic_body_paths(&mut reader, &["ProbeMatches", "ProbeMatch"])?;
+    parser::generic::parse_generic_body_paths(
+        &mut reader,
+        &[
+            (XML_WSD_NAMESPACE, "ProbeMatches"),
+            (XML_WSD_NAMESPACE, "ProbeMatch"),
+        ],
+    )?;
 
     // do not handle to probematches issued not sent by ourself
     if probes.read().await.get(&relates_to).is_none() {
@@ -290,7 +303,13 @@ async fn handle_resolve_match(
     network_address: &NetworkAddress,
     mut reader: NsReader<&[u8]>,
 ) -> Result<(), eyre::Report> {
-    parser::generic::parse_generic_body_paths(&mut reader, &["ResolveMatches", "ResolveMatch"])?;
+    parser::generic::parse_generic_body_paths(
+        &mut reader,
+        &[
+            (XML_WSD_NAMESPACE, "ResolveMatches"),
+            (XML_WSD_NAMESPACE, "ResolveMatch"),
+        ],
+    )?;
 
     let (endpoint, xaddrs) = extract_endpoint_metadata(&mut reader)?;
 
@@ -357,9 +376,9 @@ async fn perform_metadata_exchange(
 
     match response {
         Ok(response) => {
-            let response = response.text().await?;
+            let response = response.bytes().await?;
 
-            handle_metadata(devices, response, endpoint, xaddr).await?;
+            handle_metadata(devices, &response, endpoint, xaddr, network_address).await?;
         },
         Err(error) => {
             let url = error.url().map(ToString::to_string);
@@ -386,21 +405,23 @@ fn build_getmetadata_message(
     Ok(message)
 }
 
-//     def handle_metadata(self, meta: str, endpoint: str, xaddr: str) -> None:
 async fn handle_metadata(
     devices: Arc<RwLock<hashbrown::HashMap<Uuid, WSDDiscoveredDevice>>>,
-    meta: String,
+    meta: &Bytes,
     endpoint: Uuid,
     xaddr: Url,
+    network_address: &NetworkAddress,
 ) -> Result<(), eyre::Report> {
     let device_uuid = endpoint;
 
     match devices.write().await.entry(device_uuid) {
         hashbrown::hash_map::Entry::Occupied(mut occupied_entry) => {
-            occupied_entry.get_mut().update(meta, xaddr);
+            occupied_entry
+                .get_mut()
+                .update(meta, xaddr, network_address)?;
         },
         hashbrown::hash_map::Entry::Vacant(vacant_entry) => {
-            vacant_entry.insert(WSDDiscoveredDevice::new(meta, xaddr));
+            vacant_entry.insert(WSDDiscoveredDevice::new(meta, xaddr, network_address)?);
         },
     }
 
@@ -560,7 +581,7 @@ mod tests {
 
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler_with_network_address};
-    use crate::wsd::udp::client::handle_hello;
+    use crate::wsd::udp::client::{handle_bye, handle_hello};
 
     #[tokio::test]
     async fn handles_hello_without_xaddr() {
@@ -576,11 +597,11 @@ mod tests {
 
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_message_id = Uuid::new_v4();
         let host_endpoint_uuid = Uuid::new_v4();
         let hello_without_xaddrs = format!(
             include_str!("../../test/hello-without-xaddrs-template.xml"),
-            host_message_id, host_endpoint_uuid
+            Uuid::new_v4(),
+            host_endpoint_uuid
         );
 
         let (multicast_sender, mut multicast_receiver) = tokio::sync::mpsc::channel(1);
@@ -655,12 +676,16 @@ mod tests {
             host_endpoint_uuid, client_endpoint_id
         );
 
-        let metadata = "hello, world";
-
         let mock = server
             .mock("POST", &*format!("/{}", host_endpoint_uuid))
             .with_status(200)
             .with_body_from_request(move |request| {
+                let metadata: String = format!(
+                    include_str!("../../test/get-response-template.xml"),
+                    Uuid::new_v4(),
+                    Uuid::new_v4(),
+                );
+
                 assert_eq!(
                     to_string_pretty(expected_get.as_bytes()).unwrap(),
                     to_string_pretty(request.body().unwrap()).unwrap()
@@ -671,10 +696,11 @@ mod tests {
             .create_async()
             .await;
 
-        let resolve = format!(
+        let hello = format!(
             include_str!("../../test/hello-template.xml"),
             host_message_id,
             host_instance_id,
+            Uuid::new_v4(),
             host_endpoint_uuid,
             host_ip,
             host_port,
@@ -687,7 +713,7 @@ mod tests {
 
         let (_, reader) = message_handler
             .deconstruct_message(
-                resolve.as_bytes(),
+                hello.as_bytes(),
                 Some(SocketAddr::V4(SocketAddrV4::new(host_ip, 5000))),
             )
             .await
@@ -712,6 +738,169 @@ mod tests {
 
         assert!(
             client_devices
+                .read()
+                .await
+                .contains_key(&host_endpoint_uuid)
+        );
+    }
+
+    #[tokio::test]
+    async fn handles_bye() {
+        let (message_handler, _client_network_address) =
+            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
+
+        // client
+        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+
+        // host
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let host_endpoint_uuid = Uuid::new_v4();
+        let host_instance_id = "host-instance-id";
+        let bye = format!(
+            include_str!("../../test/bye-template.xml"),
+            Uuid::new_v4(),
+            host_instance_id,
+            Uuid::new_v4(),
+            host_endpoint_uuid
+        );
+
+        let (_, reader) = message_handler
+            .deconstruct_message(
+                bye.as_bytes(),
+                Some(SocketAddr::V4(SocketAddrV4::new(host_ip, 5000))),
+            )
+            .await
+            .unwrap();
+
+        handle_bye(Arc::clone(&client_devices), reader)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn handles_hello_bye() {
+        let (message_handler, network_address) =
+            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::LOCALHOST));
+
+        // client
+        let client_endpoint_id = Uuid::new_v4();
+        let client_instance_id = "client-instance-id";
+        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+        let client_messages_built = AtomicU64::new(0);
+
+        // host
+        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
+            // a host in IPv4 form ensures we bind to an IPv4 address
+            host: "127.0.0.1",
+            // random port
+            port: 0,
+            assert_on_drop: true,
+        })
+        .await;
+
+        let IpAddr::V4(host_ip) = server.socket_address().ip() else {
+            panic!("Invalid test setup");
+        };
+        let host_port = server.socket_address().port();
+        let host_instance_id = "host-instance-id";
+        let host_endpoint_uuid = Uuid::new_v4();
+
+        let expected_get = format!(
+            include_str!("../../test/get-template.xml"),
+            host_endpoint_uuid, client_endpoint_id
+        );
+
+        let mock = server
+            .mock("POST", &*format!("/{}", host_endpoint_uuid))
+            .with_status(200)
+            .with_body_from_request(move |request| {
+                let metadata: String = format!(
+                    include_str!("../../test/get-response-template.xml"),
+                    Uuid::new_v4(),
+                    Uuid::new_v4(),
+                );
+
+                assert_eq!(
+                    to_string_pretty(expected_get.as_bytes()).unwrap(),
+                    to_string_pretty(request.body().unwrap()).unwrap()
+                );
+
+                metadata.into()
+            })
+            .create_async()
+            .await;
+
+        let hello = format!(
+            include_str!("../../test/hello-template.xml"),
+            Uuid::new_v4(),
+            host_instance_id,
+            Uuid::new_v4(),
+            host_endpoint_uuid,
+            host_ip,
+            host_port,
+            host_endpoint_uuid
+        );
+
+        let (multicast_sender, mut multicast_receiver) = tokio::sync::mpsc::channel(1);
+
+        let config = Arc::new(build_config(client_endpoint_id, client_instance_id));
+
+        let (_, reader) = message_handler
+            .deconstruct_message(
+                hello.as_bytes(),
+                Some(SocketAddr::V4(SocketAddrV4::new(host_ip, 5000))),
+            )
+            .await
+            .unwrap();
+
+        handle_hello(
+            &config,
+            Arc::clone(&client_devices),
+            &client_messages_built,
+            &network_address,
+            &multicast_sender,
+            reader,
+        )
+        .await
+        .unwrap();
+
+        // we expect no resolve to be sent
+        multicast_receiver.try_recv().unwrap_err();
+
+        // ensure the mock is hit
+        mock.assert_async().await;
+
+        assert!(
+            client_devices
+                .read()
+                .await
+                .contains_key(&host_endpoint_uuid)
+        );
+
+        // and now the bye
+        let bye = format!(
+            include_str!("../../test/bye-template.xml"),
+            Uuid::new_v4(),
+            host_instance_id,
+            Uuid::new_v4(),
+            host_endpoint_uuid
+        );
+
+        let (_, reader) = message_handler
+            .deconstruct_message(
+                bye.as_bytes(),
+                Some(SocketAddr::V4(SocketAddrV4::new(host_ip, 5000))),
+            )
+            .await
+            .unwrap();
+
+        handle_bye(Arc::clone(&client_devices), reader)
+            .await
+            .unwrap();
+
+        // ensure the host is no longer present
+        assert!(
+            !client_devices
                 .read()
                 .await
                 .contains_key(&host_endpoint_uuid)

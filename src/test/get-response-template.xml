@@ -11,7 +11,7 @@
     <soap:Header>
         <wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
         <wsa:Action>http://schemas.xmlsoap.org/ws/2004/09/transfer/GetResponse</wsa:Action>
-        <wsa:MessageID>urn:uuid:00000000-0000-0000-0000-000000000000</wsa:MessageID>
+        <wsa:MessageID>urn:uuid:{}</wsa:MessageID>
         <wsa:RelatesTo>urn:uuid:{}</wsa:RelatesTo>
     </soap:Header>
     <soap:Body>

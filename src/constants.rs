@@ -24,7 +24,6 @@ pub const WSDP_URI: &str = "http://schemas.xmlsoap.org/ws/2006/02/devprof";
 pub const XML_SOAP_NAMESPACE: &str = "http://www.w3.org/2003/05/soap-envelope";
 pub const XML_WSA_NAMESPACE: &str = WSA_URI;
 pub const XML_WSD_NAMESPACE: &str = WSD_URI;
-#[expect(unused, reason = "WIP")]
 pub const XML_WSX_NAMESPACE: &str = "http://schemas.xmlsoap.org/ws/2004/09/mex";
 pub const XML_WSDP_NAMESPACE: &str = WSDP_URI;
 #[expect(unused, reason = "WIP")]
