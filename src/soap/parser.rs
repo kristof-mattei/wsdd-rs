@@ -142,7 +142,7 @@ pub fn deconstruct_raw(raw: &[u8]) -> RawMessageResult<'_> {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
                 if name.namespace_ref() == Some(XML_SOAP_NAMESPACE) {
-                    if name.borrow().local_name == "Header" {
+                    if name.local_name == "Header" {
                         header = Some(parse_header(&mut reader)?);
                     } else if name.local_name == "Body" {
                         has_body = true;
