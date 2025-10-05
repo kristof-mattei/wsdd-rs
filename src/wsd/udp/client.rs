@@ -228,7 +228,7 @@ async fn handle_bye(
         event!(
             Level::INFO,
             ?endpoint,
-            "Tried to remove device but we didn't have a record of said UUID"
+            "Received bye, but not record of that endpoint"
         );
     }
 
