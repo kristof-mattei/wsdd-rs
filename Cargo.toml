@@ -59,12 +59,13 @@ tracing-subscriber = { version = "0.3.20", features = [
 ] }
 url = "2.5.7"
 uuid = { version = "1.18.1", features = ["v1", "v4", "v5"] }
+xml = "1.0.0"
 zerocopy = { version = "0.8.27", features = ["derive"] }
 
 [dev-dependencies]
 mockito = "=1.7.0"
 pretty_assertions = "=1.4.1"
-xml-rs = "=1.0.0"
+xml = "=1.0.0"
 
 [lints.clippy]
 # don't stop from compiling / running

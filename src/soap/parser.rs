@@ -2,37 +2,36 @@ pub mod generic;
 pub mod probe;
 pub mod resolve;
 
-use std::borrow::Cow;
+use std::io::BufReader;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use quick_xml::events::Event;
-use quick_xml::name::Namespace;
-use quick_xml::name::ResolveResult::Bound;
-use quick_xml::reader::NsReader;
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{Level, event};
 use uuid::fmt::Urn;
+use xml::reader::XmlEvent;
+use xml::{EventReader, ParserConfig};
 
 use crate::constants::{WSA_URI, XML_SOAP_NAMESPACE};
 use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
+use crate::xml::{TextReadError, read_text};
 
 pub struct MessageHandler {
     handled_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
     network_address: NetworkAddress,
 }
 
-pub struct Header<'r> {
+pub struct Header {
     #[expect(unused, reason = "WIP")]
-    pub to: Option<Cow<'r, str>>,
-    pub action: Cow<'r, str>,
+    pub to: Option<Box<str>>,
+    pub action: Box<str>,
     pub message_id: Urn,
     pub relates_to: Option<Urn>,
 }
 
-type ParsedHeader<'r> = Result<Header<'r>, HeaderError>;
+type ParsedHeader = Result<Header, HeaderError>;
 
 #[derive(Error, Debug)]
 pub enum MessageHandlerError {
@@ -43,7 +42,7 @@ pub enum MessageHandlerError {
     #[error("Message already processed")]
     DuplicateMessage,
     #[error("Error parsing XML")]
-    XmlError(#[from] quick_xml::errors::Error),
+    XmlError(#[from] xml::reader::Error),
     #[error("Header Error")]
     HeaderError(#[from] HeaderError),
 }
@@ -83,7 +82,22 @@ impl MessageHandlerError {
                     "XML Message Header is missing pieces",
                 );
             },
-            &MessageHandlerError::HeaderError(HeaderError::XmlError(ref error))
+            &MessageHandlerError::HeaderError(
+                ref error @ HeaderError::TextReadError(TextReadError::NonTextContents(ref content)),
+            ) => {
+                event!(
+                    Level::ERROR,
+                    ?error,
+                    ?content,
+                    message = &*String::from_utf8_lossy(buffer),
+                    "Invalid contents in text element",
+                );
+            },
+
+            &MessageHandlerError::HeaderError(HeaderError::TextReadError(
+                TextReadError::XmlError(ref error),
+            ))
+            | &MessageHandlerError::HeaderError(HeaderError::XmlError(ref error))
             | &MessageHandlerError::XmlError(ref error) => {
                 event!(
                     Level::ERROR,
@@ -106,26 +120,31 @@ pub enum HeaderError {
     InvalidMessageId(uuid::Error),
     #[error("Invalid Relates To")]
     InvalidRelatesTo(uuid::Error),
+    #[error("Error reading text")]
+    TextReadError(#[from] TextReadError),
     #[error("Error parsing XML")]
-    XmlError(#[from] quick_xml::errors::Error),
+    XmlError(#[from] xml::reader::Error),
 }
 
-pub fn deconstruct_raw(
-    raw: &[u8],
-) -> Result<(Header<'_>, bool, NsReader<&[u8]>), MessageHandlerError> {
-    let mut reader = NsReader::from_reader(raw);
+type RawMessageResult<'r> =
+    Result<(Header, bool, EventReader<BufReader<&'r [u8]>>), MessageHandlerError>;
+
+pub fn deconstruct_raw(raw: &[u8]) -> RawMessageResult<'_> {
+    let mut reader = ParserConfig::new()
+        .ignore_comments(true)
+        .create_reader(BufReader::new(raw));
 
     let mut header = None;
     let mut has_body = false;
 
     // as per https://www.w3.org/TR/soap12/#soapenvelope, the Header, Body order is fixed. We don't need to code for Body, Header
     loop {
-        match reader.read_resolved_event()? {
-            (Bound(Namespace(ns)), Event::Start(e)) => {
-                if ns == XML_SOAP_NAMESPACE.as_bytes() {
-                    if e.name().local_name().as_ref() == b"Header" {
+        match reader.next()? {
+            XmlEvent::StartElement { name, .. } => {
+                if name.namespace_ref() == Some(XML_SOAP_NAMESPACE) {
+                    if name.borrow().local_name == "Header" {
                         header = Some(parse_header(&mut reader)?);
-                    } else if e.name().local_name().as_ref() == b"Body" {
+                    } else if name.local_name == "Body" {
                         has_body = true;
                         break;
                     } else {
@@ -133,10 +152,17 @@ pub fn deconstruct_raw(
                     }
                 }
             },
-            (_, Event::Eof) => {
+            XmlEvent::EndDocument => {
                 break;
             },
-            _ => (),
+            XmlEvent::StartDocument { .. }
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::EndElement { .. }
+            | XmlEvent::CData(_)
+            | XmlEvent::Comment(_)
+            | XmlEvent::Characters(_)
+            | XmlEvent::Whitespace(_)
+            | XmlEvent::Doctype { .. } => (),
         }
     }
 
@@ -163,7 +189,7 @@ impl MessageHandler {
         &self,
         raw: &'r [u8],
         src: Option<SocketAddr>,
-    ) -> Result<(Header<'r>, NsReader<&'r [u8]>), MessageHandlerError> {
+    ) -> Result<(Header, EventReader<BufReader<&'r [u8]>>), MessageHandlerError> {
         let (header, has_body, reader) = deconstruct_raw(raw)?;
 
         // check for duplicates
@@ -232,7 +258,7 @@ impl MessageHandler {
     }
 }
 
-fn parse_header<'r>(reader: &mut NsReader<&'r [u8]>) -> ParsedHeader<'r> {
+fn parse_header(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedHeader {
     // <wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
     let mut to = None;
     // <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches</wsa:Action>
@@ -245,32 +271,34 @@ fn parse_header<'r>(reader: &mut NsReader<&'r [u8]>) -> ParsedHeader<'r> {
     // <wsd:AppSequence InstanceId="1742000334" SequenceId="urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9" MessageNumber="1" />
 
     loop {
-        match reader.read_resolved_event()? {
-            (Bound(Namespace(ns)), Event::Start(e)) => {
-                if ns == WSA_URI.as_bytes() {
+        match reader.next()? {
+            XmlEvent::StartElement { name, .. } => {
+                if name.namespace_ref() == Some(WSA_URI) {
                     // header items can be in any order, as per SOAP 1.1 and 1.2
-                    match e.name().local_name().as_ref() {
-                        b"To" => {
-                            to = Some(reader.read_text(e.to_end().name())?);
+                    match &*name.local_name {
+                        "To" => {
+                            to = read_text(reader, &name)?.map(String::into_boxed_str);
                         },
-                        b"Action" => {
-                            action = Some(reader.read_text(e.to_end().name())?);
+                        "Action" => {
+                            action = read_text(reader, &name)?.map(String::into_boxed_str);
                         },
-                        b"MessageID" => {
-                            let m_id = reader.read_text(e.to_end().name())?;
+                        "MessageID" => {
+                            let m_id = read_text(reader, &name)?
+                                .map(|m_id| {
+                                    m_id.parse::<Urn>().map_err(HeaderError::InvalidMessageId)
+                                })
+                                .transpose()?;
 
-                            let m_id =
-                                m_id.parse::<Urn>().map_err(HeaderError::InvalidMessageId)?;
-
-                            message_id = Some(m_id);
+                            message_id = m_id;
                         },
-                        b"RelatesTo" => {
-                            let r_to = reader.read_text(e.to_end().name())?;
+                        "RelatesTo" => {
+                            let r_to = read_text(reader, &name)?
+                                .map(|r_to| {
+                                    r_to.parse::<Urn>().map_err(HeaderError::InvalidRelatesTo)
+                                })
+                                .transpose()?;
 
-                            let r_to =
-                                r_to.parse::<Urn>().map_err(HeaderError::InvalidRelatesTo)?;
-
-                            relates_to = Some(r_to);
+                            relates_to = r_to;
                         },
                         _ => {
                             // Not a match, continue
@@ -278,14 +306,19 @@ fn parse_header<'r>(reader: &mut NsReader<&'r [u8]>) -> ParsedHeader<'r> {
                     }
                 }
             },
-            (Bound(Namespace(ns)), Event::End(e)) => {
-                if ns == XML_SOAP_NAMESPACE.as_bytes()
-                    && e.name().local_name().as_ref() == b"Header"
-                {
+            XmlEvent::EndElement { name, .. } => {
+                if name.namespace_ref() == Some(XML_SOAP_NAMESPACE) && name.local_name == "Header" {
                     break;
                 }
             },
-            _ => (),
+            XmlEvent::StartDocument { .. }
+            | XmlEvent::EndDocument
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::CData(_)
+            | XmlEvent::Comment(_)
+            | XmlEvent::Characters(_)
+            | XmlEvent::Whitespace(_)
+            | XmlEvent::Doctype { .. } => (),
         }
     }
 

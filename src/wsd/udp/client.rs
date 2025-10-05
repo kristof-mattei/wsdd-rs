@@ -1,3 +1,4 @@
+use std::io::BufReader;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
@@ -6,7 +7,6 @@ use std::time::{Duration, SystemTime};
 use bytes::Bytes;
 use color_eyre::eyre;
 use hashbrown::HashMap;
-use quick_xml::NsReader;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::CancellationToken;
@@ -14,6 +14,7 @@ use tracing::{Level, event};
 use url::{Host, Url};
 use uuid::Uuid;
 use uuid::fmt::Urn;
+use xml::EventReader;
 
 use super::HANDLED_MESSAGES;
 use crate::config::Config;
@@ -179,7 +180,7 @@ async fn handle_hello(
     messages_built: &AtomicU64,
     bound_to: &NetworkAddress,
     multicast: &Sender<Box<[u8]>>,
-    mut reader: NsReader<&[u8]>,
+    mut reader: EventReader<BufReader<&[u8]>>,
 ) -> Result<(), eyre::Report> {
     parser::generic::parse_generic_body(&mut reader, XML_WSD_NAMESPACE, "Hello")?;
 
@@ -208,7 +209,7 @@ async fn handle_hello(
 
 async fn handle_bye(
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
-    mut reader: NsReader<&[u8]>,
+    mut reader: EventReader<BufReader<&[u8]>>,
 ) -> Result<(), eyre::Report> {
     parser::generic::parse_generic_body(&mut reader, XML_WSD_NAMESPACE, "Bye")?;
 
@@ -236,7 +237,7 @@ async fn handle_probe_match(
     relates_to: Option<Urn>,
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
     multicast: &Sender<Box<[u8]>>,
-    mut reader: NsReader<&[u8]>,
+    mut reader: EventReader<BufReader<&[u8]>>,
 ) -> Result<(), eyre::Report> {
     let Some(relates_to) = relates_to else {
         event!(Level::DEBUG, "missing `RelatesTo`");
@@ -293,7 +294,7 @@ async fn handle_resolve_match(
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     messages_built: &AtomicU64,
     bound_to: &NetworkAddress,
-    mut reader: NsReader<&[u8]>,
+    mut reader: EventReader<BufReader<&[u8]>>,
 ) -> Result<(), eyre::Report> {
     parser::generic::parse_generic_body_paths(
         &mut reader,
