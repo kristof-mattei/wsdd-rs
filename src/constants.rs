@@ -48,6 +48,15 @@ pub const WSD_BYE: &str = concatcp!(WSD_URI, "/Bye");
 pub const WSD_GET: &str = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Get";
 // WSD_GET_RESPONSE: str = 'http://schemas.xmlsoap.org/ws/2004/09/transfer/GetResponse'
 
+pub const WSDP_THIS_DEVICE: &str = "ThisDevice";
+pub const WSDP_THIS_DEVICE_DIALECT: &str = concatcp!(WSDP_URI, "/", WSDP_THIS_DEVICE);
+pub const WSDP_THIS_MODEL: &str = "ThisModel";
+pub const WSDP_THIS_MODEL_DIALECT: &str = concatcp!(WSDP_URI, "/", WSDP_THIS_MODEL);
+pub const WSDP_RELATIONSHIP: &str = "Relationship";
+pub const WSDP_RELATIONSHIP_DIALECT: &str = concatcp!(WSDP_URI, "/", WSDP_RELATIONSHIP);
+pub const WSDP_RELATIONSHIP_HOST: &str = "host";
+pub const WSDP_RELATIONSHIP_TYPE_HOST: &str = concatcp!(WSDP_URI, "/", WSDP_RELATIONSHIP_HOST);
+
 // WSD_TYPE_DEVICE: str = 'wsdp:Device'
 pub const WSD_TYPE_DEVICE: &str = "wsdp:Device";
 // PUB_COMPUTER: str = 'pub:Computer'

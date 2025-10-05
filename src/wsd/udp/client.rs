@@ -717,12 +717,33 @@ mod tests {
         // ensure the mock is hit
         mock.assert_async().await;
 
-        assert!(
-            client_devices
-                .read()
-                .await
-                .contains_key(&host_endpoint_uuid)
-        );
+        let client_devices = client_devices.read().await;
+
+        let device = client_devices.get(&host_endpoint_uuid);
+
+        assert!(device.is_some());
+
+        let device = device.unwrap();
+
+        let expected_props = HashMap::<_, _>::from_iter([
+            ("Manufacturer", "Synology Inc"),
+            ("FirmwareVersion", "6"),
+            ("FriendlyName", "Synology DiskStation"),
+            ("ModelUrl", "http://www.synology.com"),
+            ("PresentationUrl", "http://www.synology.com"),
+            ("ModelName", "Synology DiskStation"),
+            ("SerialNumber", "6"),
+            ("ModelNumber", "1"),
+            ("ManufacturerUrl", "http://www.synology.com"),
+        ]);
+
+        let device_props = device
+            .props()
+            .iter()
+            .map(|(key, value)| (&**key, &**value))
+            .collect::<HashMap<_, _>>();
+
+        assert_eq!(device_props, expected_props);
     }
 
     #[tokio::test]

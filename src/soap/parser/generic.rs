@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::str::FromStr as _;
 
 use quick_xml::NsReader;
-use quick_xml::events::Event;
+use quick_xml::events::{BytesStart, Event};
 use quick_xml::name::Namespace;
 use quick_xml::name::ResolveResult::Bound;
 use thiserror::Error;
@@ -18,6 +18,8 @@ pub enum GenericParsingError<'p> {
     XmlError(#[from] quick_xml::errors::Error),
     #[error("Missing ./{0} in body")]
     MissingElement(Cow<'p, str>),
+    #[error("Missing closing ./{0} in body")]
+    MissingClosingElement(Cow<'p, str>),
     #[error("Invalid element order")]
     InvalidElementOrder,
     #[error("Invalid UUID")]
@@ -107,7 +109,7 @@ pub fn extract_endpoint_metadata<'raw>(
         );
 
         return Err(GenericParsingError::MissingElement(
-            "wsa/EndpointReference".into(),
+            "wsa:EndpointReference".into(),
         ));
     };
 
@@ -117,11 +119,11 @@ pub fn extract_endpoint_metadata<'raw>(
 }
 
 /// TODO expand to make sure what we search for is at the right depth
-pub fn parse_generic_body<'full_path, 'namespace, 'path>(
-    reader: &mut NsReader<&[u8]>,
+pub fn parse_generic_body<'full_path, 'namespace, 'path, 'reader>(
+    reader: &'reader mut NsReader<&[u8]>,
     namespace: &'namespace str,
     path: &'path str,
-) -> Result<usize, GenericParsingError<'full_path>>
+) -> Result<(BytesStart<'reader>, usize), GenericParsingError<'full_path>>
 where
     'full_path: 'path + 'namespace,
 {
@@ -129,11 +131,13 @@ where
 
     loop {
         match reader.read_resolved_event()? {
-            (Bound(Namespace(ns)), Event::Start(e)) => {
+            (Bound(Namespace(ns)), Event::Start(element)) => {
                 depth += 1;
 
-                if ns == namespace.as_bytes() && e.name().local_name().as_ref() == path.as_bytes() {
-                    return Ok(depth);
+                if ns == namespace.as_bytes()
+                    && element.name().local_name().as_ref() == path.as_bytes()
+                {
+                    return Ok((element, depth));
                 }
             },
             (_, Event::Eof) => {

@@ -38,10 +38,10 @@
                 <wsdp:Relationship Type="http://schemas.xmlsoap.org/ws/2006/02/devprof/host">
                     <wsdp:Host>
                         <wsa:EndpointReference>
-                            <wsa:Address>urn:uuid:fb2f98f6-9055-4f52-8cba-8e4bb7890251</wsa:Address>
+                            <wsa:Address>urn:uuid:dea604bb-e526-46a1-8bdb-121125389a9d</wsa:Address>
                         </wsa:EndpointReference>
                         <wsdp:Types>pub:Computer</wsdp:Types>
-                        <wsdp:ServiceId>urn:uuid:fb2f98f6-9055-4f52-8cba-8e4bb7890251</wsdp:ServiceId>
+                        <wsdp:ServiceId>urn:uuid:dea604bb-e526-46a1-8bdb-121125389a9d</wsdp:ServiceId>
                         <pub:Computer>diskstation/Workgroup:WORKGROUP</pub:Computer>
                     </wsdp:Host>
                 </wsdp:Relationship>
