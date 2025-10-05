@@ -35,19 +35,19 @@ fn parse_probe(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedProbe {
                 if name.namespace_ref() == Some(XML_WSD_NAMESPACE) && name.local_name == "Scopes" {
                     let text = read_text(reader, &name)?;
 
-                    let raw_scopes = text.as_deref().unwrap_or_default();
+                    let raw_scopes = text.unwrap_or_default();
 
                     // TODO: THINK: send fault message (see p. 21 in WSD)
                     // I don't think this is correct?
                     // scopes MAYBE be ommitted...
                     event!(
                         Level::DEBUG,
-                        scopes = raw_scopes,
+                        scopes = &raw_scopes,
                         "scopes unsupported, but probed"
                     );
 
                     return Err(ProbeParsingError::ScopesUnsupported(
-                        raw_scopes.to_owned().into_boxed_str(),
+                        raw_scopes.into_boxed_str(),
                     ));
                 } else if name.namespace_ref() == Some(XML_WSD_NAMESPACE)
                     && name.local_name == "Types"
