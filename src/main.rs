@@ -21,6 +21,7 @@ mod udp_address;
 mod url_ip_addr;
 mod utils;
 mod wsd;
+mod xml;
 
 use std::env::{self, VarError};
 use std::sync::Arc;

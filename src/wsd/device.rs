@@ -1,13 +1,13 @@
+use std::io::BufReader;
+
 use bytes::Bytes;
 use color_eyre::eyre;
 use hashbrown::{HashMap, HashSet};
-use quick_xml::NsReader;
-use quick_xml::events::Event;
-use quick_xml::name::Namespace;
-use quick_xml::name::ResolveResult::Bound;
 use time::OffsetDateTime;
 use tracing::{Level, event};
 use url::Url;
+use xml::EventReader;
+use xml::reader::XmlEvent;
 
 use crate::constants::{
     WSDP_RELATIONSHIP, WSDP_RELATIONSHIP_DIALECT, WSDP_RELATIONSHIP_TYPE_HOST, WSDP_THIS_DEVICE,
@@ -17,6 +17,7 @@ use crate::constants::{
 use crate::network_address::NetworkAddress;
 use crate::soap::parser;
 use crate::soap::parser::generic::{GenericParsingError, parse_generic_body};
+use crate::xml::read_text;
 
 pub struct WSDDiscoveredDevice {
     addresses: HashMap<Box<str>, HashSet<Box<str>>>,
@@ -86,11 +87,11 @@ impl WSDDiscoveredDevice {
 
         // loop though the reader for each wsx:MetadataSection at depth 1 from where we are now
         loop {
-            let element =
+            let (_element, attributes) =
                 match parse_generic_body(&mut reader, XML_WSX_NAMESPACE, "MetadataSection") {
-                    Ok((element, _depth)) => {
+                    Ok((element, attributes, _depth)) => {
                         // we'll need to ensure that the depth is always the same
-                        element
+                        (element, attributes)
                     },
                     Err(GenericParsingError::MissingElement(_)) => {
                         // no more `MetadataSections to be found`
@@ -99,21 +100,20 @@ impl WSDDiscoveredDevice {
                     Err(error) => return Err(error.into()),
                 };
 
-            for attribute in element.attributes() {
-                let attribute =
-                    attribute.map_err(|error| GenericParsingError::XmlError(error.into()))?;
-
-                if attribute.key.0 == b"Dialect" {
-                    let new_props = if attribute.value == WSDP_THIS_DEVICE_DIALECT.as_bytes() {
+            for attribute in attributes {
+                if attribute.name.namespace_ref().is_none()
+                    && attribute.name.local_name == "Dialect"
+                {
+                    let new_props = if attribute.value == WSDP_THIS_DEVICE_DIALECT {
                         extract_wsdp_props(&mut reader, XML_WSDP_NAMESPACE, WSDP_THIS_DEVICE)?
-                    } else if attribute.value == WSDP_THIS_MODEL_DIALECT.as_bytes() {
+                    } else if attribute.value == WSDP_THIS_MODEL_DIALECT {
                         extract_wsdp_props(&mut reader, XML_WSDP_NAMESPACE, WSDP_THIS_MODEL)?
-                    } else if attribute.value == WSDP_RELATIONSHIP_DIALECT.as_bytes() {
+                    } else if attribute.value == WSDP_RELATIONSHIP_DIALECT {
                         extract_host_props(&mut reader)?
                     } else {
                         event!(
                             Level::DEBUG,
-                            dialect = %String::from_utf8_lossy(&attribute.value),
+                            dialect = &attribute.value,
                             "unknown metadata dialect"
                         );
                         break;
@@ -215,7 +215,7 @@ impl WSDDiscoveredDevice {
 }
 
 fn extract_wsdp_props<'full_path, 'namespace, 'path, 'reader>(
-    reader: &'reader mut NsReader<&[u8]>,
+    reader: &'reader mut EventReader<BufReader<&[u8]>>,
     namespace: &'namespace str,
     path: &'path str,
 ) -> Result<HashMap<Box<str>, Box<str>>, GenericParsingError<'full_path>>
@@ -228,30 +228,35 @@ where
     let mut bag = HashMap::<Box<str>, Box<str>>::new();
 
     loop {
-        match reader.read_resolved_event()? {
-            (Bound(Namespace(ns)), Event::Start(e)) => {
-                if ns == namespace.as_bytes() {
-                    let text = reader.read_text(e.name())?;
-                    // add to bag
-                    let tag_name = str::from_utf8(e.local_name().into_inner())
-                        .map_err(|error| quick_xml::Error::Encoding(error.into()))?;
+        match reader.next()? {
+            XmlEvent::StartElement { name, .. } => {
+                if name.namespace_ref() == Some(namespace) {
+                    let text = read_text(reader, &name)?;
+                    let text = text.unwrap_or_default();
 
-                    bag.insert(
-                        tag_name.to_owned().into_boxed_str(),
-                        text.into_owned().into_boxed_str(),
-                    );
+                    // add to bag
+                    let tag_name = name.local_name;
+
+                    bag.insert(tag_name.into_boxed_str(), text.into_boxed_str());
                 }
             },
-            (Bound(Namespace(ns)), Event::End(e)) => {
+            XmlEvent::EndElement { name, .. } => {
                 // this is detection for the closing element of `namespace:path`
-                if ns == namespace.as_bytes() && e.name().local_name().as_ref() == path.as_bytes() {
+
+                if name.namespace_ref() == Some(namespace) && name.local_name == path {
                     return Ok(bag);
                 }
             },
-            (_, Event::Eof) => {
+            XmlEvent::EndDocument => {
                 break;
             },
-            _ => {},
+            XmlEvent::StartDocument { .. }
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::CData(_)
+            | XmlEvent::Comment(_)
+            | XmlEvent::Characters(_)
+            | XmlEvent::Whitespace(_)
+            | XmlEvent::Doctype { .. } => {},
         }
     }
 
@@ -268,36 +273,34 @@ where
 //         comp = root.findtext(PUB_COMPUTER, '', namespaces)
 //         self.props['DisplayName'], _, self.props['BelongsTo'] = (comp.partition('/'))
 fn extract_host_props<'full_path>(
-    reader: &'_ mut NsReader<&[u8]>,
+    reader: &'_ mut EventReader<BufReader<&[u8]>>,
 ) -> Result<HashMap<Box<str>, Box<str>>, GenericParsingError<'full_path>> {
     // we are inside of the relationship metadata section, which contains ... RELATIONSHIPS
     // for each relationship, we find the one with Type=Host
     loop {
-        let element = match parse_generic_body(reader, XML_WSDP_NAMESPACE, WSDP_RELATIONSHIP) {
-            Ok((element, _depth)) => {
-                // we'll need to ensure that the depth is always the same
-                element
-            },
-            Err(GenericParsingError::MissingElement(_)) => {
-                // no more `MetadataSections to be found`
-                break;
-            },
-            Err(error) => return Err(error),
-        };
+        let (_element, attributes) =
+            match parse_generic_body(reader, XML_WSDP_NAMESPACE, WSDP_RELATIONSHIP) {
+                Ok((element, attributes, _depth)) => {
+                    // we'll need to ensure that the depth is always the same
+                    (element, attributes)
+                },
+                Err(GenericParsingError::MissingElement(_)) => {
+                    // no more `MetadataSections to be found`
+                    break;
+                },
+                Err(error) => return Err(error),
+            };
 
-        for attribute in element.attributes() {
-            let attribute =
-                attribute.map_err(|error| GenericParsingError::XmlError(error.into()))?;
-
-            if attribute.key.0 == b"Type" {
-                if attribute.value == WSDP_RELATIONSHIP_TYPE_HOST.as_bytes() {
+        for attribute in attributes {
+            if attribute.name.namespace_ref().is_none() && attribute.name.local_name == "Type" {
+                if attribute.value == WSDP_RELATIONSHIP_TYPE_HOST {
                     let new_props = HashMap::new();
 
                     return Ok(new_props);
                 } else {
                     event!(
                         Level::DEBUG,
-                        r#type = %String::from_utf8_lossy(&attribute.value),
+                        r#type = &attribute.value,
                         "unknown relationship type"
                     );
                     break;

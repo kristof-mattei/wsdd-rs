@@ -2527,7 +2527,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
- "xml-rs",
+ "xml",
  "zerocopy",
 ]
 
@@ -2536,15 +2536,6 @@ name = "xml"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72e6e0a83ae73d886ab66fc2f82b598fbbb8f373357d5f2f9f783e50e4d06435"
-
-[[package]]
-name = "xml-rs"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3a56132a0d6ecbe77352edc10232f788fc4ceefefff4cab784a98e0e16b6b51"
-dependencies = [
- "xml",
-]
 
 [[package]]
 name = "yansi"
