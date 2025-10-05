@@ -26,12 +26,11 @@ pub fn read_text(
     loop {
         match reader.next()? {
             XmlEvent::Comment(_) => {},
-            XmlEvent::Characters(characters) => {
-                // can we get multiple `XmlEvent::Characters` in a row?
+            XmlEvent::Whitespace(s) | XmlEvent::Characters(s) => {
                 if let Some(text) = text.as_mut() {
-                    text.push_str(&characters);
+                    text.push_str(&s);
                 } else {
-                    text = Some(characters);
+                    text = Some(s);
                 }
             },
             XmlEvent::EndElement { name } => {
@@ -44,12 +43,17 @@ pub fn read_text(
             | XmlEvent::ProcessingInstruction { .. }
             | XmlEvent::StartElement { .. }
             | XmlEvent::CData(_)
-            | XmlEvent::Whitespace(_)
             | XmlEvent::Doctype { .. }) => {
                 return Err(TextReadError::NonTextContents(event));
             },
         }
     }
 
-    Ok(text)
+    let trimmed = text.as_ref().map(|t| t.trim());
+
+    if trimmed == text.as_deref() {
+        Ok(text)
+    } else {
+        Ok(trimmed.map(std::borrow::ToOwned::to_owned))
+    }
 }
