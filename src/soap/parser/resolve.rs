@@ -18,7 +18,7 @@ pub enum ResolveParsingError {
     #[error("Error parsing XML")]
     XmlError(#[from] xml::reader::Error),
     #[error("Missing ./Resolve in body")]
-    MissingProbeElement,
+    MissingResolveElement,
     #[error("invalid resolve request: missing endpoint address")]
     MissingEndpoint,
     #[error("invalid resolve request: address does not match own one")]
@@ -144,5 +144,5 @@ pub fn parse_resolve_body(
     }
 
     // TODO error
-    Err(ResolveParsingError::MissingProbeElement)
+    Err(ResolveParsingError::MissingResolveElement)
 }
