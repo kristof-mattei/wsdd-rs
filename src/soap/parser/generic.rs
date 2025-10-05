@@ -12,8 +12,7 @@ use xml::name::OwnedName;
 use xml::reader::XmlEvent;
 
 use crate::constants::{XML_WSA_NAMESPACE, XML_WSD_NAMESPACE};
-use crate::soap::parser::read_text;
-use crate::xml::TextReadError;
+use crate::xml::{TextReadError, read_text};
 
 #[derive(Error, Debug)]
 pub enum GenericParsingError<'p> {
