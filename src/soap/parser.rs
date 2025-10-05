@@ -110,6 +110,43 @@ pub enum HeaderError {
     XmlError(#[from] quick_xml::errors::Error),
 }
 
+pub fn deconstruct_raw(
+    raw: &[u8],
+) -> Result<(Header<'_>, bool, NsReader<&[u8]>), MessageHandlerError> {
+    let mut reader = NsReader::from_reader(raw);
+
+    let mut header = None;
+    let mut has_body = false;
+
+    // as per https://www.w3.org/TR/soap12/#soapenvelope, the Header, Body order is fixed. We don't need to code for Body, Header
+    loop {
+        match reader.read_resolved_event()? {
+            (Bound(Namespace(ns)), Event::Start(e)) => {
+                if ns == XML_SOAP_NAMESPACE.as_bytes() {
+                    if e.name().local_name().as_ref() == b"Header" {
+                        header = Some(parse_header(&mut reader)?);
+                    } else if e.name().local_name().as_ref() == b"Body" {
+                        has_body = true;
+                        break;
+                    } else {
+                        // ...
+                    }
+                }
+            },
+            (_, Event::Eof) => {
+                break;
+            },
+            _ => (),
+        }
+    }
+
+    let Some(header) = header else {
+        return Err(MessageHandlerError::MissingHeader);
+    };
+
+    Ok((header, has_body, reader))
+}
+
 impl MessageHandler {
     pub fn new(
         handled_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
@@ -127,36 +164,7 @@ impl MessageHandler {
         raw: &'r [u8],
         src: Option<SocketAddr>,
     ) -> Result<(Header<'r>, NsReader<&'r [u8]>), MessageHandlerError> {
-        let mut reader = NsReader::from_reader(raw);
-
-        let mut header = None;
-        let mut has_body = false;
-
-        // as per https://www.w3.org/TR/soap12/#soapenvelope, the Header, Body order is fixed. We don't need to code for Body, Header
-        loop {
-            match reader.read_resolved_event()? {
-                (Bound(Namespace(ns)), Event::Start(e)) => {
-                    if ns == XML_SOAP_NAMESPACE.as_bytes() {
-                        if e.name().local_name().as_ref() == b"Header" {
-                            header = Some(parse_header(&mut reader)?);
-                        } else if e.name().local_name().as_ref() == b"Body" {
-                            has_body = true;
-                            break;
-                        } else {
-                            // ...
-                        }
-                    }
-                },
-                (_, Event::Eof) => {
-                    break;
-                },
-                _ => (),
-            }
-        }
-
-        let Some(header) = header else {
-            return Err(MessageHandlerError::MissingHeader);
-        };
+        let (header, has_body, reader) = deconstruct_raw(raw)?;
 
         // check for duplicates
         if self.is_duplicated_msg(header.message_id).await {

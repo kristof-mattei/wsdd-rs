@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::str::FromStr as _;
 
 use quick_xml::NsReader;
-use quick_xml::events::Event;
+use quick_xml::events::{BytesStart, Event};
 use quick_xml::name::Namespace;
 use quick_xml::name::ResolveResult::Bound;
 use thiserror::Error;
@@ -13,20 +13,22 @@ use uuid::fmt::Urn;
 use crate::constants::{XML_WSA_NAMESPACE, XML_WSD_NAMESPACE};
 
 #[derive(Error, Debug)]
-pub enum GenericParsingError<'e> {
+pub enum GenericParsingError<'p> {
     #[error("Error parsing XML")]
     XmlError(#[from] quick_xml::errors::Error),
     #[error("Missing ./{0} in body")]
-    MissingElement(&'e str),
+    MissingElement(Cow<'p, str>),
+    #[error("Missing closing ./{0} in body")]
+    MissingClosingElement(Cow<'p, str>),
     #[error("Invalid element order")]
     InvalidElementOrder,
     #[error("Invalid UUID")]
     InvalidUuid(#[from] uuid::Error),
 }
 
-pub fn extract_endpoint_reference_address<'raw, 'error>(
+pub fn extract_endpoint_reference_address<'raw>(
     reader: &mut NsReader<&'raw [u8]>,
-) -> Result<Cow<'raw, str>, GenericParsingError<'error>> {
+) -> Result<Cow<'raw, str>, GenericParsingError<'static>> {
     let mut address = None;
 
     loop {
@@ -56,16 +58,16 @@ pub fn extract_endpoint_reference_address<'raw, 'error>(
         );
 
         return Err(GenericParsingError::MissingElement(
-            "wsa:EndpointReference/wsa:Address",
+            "wsa:EndpointReference/wsa:Address".into(),
         ));
     };
 
     Ok(address)
 }
 
-pub fn extract_endpoint_metadata<'raw, 'error>(
+pub fn extract_endpoint_metadata<'raw>(
     reader: &mut NsReader<&'raw [u8]>,
-) -> Result<(Uuid, Option<Cow<'raw, str>>), GenericParsingError<'error>> {
+) -> Result<(Uuid, Option<Cow<'raw, str>>), GenericParsingError<'static>> {
     let mut endpoint = None;
     let mut xaddrs = None;
 
@@ -106,7 +108,9 @@ pub fn extract_endpoint_metadata<'raw, 'error>(
             "Missing wsa:EndpointReference element. Ignored."
         );
 
-        return Err(GenericParsingError::MissingElement("wsa:EndpointReference"));
+        return Err(GenericParsingError::MissingElement(
+            "wsa:EndpointReference".into(),
+        ));
     };
 
     let endpoint = Urn::from_str(&endpoint)?.into_uuid();
@@ -114,45 +118,73 @@ pub fn extract_endpoint_metadata<'raw, 'error>(
     Ok((endpoint, xaddrs))
 }
 
-pub fn parse_generic_body<'path>(
-    reader: &mut NsReader<&[u8]>,
+/// TODO expand to make sure what we search for is at the right depth
+pub fn parse_generic_body<'full_path, 'namespace, 'path, 'reader>(
+    reader: &'reader mut NsReader<&[u8]>,
+    namespace: &'namespace str,
     path: &'path str,
-) -> Result<(), GenericParsingError<'path>> {
+) -> Result<(BytesStart<'reader>, usize), GenericParsingError<'full_path>>
+where
+    'full_path: 'path + 'namespace,
+{
+    let mut depth = 0_usize;
+
     loop {
         match reader.read_resolved_event()? {
-            (Bound(Namespace(ns)), Event::Start(e)) => {
-                if ns == XML_WSD_NAMESPACE.as_bytes()
-                    && e.name().local_name().as_ref() == path.as_bytes()
+            (Bound(Namespace(ns)), Event::Start(element)) => {
+                depth += 1;
+
+                if ns == namespace.as_bytes()
+                    && element.name().local_name().as_ref() == path.as_bytes()
                 {
-                    return Ok(());
+                    return Ok((element, depth));
                 }
             },
             (_, Event::Eof) => {
                 break;
             },
-            _ => (),
+            _ => {},
         }
     }
 
-    Err(GenericParsingError::MissingElement(path))
+    Err(GenericParsingError::MissingElement(
+        format!("{}:{}", namespace, path).into(),
+    ))
 }
 
-pub fn parse_generic_body_paths<'path>(
+pub fn parse_generic_body_paths<'full_path, 'namespace, 'path>(
     reader: &mut NsReader<&[u8]>,
-    paths: &[&'path str],
-) -> Result<(), GenericParsingError<'path>> {
-    let [path, ref rest @ ..] = *paths else {
-        return Ok(());
+    paths: &[(&'namespace str, &'path str)],
+) -> Result<usize, GenericParsingError<'full_path>>
+where
+    'full_path: 'path + 'namespace,
+{
+    parse_generic_body_paths_recursive(reader, paths, 0)
+}
+
+fn parse_generic_body_paths_recursive<'full_path, 'namespace, 'path>(
+    reader: &mut NsReader<&[u8]>,
+    paths: &[(&'namespace str, &'path str)],
+    mut depth: usize,
+) -> Result<usize, GenericParsingError<'full_path>>
+where
+    'full_path: 'path + 'namespace,
+{
+    let [(namespace, path), ref rest @ ..] = *paths else {
+        return Ok(depth);
     };
 
     loop {
         match reader.read_resolved_event()? {
             (Bound(Namespace(ns)), Event::Start(e)) => {
-                if ns == XML_WSD_NAMESPACE.as_bytes()
-                    && e.name().local_name().as_ref() == path.as_bytes()
-                {
-                    return parse_generic_body_paths(reader, rest);
+                depth += 1;
+
+                if ns == namespace.as_bytes() && e.name().local_name().as_ref() == path.as_bytes() {
+                    return parse_generic_body_paths_recursive(reader, rest, depth);
                 }
+            },
+            (Bound(Namespace(_)), Event::Empty(_)) => {
+                depth -= 1;
             },
             (_, Event::Eof) => {
                 break;
@@ -161,5 +193,7 @@ pub fn parse_generic_body_paths<'path>(
         }
     }
 
-    Err(GenericParsingError::MissingElement(path))
+    Err(GenericParsingError::MissingElement(
+        format!("{}:{}", namespace, path).into(),
+    ))
 }

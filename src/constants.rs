@@ -24,7 +24,6 @@ pub const WSDP_URI: &str = "http://schemas.xmlsoap.org/ws/2006/02/devprof";
 pub const XML_SOAP_NAMESPACE: &str = "http://www.w3.org/2003/05/soap-envelope";
 pub const XML_WSA_NAMESPACE: &str = WSA_URI;
 pub const XML_WSD_NAMESPACE: &str = WSD_URI;
-#[expect(unused, reason = "WIP")]
 pub const XML_WSX_NAMESPACE: &str = "http://schemas.xmlsoap.org/ws/2004/09/mex";
 pub const XML_WSDP_NAMESPACE: &str = WSDP_URI;
 #[expect(unused, reason = "WIP")]
@@ -48,6 +47,15 @@ pub const WSD_BYE: &str = concatcp!(WSD_URI, "/Bye");
 // WSD_GET: str = 'http://schemas.xmlsoap.org/ws/2004/09/transfer/Get'
 pub const WSD_GET: &str = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Get";
 // WSD_GET_RESPONSE: str = 'http://schemas.xmlsoap.org/ws/2004/09/transfer/GetResponse'
+
+pub const WSDP_THIS_DEVICE: &str = "ThisDevice";
+pub const WSDP_THIS_DEVICE_DIALECT: &str = concatcp!(WSDP_URI, "/", WSDP_THIS_DEVICE);
+pub const WSDP_THIS_MODEL: &str = "ThisModel";
+pub const WSDP_THIS_MODEL_DIALECT: &str = concatcp!(WSDP_URI, "/", WSDP_THIS_MODEL);
+pub const WSDP_RELATIONSHIP: &str = "Relationship";
+pub const WSDP_RELATIONSHIP_DIALECT: &str = concatcp!(WSDP_URI, "/", WSDP_RELATIONSHIP);
+pub const WSDP_RELATIONSHIP_HOST: &str = "host";
+pub const WSDP_RELATIONSHIP_TYPE_HOST: &str = concatcp!(WSDP_URI, "/", WSDP_RELATIONSHIP_HOST);
 
 // WSD_TYPE_DEVICE: str = 'wsdp:Device'
 pub const WSD_TYPE_DEVICE: &str = "wsdp:Device";
