@@ -6,17 +6,15 @@
 >
     <soap:Header>
         <wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To>
-        <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Hello</wsa:Action>
+        <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Bye</wsa:Action>
         <wsa:MessageID>urn:uuid:{}</wsa:MessageID>
         <wsd:AppSequence InstanceId="{}" SequenceId="urn:uuid:{}" MessageNumber="0" />
     </soap:Header>
     <soap:Body>
-        <wsd:Hello>
+        <wsd:Bye>
             <wsa:EndpointReference>
                 <wsa:Address>urn:uuid:{}</wsa:Address>
             </wsa:EndpointReference>
-            <wsd:XAddrs>http://{}:{}/{}</wsd:XAddrs>
-            <wsd:MetadataVersion>1</wsd:MetadataVersion>
-        </wsd:Hello>
+        </wsd:Bye>
     </soap:Body>
 </soap:Envelope>

@@ -1,5 +1,5 @@
 # Rust toolchain setup
-FROM --platform=${BUILDPLATFORM} rust:1.89.0-trixie@sha256:57407b378b2b6e07b48a6135a20c87cc22ea6e249c0acf6cb1833ead3cf116e9 AS rust-base
+FROM --platform=${BUILDPLATFORM} rust:1.90.0-slim-trixie@sha256:e4ae8ab67883487c5545884d5aa5ebbe86b5f13c6df4a8e3e2f34c89cedb9f54 AS rust-base
 
 ARG APPLICATION_NAME
 ARG DEBIAN_FRONTEND=noninteractive
@@ -23,9 +23,11 @@ ARG TARGET=x86_64-unknown-linux-musl
 FROM rust-base AS rust-linux-arm64
 ARG TARGET=aarch64-unknown-linux-musl
 
-FROM rust-${TARGETPLATFORM//\//-} AS rust-cargo-build
+FROM rust-linux-${TARGETARCH//\//-} AS rust-cargo-build
 
 ARG DEBIAN_FRONTEND=noninteractive
+# expose into `build.sh`
+ARG TARGETVARIANT
 
 COPY ./build-scripts /build-scripts
 
@@ -74,6 +76,8 @@ COPY ./src ./src
 # ensure cargo picks up on the change
 RUN touch ./src/main.rs
 
+ENV PATH="/output/bin:$PATH"
+
 # --release not needed, it is implied with install
 RUN --mount=type=cache,target=/build/target/${TARGET},sharing=locked \
     --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git/db \
@@ -95,6 +99,8 @@ RUN cat /etc/passwd | grep appuser > /tmp/passwd_appuser
 FROM scratch
 
 ARG APPLICATION_NAME
+ARG TARGETARCH
+ARG TARGETVARIANT
 
 COPY --from=passwd-build /tmp/group_appuser /etc/group
 COPY --from=passwd-build /tmp/passwd_appuser /etc/passwd
@@ -104,6 +110,8 @@ COPY --from=rust-build /output/bin/${APPLICATION_NAME} /app/entrypoint
 USER appuser
 
 ENV RUST_BACKTRACE=full
+ENV TARGETARCH=${TARGETARCH}
+ENV TARGETVARIANT=${TARGETVARIANT}
 
 WORKDIR /app
 

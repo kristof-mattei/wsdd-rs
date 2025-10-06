@@ -2,7 +2,7 @@
 name = "wsdd-rs"
 version = "0.0.0-development"
 edition = "2024"
-rust-version = "1.89.0"
+rust-version = "1.90.0"
 authors = ["Kristof Mattei"]
 description = "Rust seed application"
 license = "MIT"
@@ -16,7 +16,8 @@ default = []
 tokio-console = ["dep:console-subscriber"]
 
 [dependencies]
-clap = { version = "4.5.47", features = ["cargo", "string", "derive"] }
+bytes = "1.10.1"
+clap = { version = "4.5.48", features = ["cargo", "string", "derive"] }
 color-eyre = "0.6.5"
 console-subscriber = { version = "0.4.1", optional = true }
 const_format = { version = "0.2.34", features = ["fmt", "rust_1_83"] }
@@ -27,8 +28,7 @@ hashbrown = { version = "0.16.0", default-features = false, features = [
     "inline-more",
     "equivalent",
 ] }
-libc = "0.2.175"
-quick-xml = "0.38.3"
+libc = "0.2.176"
 rand = "0.9.2"
 reqwest = { version = "0.12.23", default-features = false, features = [
     "charset",
@@ -36,7 +36,8 @@ reqwest = { version = "0.12.23", default-features = false, features = [
     "rustls-tls",
 ] }
 socket2 = { version = "0.6.0", features = ["all"] }
-thiserror = "2.0.16"
+thiserror = "2.0.17"
+time = "0.3.44"
 tokio = { version = "1.47.1", features = [
     "rt-multi-thread",
     "macros",
@@ -57,12 +58,13 @@ tracing-subscriber = { version = "0.3.20", features = [
 ] }
 url = "2.5.7"
 uuid = { version = "1.18.1", features = ["v1", "v4", "v5"] }
+xml = "1.0.0"
 zerocopy = { version = "0.8.27", features = ["derive"] }
 
 [dev-dependencies]
 mockito = "=1.7.0"
 pretty_assertions = "=1.4.1"
-xml-rs = "=1.0.0"
+xml = "=1.0.0"
 
 [lints.clippy]
 # don't stop from compiling / running

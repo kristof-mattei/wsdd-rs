@@ -148,6 +148,8 @@ rulesets:
               integration_id: 254
             - context: Format
               integration_id: 15368
+            - context: Machete
+              integration_id: 15368
             - context: Lint
               integration_id: 15368
       - type: pull_request
@@ -160,7 +162,11 @@ rulesets:
           automatic_copilot_code_review_enabled: false
           allowed_merge_methods: [merge]
 
-    bypass_actors: []
+    bypass_actors:
+      # Admin role
+      - actor_id: 5
+        actor_type: RepositoryRole
+        bypass_mode: always
     current_user_can_bypass: never
 
 branches:

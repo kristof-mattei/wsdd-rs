@@ -1,14 +1,15 @@
+use std::io::BufReader;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use color_eyre::eyre;
-use quick_xml::NsReader;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 use uuid::fmt::Urn;
+use xml::EventReader;
 
 use super::HANDLED_MESSAGES;
 use crate::config::Config;
@@ -112,7 +113,7 @@ fn handle_probe(
     config: &Config,
     messages_built: &AtomicU64,
     relates_to: Urn,
-    mut reader: NsReader<&[u8]>,
+    mut reader: EventReader<BufReader<&[u8]>>,
 ) -> Result<Vec<u8>, eyre::Report> {
     parser::probe::parse_probe_body(&mut reader)?;
 
@@ -129,7 +130,7 @@ fn handle_resolve(
     messages_built: &AtomicU64,
     target_uuid: uuid::Uuid,
     relates_to: Urn,
-    mut reader: NsReader<&[u8]>,
+    mut reader: EventReader<BufReader<&[u8]>>,
 ) -> Result<Vec<u8>, eyre::Report> {
     parser::resolve::parse_resolve_body(&mut reader, target_uuid)?;
 
@@ -151,15 +152,12 @@ async fn listen_forever(
     unicast: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
     loop {
-        #[expect(clippy::pattern_type_mismatch, reason = "Tokio macro")]
-        let message = {
-            tokio::select! {
-                () = cancellation_token.cancelled() => {
-                    break;
-                },
-                message = receiver.recv() => {
-                    message
-                }
+        let message = tokio::select! {
+            () = cancellation_token.cancelled() => {
+                break;
+            },
+            message = receiver.recv() => {
+                message
             }
         };
 

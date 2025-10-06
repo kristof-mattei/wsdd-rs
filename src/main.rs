@@ -21,6 +21,7 @@ mod udp_address;
 mod url_ip_addr;
 mod utils;
 mod wsd;
+mod xml;
 
 use std::env::{self, VarError};
 use std::sync::Arc;
@@ -98,6 +99,25 @@ fn main() -> Result<(), eyre::Report> {
     result
 }
 
+fn print_header() {
+    const NAME: &str = env!("CARGO_PKG_NAME");
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+    event!(
+        Level::INFO,
+        "{} v{} - built for {}-{}",
+        NAME,
+        VERSION,
+        std::env::var("TARGETARCH")
+            .as_deref()
+            .unwrap_or("unknown-arch"),
+        std::env::var("TARGETVARIANT")
+            .as_deref()
+            .unwrap_or("base variant")
+    );
+}
+
+#[expect(clippy::too_many_lines, reason = "WIP")]
 async fn start_tasks() -> Result<(), eyre::Report> {
     let config = Arc::new(parse_cli().inspect_err(|error| {
         // this prints the error in color and exits
@@ -108,6 +128,8 @@ async fn start_tasks() -> Result<(), eyre::Report> {
             clap_error.exit();
         }
     })?);
+
+    print_header();
 
     config.log();
 
@@ -141,7 +163,9 @@ async fn start_tasks() -> Result<(), eyre::Report> {
 
             match address_monitor.handle_change().await {
                 Ok(()) => event!(Level::INFO, "Address Monitor stopped listening"),
-                Err(error) => event!(Level::ERROR, ?error, "TODO"),
+                Err(error) => {
+                    event!(Level::ERROR, ?error, "TODO");
+                },
             }
         });
     }
@@ -234,21 +258,26 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     // * ctrl + c (SIGINT)
     // * a message on the shutdown channel, sent either by the server task or
     // another task when they complete (which means they failed)
-    #[expect(clippy::pattern_type_mismatch, reason = "Tokio")]
-    {
-        tokio::select! {
-            _ = signal_handlers::wait_for_sigint() => {
+    tokio::select! {
+        result = signal_handlers::wait_for_sigterm() => {
+            if let Err(error) = result {
+                event!(Level::ERROR, ?error, "Failed to register SIGERM handler, aborting");
+            } else {
                 // we completed because ...
-                event!(Level::WARN, message = "CTRL+C detected, stopping all tasks");
-            },
-            _ = signal_handlers::wait_for_sigterm() => {
+                event!(Level::WARN, "Sigterm detected, stopping all tasks");
+            }
+        },
+        result = signal_handlers::wait_for_sigint() => {
+            if let Err(error) = result {
+                event!(Level::ERROR, ?error, "Failed to register CTRL+C handler, aborting");
+            } else {
                 // we completed because ...
-                event!(Level::WARN, message = "Sigterm detected, stopping all tasks");
-            },
-            () = cancellation_token.cancelled() => {
-                event!(Level::WARN, "Underlying task stopped, stopping all others tasks");
-            },
-        }
+                event!(Level::WARN, "CTRL+C detected, stopping all tasks");
+            }
+        },
+        () = cancellation_token.cancelled() => {
+            event!(Level::WARN, "Underlying task stopped, stopping all others tasks");
+        },
     }
 
     // backup, in case we forgot a dropguard somewhere

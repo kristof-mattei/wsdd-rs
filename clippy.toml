@@ -9,6 +9,7 @@ absolute-paths-allowed-crates = [
     "tracing_subscriber",
     "std",
     "quick_xml",
+    "xml",
 ]
 
 disallowed-macros = [

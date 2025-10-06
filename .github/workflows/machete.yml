@@ -1,42 +1,25 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: Test Release
+name: Machete
 
 on:
-  workflow_dispatch: # releasing is manual as we don't want to release every time
-
-concurrency:
-  group: "${{ github.workflow }}"
-  cancel-in-progress: true # only last step is important, which runs or doesn't
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
 
 permissions:
-  contents: write
-  issues: read
-  pull-requests: read
-
-env:
-  CARGO_TERM_COLOR: always
-  # Use docker.io for Docker Hub if empty
-  REGISTRY: ghcr.io
-  # github.repository as <account>/<repo>
-  IMAGE_NAME: ${{ github.repository }}
+  contents: read
 
 jobs:
-  test-release:
-    name: Test Release
+  machete:
+    name: Machete
     runs-on: ubuntu-latest
     steps:
-      - name: Only on main
-        if: |
-          github.ref != 'refs/heads/main'
-        shell: bash
-        run: |
-          echo "Only to be executed on main"
-          exit 1
-
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          fetch-depth: 0
           show-progress: false
 
       - name: Cache cargo
@@ -51,7 +34,7 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-git-cliff
+          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-cargo-machete
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-
             ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-
@@ -91,25 +74,12 @@ jobs:
                 --gunzip \
                 --file=-
 
-      - name: Install git-cliff to generate changelog & next version number
+      - name: Install cargo-machete to ensure we don't have unneeded packages
         shell: bash
         run: |
-          cargo binstall --github-token ${{ secrets.GITHUB_TOKEN }} --no-confirm git-cliff
+          cargo binstall --github-token ${{ secrets.GITHUB_TOKEN }} --no-confirm cargo-machete
 
-      - name: Generate the changelog representing the next release
+      - name: Run cargo machete
         shell: bash
-        id: release
         run: |
-          repository=${{ github.repository }}
-          # split at the last / and keep that (kristof-mattei/repo-name -> repo-name)
-          repository=${repository##*/}
-
-          version=$(git-cliff --bumped-version --unreleased --github-token ${{ secrets.GITHUB_TOKEN }})
-          echo "version=$version" >> ${GITHUB_OUTPUT}
-
-          commit_message="chore(release): Release ${version}"
-
-          git-cliff --output diff-CHANGELOG.md --bump --unreleased --latest --with-commit "${commit_message}" --github-token ${{ secrets.GITHUB_TOKEN }}
-
-          echo "# Next release changelog:" >> ${GITHUB_STEP_SUMMARY}
-          cat diff-CHANGELOG.md >> ${GITHUB_STEP_SUMMARY}
+          cargo machete

@@ -1,62 +1,73 @@
-use quick_xml::events::Event;
-use quick_xml::name::Namespace;
-use quick_xml::name::ResolveResult::Bound;
-use quick_xml::reader::NsReader;
+use std::io::BufReader;
+
 use thiserror::Error;
 use tracing::{Level, event};
+use xml::EventReader;
+use xml::reader::XmlEvent;
 
 use crate::constants::{WSD_TYPE_DEVICE, XML_WSD_NAMESPACE};
+use crate::xml::{TextReadError, read_text};
 
 type ParsedProbe = Result<(), ProbeParsingError>;
 
 #[derive(Error, Debug)]
 pub enum ProbeParsingError {
     #[error("Scopes are currently not supported: {0}")]
-    ScopesUnsupported(String),
+    ScopesUnsupported(Box<str>),
     #[error("Error parsing XML")]
-    XmlError(#[from] quick_xml::errors::Error),
+    XmlError(#[from] xml::reader::Error),
+    #[error("Error reading text")]
+    TextReadError(#[from] TextReadError),
     #[error("Missing types")]
     MissingTypes,
     #[error("Unknown discovery type for probe: {0}")]
-    UnknownTypes(String),
+    UnknownTypes(Box<str>),
     #[error("Missing ./Probe in body")]
     MissingProbeElement,
 }
 
-fn parse_probe(reader: &mut NsReader<&[u8]>) -> ParsedProbe {
+fn parse_probe(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedProbe {
     let mut types = None;
 
     loop {
-        match reader.read_resolved_event()? {
-            (Bound(Namespace(ns)), Event::Start(e)) => {
-                if ns == XML_WSD_NAMESPACE.as_bytes() && e.name().local_name().as_ref() == b"Scopes"
-                {
-                    let raw_scopes = reader.read_text(e.to_end().name())?;
+        match reader.next()? {
+            XmlEvent::StartElement { name, .. } => {
+                if name.namespace_ref() == Some(XML_WSD_NAMESPACE) && name.local_name == "Scopes" {
+                    let text = read_text(reader, &name)?;
+
+                    let raw_scopes = text.unwrap_or_default();
 
                     // TODO: THINK: send fault message (see p. 21 in WSD)
                     // I don't think this is correct?
                     // scopes MAYBE be ommitted...
                     event!(
                         Level::DEBUG,
-                        scopes = &*raw_scopes,
+                        scopes = &raw_scopes,
                         "scopes unsupported, but probed"
                     );
 
                     return Err(ProbeParsingError::ScopesUnsupported(
-                        raw_scopes.into_owned(),
+                        raw_scopes.into_boxed_str(),
                     ));
-                } else if ns == XML_WSD_NAMESPACE.as_bytes()
-                    && e.name().local_name().as_ref() == b"Types"
+                } else if name.namespace_ref() == Some(XML_WSD_NAMESPACE)
+                    && name.local_name == "Types"
                 {
-                    types = Some(reader.read_text(e.to_end().name())?);
+                    types = read_text(reader, &name)?;
                 } else {
                     // Ignore
                 }
             },
-            (_, Event::Eof) => {
+            XmlEvent::EndDocument => {
                 break;
             },
-            _ => (),
+            XmlEvent::StartDocument { .. }
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::EndElement { .. }
+            | XmlEvent::CData(_)
+            | XmlEvent::Comment(_)
+            | XmlEvent::Characters(_)
+            | XmlEvent::Whitespace(_)
+            | XmlEvent::Doctype { .. } => (),
         }
     }
 
@@ -78,26 +89,32 @@ fn parse_probe(reader: &mut NsReader<&[u8]>) -> ParsedProbe {
             "unknown discovery type for probe"
         );
 
-        return Err(ProbeParsingError::UnknownTypes(types.into_owned()));
+        return Err(ProbeParsingError::UnknownTypes(types.into_boxed_str()));
     }
 
     Ok(())
 }
 
 /// This takes in a reader that is stopped at the body tag.
-pub fn parse_probe_body(reader: &mut NsReader<&[u8]>) -> ParsedProbe {
+pub fn parse_probe_body(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedProbe {
     loop {
-        match reader.read_resolved_event()? {
-            (Bound(Namespace(ns)), Event::Start(e)) => {
-                if ns == XML_WSD_NAMESPACE.as_bytes() && e.name().local_name().as_ref() == b"Probe"
-                {
+        match reader.next()? {
+            XmlEvent::StartElement { name, .. } => {
+                if name.namespace_ref() == Some(XML_WSD_NAMESPACE) && name.local_name == "Probe" {
                     return parse_probe(reader);
                 }
             },
-            (_, Event::Eof) => {
+            XmlEvent::EndDocument => {
                 break;
             },
-            _ => (),
+            XmlEvent::StartDocument { .. }
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::EndElement { .. }
+            | XmlEvent::CData(_)
+            | XmlEvent::Comment(_)
+            | XmlEvent::Characters(_)
+            | XmlEvent::Whitespace(_)
+            | XmlEvent::Doctype { .. } => (),
         }
     }
 

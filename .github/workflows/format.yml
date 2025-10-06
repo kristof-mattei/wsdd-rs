@@ -2,7 +2,6 @@
 name: Validate formatting
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
@@ -41,4 +40,4 @@ jobs:
       - name: Run Prettier
         shell: bash
         run: |
-          pnpm prettier --check .
+          pnpm prettier --list-different .

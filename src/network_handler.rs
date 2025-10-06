@@ -72,15 +72,12 @@ impl NetworkHandler {
 
     pub async fn handle_change(&mut self) -> Result<(), eyre::Report> {
         loop {
-            #[expect(clippy::pattern_type_mismatch, reason = "Tokio")]
-            let command = {
-                tokio::select! {
-                    () = self.cancellation_token.cancelled() => {
-                        break;
-                    },
-                    command = self.receiver.recv() => {
-                        command
-                    }
+            let command = tokio::select! {
+                () = self.cancellation_token.cancelled() => {
+                    break;
+                },
+                command = self.receiver.recv() => {
+                    command
                 }
             };
 
