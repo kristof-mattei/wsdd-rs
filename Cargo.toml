@@ -20,7 +20,7 @@ bytes = "1.10.1"
 clap = { version = "4.5.48", features = ["cargo", "string", "derive"] }
 color-eyre = "0.6.5"
 console-subscriber = { version = "0.4.1", optional = true }
-const_format = { version = "0.2.34", features = ["fmt", "rust_1_83"] }
+const_format = { version = "0.2.35", features = ["fmt"] }
 delegate = "0.13.4"
 dotenvy = "0.15.7"
 hashbrown = { version = "0.16.0", default-features = false, features = [
