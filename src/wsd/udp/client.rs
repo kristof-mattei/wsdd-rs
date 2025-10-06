@@ -384,7 +384,7 @@ fn build_getmetadata_message(
     config: &Config,
     endpoint: Uuid,
     messages_built: &AtomicU64,
-) -> Result<Vec<u8>, quick_xml::errors::Error> {
+) -> Result<Vec<u8>, xml::writer::Error> {
     let message = Builder::build_get(config, endpoint, messages_built)?;
 
     Ok(message)
