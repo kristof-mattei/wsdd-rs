@@ -274,7 +274,7 @@ async fn handle_probe_match(
         return Ok(());
     };
 
-    event!(Level::DEBUG, %endpoint, ?xaddr, "Probe match");
+    event!(Level::DEBUG, %endpoint, %xaddr, "Probe match");
 
     perform_metadata_exchange(
         config,
@@ -372,7 +372,7 @@ async fn perform_metadata_exchange(
             if error.is_timeout() {
                 event!(Level::WARN, url, "metadata exchange timed out");
             } else {
-                event!(Level::WARN, ?error, url, "could not fetch metadata",);
+                event!(Level::WARN, ?error, url, "could not fetch metadata");
             }
         },
     }
