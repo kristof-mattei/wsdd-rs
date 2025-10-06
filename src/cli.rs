@@ -14,10 +14,8 @@ use uuid::Uuid;
 use crate::config::{Config, PortOrSocket};
 use crate::security::parse_userspec;
 
-#[expect(clippy::too_many_lines, reason = "WIP")]
+#[expect(clippy::too_many_lines, reason = "Lots of argument")]
 fn build_clap_command() -> Command {
-    // TODO: How do we return a specific error (e.g. 3 for the user spec's value parser) when an error occurs?
-
     command!()
         .disable_version_flag(true)
         .color(clap::ColorChoice::Always)
@@ -196,6 +194,8 @@ where
     T: Into<OsString> + Clone,
 {
     let mut command = build_clap_command();
+
+    // TODO: How do we return a specific error (e.g. 3 for the user spec's value parser) when an error occurs?
     let matches = command.try_get_matches_from_mut(from)?;
 
     let interfaces: Vec<String> = if let Some(interfaces) = matches.get_many::<String>("interface")
