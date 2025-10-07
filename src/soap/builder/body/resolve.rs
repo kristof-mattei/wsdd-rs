@@ -4,8 +4,10 @@ use uuid::Uuid;
 use xml::EventWriter;
 use xml::writer::XmlEvent;
 
+use crate::config::Config;
 use crate::constants::XML_WSD_NAMESPACE;
-use crate::soap::builder::{Builder, WriteBody};
+use crate::soap::builder::WriteBody;
+use crate::soap::builder::body::add_endpoint_reference;
 
 pub struct Resolve {
     endpoint: Uuid,
@@ -27,12 +29,12 @@ where
 
     fn write_body(
         self,
-        builder: &mut Builder,
+        config: &Config,
         writer: &mut EventWriter<W>,
     ) -> Result<(), xml::writer::Error> {
         writer.write(XmlEvent::start_element("wsd:Resolve"))?;
 
-        builder.add_endpoint_reference(writer, Some(self.endpoint))?;
+        add_endpoint_reference(writer, &config.uuid_as_urn_str, Some(self.endpoint))?;
 
         writer.write(XmlEvent::end_element())?;
 

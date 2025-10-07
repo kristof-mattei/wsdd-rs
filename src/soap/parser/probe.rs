@@ -5,7 +5,7 @@ use tracing::{Level, event};
 use xml::EventReader;
 use xml::reader::XmlEvent;
 
-use crate::constants::{WSD_TYPE_DEVICE, XML_WSD_NAMESPACE};
+use crate::constants::{WSDP_TYPE_DEVICE, XML_WSD_NAMESPACE};
 use crate::xml::{TextReadError, read_text};
 
 type ParsedProbe = Result<(), ProbeParsingError>;
@@ -82,7 +82,7 @@ fn parse_probe(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedProbe {
 
     // TODO do we want to return the probes and make the host handle the different types
     // As it is the host responsible for defining the response
-    if types.trim() != WSD_TYPE_DEVICE {
+    if types.trim() != WSDP_TYPE_DEVICE {
         event!(
             Level::DEBUG,
             r#type = &*types,

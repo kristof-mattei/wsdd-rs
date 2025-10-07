@@ -416,7 +416,6 @@ impl MulticastHandler {
                     &self.cancellation_token,
                     Arc::clone(&self.config),
                     Arc::clone(&self.devices),
-                    Arc::clone(&self.messages_built),
                     self.address.clone(),
                     self.recv_socket_receiver.get_listener().await,
                     self.mc_socket_receiver.get_listener().await,

@@ -2,7 +2,8 @@ use std::io::Write;
 
 use xml::EventWriter;
 
-use crate::soap::builder::{Builder, WriteBody};
+use crate::config::Config;
+use crate::soap::builder::WriteBody;
 
 pub struct EmptyBody {}
 
@@ -18,7 +19,7 @@ where
 {
     fn write_body(
         self,
-        _builder: &mut Builder,
+        _config: &Config,
         _writer: &mut EventWriter<W>,
     ) -> Result<(), xml::writer::Error> {
         Ok(())

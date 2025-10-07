@@ -1,7 +1,6 @@
 use std::io::BufReader;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 use std::time::{Duration, SystemTime};
 
 use bytes::Bytes;
@@ -33,7 +32,6 @@ pub(crate) struct WSDClient {
     address: IpAddr,
     multicast: Sender<Box<[u8]>>,
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
-    messages_built: Arc<AtomicU64>,
 }
 
 /// * `recv_socket_receiver`: used to receive multicast messages on `WSD_PORT`
@@ -46,7 +44,6 @@ impl WSDClient {
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
         devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
-        messages_built: Arc<AtomicU64>,
         bound_to: NetworkAddress,
         recv_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
         mc_send_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
@@ -63,7 +60,6 @@ impl WSDClient {
             cancellation_token.clone(),
             Arc::clone(&config),
             devices,
-            Arc::clone(&messages_built),
             bound_to,
             recv_socket_receiver,
             mc_send_socket_receiver,
@@ -76,7 +72,6 @@ impl WSDClient {
             cancellation_token,
             config,
             address,
-            messages_built,
             multicast,
             probes: Arc::clone(&probes),
         };
@@ -104,7 +99,7 @@ impl WSDClient {
     async fn send_probe(&mut self) -> Result<(), eyre::Report> {
         self.remove_outdated_probes().await;
 
-        let (probe, message_id) = Builder::build_probe(&self.config, &self.messages_built)?;
+        let (probe, message_id) = Builder::build_probe(&self.config)?;
 
         self.probes.write().await.insert(message_id, now());
 
@@ -177,7 +172,6 @@ fn __extract_xaddr(bound_to: IpAddr, xaddrs: &str) -> Option<url::Url> {
 async fn handle_hello(
     config: &Config,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
-    messages_built: &AtomicU64,
     bound_to: &NetworkAddress,
     multicast: &Sender<Box<[u8]>>,
     mut reader: EventReader<BufReader<&[u8]>>,
@@ -189,7 +183,7 @@ async fn handle_hello(
     let Some(xaddrs) = xaddrs else {
         event!(Level::INFO, "Hello without XAddrs, sending resolve");
 
-        let (message, _) = Builder::build_resolve(config, endpoint, messages_built)?;
+        let (message, _) = Builder::build_resolve(config, endpoint)?;
 
         multicast.send(message.into_boxed_slice()).await?;
 
@@ -200,9 +194,10 @@ async fn handle_hello(
         return Ok(());
     };
 
+    // TODO serve variables and static text
     event!(Level::INFO, "Hello from {} on {}", endpoint, xaddr);
 
-    perform_metadata_exchange(config, devices, messages_built, bound_to, endpoint, xaddr).await?;
+    perform_metadata_exchange(config, devices, bound_to, endpoint, xaddr).await?;
 
     Ok(())
 }
@@ -228,11 +223,9 @@ async fn handle_bye(
     Ok(())
 }
 
-#[expect(clippy::too_many_arguments, reason = "WIP")]
 async fn handle_probe_match(
     config: &Config,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
-    messages_built: &AtomicU64,
     bound_to: &NetworkAddress,
     relates_to: Option<Urn>,
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
@@ -263,7 +256,7 @@ async fn handle_probe_match(
     let Some(xaddrs) = xaddrs else {
         event!(Level::INFO, "probe match without XAddrs, sending resolve");
 
-        let (message, _) = Builder::build_resolve(config, endpoint, messages_built)?;
+        let (message, _) = Builder::build_resolve(config, endpoint)?;
 
         multicast.send(message.into_boxed_slice()).await?;
 
@@ -276,15 +269,7 @@ async fn handle_probe_match(
 
     event!(Level::DEBUG, %endpoint, %xaddr, "Probe match");
 
-    perform_metadata_exchange(
-        config,
-        Arc::clone(&devices),
-        messages_built,
-        bound_to,
-        endpoint,
-        xaddr,
-    )
-    .await?;
+    perform_metadata_exchange(config, Arc::clone(&devices), bound_to, endpoint, xaddr).await?;
 
     Ok(())
 }
@@ -292,7 +277,6 @@ async fn handle_probe_match(
 async fn handle_resolve_match(
     config: &Config,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
-    messages_built: &AtomicU64,
     bound_to: &NetworkAddress,
     mut reader: EventReader<BufReader<&[u8]>>,
 ) -> Result<(), eyre::Report> {
@@ -323,7 +307,7 @@ async fn handle_resolve_match(
 
     event!(Level::DEBUG, %endpoint, ?xaddr, "Resolve match");
 
-    perform_metadata_exchange(config, devices, messages_built, bound_to, endpoint, xaddr).await?;
+    perform_metadata_exchange(config, devices, bound_to, endpoint, xaddr).await?;
 
     Ok(())
 }
@@ -331,7 +315,6 @@ async fn handle_resolve_match(
 async fn perform_metadata_exchange(
     config: &Config,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
-    messages_built: &AtomicU64,
     bound_to: &NetworkAddress,
     endpoint: Uuid,
     xaddr: Url,
@@ -343,7 +326,7 @@ async fn perform_metadata_exchange(
         return Ok(());
     }
 
-    let body = build_getmetadata_message(config, endpoint, messages_built)?;
+    let body = build_getmetadata_message(config, endpoint)?;
 
     let client_builder = reqwest::ClientBuilder::new().local_address(bound_to.address);
 
@@ -383,9 +366,8 @@ async fn perform_metadata_exchange(
 fn build_getmetadata_message(
     config: &Config,
     endpoint: Uuid,
-    messages_built: &AtomicU64,
 ) -> Result<Vec<u8>, xml::writer::Error> {
-    let message = Builder::build_get(config, endpoint, messages_built)?;
+    let message = Builder::build_get(config, endpoint)?;
 
     Ok(message)
 }
@@ -417,7 +399,6 @@ async fn listen_forever(
     config: Arc<Config>,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     message_handler: MessageHandler,
-    messages_built: Arc<AtomicU64>,
     bound_to: NetworkAddress,
     mut recv_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
     mut mc_send_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
@@ -461,7 +442,6 @@ async fn listen_forever(
                 handle_hello(
                     &config,
                     Arc::clone(&devices),
-                    &messages_built,
                     &bound_to,
                     &multicast,
                     body_reader,
@@ -473,7 +453,6 @@ async fn listen_forever(
                 handle_probe_match(
                     &config,
                     Arc::clone(&devices),
-                    &messages_built,
                     &bound_to,
                     header.relates_to,
                     Arc::clone(&probes),
@@ -483,14 +462,7 @@ async fn listen_forever(
                 .await
             },
             constants::WSD_RESOLVE_MATCH => {
-                handle_resolve_match(
-                    &config,
-                    Arc::clone(&devices),
-                    &messages_built,
-                    &bound_to,
-                    body_reader,
-                )
-                .await
+                handle_resolve_match(&config, Arc::clone(&devices), &bound_to, body_reader).await
             },
             _ => {
                 event!(
@@ -518,7 +490,6 @@ fn spawn_receiver_loop(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
-    messages_built: Arc<AtomicU64>,
     bound_to: NetworkAddress,
     recv_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
     mc_send_socket_receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
@@ -536,7 +507,6 @@ fn spawn_receiver_loop(
                 config,
                 devices,
                 message_handler,
-                messages_built,
                 bound_to,
                 recv_socket_receiver,
                 mc_send_socket_receiver,
@@ -553,7 +523,6 @@ fn spawn_receiver_loop(
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
-    use std::sync::atomic::AtomicU64;
 
     use hashbrown::HashMap;
     use mockito::ServerOpts;
@@ -575,7 +544,6 @@ mod tests {
         let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
         let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
-        let client_messages_built = AtomicU64::new(0);
 
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
@@ -599,7 +567,6 @@ mod tests {
         handle_hello(
             &client_config,
             Arc::clone(&client_devices),
-            &client_messages_built,
             &client_network_address,
             &multicast_sender,
             reader,
@@ -633,7 +600,6 @@ mod tests {
         let client_endpoint_id = Uuid::new_v4();
         let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
-        let client_messages_built = AtomicU64::new(0);
 
         // host
         let mut server = mockito::Server::new_with_opts_async(ServerOpts {
@@ -704,7 +670,6 @@ mod tests {
         handle_hello(
             &config,
             Arc::clone(&client_devices),
-            &client_messages_built,
             &bound_to,
             &multicast_sender,
             reader,
@@ -789,7 +754,6 @@ mod tests {
         let client_endpoint_id = Uuid::new_v4();
         let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
-        let client_messages_built = AtomicU64::new(0);
 
         // host
         let mut server = mockito::Server::new_with_opts_async(ServerOpts {
@@ -859,7 +823,6 @@ mod tests {
         handle_hello(
             &config,
             Arc::clone(&client_devices),
-            &client_messages_built,
             &network_address,
             &multicast_sender,
             reader,
