@@ -10,6 +10,7 @@ pub struct Config {
     pub interface: Vec<String>,
     pub hoplimit: u8,
     pub uuid: Uuid,
+    pub uuid_as_urn_str: Box<str>,
     pub verbosity: Level,
     pub domain: Option<String>,
     pub hostname: String,

@@ -1,10 +1,5 @@
-mod bye;
-mod empty_body;
-mod hello;
-mod probe;
-mod probe_matches;
-mod resolve;
-mod resolve_matches;
+mod body;
+mod header;
 
 use std::io::Write;
 use std::net::IpAddr;
@@ -18,17 +13,21 @@ use xml::writer::XmlEvent;
 
 use crate::config::Config;
 use crate::constants::{
-    WSA_ANON, WSA_DISCOVERY, WSD_BYE, WSD_GET, WSD_HELLO, WSD_HTTP_PORT, WSD_PROBE,
-    WSD_PROBE_MATCH, WSD_RESOLVE, WSD_RESOLVE_MATCH, XML_SOAP_NAMESPACE, XML_WSA_NAMESPACE,
+    WSA_ANON, WSA_DISCOVERY, WSD_BYE, WSD_GET, WSD_HELLO, WSD_PROBE, WSD_PROBE_MATCH, WSD_RESOLVE,
+    WSD_RESOLVE_MATCH, XML_SOAP_NAMESPACE, XML_WSA_NAMESPACE,
 };
-use crate::soap::builder::bye::Bye;
-use crate::soap::builder::empty_body::EmptyBody;
-use crate::soap::builder::hello::Hello;
-use crate::soap::builder::probe::Probe;
-use crate::soap::builder::probe_matches::ProbeMatches;
-use crate::soap::builder::resolve::Resolve;
-use crate::soap::builder::resolve_matches::ResolveMatches;
-use crate::url_ip_addr::UrlIpAddr;
+use crate::soap::builder::body::WriteBody;
+use crate::soap::builder::body::bye::Bye;
+use crate::soap::builder::body::empty_body::EmptyBody;
+use crate::soap::builder::body::hello::Hello;
+use crate::soap::builder::body::probe::Probe;
+use crate::soap::builder::body::probe_matches::ProbeMatches;
+use crate::soap::builder::body::resolve::Resolve;
+use crate::soap::builder::body::resolve_matches::ResolveMatches;
+use crate::soap::builder::header::WriteExtraHeaders;
+use crate::soap::builder::header::app_sequence::AppSequence;
+use crate::soap::builder::header::none::NoExtraHeaders;
+use crate::soap::builder::header::reply_to_from::ReplyToFrom;
 
 pub enum MessageType {
     Hello,
@@ -46,12 +45,8 @@ impl std::fmt::Display for MessageType {
     }
 }
 
-type WriteElementCallback<W> =
-    fn(&mut Builder, &mut EventWriter<W>) -> Result<(), xml::writer::Error>;
-
-pub struct Builder<'config, 'm> {
+pub struct Builder<'config> {
     config: &'config Config,
-    messages_built: &'m AtomicU64,
 }
 
 #[cfg_attr(
@@ -92,43 +87,26 @@ fn sequence_id() -> Urn {
     }
 }
 
-trait WriteBody<W>
-where
-    W: Write,
-{
-    fn namespaces(&self) -> impl Iterator<Item = (impl Into<String>, impl Into<String>)> {
-        std::iter::empty::<(String, String)>()
+impl<'config> Builder<'config> {
+    fn new(config: &'config Config) -> Self {
+        Self { config }
     }
 
-    fn write_body(
-        self,
-        builder: &mut Builder,
-        writer: &mut EventWriter<W>,
-    ) -> Result<(), xml::writer::Error>;
-}
-
-impl<'config, 'm> Builder<'config, 'm> {
-    fn new(config: &'config Config, messages_built: &'m AtomicU64) -> Self {
-        Self {
-            config,
-            messages_built,
-        }
-    }
-
-    fn build_message<B, W>(
+    fn build_message<H, B, W>(
         &mut self,
         to_addr: &str,
         action: &str,
         relates_to: Option<Urn>,
-        add_extra_headers: Option<WriteElementCallback<W>>,
+        extra_headers: H,
         body: B,
     ) -> Result<(W, Urn), xml::writer::Error>
     where
+        H: WriteExtraHeaders<W>,
         B: WriteBody<W>,
         W: Write + Default + AsRef<[u8]>,
     {
         let response =
-            self.build_message_tree::<B, W>(to_addr, action, relates_to, add_extra_headers, body)?;
+            self.build_message_tree::<H, B, W>(to_addr, action, relates_to, extra_headers, body)?;
 
         event!(
             Level::DEBUG,
@@ -144,15 +122,16 @@ impl<'config, 'm> Builder<'config, 'm> {
     /// The message can be constructed based on a response to another
     /// message (given by its header) and with a optional response that
     /// serves as the message's body
-    fn build_message_tree<B, W>(
+    fn build_message_tree<H, B, W>(
         &mut self,
         to_addr: &str,
         action: &str,
         relates_to: Option<Urn>,
-        add_extra_headers: Option<WriteElementCallback<W>>,
+        extra_headers: H,
         body: B,
     ) -> Result<(W, Urn), xml::writer::Error>
     where
+        H: WriteExtraHeaders<W>,
         B: WriteBody<W>,
         W: Write + Default,
     {
@@ -169,6 +148,10 @@ impl<'config, 'm> Builder<'config, 'm> {
         let mut start_element = XmlEvent::start_element("soap:Envelope")
             .ns("soap", XML_SOAP_NAMESPACE)
             .ns("wsa", XML_WSA_NAMESPACE);
+
+        for (prefix, namespace) in extra_headers.namespaces() {
+            start_element = start_element.ns(prefix, namespace);
+        }
 
         for (prefix, namespace) in body.namespaces() {
             start_element = start_element.ns(prefix, namespace);
@@ -199,16 +182,14 @@ impl<'config, 'm> Builder<'config, 'm> {
             header_and_body.write(XmlEvent::end_element())?;
         }
 
-        if let Some(add_extra_headers) = add_extra_headers {
-            add_extra_headers(self, &mut header_and_body)?;
-        }
+        WriteExtraHeaders::<W>::write_extra_headers(extra_headers, &mut header_and_body)?;
 
         // close soap:Heap
         header_and_body.write(XmlEvent::end_element())?;
 
         header_and_body.write(XmlEvent::start_element("soap:Body"))?;
 
-        WriteBody::<W>::write_body(body, self, &mut header_and_body)?;
+        WriteBody::<W>::write_body(body, self.config, &mut header_and_body)?;
 
         // close body
         header_and_body.write(XmlEvent::end_element())?;
@@ -220,18 +201,14 @@ impl<'config, 'm> Builder<'config, 'm> {
     }
 
     /// WS-Discovery, Section 4.1, Hello message
-    pub fn build_hello(
-        config: &Config,
-        messages_built: &AtomicU64,
-        xaddr: IpAddr,
-    ) -> Result<Vec<u8>, xml::writer::Error> {
-        let mut builder = Builder::new(config, messages_built);
+    pub fn build_hello(config: &Config, xaddr: IpAddr) -> Result<Vec<u8>, xml::writer::Error> {
+        let mut builder = Builder::new(config);
 
-        let message = builder.build_message::<Hello, Vec<u8>>(
+        let message = builder.build_message::<_, _, Vec<u8>>(
             WSA_DISCOVERY,
             WSD_HELLO,
             None,
-            None,
+            NoExtraHeaders::new(),
             Hello::new(xaddr),
         )?;
 
@@ -239,25 +216,31 @@ impl<'config, 'm> Builder<'config, 'm> {
     }
 
     /// WS-Discovery, Section 4.2, Bye message
-    pub fn build_bye(
-        config: &Config,
-        messages_built: &AtomicU64,
-    ) -> Result<Vec<u8>, xml::writer::Error> {
-        let mut builder = Builder::new(config, messages_built);
+    pub fn build_bye(config: &Config) -> Result<Vec<u8>, xml::writer::Error> {
+        let mut builder = Builder::new(config);
 
-        let message = builder.build_message(WSA_DISCOVERY, WSD_BYE, None, None, Bye::new())?;
+        let message = builder.build_message(
+            WSA_DISCOVERY,
+            WSD_BYE,
+            None,
+            NoExtraHeaders::new(),
+            Bye::new(),
+        )?;
 
         Ok(message.0)
     }
 
     // WS-Discovery, Section 4.3, Probe message
-    pub fn build_probe(
-        config: &Config,
-        messages_built: &AtomicU64,
-    ) -> Result<(Vec<u8>, Urn), xml::writer::Error> {
-        let mut builder = Builder::new(config, messages_built);
+    pub fn build_probe(config: &Config) -> Result<(Vec<u8>, Urn), xml::writer::Error> {
+        let mut builder = Builder::new(config);
 
-        let message = builder.build_message(WSA_DISCOVERY, WSD_PROBE, None, None, Probe::new())?;
+        let message = builder.build_message(
+            WSA_DISCOVERY,
+            WSD_PROBE,
+            None,
+            NoExtraHeaders::new(),
+            Probe::new(),
+        )?;
 
         Ok((message.0, message.1))
     }
@@ -266,15 +249,14 @@ impl<'config, 'm> Builder<'config, 'm> {
     pub fn build_resolve(
         config: &Config,
         endpoint: Uuid,
-        messages_built: &AtomicU64,
     ) -> Result<(Vec<u8>, Urn), xml::writer::Error> {
-        let mut builder = Builder::new(config, messages_built);
+        let mut builder = Builder::new(config);
 
         let message = builder.build_message(
             WSA_DISCOVERY,
             WSD_RESOLVE,
             None,
-            None,
+            NoExtraHeaders::new(),
             Resolve::new(endpoint),
         )?;
 
@@ -287,17 +269,16 @@ impl<'config, 'm> Builder<'config, 'm> {
         messages_built: &AtomicU64,
         relates_to: Urn,
     ) -> Result<Vec<u8>, xml::writer::Error> {
-        let mut builder = Builder::new(config, messages_built);
+        let mut builder = Builder::new(config);
 
         let message = builder.build_message(
             WSA_ANON,
             WSD_RESOLVE_MATCH,
             Some(relates_to),
-            #[expect(
-                clippy::redundant_closure_for_method_calls,
-                reason = "lifetimes aren't passed when using function pointer"
-            )]
-            Some(|builder, element| builder.add_wsd_host_header_elements(element)),
+            AppSequence::new(
+                &config.wsd_instance_id,
+                messages_built.fetch_add(1, Ordering::SeqCst),
+            ),
             ResolveMatches::new(address),
         )?;
 
@@ -309,150 +290,31 @@ impl<'config, 'm> Builder<'config, 'm> {
         messages_built: &AtomicU64,
         relates_to: Urn,
     ) -> Result<Vec<u8>, xml::writer::Error> {
-        let mut builder = Builder::new(config, messages_built);
+        let mut builder = Builder::new(config);
 
         let message = builder.build_message(
             WSA_ANON,
             WSD_PROBE_MATCH,
             Some(relates_to),
-            #[expect(
-                clippy::redundant_closure_for_method_calls,
-                reason = "lifetimes aren't passed when using function pointer"
-            )]
-            Some(|builder, element| builder.add_wsd_host_header_elements(element)),
+            AppSequence::new(
+                &config.wsd_instance_id,
+                messages_built.fetch_add(1, Ordering::SeqCst),
+            ),
             ProbeMatches::new(),
         )?;
 
         Ok(message.0)
     }
 
-    fn add_wsd_host_header_elements<W>(
-        &mut self,
-        writer: &mut EventWriter<W>,
-    ) -> Result<(), xml::writer::Error>
-    where
-        W: Write,
-    {
-        let wsd_instance_id = self.config.wsd_instance_id.to_string();
-        let sequence_id = sequence_id().to_string();
-        let message_number = self
-            .messages_built
-            .fetch_add(1, Ordering::SeqCst)
-            .to_string();
-
-        writer.write(
-            XmlEvent::start_element("wsd:AppSequence")
-                .attr("InstanceId", wsd_instance_id.as_str())
-                .attr("SequenceId", sequence_id.as_str())
-                .attr("MessageNumber", &message_number),
-        )?;
-
-        writer.write(XmlEvent::end_element())?;
-
-        Ok(())
-    }
-
-    fn add_wsd_client_get_header_elements(
-        &mut self,
-        writer: &mut EventWriter<Vec<u8>>,
-    ) -> Result<(), xml::writer::Error> {
-        writer.write(XmlEvent::start_element("wsa:ReplyTo"))?;
-        writer.write(XmlEvent::start_element("wsa:Address"))?;
-        writer.write(XmlEvent::Characters(WSA_ANON))?;
-        writer.write(XmlEvent::end_element())?;
-        writer.write(XmlEvent::end_element())?;
-
-        writer.write(XmlEvent::start_element("wsa:From"))?;
-        writer.write(XmlEvent::start_element("wsa:Address"))?;
-        writer.write(XmlEvent::Characters(
-            self.config.uuid.urn().to_string().as_str(),
-        ))?;
-        writer.write(XmlEvent::end_element())?;
-        writer.write(XmlEvent::end_element())?;
-
-        Ok(())
-    }
-
-    #[expect(clippy::unused_self, reason = "Builder consistency")]
-    fn add_types<W>(
-        &self,
-        writer: &mut EventWriter<W>,
-        types: &str,
-    ) -> Result<(), xml::writer::Error>
-    where
-        W: Write,
-    {
-        writer.write(XmlEvent::start_element("wsd:Types"))?;
-        writer.write(XmlEvent::Characters(types))?;
-        writer.write(XmlEvent::end_element())?;
-
-        Ok(())
-    }
-
-    fn add_endpoint_reference<W: Write>(
-        &mut self,
-        writer: &mut EventWriter<W>,
-        endpoint: Option<Uuid>,
-    ) -> Result<(), xml::writer::Error> {
-        let endpoint = endpoint.unwrap_or(self.config.uuid).urn().to_string();
-
-        writer.write(XmlEvent::start_element("wsa:EndpointReference"))?;
-        writer.write(XmlEvent::start_element("wsa:Address"))?;
-        writer.write(XmlEvent::Characters(&endpoint))?;
-        writer.write(XmlEvent::end_element())?;
-        writer.write(XmlEvent::end_element())?;
-
-        Ok(())
-    }
-
-    fn add_xaddr<W: Write>(
-        &mut self,
-        writer: &mut EventWriter<W>,
-        ip_addr: IpAddr,
-    ) -> Result<(), xml::writer::Error> {
-        let address = format!(
-            "http://{}:{}/{}",
-            UrlIpAddr::from(ip_addr),
-            WSD_HTTP_PORT,
-            self.config.uuid
-        );
-
-        writer.write(XmlEvent::start_element("wsd:XAddrs"))?;
-        writer.write(XmlEvent::Characters(&address))?;
-        writer.write(XmlEvent::end_element())?;
-
-        Ok(())
-    }
-
-    #[expect(clippy::unused_self, reason = "Builder consistency")]
-    fn add_metadata_version<W: Write>(
-        &self,
-        writer: &mut EventWriter<W>,
-    ) -> Result<(), xml::writer::Error> {
-        writer.write(XmlEvent::start_element("wsd:MetadataVersion"))?;
-        writer.write(XmlEvent::Characters("1"))?;
-        writer.write(XmlEvent::end_element())?;
-
-        Ok(())
-    }
-
-    pub fn build_get(
-        config: &Config,
-        endpoint: Uuid,
-        messages_built: &AtomicU64,
-    ) -> Result<Vec<u8>, xml::writer::Error> {
-        let mut builder = Builder::new(config, messages_built);
+    pub fn build_get(config: &Config, endpoint: Uuid) -> Result<Vec<u8>, xml::writer::Error> {
+        let mut builder = Builder::new(config);
 
         builder
             .build_message(
                 endpoint.as_urn().to_string().as_str(),
                 WSD_GET,
                 None,
-                #[expect(
-                    clippy::redundant_closure_for_method_calls,
-                    reason = "lifetimes aren't passed when using function pointer"
-                )]
-                Some(|builder, writer| builder.add_wsd_client_get_header_elements(writer)),
+                ReplyToFrom::new(&config.uuid_as_urn_str),
                 EmptyBody::new(),
             )
             .map(|(m, _)| m)

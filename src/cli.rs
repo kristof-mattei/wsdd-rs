@@ -229,12 +229,15 @@ where
         None => get_uuid_from_machine(),
     }?;
 
+    let uuid_as_urn_str = uuid.urn().to_string().into_boxed_str();
+
     let listen = matches.get_one::<PortOrSocket>("listen").cloned();
 
     let config = Config {
         interface: interfaces,
         hoplimit: *matches.get_one("hoplimit").expect("hoplimit has a default"),
         uuid,
+        uuid_as_urn_str,
         verbosity,
         domain: matches.get_one("domain").cloned(),
         hostname,

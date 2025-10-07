@@ -58,12 +58,12 @@ pub const WSDP_RELATIONSHIP_HOST: &str = "host";
 pub const WSDP_RELATIONSHIP_TYPE_HOST: &str = concatcp!(WSDP_URI, "/", WSDP_RELATIONSHIP_HOST);
 
 // WSD_TYPE_DEVICE: str = 'wsdp:Device'
-pub const WSD_TYPE_DEVICE: &str = "wsdp:Device";
+pub const WSDP_TYPE_DEVICE: &str = "wsdp:Device";
 // PUB_COMPUTER: str = 'pub:Computer'
 const PUB_COMPUTER: &str = "pub:Computer";
 // WSD_TYPE_DEVICE_COMPUTER: str = '{0} {1}'.format(WSD_TYPE_DEVICE, PUB_COMPUTER)
 // TODO: fix when format_args!() becomes const
-pub const WSD_TYPE_DEVICE_COMPUTER: &str = concatcp!(WSD_TYPE_DEVICE, " ", PUB_COMPUTER);
+pub const WSDP_TYPE_DEVICE_COMPUTER: &str = concatcp!(WSDP_TYPE_DEVICE, " ", PUB_COMPUTER);
 
 // WSD_MCAST_GRP_V4: str = '239.255.255.250'
 pub const WSD_MCAST_GRP_V4: Ipv4Addr = Ipv4Addr::new(239, 255, 255, 250);

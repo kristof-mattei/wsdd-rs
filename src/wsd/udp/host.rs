@@ -24,7 +24,6 @@ pub struct WSDHost {
     address: IpAddr,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    messages_built: Arc<AtomicU64>,
     multicast: Sender<Box<[u8]>>,
 }
 
@@ -55,7 +54,6 @@ impl WSDHost {
             address,
             cancellation_token,
             config,
-            messages_built,
             multicast,
         };
 
@@ -86,7 +84,7 @@ impl WSDHost {
 
     // WS-Discovery, Section 4.1, Hello message
     async fn send_hello(&self) -> Result<(), eyre::Report> {
-        let hello = Builder::build_hello(&self.config, &self.messages_built, self.address)?;
+        let hello = Builder::build_hello(&self.config, self.address)?;
 
         // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
         // TODO move event to here and write properly
@@ -99,7 +97,7 @@ impl WSDHost {
 
     /// WS-Discovery, Section 4.2, Bye message
     async fn send_bye(&self) -> Result<(), eyre::Report> {
-        let bye = Builder::build_bye(&self.config, &self.messages_built)?;
+        let bye = Builder::build_bye(&self.config)?;
 
         // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
         // TODO move event to here and write properly
