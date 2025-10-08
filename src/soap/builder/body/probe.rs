@@ -5,7 +5,7 @@ use xml::writer::XmlEvent;
 
 use crate::config::Config;
 use crate::constants::{
-    WSDP_TYPE_DEVICE, XML_PUB_NAMESPACE, XML_SOAP_NAMESPACE, XML_WSD_NAMESPACE, XML_WSDP_NAMESPACE,
+    WSDP_TYPE_DEVICE, XML_PUB_NAMESPACE, XML_WSD_NAMESPACE, XML_WSDP_NAMESPACE,
 };
 use crate::soap::builder::WriteBody;
 use crate::soap::builder::body::add_types;
@@ -36,7 +36,7 @@ where
         _config: &Config,
         writer: &mut EventWriter<W>,
     ) -> Result<(), xml::writer::Error> {
-        writer.write(XmlEvent::start_element("Probe").ns("soap", XML_SOAP_NAMESPACE))?;
+        writer.write(XmlEvent::start_element("wsd:Probe"))?;
 
         add_types(writer, WSDP_TYPE_DEVICE)?;
 
