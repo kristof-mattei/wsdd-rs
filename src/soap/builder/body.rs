@@ -22,6 +22,8 @@ where
     W: Write,
 {
     fn namespaces(&self) -> impl Iterator<Item = (impl Into<String>, impl Into<String>)> {
+        // <[(String, String); 0]>::into_iter([])
+
         std::iter::empty::<(String, String)>()
     }
 
