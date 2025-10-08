@@ -273,8 +273,6 @@ mod tests {
         let host_messages_built = Arc::new(AtomicU64::new(0));
         let host_ip = Ipv4Addr::new(192, 168, 100, 1);
 
-        // client
-
         let cancellation_token = CancellationToken::new();
         let (_sender, receiver) = tokio::sync::mpsc::channel(10);
         let (multicast, mut multicast_receiver) = tokio::sync::mpsc::channel(10);
@@ -321,8 +319,6 @@ mod tests {
         let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
         let host_messages_built = Arc::new(AtomicU64::new(0));
         let host_ip = Ipv4Addr::new(192, 168, 100, 1);
-
-        // client
 
         let cancellation_token = CancellationToken::new();
         let (_sender, receiver) = tokio::sync::mpsc::channel(10);
