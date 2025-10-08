@@ -345,12 +345,14 @@ mod tests {
 
         let bye = multicast_receiver.recv().await.unwrap();
 
+        let expected_message_number = 1_usize;
+
         let expected = format!(
             include_str!("../../test/bye-template.xml"),
             Uuid::nil(),
             host_instance_id,
             Uuid::nil(),
-            host_messages_built.load(Ordering::SeqCst) - 1,
+            expected_message_number,
             host_endpoint_uuid,
         );
 
