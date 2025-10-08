@@ -5,7 +5,7 @@ use xml::EventWriter;
 use xml::writer::XmlEvent;
 
 use crate::config::Config;
-use crate::constants::{XML_SOAP_NAMESPACE, XML_WSD_NAMESPACE};
+use crate::constants::XML_WSD_NAMESPACE;
 use crate::soap::builder::WriteBody;
 use crate::soap::builder::body::{add_endpoint_reference, add_metadata_version, add_xaddr};
 
@@ -32,7 +32,7 @@ where
         config: &Config,
         writer: &mut EventWriter<W>,
     ) -> Result<(), xml::writer::Error> {
-        writer.write(XmlEvent::start_element("Hello").ns("soap", XML_SOAP_NAMESPACE))?;
+        writer.write(XmlEvent::start_element("wsd:Hello"))?;
 
         add_endpoint_reference(writer, &config.uuid_as_urn_str, None)?;
 

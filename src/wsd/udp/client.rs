@@ -729,6 +729,7 @@ mod tests {
             Uuid::new_v4(),
             host_instance_id,
             Uuid::new_v4(),
+            0,
             host_endpoint_uuid
         );
 
@@ -849,6 +850,7 @@ mod tests {
             Uuid::new_v4(),
             host_instance_id,
             Uuid::new_v4(),
+            0,
             host_endpoint_uuid
         );
 
