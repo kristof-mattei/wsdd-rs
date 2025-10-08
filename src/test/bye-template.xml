@@ -8,7 +8,7 @@
         <wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To>
         <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Bye</wsa:Action>
         <wsa:MessageID>urn:uuid:{}</wsa:MessageID>
-        <wsd:AppSequence InstanceId="{}" SequenceId="urn:uuid:{}" MessageNumber="0" />
+        <wsd:AppSequence InstanceId="{}" SequenceId="urn:uuid:{}" MessageNumber="{}" />
     </soap:Header>
     <soap:Body>
         <wsd:Bye>

@@ -24,6 +24,7 @@ pub struct WSDHost {
     address: IpAddr,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
+    messages_built: Arc<AtomicU64>,
     multicast: Sender<Box<[u8]>>,
 }
 
@@ -54,6 +55,7 @@ impl WSDHost {
             address,
             cancellation_token,
             config,
+            messages_built: Arc::clone(&messages_built),
             multicast,
         };
 
@@ -63,7 +65,7 @@ impl WSDHost {
         )))
         .await;
 
-        if let Err(error) = host.send_hello().await {
+        if let Err(error) = host.send_hello(&messages_built).await {
             // TODO is this fatal? What should we do?
             event!(Level::ERROR, ?error, "Failed to send hello");
         }
@@ -77,14 +79,14 @@ impl WSDHost {
         // note that this is a child token, so we only cancel ourselves
         self.cancellation_token.cancel();
 
-        if graceful && let Err(error) = self.send_bye().await {
+        if graceful && let Err(error) = self.send_bye(&self.messages_built).await {
             event!(Level::DEBUG, ?error, "Failed to schedule bye message");
         }
     }
 
     // WS-Discovery, Section 4.1, Hello message
-    async fn send_hello(&self) -> Result<(), eyre::Report> {
-        let hello = Builder::build_hello(&self.config, self.address)?;
+    async fn send_hello(&self, messages_built: &AtomicU64) -> Result<(), eyre::Report> {
+        let hello = Builder::build_hello(&self.config, messages_built, self.address)?;
 
         // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
         // TODO move event to here and write properly
@@ -96,8 +98,8 @@ impl WSDHost {
     }
 
     /// WS-Discovery, Section 4.2, Bye message
-    async fn send_bye(&self) -> Result<(), eyre::Report> {
-        let bye = Builder::build_bye(&self.config)?;
+    async fn send_bye(&self, messages_built: &AtomicU64) -> Result<(), eyre::Report> {
+        let bye = Builder::build_bye(&self.config, messages_built)?;
 
         // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
         // TODO move event to here and write properly
@@ -253,11 +255,114 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use pretty_assertions::assert_eq;
+    use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
 
+    use crate::network_address::NetworkAddress;
+    use crate::network_interface::NetworkInterface;
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler};
-    use crate::wsd::udp::host::{handle_probe, handle_resolve};
+    use crate::wsd::udp::host::{WSDHost, handle_probe, handle_resolve};
+
+    #[tokio::test]
+    async fn sends_hello() {
+        // host
+        let host_endpoint_uuid = Uuid::new_v4();
+        let host_instance_id = "host-instance-id";
+        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
+        let host_messages_built = Arc::new(AtomicU64::new(0));
+        let host_ip = Ipv4Addr::new(192, 168, 100, 1);
+
+        // client
+
+        let cancellation_token = CancellationToken::new();
+        let (_sender, receiver) = tokio::sync::mpsc::channel(10);
+        let (multicast, mut multicast_receiver) = tokio::sync::mpsc::channel(10);
+        let (unicast, _unicast_receiver) = tokio::sync::mpsc::channel(10);
+
+        let _wsd_host = WSDHost::init(
+            &cancellation_token,
+            Arc::clone(&host_config),
+            Arc::clone(&host_messages_built),
+            NetworkAddress::new(
+                host_ip.into(),
+                Arc::new(NetworkInterface::new_with_index("eth0", 5, 1)),
+            ),
+            receiver,
+            multicast,
+            unicast,
+        )
+        .await;
+
+        let hello = multicast_receiver.recv().await.unwrap();
+
+        let expected = format!(
+            include_str!("../../test/hello-template.xml"),
+            Uuid::nil(),
+            host_instance_id,
+            Uuid::nil(),
+            host_endpoint_uuid,
+            host_ip,
+            5357,
+            host_endpoint_uuid
+        );
+
+        let response = to_string_pretty(&hello).unwrap();
+        let expected = to_string_pretty(expected.as_bytes()).unwrap();
+
+        assert_eq!(response, expected);
+    }
+
+    #[tokio::test]
+    async fn sends_bye() {
+        // host
+        let host_endpoint_uuid = Uuid::new_v4();
+        let host_instance_id = "host-instance-id";
+        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
+        let host_messages_built = Arc::new(AtomicU64::new(0));
+        let host_ip = Ipv4Addr::new(192, 168, 100, 1);
+
+        // client
+
+        let cancellation_token = CancellationToken::new();
+        let (_sender, receiver) = tokio::sync::mpsc::channel(10);
+        let (multicast, mut multicast_receiver) = tokio::sync::mpsc::channel(10);
+        let (unicast, _unicast_receiver) = tokio::sync::mpsc::channel(10);
+
+        let wsd_host = WSDHost::init(
+            &cancellation_token,
+            Arc::clone(&host_config),
+            Arc::clone(&host_messages_built),
+            NetworkAddress::new(
+                host_ip.into(),
+                Arc::new(NetworkInterface::new_with_index("eth0", 5, 1)),
+            ),
+            receiver,
+            multicast,
+            unicast,
+        )
+        .await;
+
+        let _hello = multicast_receiver.recv().await.unwrap();
+
+        wsd_host.teardown(true).await;
+
+        let bye = multicast_receiver.recv().await.unwrap();
+
+        let expected = format!(
+            include_str!("../../test/bye-template.xml"),
+            Uuid::nil(),
+            host_instance_id,
+            Uuid::nil(),
+            host_messages_built.load(Ordering::SeqCst) - 1,
+            host_endpoint_uuid,
+        );
+
+        let response = to_string_pretty(&bye).unwrap();
+        let expected = to_string_pretty(expected.as_bytes()).unwrap();
+
+        assert_eq!(response, expected);
+    }
 
     #[tokio::test]
     async fn handles_resolve() {

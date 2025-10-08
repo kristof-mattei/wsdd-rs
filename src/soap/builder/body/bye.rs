@@ -29,7 +29,7 @@ where
         config: &Config,
         writer: &mut EventWriter<W>,
     ) -> Result<(), xml::writer::Error> {
-        writer.write(XmlEvent::start_element("Bye").ns("wsd", XML_WSD_NAMESPACE))?;
+        writer.write(XmlEvent::start_element("wsd:Bye"))?;
 
         add_endpoint_reference(writer, &config.uuid_as_urn_str, None)?;
 

@@ -201,14 +201,21 @@ impl<'config> Builder<'config> {
     }
 
     /// WS-Discovery, Section 4.1, Hello message
-    pub fn build_hello(config: &Config, xaddr: IpAddr) -> Result<Vec<u8>, xml::writer::Error> {
+    pub fn build_hello(
+        config: &Config,
+        messages_built: &AtomicU64,
+        xaddr: IpAddr,
+    ) -> Result<Vec<u8>, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
         let message = builder.build_message::<_, _, Vec<u8>>(
             WSA_DISCOVERY,
             WSD_HELLO,
             None,
-            NoExtraHeaders::new(),
+            AppSequence::new(
+                &config.wsd_instance_id,
+                messages_built.fetch_add(1, Ordering::SeqCst),
+            ),
             Hello::new(xaddr),
         )?;
 
@@ -216,14 +223,20 @@ impl<'config> Builder<'config> {
     }
 
     /// WS-Discovery, Section 4.2, Bye message
-    pub fn build_bye(config: &Config) -> Result<Vec<u8>, xml::writer::Error> {
+    pub fn build_bye(
+        config: &Config,
+        messages_built: &AtomicU64,
+    ) -> Result<Vec<u8>, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
         let message = builder.build_message(
             WSA_DISCOVERY,
             WSD_BYE,
             None,
-            NoExtraHeaders::new(),
+            AppSequence::new(
+                &config.wsd_instance_id,
+                messages_built.fetch_add(1, Ordering::SeqCst),
+            ),
             Bye::new(),
         )?;
 
