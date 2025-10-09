@@ -91,7 +91,11 @@ fn main() -> Result<(), eyre::Report> {
     parsing_error.map_or(Ok(()), Err)?;
 
     // initialize the runtime
-    let rt = tokio::runtime::Runtime::new().unwrap();
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_io()
+        .enable_time()
+        .build()
+        .unwrap();
 
     // start service
     let result: Result<(), eyre::Report> = rt.block_on(start_tasks());
@@ -132,6 +136,50 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     print_header();
 
     config.log();
+
+    if let &Some(ref chroot_path) = &config.chroot {
+        if let Err(error) = chroot(chroot_path) {
+            event!(
+                Level::ERROR,
+                ?error,
+                "could not chroot to {}",
+                chroot_path.display()
+            );
+
+            // TODO error more gracefully
+            #[expect(clippy::exit, reason = "Daemonize failed, all we can do is die")]
+            std::process::exit(2);
+        } else {
+            event!(
+                Level::INFO,
+                "chrooted successfully to {}",
+                chroot_path.display()
+            );
+        }
+    }
+
+    if let &Some((uid, gid)) = &config.user
+        && let Err(reason) = drop_privileges(uid, gid)
+    {
+        event!(Level::ERROR, ?uid, ?gid, reason, "Drop privileges failed");
+
+        // TODO error more gracefully
+        #[expect(clippy::exit, reason = "Daemonize failed, all we can do is die")]
+        std::process::exit(3);
+    }
+
+    if config.chroot.is_some()
+        &&
+        // SAFETY: libc call
+        (unsafe { libc::getuid() == 0 } ||
+            // SAFETY: libc call
+            unsafe { libc::getgid() == 0 })
+    {
+        event!(
+            Level::WARN,
+            "chrooted but running as root, consider -u option"
+        );
+    }
 
     // TODO
     // if args.ipv4only and args.ipv6only:
@@ -193,49 +241,6 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     //     api_server = ApiServer(aio_loop, args.listen, nm)
     // ApiServer::new(listen, )
     // };
-    if let &Some(ref chroot_path) = &config.chroot {
-        if let Err(error) = chroot(chroot_path) {
-            event!(
-                Level::ERROR,
-                ?error,
-                "could not chroot to {}",
-                chroot_path.display()
-            );
-
-            // TODO error more gracefully
-            #[expect(clippy::exit, reason = "Daemonize failed, all we can do is die")]
-            std::process::exit(2);
-        } else {
-            event!(
-                Level::INFO,
-                "chrooted successfully to {}",
-                chroot_path.display()
-            );
-        }
-    }
-
-    if let &Some((uid, gid)) = &config.user
-        && let Err(reason) = drop_privileges(uid, gid)
-    {
-        event!(Level::ERROR, ?uid, ?gid, reason, "Drop privileges failed");
-
-        // TODO error more gracefully
-        #[expect(clippy::exit, reason = "Daemonize failed, all we can do is die")]
-        std::process::exit(3);
-    }
-
-    if config.chroot.is_some()
-        &&
-        // SAFETY: libc call
-        (unsafe { libc::getuid() == 0 } ||
-            // SAFETY: libc call
-            unsafe { libc::getgid() == 0 })
-    {
-        event!(
-            Level::WARN,
-            "chrooted but running as root, consider -u option"
-        );
-    }
 
     // # main loop, serve requests coming from any outbound socket
     // try:
