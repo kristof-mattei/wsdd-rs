@@ -91,7 +91,11 @@ fn main() -> Result<(), eyre::Report> {
     parsing_error.map_or(Ok(()), Err)?;
 
     // initialize the runtime
-    let rt = tokio::runtime::Runtime::new().unwrap();
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_io()
+        .enable_time()
+        .build()
+        .unwrap();
 
     // start service
     let result: Result<(), eyre::Report> = rt.block_on(start_tasks());
