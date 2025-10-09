@@ -1,3 +1,4 @@
+use color_eyre::eyre;
 use tokio::task::JoinHandle;
 
 pub mod env;
@@ -11,11 +12,9 @@ pub mod task;
 /// `Result::Ok(T)` when both the join-handle AND
 /// the result of the inner function are `Result::Ok`, and `Result::Err`
 /// when either the join failed, or the inner task failed
-#[expect(unused, reason = "WIP")]
-pub async fn flatten_handle<T, E>(handle: JoinHandle<Result<T, E>>) -> Result<T, color_eyre::Report>
+pub async fn flatten_handle<T, E>(handle: JoinHandle<Result<T, E>>) -> Result<T, eyre::Report>
 where
-    E: 'static + Sync + Send,
-    color_eyre::Report: From<E>,
+    eyre::Report: From<E>,
 {
     match handle.await {
         Ok(Ok(result)) => Ok(result),

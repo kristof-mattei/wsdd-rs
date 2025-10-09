@@ -39,7 +39,7 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::{EnvFilter, Layer as _};
 
-use crate::cli::parse_cli;
+use crate::{cli::parse_cli, utils::flatten_handle};
 
 fn build_filter() -> (EnvFilter, Option<eyre::Report>) {
     fn build_default_filter() -> EnvFilter {
@@ -91,14 +91,18 @@ fn main() -> Result<(), eyre::Report> {
     parsing_error.map_or(Ok(()), Err)?;
 
     // initialize the runtime
-    let rt = tokio::runtime::Builder::new_multi_thread()
+    let result: Result<(), eyre::Report> = tokio::runtime::Builder::new_multi_thread()
         .enable_io()
         .enable_time()
         .build()
-        .unwrap();
+        .expect("Failed building the Runtime")
+        .block_on(async {
+            // explicitly launch everything in a spawned task
+            // see https://docs.rs/tokio/latest/tokio/attr.main.html#non-worker-async-function
+            let handle = tokio::task::spawn(start_tasks());
 
-    // start service
-    let result: Result<(), eyre::Report> = rt.block_on(start_tasks());
+            flatten_handle(handle).await
+        });
 
     result
 }
