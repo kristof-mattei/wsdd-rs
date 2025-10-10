@@ -64,7 +64,6 @@ zerocopy = { version = "0.8.27", features = ["derive"] }
 [dev-dependencies]
 mockito = "=1.7.0"
 pretty_assertions = "=1.4.1"
-xml = "=1.0.0"
 
 [lints.clippy]
 # don't stop from compiling / running
