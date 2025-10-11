@@ -2,11 +2,12 @@ use std::io::Write;
 
 use crate::soap::builder::WriteExtraHeaders;
 
+#[derive(Default)]
 pub struct NoExtraHeaders {}
 
 impl NoExtraHeaders {
     pub fn new() -> Self {
-        Self {}
+        Self::default()
     }
 }
 
