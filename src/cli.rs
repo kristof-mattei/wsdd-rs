@@ -350,3 +350,40 @@ where
     // return the value provided by the user
     matches.get_one::<T>(key)
 }
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+    use tracing::Level;
+
+    use crate::cli::parse_cli_from;
+
+    #[test]
+    fn interfaces() {
+        let config =
+            parse_cli_from(["wsdd-rs", "--interface", "eth0", "--interface", "eth1"]).unwrap();
+
+        assert_eq!(config.interfaces, ["eth0", "eth1"]);
+    }
+
+    #[test]
+    fn no_verbose() {
+        let config = parse_cli_from(["wsdd-rs"]).unwrap();
+
+        assert_eq!(config.verbosity, Level::WARN);
+    }
+
+    #[test]
+    fn verbose() {
+        let config = parse_cli_from(["wsdd-rs", "--verbose"]).unwrap();
+
+        assert_eq!(config.verbosity, Level::INFO);
+    }
+
+    #[test]
+    fn very_verbose() {
+        let config = parse_cli_from(["wsdd-rs", "--verbose", "--verbose"]).unwrap();
+
+        assert_eq!(config.verbosity, Level::DEBUG);
+    }
+}
