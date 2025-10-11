@@ -21,6 +21,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CARGO_FEATURES: --all-features
+  BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
   # github.repository as <account>/<repo>
   IMAGE_NAME: ${{ github.repository }}
   IMAGE_VARIANTS: |-
@@ -324,12 +325,14 @@ jobs:
           grcov $(find . -name "profile-*.profraw" -print) \
             --binary-path ./target/debug/ \
             --branch \
+            --vcs-branch ${BRANCH_NAME} \
             --ignore-not-existing \
             --keep-only "src/**" \
             --llvm \
-            --output-path ./reports/lcov.info \
-            --output-type lcov \
-            --source-dir .
+            --output-type coveralls+ \
+            --output-path ./reports/coveralls.json \
+            --source-dir . \
+            --token magic
 
       - name: Upload coverage results (to Codecov.io)
         uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
@@ -337,7 +340,7 @@ jobs:
           disable_search: true
           disable_telem: true
           fail_ci_if_error: true
-          files: reports/lcov.info
+          files: reports/coveralls.json
           plugins: ""
           use_oidc: true
 
