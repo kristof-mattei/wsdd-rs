@@ -5,6 +5,12 @@ use crate::soap::builder::WriteExtraHeaders;
 #[derive(Default)]
 pub struct NoExtraHeaders {}
 
+impl NoExtraHeaders {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 impl<W> WriteExtraHeaders<W> for NoExtraHeaders
 where
     W: Write,

@@ -532,12 +532,10 @@ mod tests {
     use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
 
-    use crate::wsd::udp::client::{handle_bye, handle_hello};
-    use crate::{
-        network_interface::NetworkInterface,
-        test_utils::{build_config, build_message_handler_with_network_address},
-    };
-    use crate::{test_utils::xml::to_string_pretty, wsd::udp::client::WSDClient};
+    use crate::network_interface::NetworkInterface;
+    use crate::test_utils::xml::to_string_pretty;
+    use crate::test_utils::{build_config, build_message_handler_with_network_address};
+    use crate::wsd::udp::client::{WSDClient, handle_bye, handle_hello};
 
     #[tokio::test]
     async fn handles_hello_without_xaddr() {

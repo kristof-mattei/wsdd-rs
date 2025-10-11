@@ -13,6 +13,12 @@ use crate::soap::builder::body::{add_endpoint_reference, add_metadata_version, a
 #[derive(Default)]
 pub struct ProbeMatches {}
 
+impl ProbeMatches {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 impl<W> WriteBody<W> for ProbeMatches
 where
     W: Write,

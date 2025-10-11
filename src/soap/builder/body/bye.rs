@@ -11,6 +11,12 @@ use crate::soap::builder::body::add_endpoint_reference;
 #[derive(Default)]
 pub struct Bye {}
 
+impl Bye {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 impl<W> WriteBody<W> for Bye
 where
     W: Write,
