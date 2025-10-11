@@ -338,7 +338,7 @@ jobs:
         uses: coverallsapp/github-action@773b6d8e80fa7862da56a7664bd747c91255b2e2 # v2.3.5
         with:
           format: coveralls
-          git-branch: ${BRANCH_NAME}
+          git-branch: ${{ env.BRANCH_NAME }}
           files: ./reports/coveralls+
 
       - name: Upload coverage results (to Codecov.io)
