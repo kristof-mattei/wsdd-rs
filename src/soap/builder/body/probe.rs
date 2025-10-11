@@ -10,11 +10,12 @@ use crate::constants::{
 use crate::soap::builder::WriteBody;
 use crate::soap::builder::body::add_types;
 
+#[derive(Default)]
 pub struct Probe {}
 
 impl Probe {
     pub fn new() -> Self {
-        Self {}
+        Self::default()
     }
 }
 

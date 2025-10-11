@@ -5,11 +5,12 @@ use xml::EventWriter;
 use crate::config::Config;
 use crate::soap::builder::WriteBody;
 
+#[derive(Default)]
 pub struct EmptyBody {}
 
 impl EmptyBody {
     pub fn new() -> Self {
-        Self {}
+        Self::default()
     }
 }
 
