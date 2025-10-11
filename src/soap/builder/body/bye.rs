@@ -8,13 +8,8 @@ use crate::constants::XML_WSD_NAMESPACE;
 use crate::soap::builder::WriteBody;
 use crate::soap::builder::body::add_endpoint_reference;
 
+#[derive(Default)]
 pub struct Bye {}
-
-impl Bye {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
 
 impl<W> WriteBody<W> for Bye
 where

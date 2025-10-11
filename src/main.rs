@@ -27,11 +27,11 @@ use std::env::{self, VarError};
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::network_handler::NetworkHandler;
+use crate::security::{chroot, drop_privileges};
 use color_eyre::config::HookBuilder;
 use color_eyre::eyre;
 use dotenvy::dotenv;
-use network_handler::NetworkHandler;
-use security::{chroot, drop_privileges};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};

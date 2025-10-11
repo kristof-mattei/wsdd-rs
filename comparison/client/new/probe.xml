@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope
-    xmlns:pub="http://schemas.microsoft.com/windows/pub/2005/07"
     xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery"
     xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
     xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"

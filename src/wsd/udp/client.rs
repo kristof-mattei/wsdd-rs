@@ -525,14 +525,19 @@ mod tests {
     use std::sync::Arc;
 
     use hashbrown::HashMap;
+    use libc::RT_SCOPE_SITE;
     use mockito::ServerOpts;
     use pretty_assertions::assert_eq;
     use tokio::sync::RwLock;
+    use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
 
-    use crate::test_utils::xml::to_string_pretty;
-    use crate::test_utils::{build_config, build_message_handler_with_network_address};
     use crate::wsd::udp::client::{handle_bye, handle_hello};
+    use crate::{
+        network_interface::NetworkInterface,
+        test_utils::{build_config, build_message_handler_with_network_address},
+    };
+    use crate::{test_utils::xml::to_string_pretty, wsd::udp::client::WSDClient};
 
     #[tokio::test]
     async fn handles_hello_without_xaddr() {
@@ -873,5 +878,45 @@ mod tests {
                 .await
                 .contains_key(&host_endpoint_uuid)
         );
+    }
+
+    #[tokio::test]
+    async fn sends_probe() {
+        let cancellation_token = CancellationToken::new();
+        let client_endpoint_id = Uuid::new_v4();
+        let client_instance_id = "client-instance-id";
+        let config = Arc::new(build_config(client_endpoint_id, client_instance_id));
+        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+
+        let (_sender, recv_socket_receiver) = tokio::sync::mpsc::channel(10);
+        let (_sender, mc_send_socket_receiver) = tokio::sync::mpsc::channel(10);
+        let (mc_send_socket_sender, mut multicast_receiver) = tokio::sync::mpsc::channel(10);
+        let (unicast, _unicast_receiver) = tokio::sync::mpsc::channel(10);
+
+        let bound_to = crate::network_address::NetworkAddress::new(
+            IpAddr::V4(Ipv4Addr::new(192, 168, 100, 5)),
+            Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+        );
+
+        let _client = WSDClient::init(
+            &cancellation_token,
+            config,
+            client_devices,
+            bound_to,
+            recv_socket_receiver,
+            mc_send_socket_receiver,
+            mc_send_socket_sender,
+            unicast,
+        )
+        .await;
+
+        let probe = multicast_receiver.recv().await.unwrap();
+
+        let expected = format!(include_str!("../../test/probe-template.xml"), Uuid::nil());
+
+        let response = to_string_pretty(&probe).unwrap();
+        let expected = to_string_pretty(expected.as_bytes()).unwrap();
+
+        assert_eq!(response, expected);
     }
 }

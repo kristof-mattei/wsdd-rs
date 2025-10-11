@@ -237,7 +237,7 @@ impl<'config> Builder<'config> {
                 &config.wsd_instance_id,
                 messages_built.fetch_add(1, Ordering::SeqCst),
             ),
-            Bye::new(),
+            Bye::default(),
         )?;
 
         Ok(message.0)
@@ -251,8 +251,8 @@ impl<'config> Builder<'config> {
             WSA_DISCOVERY,
             WSD_PROBE,
             None,
-            NoExtraHeaders::new(),
-            Probe::new(),
+            NoExtraHeaders::default(),
+            Probe::default(),
         )?;
 
         Ok((message.0, message.1))
@@ -269,7 +269,7 @@ impl<'config> Builder<'config> {
             WSA_DISCOVERY,
             WSD_RESOLVE,
             None,
-            NoExtraHeaders::new(),
+            NoExtraHeaders::default(),
             Resolve::new(endpoint),
         )?;
 
@@ -313,7 +313,7 @@ impl<'config> Builder<'config> {
                 &config.wsd_instance_id,
                 messages_built.fetch_add(1, Ordering::SeqCst),
             ),
-            ProbeMatches::new(),
+            ProbeMatches::default(),
         )?;
 
         Ok(message.0)
@@ -328,116 +328,8 @@ impl<'config> Builder<'config> {
                 WSD_GET,
                 None,
                 ReplyToFrom::new(&config.uuid_as_urn_str),
-                EmptyBody::new(),
+                EmptyBody::default(),
             )
             .map(|(m, _)| m)
     }
-
-    // def handle_probe(self, header: ElementTree.Element, body: ElementTree.Element) -> Optional[WSDMessage]:
-    //     probe = body.find('./wsd:Probe', namespaces)
-    //     if probe is None:
-    //         return None
-
-    //     scopes = probe.find('./wsd:Scopes', namespaces)
-
-    //     if scopes:
-    //         # THINK: send fault message (see p. 21 in WSD)
-    //         logger.debug('scopes ({}) unsupported but probed'.format(scopes))
-    //         return None
-
-    //     types_elem = probe.find('./wsd:Types', namespaces)
-    //     if types_elem is None:
-    //         logger.debug('Probe message lacks wsd:Types element. Ignored.')
-    //         return None
-
-    //     types = types_elem.text
-    //     if not types == WSD_TYPE_DEVICE:
-    //         logger.debug('unknown discovery type ({}) for probe'.format(types))
-    //         return None
-
-    //     matches = ElementTree.Element('wsd:ProbeMatches')
-    //     match = ElementTree.SubElement(matches, 'wsd:ProbeMatch')
-    //     self.add_endpoint_reference(match)
-    //     self.add_types(match)
-    //     self.add_metadata_version(match)
-
-    //     return matches, WSD_PROBE_MATCH
-
-    // def handle_resolve(self, header: ElementTree.Element, body: ElementTree.Element) -> Optional[WSDMessage]:
-    //     resolve = body.find('./wsd:Resolve', namespaces)
-    //     if resolve is None:
-    //         return None
-
-    //     addr = resolve.find('./wsa:EndpointReference/wsa:Address', namespaces)
-    //     if addr is None:
-    //         logger.debug('invalid resolve request: missing endpoint address')
-    //         return None
-
-    //     if not addr.text == args.uuid.urn:
-    //         logger.debug('invalid resolve request: address ({}) does not match own one ({})'.format(
-    //             addr.text, args.uuid.urn))
-    //         return None
-
-    //     matches = ElementTree.Element('wsd:ResolveMatches')
-    //     match = ElementTree.SubElement(matches, 'wsd:ResolveMatch')
-    //     self.add_endpoint_reference(match)
-    //     self.add_types(match)
-    //     self.add_xaddr(match, self.mch.address.transport_str)
-    //     self.add_metadata_version(match)
-
-    //     return matches, WSD_RESOLVE_MATCH
-
-    // def handle_message(self, msg: str, src: Optional[UdpAddress] = None) -> Optional[str]:
-    //     """
-    //     handle a WSD message
-    //     """
-    //     try:
-    //         tree = ETfromString(msg)
-    //     except ElementTree.ParseError:
-    //         return None
-
-    //     header = tree.find('./soap:Header', namespaces)
-    //     if header is None:
-    //         return None
-
-    //     msg_id_tag = header.find('./wsa:MessageID', namespaces)
-    //     if msg_id_tag is None:
-    //         return None
-
-    //     msg_id = str(msg_id_tag.text)
-
-    //     # check for duplicates
-    //     if self.is_duplicated_msg(msg_id):
-    //         logger.debug('known message ({0}): dropping it'.format(msg_id))
-    //         return None
-
-    //     action_tag = header.find('./wsa:Action', namespaces)
-    //     if action_tag is None:
-    //         return None
-
-    //     action: str = str(action_tag.text)
-    //     _, _, action_method = action.rpartition('/')
-
-    //     if src:
-    //         logger.info('{}:{}({}) - - "{} {} UDP" - -'.format(src.transport_str, src.port, src.interface,
-    //                                                            action_method, msg_id))
-    //     else:
-    //         # http logging is already done by according server
-    //         logger.debug('processing WSD {} message ({})'.format(action_method, msg_id))
-
-    //     body = tree.find('./soap:Body', namespaces)
-    //     if body is None:
-    //         return None
-
-    //     logger.debug('incoming message content is {0}'.format(msg))
-    //     if action in self.handlers:
-    //         handler = self.handlers[action]
-    //         retval = handler(header, body)
-    //         if retval is not None:
-    //             response, response_type = retval
-    //             return self.build_message(WSA_ANON, response_type, header, response)
-    //     else:
-    //         logger.debug('unhandled action {0}/{1}'.format(action, msg_id))
-
-    //     return None
 }
