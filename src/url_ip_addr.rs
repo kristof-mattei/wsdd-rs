@@ -18,3 +18,34 @@ impl From<IpAddr> for UrlIpAddr {
         UrlIpAddr { ip_addr: value }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::url_ip_addr::UrlIpAddr;
+    use pretty_assertions::assert_eq;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    #[test]
+    fn displays_ipv4() {
+        let ip_addr: IpAddr = Ipv4Addr::new(192, 168, 100, 5).into();
+
+        let url_ip_addr: UrlIpAddr = ip_addr.into();
+
+        assert_eq!("192.168.100.5", url_ip_addr.to_string());
+    }
+
+    #[test]
+    fn displays_ipv6_with_square_brackets() {
+        let ip_addr: IpAddr = Ipv6Addr::new(
+            0x2001, 0x0db8, 0x5c41, 0xf105, 0x2cf9, 0xcd58, 0x0b74, 0x0684,
+        )
+        .into();
+
+        let url_ip_addr: UrlIpAddr = ip_addr.into();
+
+        assert_eq!(
+            "[2001:db8:5c41:f105:2cf9:cd58:b74:684]",
+            url_ip_addr.to_string()
+        );
+    }
+}
