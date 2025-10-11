@@ -254,6 +254,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
 
+    use libc::RT_SCOPE_SITE;
     use pretty_assertions::assert_eq;
     use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
@@ -284,7 +285,7 @@ mod tests {
             Arc::clone(&host_messages_built),
             NetworkAddress::new(
                 host_ip.into(),
-                Arc::new(NetworkInterface::new_with_index("eth0", 5, 1)),
+                Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
             ),
             receiver,
             multicast,
@@ -331,7 +332,7 @@ mod tests {
             Arc::clone(&host_messages_built),
             NetworkAddress::new(
                 host_ip.into(),
-                Arc::new(NetworkInterface::new_with_index("eth0", 5, 1)),
+                Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
             ),
             receiver,
             multicast,
