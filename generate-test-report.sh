@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BASE_RUSTFLAGS=""
+BASE_RUSTFLAGS="--cfg tokio_unstable"
 CARGO_FEATURES=""
 
 export RUSTFLAGS="${BASE_RUSTFLAGS} --allow=warnings -Cinstrument-coverage"

@@ -327,8 +327,8 @@ jobs:
             --ignore-not-existing \
             --keep-only "src/**" \
             --llvm \
-            --output-path ./reports/lcov.info \
-            --output-type lcov \
+            --output-type covdir \
+            --output-path ./reports/covdir.json \
             --source-dir .
 
       - name: Upload coverage results (to Codecov.io)
@@ -337,7 +337,7 @@ jobs:
           disable_search: true
           disable_telem: true
           fail_ci_if_error: true
-          files: reports/lcov.info
+          files: reports/covdir.json
           plugins: ""
           use_oidc: true
 
