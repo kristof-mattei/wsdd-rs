@@ -30,8 +30,6 @@ use std::time::Duration;
 use color_eyre::config::HookBuilder;
 use color_eyre::eyre;
 use dotenvy::dotenv;
-use network_handler::NetworkHandler;
-use security::{chroot, drop_privileges};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
@@ -39,7 +37,10 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::{EnvFilter, Layer as _};
 
-use crate::{cli::parse_cli, utils::flatten_handle};
+use crate::cli::parse_cli;
+use crate::network_handler::NetworkHandler;
+use crate::security::{chroot, drop_privileges};
+use crate::utils::flatten_handle;
 
 fn build_filter() -> (EnvFilter, Option<eyre::Report>) {
     fn build_default_filter() -> EnvFilter {

@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope
     xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
-    xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+    xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+>
     <soap:Header>
         <wsa:To>urn:uuid:d6b92844-8911-4f59-8bdb-c9dadbb1a5bc</wsa:To>
         <wsa:Action>http://schemas.xmlsoap.org/ws/2004/09/transfer/Get</wsa:Action>
