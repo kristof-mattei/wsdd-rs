@@ -356,7 +356,10 @@ mod tests {
     use pretty_assertions::assert_eq;
     use tracing::Level;
 
-    use crate::cli::parse_cli_from;
+    use crate::{
+        cli::{parse_cli_from, to_listen},
+        config::PortOrSocket,
+    };
 
     #[test]
     fn interfaces() {
@@ -385,5 +388,32 @@ mod tests {
         let config = parse_cli_from(["wsdd-rs", "--verbose", "--verbose"]).unwrap();
 
         assert_eq!(config.verbosity, Level::DEBUG);
+    }
+
+    #[test]
+    fn to_listen_port() {
+        let port = to_listen("1234");
+
+        assert_eq!(port, Ok(PortOrSocket::Port(1234)));
+    }
+
+    #[test]
+    fn to_listen_socket() {
+        let port = to_listen("/var/wsdd-rs/socket");
+
+        assert_eq!(
+            port,
+            Ok(PortOrSocket::SocketPath("/var/wsdd-rs/socket".into()))
+        );
+    }
+
+    #[test]
+    fn to_listen_port_too_large() {
+        let port = to_listen("123456");
+
+        assert!(matches!(
+            port.err().as_deref(),
+            Some("number too large to fit in u16")
+        ));
     }
 }
