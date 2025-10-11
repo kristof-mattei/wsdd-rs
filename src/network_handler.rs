@@ -199,15 +199,15 @@ impl NetworkHandler {
         }
 
         // Use interface only if it's in the list of user-provided interface names
-        if !self.config.interface.is_empty()
+        if !self.config.interfaces.is_empty()
             && !self
                 .config
-                .interface
+                .interfaces
                 .iter()
                 .any(|i| i == &*address.interface.name)
             && !self
                 .config
-                .interface
+                .interfaces
                 .iter()
                 .any(|i| i == &*address.address.to_string())
         {
