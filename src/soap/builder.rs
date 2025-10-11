@@ -237,7 +237,7 @@ impl<'config> Builder<'config> {
                 &config.wsd_instance_id,
                 messages_built.fetch_add(1, Ordering::SeqCst),
             ),
-            Bye::default(),
+            Bye::new(),
         )?;
 
         Ok(message.0)
@@ -251,8 +251,8 @@ impl<'config> Builder<'config> {
             WSA_DISCOVERY,
             WSD_PROBE,
             None,
-            NoExtraHeaders::default(),
-            Probe::default(),
+            NoExtraHeaders::new(),
+            Probe::new(),
         )?;
 
         Ok((message.0, message.1))
@@ -269,7 +269,7 @@ impl<'config> Builder<'config> {
             WSA_DISCOVERY,
             WSD_RESOLVE,
             None,
-            NoExtraHeaders::default(),
+            NoExtraHeaders::new(),
             Resolve::new(endpoint),
         )?;
 
@@ -313,7 +313,7 @@ impl<'config> Builder<'config> {
                 &config.wsd_instance_id,
                 messages_built.fetch_add(1, Ordering::SeqCst),
             ),
-            ProbeMatches::default(),
+            ProbeMatches::new(),
         )?;
 
         Ok(message.0)
@@ -328,7 +328,7 @@ impl<'config> Builder<'config> {
                 WSD_GET,
                 None,
                 ReplyToFrom::new(&config.uuid_as_urn_str),
-                EmptyBody::default(),
+                EmptyBody::new(),
             )
             .map(|(m, _)| m)
     }
