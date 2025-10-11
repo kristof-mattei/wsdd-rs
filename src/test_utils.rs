@@ -99,3 +99,17 @@ pub fn build_message_handler_with_network_address(
         network_address,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test_utils::xml::to_string_pretty;
+
+    #[test]
+    fn invalid_xml_yields_error() {
+        let invalid = "<open>contents</not_closed";
+
+        let pretty = to_string_pretty(invalid.as_bytes());
+
+        pretty.unwrap_err();
+    }
+}
