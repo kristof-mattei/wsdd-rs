@@ -126,25 +126,6 @@ impl NetworkHandler {
         Ok(())
     }
 
-    // def enumerate(self) -> None:
-    //     """
-    //     Performs an initial enumeration of addresses and sets up everything
-    //     for observing future changes.
-    //     """
-    //     if self.active:
-    //         return
-
-    //     self.active = True
-    //     self.do_enumerate()
-
-    // def do_enumerate(self) -> None:
-    //     pass
-
-    // def handle_change(self) -> None:
-    //     """ handle network change message """
-    //     pass
-
-    // def add_interface(self, interface: NetworkInterface) -> NetworkInterface:
     pub fn add_interface(
         &mut self,
         ifa_scope: u8,
