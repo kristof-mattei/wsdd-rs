@@ -234,7 +234,7 @@ where
     let listen = matches.get_one::<PortOrSocket>("listen").cloned();
 
     let config = Config {
-        interface: interfaces,
+        interfaces,
         hoplimit: *matches.get_one("hoplimit").expect("hoplimit has a default"),
         uuid,
         uuid_as_urn_str,
