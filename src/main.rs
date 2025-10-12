@@ -204,20 +204,33 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     network_handler.set_active();
 
     {
-        let mut address_monitor =
-            address_monitor::create_address_monitor(cancellation_token.clone(), sender, &config)?;
-
-        address_monitor.request_current_state()?;
-
         let cancellation_token = cancellation_token.clone();
+        let config = Arc::clone(&config);
 
         tasks.spawn(async move {
-            let _guard = cancellation_token.drop_guard();
+            let _guard = cancellation_token.clone().drop_guard();
+
+            let mut address_monitor = match address_monitor::create_address_monitor(
+                cancellation_token.clone(),
+                sender,
+                &config,
+            ) {
+                Ok(address_monitor) => address_monitor,
+                Err(error) => {
+                    event!(Level::ERROR, ?error, "Failed to create address monitor");
+                    return;
+                },
+            };
+
+            if let Err(error) = address_monitor.request_current_state() {
+                event!(Level::ERROR, ?error, "Failed to request current state");
+                return;
+            }
 
             match address_monitor.handle_change().await {
                 Ok(()) => event!(Level::INFO, "Address Monitor stopped listening"),
                 Err(error) => {
-                    event!(Level::ERROR, ?error, "TODO");
+                    event!(Level::ERROR, ?error, "Address Monitor stopped unexpectedly");
                 },
             }
         });
@@ -230,9 +243,9 @@ async fn start_tasks() -> Result<(), eyre::Report> {
             let _guard = cancellation_token.drop_guard();
 
             match network_handler.handle_change().await {
-                Ok(()) => event!(Level::INFO, "Network handler stopped listening"),
+                Ok(()) => event!(Level::INFO, "Network Handler stopped listening"),
                 Err(error) => {
-                    event!(Level::ERROR, ?error, "TODO");
+                    event!(Level::ERROR, ?error, "Network Handler stopped unexpectedly");
                 },
             }
 
@@ -246,6 +259,32 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     //     api_server = ApiServer(aio_loop, args.listen, nm)
     // ApiServer::new(listen, )
     // };
+
+    if let Some(listen_on) = config.listen.as_ref() {
+        let cancellation_token = cancellation_token.clone();
+        let listen_on = listen_on.clone();
+
+        tasks.spawn(async move {
+            let _guard = cancellation_token.clone().drop_guard();
+
+            let api_server = match api_server::ApiServer::new(cancellation_token, listen_on) {
+                Ok(api_server) => api_server,
+                Err(error) => {
+                    event!(Level::ERROR, ?error, "Failed to start ApiServer");
+                    return;
+                },
+            };
+
+            match api_server.handle_connections().await {
+                Ok(()) => event!(Level::INFO, "API Server stopped listening"),
+                Err(error) => {
+                    event!(Level::ERROR, ?error, "API Server stopped unexpectedly");
+                },
+            }
+
+            api_server.teardown().await;
+        });
+    }
 
     // # main loop, serve requests coming from any outbound socket
     // try:

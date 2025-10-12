@@ -132,6 +132,38 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Debug executable 'wsdd-rs' with --interface enp4s0 -4 --discovery --listen 5555",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=wsdd-rs",
+                    "--package=wsdd-rs",
+                    "--features=tokio-console"
+                ],
+                "filter": {
+                    "name": "wsdd-rs",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "--interface",
+                "enp4s0",
+                "-4",
+                "--discovery",
+                "--listen",
+                "5555"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
+            },
+            "internalConsoleOptions": "neverOpen",
+            "terminal": "integrated"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "Debug executable 'wsdd-rs' with --interface enp4s0 -4 --no-host --discovery",
             "cargo": {
                 "args": [
