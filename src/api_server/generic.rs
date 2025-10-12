@@ -1,4 +1,3 @@
-use std::convert::Into;
 use std::pin::Pin;
 
 use pin_project::pin_project;

@@ -16,6 +16,9 @@ use tracing::{Level, event};
 use crate::api_server::generic::{GenericListener, GenericStream, GenericWriteHalf};
 use crate::config::PortOrSocket;
 
+const MAX_CONNECTION_BACKLOG: u32 = 100;
+const MAX_CONCURRENT_CONNECTIONS: usize = 10;
+
 pub struct ApiServer {
     cancellation_token: CancellationToken,
     listen_on: PortOrSocket,
@@ -50,16 +53,16 @@ impl ApiServer {
                 socket.set_reuseport(true)?;
                 socket.bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)))?;
 
-                socket.listen(100)?.into()
+                socket.listen(MAX_CONNECTION_BACKLOG)?.into()
             },
             PortOrSocket::SocketPath(ref path) => {
                 let socket = tokio::net::UnixSocket::new_stream()?;
                 socket.bind(path)?;
-                socket.listen(100)?.into()
+                socket.listen(MAX_CONNECTION_BACKLOG)?.into()
             },
         };
 
-        let semaphore = Arc::new(Semaphore::new(10));
+        let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
 
         loop {
             let new_connection = tokio::select! {
@@ -126,7 +129,9 @@ async fn handle_single_connection(
     stream: GenericStream,
     _permit: OwnedSemaphorePermit,
 ) {
-    let mut buffer = vec![0_u8; 255];
+    const BUFFER_SIZE: usize = 255;
+
+    let mut buffer = vec![0_u8; BUFFER_SIZE];
 
     let (mut reader, mut writer) = stream.into_split();
 
