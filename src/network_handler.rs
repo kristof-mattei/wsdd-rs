@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use color_eyre::eyre;
 use thiserror::Error;
@@ -36,7 +37,7 @@ pub enum Command {
 
 pub struct NetworkHandler {
     // TODO this should _probably_ be an AtomicBool
-    active: bool,
+    active: AtomicBool,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
@@ -61,7 +62,7 @@ impl NetworkHandler {
         receiver: tokio::sync::mpsc::Receiver<Command>,
     ) -> Self {
         Self {
-            active: false,
+            active: AtomicBool::new(false),
             config: Arc::clone(config),
             cancellation_token,
             interfaces: HashMap::new(),
@@ -162,7 +163,7 @@ impl NetworkHandler {
 
     fn is_address_handled(&self, address: &NetworkAddress) -> bool {
         // do not handle anything when we are not active
-        if !self.active {
+        if !self.active.load(Ordering::Acquire) {
             return false;
         }
 
@@ -260,11 +261,11 @@ impl NetworkHandler {
 
     // def teardown(self) -> None:
     pub async fn teardown(&mut self) {
-        if !self.active {
+        if !self.active.load(Ordering::Acquire) {
             return;
         }
 
-        self.active = false;
+        self.active.store(false, Ordering::Release);
 
         let tasks = TaskTracker::new();
 
@@ -341,6 +342,6 @@ impl NetworkHandler {
     }
 
     pub fn set_active(&mut self) {
-        self.active = true;
+        self.active.store(true, Ordering::Release);
     }
 }
