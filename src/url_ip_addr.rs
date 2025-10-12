@@ -21,9 +21,11 @@ impl From<IpAddr> for UrlIpAddr {
 
 #[cfg(test)]
 mod tests {
-    use crate::url_ip_addr::UrlIpAddr;
-    use pretty_assertions::assert_eq;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    use pretty_assertions::assert_eq;
+
+    use crate::url_ip_addr::UrlIpAddr;
 
     #[test]
     fn displays_ipv4() {

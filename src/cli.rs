@@ -356,10 +356,8 @@ mod tests {
     use pretty_assertions::assert_eq;
     use tracing::Level;
 
-    use crate::{
-        cli::{parse_cli_from, to_listen},
-        config::PortOrSocket,
-    };
+    use crate::cli::{parse_cli_from, to_listen};
+    use crate::config::PortOrSocket;
 
     #[test]
     fn interfaces() {
