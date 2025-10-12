@@ -27,8 +27,8 @@ pub fn create_address_monitor(
     channel: Sender<Command>,
     config: &Arc<Config>,
 ) -> Result<Monitor, eyre::Report> {
-    Monitor::new(cancellation_token, channel, config).map_err(|e| {
-        event!(Level::ERROR, ?e);
-        e.into()
+    Monitor::new(cancellation_token, channel, config).map_err(|error| {
+        event!(Level::ERROR, ?error);
+        error.into()
     })
 }
