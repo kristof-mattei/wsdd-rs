@@ -9,7 +9,7 @@ use tracing::{Level, event};
 pub fn parse_userspec(user_spec: &str) -> Result<(u32, u32), String> {
     let (user_id, group_id) = user_spec
         .split_once(':')
-        .ok_or(String::from("wrong format (expected username:groupname)"))?;
+        .ok_or(String::from("Wrong format (expected `username:groupname`)"))?;
 
     let uid = { getpwname(user_id) }?;
     let gid = { getgrname(group_id) }?;
@@ -33,7 +33,7 @@ fn getpwname(user: &str) -> Result<u32, String> {
         None => {
             // SAFETY: libc call
             if unsafe { *libc::__errno_location() } == 0 {
-                Err(format!("User '{}' not found in /etc/passwd", user))
+                Err(format!("User `{}` not found in /etc/passwd", user))
             } else {
                 Err(format!("{}", Error::last_os_error()))
             }
@@ -58,7 +58,7 @@ fn getgrname(group: &str) -> Result<u32, String> {
         None => {
             // SAFETY: libc call
             if unsafe { *libc::__errno_location() } == 0 {
-                Err(format!("Group {} not found in /etc/passwd", group))
+                Err(format!("Group `{}` not found in /etc/group", group))
             } else {
                 Err(format!("{}", Error::last_os_error()))
             }
@@ -113,4 +113,43 @@ pub fn chroot(root: &Path) -> Result<(), eyre::Report> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::security::parse_userspec;
+
+    #[test]
+    fn parse_userspec_root_root() {
+        let result = parse_userspec("root:root");
+
+        assert!(matches!(result, Ok((0, 0))));
+    }
+
+    #[test]
+    fn parse_userspec_invalid_format() {
+        let result = parse_userspec("abcabc");
+
+        assert!(
+            matches!(result, Err(error) if error == "Wrong format (expected `username:groupname`)")
+        );
+    }
+
+    #[test]
+    fn parse_userspec_non_existing_user() {
+        let result = parse_userspec("I_DO_NOT_EXIST:root");
+
+        assert!(
+            matches!(result, Err(error) if error == "User `I_DO_NOT_EXIST` not found in /etc/passwd")
+        );
+    }
+
+    #[test]
+    fn parse_userspec_non_existing_group() {
+        let result = parse_userspec("root:I_DO_NOT_EXIST");
+
+        assert!(
+            matches!(result, Err(error) if error == "Group `I_DO_NOT_EXIST` not found in /etc/group")
+        );
+    }
 }
