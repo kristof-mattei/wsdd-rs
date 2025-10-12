@@ -42,7 +42,7 @@ impl ApiServer {
         })
     }
 
-    pub async fn do_your_thing(&self) -> Result<(), eyre::Report> {
+    pub async fn handle_connections(&self) -> Result<(), eyre::Report> {
         let listener: GenericListener = match self.listen_on {
             PortOrSocket::Port(port) => {
                 let socket = tokio::net::TcpSocket::new_v4()?;

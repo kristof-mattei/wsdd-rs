@@ -230,7 +230,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
             match address_monitor.handle_change().await {
                 Ok(()) => event!(Level::INFO, "Address Monitor stopped listening"),
                 Err(error) => {
-                    event!(Level::ERROR, ?error, "TODO");
+                    event!(Level::ERROR, ?error, "Address Monitor stopped unexpectedly");
                 },
             }
         });
@@ -243,9 +243,9 @@ async fn start_tasks() -> Result<(), eyre::Report> {
             let _guard = cancellation_token.drop_guard();
 
             match network_handler.handle_change().await {
-                Ok(()) => event!(Level::INFO, "Network handler stopped listening"),
+                Ok(()) => event!(Level::INFO, "Network Handler stopped listening"),
                 Err(error) => {
-                    event!(Level::ERROR, ?error, "TODO");
+                    event!(Level::ERROR, ?error, "Network Handler stopped unexpectedly");
                 },
             }
 
@@ -275,10 +275,10 @@ async fn start_tasks() -> Result<(), eyre::Report> {
                 },
             };
 
-            match api_server.do_your_thing().await {
-                Ok(()) => event!(Level::INFO, "Network handler stopped listening"),
+            match api_server.handle_connections().await {
+                Ok(()) => event!(Level::INFO, "API Server stopped listening"),
                 Err(error) => {
-                    event!(Level::ERROR, ?error, "TODO");
+                    event!(Level::ERROR, ?error, "API Server stopped unexpectedly");
                 },
             }
 
