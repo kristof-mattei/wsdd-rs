@@ -43,14 +43,13 @@ impl std::cmp::PartialEq for NetworkAddress {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        net::{Ipv4Addr, Ipv6Addr},
-        sync::Arc,
-    };
+    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::sync::Arc;
 
     use libc::RT_SCOPE_SITE;
 
-    use crate::{network_address::NetworkAddress, network_interface::NetworkInterface};
+    use crate::network_address::NetworkAddress;
+    use crate::network_interface::NetworkInterface;
 
     #[test]
     fn ipv4_loopback_not_multicastable() {
