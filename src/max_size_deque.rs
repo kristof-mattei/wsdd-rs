@@ -44,8 +44,9 @@ impl<T> MaxSizeDeque<T> where T: Eq {}
 
 #[cfg(test)]
 mod tests {
-    use crate::max_size_deque::MaxSizeDeque;
     use pretty_assertions::assert_eq;
+
+    use crate::max_size_deque::MaxSizeDeque;
 
     #[test]
     fn no_slots() {
