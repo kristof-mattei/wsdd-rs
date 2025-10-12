@@ -1,6 +1,5 @@
 mod generic;
 
-use std::convert::Into as _;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -147,7 +146,7 @@ async fn handle_single_connection(
                 break;
             },
             Ok(bytes_read) => {
-                match process_command(&buffer[0..bytes_read - 1], &mut writer).await {
+                match process_command(&buffer[0..bytes_read], &mut writer).await {
                     Ok(true) => {
                         // all good
                         continue;
@@ -177,12 +176,13 @@ async fn handle_single_connection(
 }
 
 #[expect(clippy::match_same_arms, reason = "")]
+/// `raw_command` is newline terminated
 async fn process_command(
     raw_command: &[u8],
     writer: &mut GenericWriteHalf,
 ) -> Result<bool, std::io::Error> {
     let command = match str::from_utf8(raw_command) {
-        Ok(command) => command,
+        Ok(command) => command.trim(),
         Err(_error) => {
             writer.write_all("Invalid UTF-8".as_bytes()).await?;
 
