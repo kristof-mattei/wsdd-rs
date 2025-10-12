@@ -151,7 +151,9 @@ impl NetworkHandler {
                 };
 
                 let entry = vacant_entry.insert(Arc::new(NetworkInterface::new_with_index(
-                    if_name, ifa_scope, ifa_index,
+                    if_name.into_string(),
+                    ifa_scope,
+                    ifa_index,
                 )));
 
                 Arc::clone(entry)

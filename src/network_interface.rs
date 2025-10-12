@@ -1,11 +1,12 @@
 #![expect(unused, reason = "WIP")]
+use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 use std::io::Error;
 
 use color_eyre::eyre;
 use libc::IF_NAMESIZE;
 
-#[derive(Eq, Clone)]
+#[derive(Debug, Eq, Clone)]
 pub struct NetworkInterface {
     pub name: Box<str>,
     pub index: u32,
@@ -13,10 +14,10 @@ pub struct NetworkInterface {
 }
 
 impl NetworkInterface {
-    pub fn new<I: Into<String>>(name: I, scope: u8) -> Result<Self, std::io::Error> {
-        let name: String = name.into();
+    pub fn new<I: AsRef<str>>(name: I, scope: u8) -> Result<Self, std::io::Error> {
+        let name: &str = name.as_ref();
 
-        let index = if_nametoindex(&name)?;
+        let index = if_nametoindex(name)?;
 
         Ok(Self {
             name: name.into(),
@@ -25,7 +26,7 @@ impl NetworkInterface {
         })
     }
 
-    pub fn new_with_index<I: Into<String>>(name: I, scope: u8, index: u32) -> Self {
+    pub fn new_with_index<'a, I: Into<Cow<'a, str>>>(name: I, scope: u8, index: u32) -> Self {
         let name = name.into();
         Self {
             name: name.into(),
@@ -60,7 +61,7 @@ fn if_nametoindex(name: &str) -> Result<u32, std::io::Error> {
     }
 }
 
-pub fn if_indextoname(index: u32) -> Result<String, std::io::Error> {
+pub fn if_indextoname(index: u32) -> Result<Box<str>, std::io::Error> {
     let mut buffer = vec![0_u8; IF_NAMESIZE];
 
     // SAFETY: libc call
@@ -75,5 +76,29 @@ pub fn if_indextoname(index: u32) -> Result<String, std::io::Error> {
         .to_str()
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
 
-    Ok(String::from(ifname))
+    Ok(String::from(ifname).into_boxed_str())
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+
+    use crate::network_interface::NetworkInterface;
+
+    #[test]
+    fn equality() {
+        let first = NetworkInterface::new_with_index("eth0", 0, 1);
+        let second = NetworkInterface::new_with_index("eth0", 0, 1);
+
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn display_only_prints_name() {
+        const NAME: &str = "eth0";
+
+        let interface = NetworkInterface::new_with_index(NAME, 0, 1);
+
+        assert_eq!(interface.to_string(), NAME);
+    }
 }
