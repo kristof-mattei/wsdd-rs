@@ -198,23 +198,23 @@ where
     // TODO: How do we return a specific error (e.g. 3 for the user spec's value parser) when an error occurs?
     let matches = command.try_get_matches_from_mut(from)?;
 
-    let interfaces: Vec<String> = if let Some(interfaces) = matches.get_many::<String>("interface")
-    {
-        interfaces.cloned().collect::<Vec<_>>()
-    } else {
-        event!(Level::WARN, "no interface given, using all interfaces");
+    let interfaces: Vec<Box<str>> =
+        if let Some(interfaces) = matches.get_many::<String>("interface") {
+            interfaces.map(|i| i.to_owned().into_boxed_str()).collect()
+        } else {
+            event!(Level::WARN, "no interface given, using all interfaces");
 
-        vec![]
-    };
+            vec![]
+        };
 
     let hostname = if let Some(hostname) = get_user_cli_value::<String>(&matches, "hostname") {
-        hostname.clone()
+        hostname.to_owned().into_boxed_str()
     } else {
         let hostname = gethostname()?;
 
         hostname
             .split_once('.')
-            .map(|(first, _rest)| first.to_owned())
+            .map(|(first, _rest)| Box::from(first))
             .unwrap_or(hostname)
     };
 
@@ -242,9 +242,10 @@ where
         domain: matches.get_one("domain").cloned(),
         hostname,
         workgroup: matches
-            .get_one("workgroup")
-            .cloned()
-            .expect("workgroup has a default"),
+            .get_one::<String>("workgroup")
+            .expect("workgroup has a default")
+            .to_owned()
+            .into_boxed_str(),
         no_autostart: matches.get_one("no-autostart").copied().unwrap_or(false),
         no_http: matches.get_one("no-http").copied().unwrap_or(false),
         ipv4only: matches.get_one("ipv4only").copied().unwrap_or(false),
@@ -269,7 +270,7 @@ where
             .expect("Before epoch? Time travel?")
             .as_secs()
             .to_string()
-            .into(),
+            .into_boxed_str(),
     };
 
     // TODO
@@ -293,7 +294,7 @@ fn to_listen(listen: &str) -> Result<PortOrSocket, String> {
     }
 }
 
-fn gethostname() -> Result<String, eyre::Report> {
+fn gethostname() -> Result<Box<str>, eyre::Report> {
     let mut buffer = [0_u8; 255 /* POSIX LIMIT */ + 1 /* for the \0 */];
 
     // SAFETY: libc call
@@ -307,7 +308,7 @@ fn gethostname() -> Result<String, eyre::Report> {
         .expect("We used oversized buffer, so not finding a null is impossible")
         .to_str()?;
 
-    Ok(String::from(hostname))
+    Ok(String::from(hostname).into_boxed_str())
 }
 
 fn get_uuid_from_machine() -> Result<Uuid, eyre::Report> {
@@ -364,7 +365,14 @@ mod tests {
         let config =
             parse_cli_from(["wsdd-rs", "--interface", "eth0", "--interface", "eth1"]).unwrap();
 
-        assert_eq!(config.interfaces, ["eth0", "eth1"]);
+        assert_eq!(
+            config
+                .interfaces
+                .iter()
+                .map(AsRef::as_ref)
+                .collect::<Vec<_>>(),
+            &["eth0", "eth1"]
+        );
     }
 
     #[test]

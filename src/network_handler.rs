@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
 
+use crate::address_monitor::ApplicationStatus;
 use crate::config::Config;
 use crate::multicast_handler::MulticastHandler;
 use crate::network_address::NetworkAddress;
@@ -42,7 +43,8 @@ pub struct NetworkHandler {
     config: Arc<Config>,
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
     multicast_handlers: Vec<MulticastHandler>,
-    receiver: tokio::sync::mpsc::Receiver<Command>,
+    command_receiver: tokio::sync::mpsc::Receiver<Command>,
+    state_receiver: tokio::sync::watch::Receiver<ApplicationStatus>,
 }
 
 #[derive(Error, Debug)]
@@ -59,7 +61,8 @@ impl NetworkHandler {
     pub fn new(
         cancellation_token: CancellationToken,
         config: &Arc<Config>,
-        receiver: tokio::sync::mpsc::Receiver<Command>,
+        command_receiver: tokio::sync::mpsc::Receiver<Command>,
+        state_receiver: tokio::sync::watch::Receiver<ApplicationStatus>,
     ) -> Self {
         Self {
             active: AtomicBool::new(false),
@@ -67,7 +70,8 @@ impl NetworkHandler {
             cancellation_token,
             interfaces: HashMap::new(),
             multicast_handlers: vec![],
-            receiver,
+            command_receiver,
+            state_receiver,
         }
     }
 
@@ -77,7 +81,25 @@ impl NetworkHandler {
                 () = self.cancellation_token.cancelled() => {
                     break;
                 },
-                command = self.receiver.recv() => {
+                changed = self.state_receiver.changed() => {
+                    if changed.is_err() {
+                        break;
+                    } else {
+                        let new_state = *self.state_receiver.borrow();
+
+                        match new_state {
+                            ApplicationStatus::Paused => {
+                                self.teardown().await;
+                            },
+                            ApplicationStatus::Running => {
+                                self.set_active();
+                            }
+                        }
+
+                        continue;
+                    }
+                },
+                command = self.command_receiver.recv() => {
                     command
                 }
             };
@@ -124,10 +146,11 @@ impl NetworkHandler {
                 },
             }
         }
+
         Ok(())
     }
 
-    pub fn add_interface(
+    fn add_interface(
         &mut self,
         ifa_scope: u8,
         ifa_index: u32,
@@ -188,12 +211,12 @@ impl NetworkHandler {
                 .config
                 .interfaces
                 .iter()
-                .any(|i| i == &*address.interface.name)
+                .any(|i| *i == address.interface.name)
             && !self
                 .config
                 .interfaces
                 .iter()
-                .any(|i| i == &*address.address.to_string())
+                .any(|i| **i == address.address.to_string())
         {
             return false;
         }
@@ -261,7 +284,6 @@ impl NetworkHandler {
         // handler gets dropped
     }
 
-    // def teardown(self) -> None:
     pub async fn teardown(&mut self) {
         if !self.active.load(Ordering::Acquire) {
             return;
