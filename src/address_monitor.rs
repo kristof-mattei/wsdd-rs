@@ -22,16 +22,10 @@ type Monitor = RouteSocketAddressMonitor;
 )))]
 type Monitor = !;
 
-#[derive(Eq, PartialEq, Copy, Clone)]
-pub enum ApplicationStatus {
-    Running,
-    Paused,
-}
-
 pub fn create_address_monitor(
     cancellation_token: CancellationToken,
     new_address_sender: Sender<Command>,
-    state_receiver: tokio::sync::watch::Receiver<ApplicationStatus>,
+    state_receiver: tokio::sync::watch::Receiver<()>,
     config: &Arc<Config>,
 ) -> Result<Monitor, eyre::Report> {
     Monitor::new(

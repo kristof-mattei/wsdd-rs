@@ -437,7 +437,7 @@ async fn listen_forever(
         };
 
         // handle based on action
-        if let Err(err) = match &*header.action {
+        if let Err(error) = match &*header.action {
             constants::WSD_HELLO => {
                 handle_hello(
                     &config,
@@ -477,7 +477,7 @@ async fn listen_forever(
             event!(
                 Level::ERROR,
                 action = &*header.action,
-                ?err,
+                ?error,
                 "Failure to parse XML"
             );
             continue;

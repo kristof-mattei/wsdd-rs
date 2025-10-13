@@ -37,7 +37,6 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::{EnvFilter, Layer as _};
 
-use crate::address_monitor::ApplicationStatus;
 use crate::cli::parse_cli;
 use crate::network_handler::NetworkHandler;
 use crate::security::{chroot, drop_privileges};
@@ -200,16 +199,14 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     let tasks = tokio_util::task::TaskTracker::new();
 
     let (command_sender, command_receiver) = tokio::sync::mpsc::channel(10);
-    let (state_sender, state_receiver) =
-        tokio::sync::watch::channel::<ApplicationStatus>(ApplicationStatus::Running);
+    let (start_sender, start_receiver) = tokio::sync::watch::channel::<()>(());
 
     let mut network_handler = NetworkHandler::new(
         cancellation_token.clone(),
         &config,
         command_receiver,
-        state_receiver.clone(),
+        start_sender,
     );
-    network_handler.set_active();
 
     {
         let cancellation_token = cancellation_token.clone();
@@ -222,7 +219,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
             let mut address_monitor = match address_monitor::create_address_monitor(
                 cancellation_token.clone(),
                 command_sender,
-                state_receiver,
+                start_receiver,
                 &config,
             ) {
                 Ok(address_monitor) => address_monitor,
@@ -232,11 +229,6 @@ async fn start_tasks() -> Result<(), eyre::Report> {
                 },
             };
 
-            if let Err(error) = address_monitor.request_current_state() {
-                event!(Level::ERROR, ?error, "Failed to request current state");
-                return;
-            }
-
             match address_monitor.handle_change().await {
                 Ok(()) => event!(Level::INFO, "Address Monitor stopped listening"),
                 Err(error) => {
@@ -244,6 +236,10 @@ async fn start_tasks() -> Result<(), eyre::Report> {
                 },
             }
         });
+    }
+
+    if !config.no_autostart {
+        network_handler.set_active()?;
     }
 
     {
@@ -273,12 +269,13 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     if let Some(listen_on) = config.listen.as_ref() {
         let cancellation_token = cancellation_token.clone();
         let listen_on = listen_on.clone();
+        let command_sender = command_sender.clone();
 
         tasks.spawn(async move {
             let _guard = cancellation_token.clone().drop_guard();
 
             let api_server =
-                match api_server::ApiServer::new(cancellation_token, listen_on, state_sender) {
+                match api_server::ApiServer::new(cancellation_token, &listen_on, command_sender) {
                     Ok(api_server) => api_server,
                     Err(error) => {
                         event!(Level::ERROR, ?error, "Failed to start ApiServer");
