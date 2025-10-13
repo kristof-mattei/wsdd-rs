@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use color_eyre::eyre;
 use thiserror::Error;
@@ -16,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
 
+use crate::address_monitor::ApplicationStatus;
 use crate::config::Config;
 use crate::multicast_handler::MulticastHandler;
 use crate::network_address::NetworkAddress;
@@ -36,12 +38,13 @@ pub enum Command {
 
 pub struct NetworkHandler {
     // TODO this should _probably_ be an AtomicBool
-    active: bool,
+    active: AtomicBool,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
     multicast_handlers: Vec<MulticastHandler>,
-    receiver: tokio::sync::mpsc::Receiver<Command>,
+    command_receiver: tokio::sync::mpsc::Receiver<Command>,
+    state_receiver: tokio::sync::watch::Receiver<ApplicationStatus>,
 }
 
 #[derive(Error, Debug)]
@@ -58,15 +61,17 @@ impl NetworkHandler {
     pub fn new(
         cancellation_token: CancellationToken,
         config: &Arc<Config>,
-        receiver: tokio::sync::mpsc::Receiver<Command>,
+        command_receiver: tokio::sync::mpsc::Receiver<Command>,
+        state_receiver: tokio::sync::watch::Receiver<ApplicationStatus>,
     ) -> Self {
         Self {
-            active: false,
+            active: AtomicBool::new(false),
             config: Arc::clone(config),
             cancellation_token,
             interfaces: HashMap::new(),
             multicast_handlers: vec![],
-            receiver,
+            command_receiver,
+            state_receiver,
         }
     }
 
@@ -76,7 +81,25 @@ impl NetworkHandler {
                 () = self.cancellation_token.cancelled() => {
                     break;
                 },
-                command = self.receiver.recv() => {
+                changed = self.state_receiver.changed() => {
+                    if changed.is_err() {
+                        break;
+                    } else {
+                        let new_state = *self.state_receiver.borrow();
+
+                        match new_state {
+                            ApplicationStatus::Paused => {
+                                self.teardown().await;
+                            },
+                            ApplicationStatus::Running => {
+                                self.set_active();
+                            }
+                        }
+
+                        continue;
+                    }
+                },
+                command = self.command_receiver.recv() => {
                     command
                 }
             };
@@ -123,29 +146,11 @@ impl NetworkHandler {
                 },
             }
         }
+
         Ok(())
     }
 
-    // def enumerate(self) -> None:
-    //     """
-    //     Performs an initial enumeration of addresses and sets up everything
-    //     for observing future changes.
-    //     """
-    //     if self.active:
-    //         return
-
-    //     self.active = True
-    //     self.do_enumerate()
-
-    // def do_enumerate(self) -> None:
-    //     pass
-
-    // def handle_change(self) -> None:
-    //     """ handle network change message """
-    //     pass
-
-    // def add_interface(self, interface: NetworkInterface) -> NetworkInterface:
-    pub fn add_interface(
+    fn add_interface(
         &mut self,
         ifa_scope: u8,
         ifa_index: u32,
@@ -169,7 +174,9 @@ impl NetworkHandler {
                 };
 
                 let entry = vacant_entry.insert(Arc::new(NetworkInterface::new_with_index(
-                    if_name, ifa_scope, ifa_index,
+                    if_name.into_string(),
+                    ifa_scope,
+                    ifa_index,
                 )));
 
                 Arc::clone(entry)
@@ -181,7 +188,7 @@ impl NetworkHandler {
 
     fn is_address_handled(&self, address: &NetworkAddress) -> bool {
         // do not handle anything when we are not active
-        if !self.active {
+        if !self.active.load(Ordering::Acquire) {
             return false;
         }
 
@@ -199,17 +206,17 @@ impl NetworkHandler {
         }
 
         // Use interface only if it's in the list of user-provided interface names
-        if !self.config.interface.is_empty()
+        if !self.config.interfaces.is_empty()
             && !self
                 .config
-                .interface
+                .interfaces
                 .iter()
-                .any(|i| i == &*address.interface.name)
+                .any(|i| *i == address.interface.name)
             && !self
                 .config
-                .interface
+                .interfaces
                 .iter()
-                .any(|i| i == &*address.address.to_string())
+                .any(|i| **i == address.address.to_string())
         {
             return false;
         }
@@ -277,13 +284,12 @@ impl NetworkHandler {
         // handler gets dropped
     }
 
-    // def teardown(self) -> None:
     pub async fn teardown(&mut self) {
-        if !self.active {
+        if !self.active.load(Ordering::Acquire) {
             return;
         }
 
-        self.active = false;
+        self.active.store(false, Ordering::Release);
 
         let tasks = TaskTracker::new();
 
@@ -360,6 +366,6 @@ impl NetworkHandler {
     }
 
     pub fn set_active(&mut self) {
-        self.active = true;
+        self.active.store(true, Ordering::Release);
     }
 }

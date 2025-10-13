@@ -7,14 +7,14 @@ use uuid::Uuid;
 #[expect(clippy::struct_excessive_bools, reason = "Main config")]
 #[derive(Debug, PartialEq)]
 pub struct Config {
-    pub interface: Vec<String>,
+    pub interfaces: Vec<Box<str>>,
     pub hoplimit: u8,
     pub uuid: Uuid,
     pub uuid_as_urn_str: Box<str>,
     pub verbosity: Level,
-    pub domain: Option<String>,
-    pub hostname: String,
-    pub workgroup: String,
+    pub domain: Option<Box<str>>,
+    pub hostname: Box<str>,
+    pub workgroup: Box<str>,
     pub no_autostart: bool,
     pub no_http: bool,
     pub ipv4only: bool,

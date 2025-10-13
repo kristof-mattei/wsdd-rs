@@ -22,13 +22,26 @@ type Monitor = RouteSocketAddressMonitor;
 )))]
 type Monitor = !;
 
+#[derive(Eq, PartialEq, Copy, Clone)]
+pub enum ApplicationStatus {
+    Running,
+    Paused,
+}
+
 pub fn create_address_monitor(
     cancellation_token: CancellationToken,
-    channel: Sender<Command>,
+    new_address_sender: Sender<Command>,
+    state_receiver: tokio::sync::watch::Receiver<ApplicationStatus>,
     config: &Arc<Config>,
 ) -> Result<Monitor, eyre::Report> {
-    Monitor::new(cancellation_token, channel, config).map_err(|e| {
-        event!(Level::ERROR, ?e);
-        e.into()
+    Monitor::new(
+        cancellation_token,
+        new_address_sender,
+        state_receiver,
+        config,
+    )
+    .map_err(|error| {
+        event!(Level::ERROR, ?error);
+        error.into()
     })
 }

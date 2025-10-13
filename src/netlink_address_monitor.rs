@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 use zerocopy::{FromBytes as _, Immutable, IntoBytes};
 
+use crate::address_monitor::ApplicationStatus;
 use crate::config::Config;
 use crate::ffi::{self, NLMSG_ALIGNTO, ifaddrmsg, nlmsghdr, rtattr};
 use crate::network_handler::Command;
@@ -35,8 +36,9 @@ const SIZE_OF_SOCKADDR_NL: u32 = const {
 
 pub struct NetlinkAddressMonitor {
     cancellation_token: CancellationToken,
-    channel: Sender<Command>,
+    command_sender: Sender<Command>,
     socket: tokio::net::UdpSocket,
+    state_receiver: tokio::sync::watch::Receiver<ApplicationStatus>,
 }
 
 fn align_to(offset: usize, align_to: usize) -> usize {
@@ -50,7 +52,8 @@ impl NetlinkAddressMonitor {
     /// Implementation for Netlink sockets, i.e. Linux
     pub fn new(
         cancellation_token: CancellationToken,
-        channel: Sender<Command>,
+        command_sender: Sender<Command>,
+        state_receiver: tokio::sync::watch::Receiver<ApplicationStatus>,
         config: &Arc<Config>,
     ) -> Result<Self, std::io::Error> {
         let mut rtm_groups = RTMGRP_LINK;
@@ -104,8 +107,9 @@ impl NetlinkAddressMonitor {
 
         Ok(Self {
             cancellation_token,
-            channel,
+            command_sender,
             socket: tokio::net::UdpSocket::from_std(std::net::UdpSocket::from(socket))?,
+            state_receiver,
         })
     }
 
@@ -176,20 +180,27 @@ impl NetlinkAddressMonitor {
                 () = self.cancellation_token.cancelled() => {
                     break;
                 },
+                changed = self.state_receiver.changed() => {
+                    if changed.is_err() {
+                        break;
+                    } else {
+                        if *self.state_receiver.borrow() == ApplicationStatus::Running {
+                            self.request_current_state()?;
+                        }
+
+                        continue;
+                    }
+                },
                 result = self.socket.recv_buf(&mut buffer_slice) => {
                     result?
                 }
             };
 
-            // `recv_buf` tells us that `bytes_read` were read from the socket into our `buffer`, so they're initialized
-            buffer.truncate(bytes_read);
-
             event!(Level::DEBUG, "netlink message with {} bytes", bytes_read);
 
-            let buffer = Arc::<[_]>::from(buffer);
-
+            // `recv_buf` tells us that `bytes_read` were read from the socket into our `buffer`, so they're initialized
             // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
-            let buffer = unsafe { buffer.assume_init() };
+            let buffer = unsafe { &*(&raw const buffer[0..bytes_read] as *const [u8]) };
 
             let mut offset = 0;
 
@@ -332,11 +343,11 @@ impl NetlinkAddressMonitor {
                         index: ifaddr_message.ifa_index,
                     }
                 } else {
-                    // unreachable because we checked baove
+                    // unreachable because we checked above
                     unreachable!()
                 };
 
-                if let Err(error) = self.channel.send(command).await {
+                if let Err(error) = self.command_sender.send(command).await {
                     event!(Level::ERROR, ?error, "Failed to announce command");
                 }
 
