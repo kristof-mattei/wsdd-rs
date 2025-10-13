@@ -85,15 +85,12 @@ impl NetworkHandler {
                     if changed.is_err() {
                         break;
                     } else {
-                        let new_state = *self.state_receiver.borrow();
-
-                        match new_state {
-                            ApplicationStatus::Paused => {
-                                self.teardown().await;
-                            },
-                            ApplicationStatus::Running => {
-                                self.set_active();
-                            }
+                        if (*self.state_receiver.borrow()) == ApplicationStatus::Paused {
+                            self.teardown().await;
+                        } else if (*self.state_receiver.borrow()) == ApplicationStatus::Running {
+                            self.set_active();
+                        } else {
+                            // ...
                         }
 
                         continue;
@@ -216,7 +213,7 @@ impl NetworkHandler {
                 .config
                 .interfaces
                 .iter()
-                .any(|i| **i == address.address.to_string())
+                .any(|i| *i == address.address.to_string().into_boxed_str())
         {
             return false;
         }

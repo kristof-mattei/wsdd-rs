@@ -228,12 +228,12 @@ async fn process_command(
             return Ok(false);
         },
         "start" => {
-            if state_sender.send(ApplicationStatus::Running).is_err() {
+            if (state_sender.send(ApplicationStatus::Running)).is_err() {
                 return Ok(false);
             }
         },
         "stop" => {
-            if state_sender.send(ApplicationStatus::Paused).is_err() {
+            if (state_sender.send(ApplicationStatus::Paused)).is_err() {
                 return Ok(false);
             }
         },

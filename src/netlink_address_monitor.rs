@@ -107,7 +107,7 @@ impl NetlinkAddressMonitor {
 
         Ok(Self {
             cancellation_token,
-            command_sender,
+            channel: command_sender,
             socket: tokio::net::UdpSocket::from_std(std::net::UdpSocket::from(socket))?,
             state_receiver,
         })
