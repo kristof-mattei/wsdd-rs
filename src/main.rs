@@ -37,6 +37,7 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::{EnvFilter, Layer as _};
 
+use crate::address_monitor::ApplicationStatus;
 use crate::cli::parse_cli;
 use crate::network_handler::NetworkHandler;
 use crate::security::{chroot, drop_privileges};
@@ -198,21 +199,30 @@ async fn start_tasks() -> Result<(), eyre::Report> {
 
     let tasks = tokio_util::task::TaskTracker::new();
 
-    let (sender, receiver) = tokio::sync::mpsc::channel(10);
+    let (command_sender, command_receiver) = tokio::sync::mpsc::channel(10);
+    let (state_sender, state_receiver) =
+        tokio::sync::watch::channel::<ApplicationStatus>(ApplicationStatus::Running);
 
-    let mut network_handler = NetworkHandler::new(cancellation_token.clone(), &config, receiver);
+    let mut network_handler = NetworkHandler::new(
+        cancellation_token.clone(),
+        &config,
+        command_receiver,
+        state_receiver.clone(),
+    );
     network_handler.set_active();
 
     {
         let cancellation_token = cancellation_token.clone();
         let config = Arc::clone(&config);
+        let command_sender = command_sender.clone();
 
         tasks.spawn(async move {
             let _guard = cancellation_token.clone().drop_guard();
 
             let mut address_monitor = match address_monitor::create_address_monitor(
                 cancellation_token.clone(),
-                sender,
+                command_sender,
+                state_receiver,
                 &config,
             ) {
                 Ok(address_monitor) => address_monitor,
@@ -267,13 +277,14 @@ async fn start_tasks() -> Result<(), eyre::Report> {
         tasks.spawn(async move {
             let _guard = cancellation_token.clone().drop_guard();
 
-            let api_server = match api_server::ApiServer::new(cancellation_token, listen_on) {
-                Ok(api_server) => api_server,
-                Err(error) => {
-                    event!(Level::ERROR, ?error, "Failed to start ApiServer");
-                    return;
-                },
-            };
+            let api_server =
+                match api_server::ApiServer::new(cancellation_token, listen_on, state_sender) {
+                    Ok(api_server) => api_server,
+                    Err(error) => {
+                        event!(Level::ERROR, ?error, "Failed to start ApiServer");
+                        return;
+                    },
+                };
 
             match api_server.handle_connections().await {
                 Ok(()) => event!(Level::INFO, "API Server stopped listening"),

@@ -13,6 +13,7 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
+use crate::address_monitor::ApplicationStatus;
 use crate::api_server::generic::{GenericListener, GenericStream, GenericWriteHalf};
 use crate::config::PortOrSocket;
 
@@ -22,6 +23,7 @@ const MAX_CONCURRENT_CONNECTIONS: usize = 10;
 pub struct ApiServer {
     cancellation_token: CancellationToken,
     listen_on: PortOrSocket,
+    state_sender: tokio::sync::watch::Sender<ApplicationStatus>,
 }
 
 #[derive(Debug, Error)]
@@ -38,10 +40,12 @@ impl ApiServer {
     pub fn new(
         cancellation_token: CancellationToken,
         listen_on: PortOrSocket,
+        state_sender: tokio::sync::watch::Sender<ApplicationStatus>,
     ) -> Result<ApiServer, ApiServerError> {
         Ok(Self {
             cancellation_token,
             listen_on,
+            state_sender,
         })
     }
 
@@ -109,8 +113,11 @@ impl ApiServer {
                     let cancellation_token: CancellationToken =
                         self.cancellation_token.child_token();
 
+                    let state_sender = self.state_sender.clone();
+
                     tokio::task::spawn(async move {
-                        handle_single_connection(cancellation_token, stream, permit).await;
+                        handle_single_connection(cancellation_token, state_sender, stream, permit)
+                            .await;
                     });
                 },
                 Err(error) => {
@@ -126,6 +133,7 @@ impl ApiServer {
 
 async fn handle_single_connection(
     cancellation_token: CancellationToken,
+    state_sender: tokio::sync::watch::Sender<ApplicationStatus>,
     stream: GenericStream,
     _permit: OwnedSemaphorePermit,
 ) {
@@ -151,7 +159,7 @@ async fn handle_single_connection(
                 break;
             },
             Ok(bytes_read) => {
-                match process_command(&buffer[0..bytes_read], &mut writer).await {
+                match process_command(&buffer[0..bytes_read], &state_sender, &mut writer).await {
                     Ok(true) => {
                         // all good
                         continue;
@@ -180,10 +188,10 @@ async fn handle_single_connection(
     // I mean permit
 }
 
-#[expect(clippy::match_same_arms, reason = "")]
 /// `raw_command` is newline terminated
 async fn process_command(
     raw_command: &[u8],
+    state_sender: &tokio::sync::watch::Sender<ApplicationStatus>,
     writer: &mut GenericWriteHalf,
 ) -> Result<bool, std::io::Error> {
     let command = match str::from_utf8(raw_command) {
@@ -220,11 +228,14 @@ async fn process_command(
             return Ok(false);
         },
         "start" => {
-            // self.address_monitor.enumerate()
+            if state_sender.send(ApplicationStatus::Running).is_err() {
+                return Ok(false);
+            }
         },
-
         "stop" => {
-            // self.address_monitor.teardown()
+            if state_sender.send(ApplicationStatus::Paused).is_err() {
+                return Ok(false);
+            }
         },
         _ => {
             event!(
