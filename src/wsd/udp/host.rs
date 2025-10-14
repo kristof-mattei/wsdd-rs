@@ -405,7 +405,7 @@ mod tests {
             include_str!("../../test/resolve-matches-template.xml"),
             client_message_id,
             host_instance_id,
-            host_messages_built.load(Ordering::SeqCst) - 1,
+            host_messages_built.load(Ordering::Relaxed) - 1,
             host_endpoint_uuid,
             client_ip,
             host_endpoint_uuid
@@ -457,7 +457,7 @@ mod tests {
             include_str!("../../test/probe-matches-template.xml"),
             client_message_id,
             host_instance_id,
-            host_messages_built.load(Ordering::SeqCst) - 1,
+            host_messages_built.load(Ordering::Relaxed) - 1,
             host_endpoint_uuid
         );
 
