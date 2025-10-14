@@ -214,7 +214,7 @@ impl<'config> Builder<'config> {
             None,
             AppSequence::new(
                 &config.wsd_instance_id,
-                messages_built.fetch_add(1, Ordering::SeqCst),
+                messages_built.fetch_add(1, Ordering::Relaxed),
             ),
             Hello::new(xaddr),
         )?;
@@ -235,7 +235,7 @@ impl<'config> Builder<'config> {
             None,
             AppSequence::new(
                 &config.wsd_instance_id,
-                messages_built.fetch_add(1, Ordering::SeqCst),
+                messages_built.fetch_add(1, Ordering::Relaxed),
             ),
             Bye::new(),
         )?;
@@ -290,7 +290,7 @@ impl<'config> Builder<'config> {
             Some(relates_to),
             AppSequence::new(
                 &config.wsd_instance_id,
-                messages_built.fetch_add(1, Ordering::SeqCst),
+                messages_built.fetch_add(1, Ordering::Relaxed),
             ),
             ResolveMatches::new(address),
         )?;
@@ -311,7 +311,7 @@ impl<'config> Builder<'config> {
             Some(relates_to),
             AppSequence::new(
                 &config.wsd_instance_id,
-                messages_built.fetch_add(1, Ordering::SeqCst),
+                messages_built.fetch_add(1, Ordering::Relaxed),
             ),
             ProbeMatches::new(),
         )?;
