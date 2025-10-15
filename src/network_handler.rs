@@ -17,7 +17,6 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
 
-use crate::address_monitor::ApplicationStatus;
 use crate::config::Config;
 use crate::multicast_handler::MulticastHandler;
 use crate::network_address::NetworkAddress;
@@ -34,6 +33,8 @@ pub enum Command {
         scope: u8,
         index: u32,
     },
+    Start,
+    Stop,
 }
 
 pub struct NetworkHandler {
@@ -44,7 +45,7 @@ pub struct NetworkHandler {
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
     multicast_handlers: Vec<MulticastHandler>,
     command_receiver: tokio::sync::mpsc::Receiver<Command>,
-    state_receiver: tokio::sync::watch::Receiver<ApplicationStatus>,
+    start_sender: tokio::sync::watch::Sender<()>,
 }
 
 #[derive(Error, Debug)]
@@ -62,7 +63,7 @@ impl NetworkHandler {
         cancellation_token: CancellationToken,
         config: &Arc<Config>,
         command_receiver: tokio::sync::mpsc::Receiver<Command>,
-        state_receiver: tokio::sync::watch::Receiver<ApplicationStatus>,
+        start_sender: tokio::sync::watch::Sender<()>,
     ) -> Self {
         Self {
             active: AtomicBool::new(false),
@@ -71,7 +72,7 @@ impl NetworkHandler {
             interfaces: HashMap::new(),
             multicast_handlers: vec![],
             command_receiver,
-            state_receiver,
+            start_sender,
         }
     }
 
@@ -80,24 +81,6 @@ impl NetworkHandler {
             let command = tokio::select! {
                 () = self.cancellation_token.cancelled() => {
                     break;
-                },
-                changed = self.state_receiver.changed() => {
-                    if changed.is_err() {
-                        break;
-                    } else {
-                        let new_state = *self.state_receiver.borrow();
-
-                        match new_state {
-                            ApplicationStatus::Paused => {
-                                self.teardown().await;
-                            },
-                            ApplicationStatus::Running => {
-                                self.set_active();
-                            }
-                        }
-
-                        continue;
-                    }
                 },
                 command = self.command_receiver.recv() => {
                     command
@@ -143,6 +126,12 @@ impl NetworkHandler {
                         Arc::clone(&interface),
                     ))
                     .await;
+                },
+                Command::Start => {
+                    self.set_active()?;
+                },
+                Command::Stop => {
+                    self.teardown().await;
                 },
             }
         }
@@ -285,11 +274,10 @@ impl NetworkHandler {
     }
 
     pub async fn teardown(&mut self) {
-        if !self.active.load(Ordering::Acquire) {
+        if !self.active.swap(false, Ordering::SeqCst) {
+            // Already stopped, nothing to do
             return;
         }
-
-        self.active.store(false, Ordering::Release);
 
         let tasks = TaskTracker::new();
 
@@ -365,7 +353,13 @@ impl NetworkHandler {
         }
     }
 
-    pub fn set_active(&mut self) {
-        self.active.store(true, Ordering::Release);
+    pub fn set_active(&mut self) -> Result<(), eyre::Report> {
+        if !self.active.swap(true, Ordering::SeqCst) {
+            self.start_sender
+                .send(())
+                .map_err(|_| eyre::Report::msg("channel gone"))?;
+        }
+
+        Ok(())
     }
 }

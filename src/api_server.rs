@@ -1,56 +1,36 @@
 mod generic;
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use color_eyre::eyre;
-use thiserror::Error;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
-use crate::address_monitor::ApplicationStatus;
 use crate::api_server::generic::{GenericListener, GenericStream, GenericWriteHalf};
 use crate::config::PortOrSocket;
+use crate::network_handler::Command;
 
 const MAX_CONNECTION_BACKLOG: u32 = 100;
 const MAX_CONCURRENT_CONNECTIONS: usize = 10;
 
 pub struct ApiServer {
     cancellation_token: CancellationToken,
-    listen_on: PortOrSocket,
-    state_sender: tokio::sync::watch::Sender<ApplicationStatus>,
-}
-
-#[derive(Debug, Error)]
-#[expect(unused, reason = "WIP")]
-pub enum ApiServerError {
-    #[error("Could not bind to socket `{0}`")]
-    InvalidSocket(PathBuf),
-    #[error("Could not bind to port `{0}`")]
-    InvalidPort(u16),
+    listener: GenericListener,
+    command_sender: tokio::sync::mpsc::Sender<Command>,
 }
 
 impl ApiServer {
-    #[expect(clippy::unnecessary_wraps, reason = "WIP")]
     pub fn new(
         cancellation_token: CancellationToken,
-        listen_on: PortOrSocket,
-        state_sender: tokio::sync::watch::Sender<ApplicationStatus>,
-    ) -> Result<ApiServer, ApiServerError> {
-        Ok(Self {
-            cancellation_token,
-            listen_on,
-            state_sender,
-        })
-    }
-
-    pub async fn handle_connections(&self) -> Result<(), eyre::Report> {
-        let listener: GenericListener = match self.listen_on {
+        listen_on: &PortOrSocket,
+        command_sender: tokio::sync::mpsc::Sender<Command>,
+    ) -> Result<ApiServer, std::io::Error> {
+        let listener: GenericListener = match *listen_on {
             PortOrSocket::Port(port) => {
                 let socket = tokio::net::TcpSocket::new_v4()?;
                 socket.set_reuseaddr(true)?;
@@ -66,6 +46,14 @@ impl ApiServer {
             },
         };
 
+        Ok(Self {
+            cancellation_token,
+            listener,
+            command_sender,
+        })
+    }
+
+    pub async fn handle_connections(&self) -> Result<(), eyre::Report> {
         let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
 
         loop {
@@ -73,7 +61,7 @@ impl ApiServer {
                 () = self.cancellation_token.cancelled() => {
                     return Ok(());
                 },
-                new_connection = listener.accept() => {
+                new_connection = self.listener.accept() => {
                     new_connection
                 }
             };
@@ -113,11 +101,16 @@ impl ApiServer {
                     let cancellation_token: CancellationToken =
                         self.cancellation_token.child_token();
 
-                    let state_sender = self.state_sender.clone();
+                    let command_sender = self.command_sender.clone();
 
                     tokio::task::spawn(async move {
-                        handle_single_connection(cancellation_token, state_sender, stream, permit)
-                            .await;
+                        handle_single_connection(
+                            cancellation_token,
+                            command_sender,
+                            stream,
+                            permit,
+                        )
+                        .await;
                     });
                 },
                 Err(error) => {
@@ -133,7 +126,7 @@ impl ApiServer {
 
 async fn handle_single_connection(
     cancellation_token: CancellationToken,
-    state_sender: tokio::sync::watch::Sender<ApplicationStatus>,
+    command_sender: tokio::sync::mpsc::Sender<Command>,
     stream: GenericStream,
     _permit: OwnedSemaphorePermit,
 ) {
@@ -159,7 +152,7 @@ async fn handle_single_connection(
                 break;
             },
             Ok(bytes_read) => {
-                match process_command(&buffer[0..bytes_read], &state_sender, &mut writer).await {
+                match process_command(&buffer[0..bytes_read], &command_sender, &mut writer).await {
                     Ok(true) => {
                         // all good
                         continue;
@@ -191,7 +184,7 @@ async fn handle_single_connection(
 /// `raw_command` is newline terminated
 async fn process_command(
     raw_command: &[u8],
-    state_sender: &tokio::sync::watch::Sender<ApplicationStatus>,
+    command_sender: &tokio::sync::mpsc::Sender<Command>,
     writer: &mut GenericWriteHalf,
 ) -> Result<bool, std::io::Error> {
     let command = match str::from_utf8(raw_command) {
@@ -228,13 +221,17 @@ async fn process_command(
             return Ok(false);
         },
         "start" => {
-            if state_sender.send(ApplicationStatus::Running).is_err() {
-                return Ok(false);
+            if command_sender.send(Command::Start).await.is_err() {
+                writer
+                    .write_all("Failed to issue start command. Please retry.".as_bytes())
+                    .await?;
             }
         },
         "stop" => {
-            if state_sender.send(ApplicationStatus::Paused).is_err() {
-                return Ok(false);
+            if command_sender.send(Command::Stop).await.is_err() {
+                writer
+                    .write_all("Failed to issue stop command. Please retry.".as_bytes())
+                    .await?;
             }
         },
         _ => {
