@@ -37,6 +37,7 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::{EnvFilter, Layer as _};
 
+use crate::address_monitor::create_address_monitor;
 use crate::cli::parse_cli;
 use crate::network_handler::NetworkHandler;
 use crate::security::{chroot, drop_privileges};
@@ -216,7 +217,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
         tasks.spawn(async move {
             let _guard = cancellation_token.clone().drop_guard();
 
-            let mut address_monitor = match address_monitor::create_address_monitor(
+            let mut address_monitor = match create_address_monitor(
                 cancellation_token.clone(),
                 command_sender,
                 start_receiver,
@@ -229,7 +230,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
                 },
             };
 
-            match address_monitor.handle_change().await {
+            match address_monitor.process_changes().await {
                 Ok(()) => event!(Level::INFO, "Address Monitor stopped listening"),
                 Err(error) => {
                     event!(Level::ERROR, ?error, "Address Monitor stopped unexpectedly");
@@ -248,7 +249,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
         tasks.spawn(async move {
             let _guard = cancellation_token.drop_guard();
 
-            match network_handler.handle_change().await {
+            match network_handler.process_commands().await {
                 Ok(()) => event!(Level::INFO, "Network Handler stopped listening"),
                 Err(error) => {
                     event!(Level::ERROR, ?error, "Network Handler stopped unexpectedly");
@@ -258,13 +259,6 @@ async fn start_tasks() -> Result<(), eyre::Report> {
             network_handler.teardown().await;
         });
     }
-
-    // TODO
-    // api_server = None
-    // let api_server = if let Some(listen) = config.listen {
-    //     api_server = ApiServer(aio_loop, args.listen, nm)
-    // ApiServer::new(listen, )
-    // };
 
     if let Some(listen_on) = config.listen.as_ref() {
         let cancellation_token = cancellation_token.clone();
@@ -293,22 +287,6 @@ async fn start_tasks() -> Result<(), eyre::Report> {
             api_server.teardown().await;
         });
     }
-
-    // # main loop, serve requests coming from any outbound socket
-    // try:
-    //     aio_loop.run_forever()
-    // except (SystemExit, KeyboardInterrupt):
-    //     logger.info('shutting down gracefully...')
-    //     if api_server is not None:
-    //         aio_loop.run_until_complete(api_server.cleanup())
-
-    //     nm.cleanup()
-    //     aio_loop.stop()
-    // except Exception:
-    //     logger.exception('error in main loop')
-
-    // logger.info('Done.')
-    // return 0
 
     // now we wait forever for either
     // * SIGTERM
@@ -352,7 +330,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
         event!(Level::ERROR, "Tasks didn't stop within allotted time!");
     }
 
-    event!(Level::INFO, "Goodbye");
+    event!(Level::INFO, "Done");
 
     Ok(())
 }

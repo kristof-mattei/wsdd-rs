@@ -103,15 +103,12 @@ impl ApiServer {
 
                     let command_sender = self.command_sender.clone();
 
-                    tokio::task::spawn(async move {
-                        handle_single_connection(
-                            cancellation_token,
-                            command_sender,
-                            stream,
-                            permit,
-                        )
-                        .await;
-                    });
+                    tokio::task::spawn(handle_single_connection(
+                        cancellation_token,
+                        command_sender,
+                        stream,
+                        permit,
+                    ));
                 },
                 Err(error) => {
                     event!(Level::ERROR, ?error, "Failed to accept connection");

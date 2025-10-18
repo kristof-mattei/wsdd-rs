@@ -76,7 +76,7 @@ impl NetworkHandler {
         }
     }
 
-    pub async fn handle_change(&mut self) -> Result<(), eyre::Report> {
+    pub async fn process_commands(&mut self) -> Result<(), eyre::Report> {
         loop {
             let command = tokio::select! {
                 () = self.cancellation_token.cancelled() => {
