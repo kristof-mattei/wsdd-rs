@@ -2,7 +2,6 @@ use std::io::Error;
 use std::mem::MaybeUninit;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::os::fd::FromRawFd as _;
-use std::sync::Arc;
 
 use color_eyre::eyre;
 use libc::{
@@ -54,7 +53,7 @@ impl NetlinkAddressMonitor {
         cancellation_token: CancellationToken,
         command_sender: Sender<Command>,
         state_receiver: tokio::sync::watch::Receiver<ApplicationStatus>,
-        config: &Arc<Config>,
+        config: &Config,
     ) -> Result<Self, std::io::Error> {
         let mut rtm_groups = RTMGRP_LINK;
 

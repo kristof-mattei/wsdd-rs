@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use color_eyre::eyre;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
@@ -32,7 +30,7 @@ pub fn create_address_monitor(
     cancellation_token: CancellationToken,
     new_address_sender: Sender<Command>,
     state_receiver: tokio::sync::watch::Receiver<ApplicationStatus>,
-    config: &Arc<Config>,
+    config: &Config,
 ) -> Result<Monitor, eyre::Report> {
     Monitor::new(
         cancellation_token,
