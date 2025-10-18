@@ -168,7 +168,7 @@ impl NetlinkAddressMonitor {
     }
 
     #[expect(clippy::too_many_lines, reason = "WIP")]
-    pub async fn handle_change(&mut self) -> Result<(), eyre::Report> {
+    pub async fn process_changes(&mut self) -> Result<(), eyre::Report> {
         loop {
             // we originally had this on the stack (array) but tokio moves it to the heap because of size
             let mut buffer = vec![MaybeUninit::<u8>::uninit(); 4096];

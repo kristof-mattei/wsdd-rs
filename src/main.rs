@@ -37,7 +37,7 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::{EnvFilter, Layer as _};
 
-use crate::address_monitor::ApplicationStatus;
+use crate::address_monitor::{ApplicationStatus, create_address_monitor};
 use crate::cli::parse_cli;
 use crate::network_handler::NetworkHandler;
 use crate::security::{chroot, drop_privileges};
@@ -219,7 +219,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
         tasks.spawn(async move {
             let _guard = cancellation_token.clone().drop_guard();
 
-            let mut address_monitor = match address_monitor::create_address_monitor(
+            let mut address_monitor = match create_address_monitor(
                 cancellation_token.clone(),
                 command_sender,
                 state_receiver,
@@ -237,7 +237,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
                 return;
             }
 
-            match address_monitor.handle_change().await {
+            match address_monitor.process_changes().await {
                 Ok(()) => event!(Level::INFO, "Address Monitor stopped listening"),
                 Err(error) => {
                     event!(Level::ERROR, ?error, "Address Monitor stopped unexpectedly");
@@ -252,7 +252,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
         tasks.spawn(async move {
             let _guard = cancellation_token.drop_guard();
 
-            match network_handler.handle_change().await {
+            match network_handler.process_commands().await {
                 Ok(()) => event!(Level::INFO, "Network Handler stopped listening"),
                 Err(error) => {
                     event!(Level::ERROR, ?error, "Network Handler stopped unexpectedly");
@@ -332,7 +332,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
         event!(Level::ERROR, "Tasks didn't stop within allotted time!");
     }
 
-    event!(Level::INFO, "Goodbye");
+    event!(Level::INFO, "Done");
 
     Ok(())
 }
