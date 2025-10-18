@@ -177,7 +177,7 @@ impl NetworkHandler {
 
     fn is_address_handled(&self, address: &NetworkAddress) -> bool {
         // do not handle anything when we are not active
-        if !self.active.load(Ordering::Acquire) {
+        if !self.active.load(Ordering::Relaxed) {
             return false;
         }
 
@@ -274,7 +274,22 @@ impl NetworkHandler {
     }
 
     pub async fn teardown(&mut self) {
-        if !self.active.swap(false, Ordering::SeqCst) {
+        let mut was_active = self.active.load(Ordering::Relaxed);
+
+        // we can get away with `Relaxed` because nothing depends on our value
+        while was_active {
+            match self.active.compare_exchange_weak(
+                true,
+                false,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(current) => was_active = current,
+            }
+        }
+
+        if !was_active {
             // Already stopped, nothing to do
             return;
         }
@@ -354,10 +369,26 @@ impl NetworkHandler {
     }
 
     pub fn set_active(&mut self) -> Result<(), eyre::Report> {
-        if !self.active.swap(true, Ordering::SeqCst) {
-            self.start_sender
-                .send(())
-                .map_err(|_| eyre::Report::msg("channel gone"))?;
+        let mut was_active = self.active.load(Ordering::Relaxed);
+
+        // we can get away with `Relaxed` because nothing depends on our value
+        while !was_active {
+            match self.active.compare_exchange_weak(
+                false,
+                true,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    self.start_sender
+                        .send(())
+                        .map_err(|_| eyre::Report::msg("channel gone"))?;
+                    break;
+                },
+                Err(current) => {
+                    was_active = current;
+                },
+            }
         }
 
         Ok(())
