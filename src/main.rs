@@ -332,7 +332,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
         event!(Level::ERROR, "Tasks didn't stop within allotted time!");
     }
 
-    event!(Level::INFO, "Goodbye");
+    event!(Level::INFO, "Done");
 
     Ok(())
 }
