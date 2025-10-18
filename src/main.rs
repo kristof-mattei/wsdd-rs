@@ -263,13 +263,6 @@ async fn start_tasks() -> Result<(), eyre::Report> {
         });
     }
 
-    // TODO
-    // api_server = None
-    // let api_server = if let Some(listen) = config.listen {
-    //     api_server = ApiServer(aio_loop, args.listen, nm)
-    // ApiServer::new(listen, )
-    // };
-
     if let Some(listen_on) = config.listen.as_ref() {
         let cancellation_token = cancellation_token.clone();
         let listen_on = listen_on.clone();
@@ -296,22 +289,6 @@ async fn start_tasks() -> Result<(), eyre::Report> {
             api_server.teardown().await;
         });
     }
-
-    // # main loop, serve requests coming from any outbound socket
-    // try:
-    //     aio_loop.run_forever()
-    // except (SystemExit, KeyboardInterrupt):
-    //     logger.info('shutting down gracefully...')
-    //     if api_server is not None:
-    //         aio_loop.run_until_complete(api_server.cleanup())
-
-    //     nm.cleanup()
-    //     aio_loop.stop()
-    // except Exception:
-    //     logger.exception('error in main loop')
-
-    // logger.info('Done.')
-    // return 0
 
     // now we wait forever for either
     // * SIGTERM
