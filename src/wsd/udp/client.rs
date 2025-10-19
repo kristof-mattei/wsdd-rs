@@ -30,27 +30,24 @@ pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     address: IpAddr,
-    multicast: Sender<Box<[u8]>>,
+    mc_local_port_tx: Sender<Box<[u8]>>,
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
 }
 
 /// Parameters:
 ///
-/// * `recv_socket_rx`: used to receive multicast messages on `WSD_PORT`
-/// * `mc_send_socket_rx`: used to receive unicast messages sent directly to us
-/// * `multicast_tx`: use to send multicast messages, from a random port to `WSD_PORT`
-/// * `unicast_tx`: used to send unicast messages FROM `WSD_PORT` to ...
+/// * `mc_wsd_port_rx`: used to receive multicast messages on `WSD_PORT`
+/// * `mc_local_port_rx`: used to receive multicast messages sent to the local port
+/// * `mc_local_port_tx`: use to send multicast messages, from the local port to `WSD_PORT`
 impl WSDClient {
-    #[expect(clippy::too_many_arguments, reason = "WIP")]
     pub async fn init(
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
         devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
         bound_to: NetworkAddress,
-        recv_socket_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-        mc_send_socket_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-        multicast_tx: Sender<Box<[u8]>>,
-        unicast_tx: Sender<(SocketAddr, Box<[u8]>)>,
+        mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
+        mc_local_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
+        mc_local_port_tx: Sender<Box<[u8]>>,
     ) -> Self {
         let cancellation_token = cancellation_token.child_token();
 
@@ -63,10 +60,9 @@ impl WSDClient {
             Arc::clone(&config),
             devices,
             bound_to,
-            recv_socket_rx,
-            mc_send_socket_rx,
-            multicast_tx.clone(),
-            unicast_tx,
+            mc_wsd_port_rx,
+            mc_local_port_rx,
+            mc_local_port_tx.clone(),
             Arc::clone(&probes),
         );
 
@@ -74,8 +70,8 @@ impl WSDClient {
             cancellation_token,
             config,
             address,
-            multicast: multicast_tx,
-            probes: Arc::clone(&probes),
+            mc_local_port_tx,
+            probes,
         };
 
         // avoid packet storm when hosts come up by delaying initial probe
@@ -109,7 +105,7 @@ impl WSDClient {
         // TODO move event to here and write properly
         event!(Level::INFO, "scheduling {} message", MessageType::Probe);
 
-        self.multicast.send(probe.into_boxed_slice()).await?;
+        self.mc_local_port_tx.send(probe.into_boxed_slice()).await?;
 
         Ok(())
     }
@@ -231,7 +227,7 @@ async fn handle_probe_match(
     bound_to: &NetworkAddress,
     relates_to: Option<Urn>,
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
-    multicast: &Sender<Box<[u8]>>,
+    mc_local_port_tx: &Sender<Box<[u8]>>,
     mut reader: EventReader<BufReader<&[u8]>>,
 ) -> Result<(), eyre::Report> {
     let Some(relates_to) = relates_to else {
@@ -255,12 +251,14 @@ async fn handle_probe_match(
 
     let (endpoint, xaddrs) = extract_endpoint_metadata(&mut reader)?;
 
+    //  If no XAddrs are included in the ProbeMatches message, then the client may send a
+    //  Resolve message by UDP multicast to port 3702.
     let Some(xaddrs) = xaddrs else {
         event!(Level::INFO, "probe match without XAddrs, sending resolve");
 
         let (message, _) = Builder::build_resolve(config, endpoint)?;
 
-        multicast.send(message.into_boxed_slice()).await?;
+        mc_local_port_tx.send(message.into_boxed_slice()).await?;
 
         return Ok(());
     };
@@ -402,10 +400,9 @@ async fn listen_forever(
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     message_handler: MessageHandler,
     bound_to: NetworkAddress,
-    mut recv_socket_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-    mut mc_send_socket_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-    multicast_tx: Sender<Box<[u8]>>,
-    _unicast_tx: Sender<(SocketAddr, Box<[u8]>)>,
+    mut mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
+    mut mc_local_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
+    mc_local_port_tx: Sender<Box<[u8]>>,
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
 ) {
     loop {
@@ -413,10 +410,10 @@ async fn listen_forever(
             () = cancellation_token.cancelled() => {
                 break;
             },
-            message = recv_socket_rx.recv() => {
+            message = mc_wsd_port_rx.recv() => {
                 message
             }
-            message = mc_send_socket_rx.recv() => {
+            message = mc_local_port_rx.recv() => {
                 message
             }
         };
@@ -445,7 +442,7 @@ async fn listen_forever(
                     &config,
                     Arc::clone(&devices),
                     &bound_to,
-                    &multicast_tx,
+                    &mc_local_port_tx,
                     body_reader,
                 )
                 .await
@@ -458,7 +455,7 @@ async fn listen_forever(
                     &bound_to,
                     header.relates_to,
                     Arc::clone(&probes),
-                    &multicast_tx,
+                    &mc_local_port_tx,
                     body_reader,
                 )
                 .await
@@ -493,10 +490,9 @@ fn spawn_rx_loop(
     config: Arc<Config>,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     bound_to: NetworkAddress,
-    recv_socket_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-    mc_send_socket_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-    multicast_tx: Sender<Box<[u8]>>,
-    unicast_tx: Sender<(SocketAddr, Box<[u8]>)>,
+    mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
+    mc_local_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
+    mc_local_port_tx: Sender<Box<[u8]>>,
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
 ) {
     let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to.clone());
@@ -510,10 +506,9 @@ fn spawn_rx_loop(
                 devices,
                 message_handler,
                 bound_to,
-                recv_socket_rx,
-                mc_send_socket_rx,
-                multicast_tx,
-                unicast_tx,
+                mc_wsd_port_rx,
+                mc_local_port_rx,
+                mc_local_port_tx,
                 probes,
             )
             .await;
@@ -891,7 +886,6 @@ mod tests {
         let (_recv_socket_tx, recv_socket_rx) = tokio::sync::mpsc::channel(10);
         let (_mc_send_socket_tx, mc_send_socket_rx) = tokio::sync::mpsc::channel(10);
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(10);
-        let (unicast_tx, _unicast_rx) = tokio::sync::mpsc::channel(10);
 
         let bound_to = crate::network_address::NetworkAddress::new(
             IpAddr::V4(Ipv4Addr::new(192, 168, 100, 5)),
@@ -906,7 +900,6 @@ mod tests {
             recv_socket_rx,
             mc_send_socket_rx,
             multicast_tx,
-            unicast_tx,
         )
         .await;
 
