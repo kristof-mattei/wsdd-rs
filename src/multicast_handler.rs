@@ -226,12 +226,10 @@ impl MulticastHandler {
         );
 
         // TODO handle error
-        recv_socket
-            .join_multicast_v6(&constants::WSD_MCAST_GRP_V6, idx)
-            .unwrap();
+        recv_socket.join_multicast_v6(&constants::WSD_MCAST_GRP_V6, idx)?;
 
         // TODO error
-        recv_socket.set_only_v6(true).unwrap();
+        recv_socket.set_only_v6(true)?;
 
         // TODO error
         // https://github.com/torvalds/linux/commit/15033f0457dca569b284bef0c8d3ad55fb37eacb
@@ -274,7 +272,7 @@ impl MulticastHandler {
         mc_send_socket.set_multicast_hops_v6(config.hoplimit.into())?;
 
         // TODO error
-        mc_send_socket.set_multicast_if_v6(idx).unwrap();
+        mc_send_socket.set_multicast_if_v6(idx)?;
 
         // TODO error
         mc_send_socket
