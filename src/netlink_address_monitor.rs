@@ -16,7 +16,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 use zerocopy::{FromBytes as _, Immutable, IntoBytes};
 
-use crate::address_monitor::ApplicationStatus;
 use crate::config::Config;
 use crate::ffi::{self, NLMSG_ALIGNTO, ifaddrmsg, nlmsghdr, rtattr};
 use crate::network_handler::Command;
@@ -37,7 +36,7 @@ pub struct NetlinkAddressMonitor {
     cancellation_token: CancellationToken,
     command_sender: Sender<Command>,
     socket: tokio::net::UdpSocket,
-    state_receiver: tokio::sync::watch::Receiver<ApplicationStatus>,
+    state_receiver: tokio::sync::watch::Receiver<()>,
 }
 
 fn align_to(offset: usize, align_to: usize) -> usize {
@@ -52,7 +51,7 @@ impl NetlinkAddressMonitor {
     pub fn new(
         cancellation_token: CancellationToken,
         command_sender: Sender<Command>,
-        state_receiver: tokio::sync::watch::Receiver<ApplicationStatus>,
+        state_receiver: tokio::sync::watch::Receiver<()>,
         config: &Config,
     ) -> Result<Self, std::io::Error> {
         let mut rtm_groups = RTMGRP_LINK;
@@ -182,13 +181,11 @@ impl NetlinkAddressMonitor {
                 changed = self.state_receiver.changed() => {
                     if changed.is_err() {
                         break;
-                    } else {
-                        if *self.state_receiver.borrow() == ApplicationStatus::Running {
-                            self.request_current_state()?;
-                        }
-
-                        continue;
                     }
+
+                    self.request_current_state()?;
+
+                    continue;
                 },
                 result = self.socket.recv_buf(&mut buffer_slice) => {
                     result?
