@@ -393,6 +393,11 @@ async fn handle_metadata(
     Ok(())
 }
 
+enum Src {
+    WsdPort,
+    LocalPort,
+}
+
 #[expect(clippy::too_many_arguments, reason = "WIP")]
 async fn listen_forever(
     cancellation_token: CancellationToken,
@@ -406,15 +411,15 @@ async fn listen_forever(
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
 ) {
     loop {
-        let message = tokio::select! {
+        let (source, message) = tokio::select! {
             () = cancellation_token.cancelled() => {
                 break;
             },
             message = mc_wsd_port_rx.recv() => {
-                message
+                (Src::WsdPort, message)
             }
             message = mc_local_port_rx.recv() => {
-                message
+                (Src::LocalPort, message)
             }
         };
 
@@ -434,6 +439,11 @@ async fn listen_forever(
                 continue;
             },
         };
+
+        if matches!(source, Src::WsdPort) {
+            dbg!(&header.action);
+            dbg!(&header.action);
+        }
 
         // handle based on action
         if let Err(error) = match &*header.action {
