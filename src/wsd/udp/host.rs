@@ -34,21 +34,21 @@ impl WSDHost {
         config: Arc<Config>,
         messages_built: Arc<AtomicU64>,
         network_address: NetworkAddress,
-        receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
-        multicast: Sender<Box<[u8]>>,
-        unicast: Sender<(SocketAddr, Box<[u8]>)>,
+        recv_socket_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
+        multicast_tx: Sender<Box<[u8]>>,
+        unicast_tx: Sender<(SocketAddr, Box<[u8]>)>,
     ) -> Self {
         let cancellation_token = cancellation_token.child_token();
 
         let address = network_address.address;
 
-        spawn_receiver_loop(
+        spawn_rx_loop(
             cancellation_token.clone(),
             Arc::clone(&config),
             Arc::clone(&messages_built),
             network_address,
-            receiver,
-            unicast,
+            recv_socket_rx,
+            unicast_tx,
         );
 
         let host = Self {
@@ -56,7 +56,7 @@ impl WSDHost {
             cancellation_token,
             config,
             messages_built: Arc::clone(&messages_built),
-            multicast,
+            multicast: multicast_tx,
         };
 
         // avoid packet storm when hosts come up by delaying initial hello
@@ -148,15 +148,15 @@ async fn listen_forever(
     config: Arc<Config>,
     message_handler: MessageHandler,
     messages_built: Arc<AtomicU64>,
-    mut receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
-    unicast: Sender<(SocketAddr, Box<[u8]>)>,
+    mut recv_socket_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
+    unicast_tx: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
     loop {
         let message = tokio::select! {
             () = cancellation_token.cancelled() => {
                 break;
             },
-            message = receiver.recv() => {
+            message = recv_socket_rx.recv() => {
                 message
             }
         };
@@ -216,19 +216,19 @@ async fn listen_forever(
         };
 
         // return to sender
-        if let Err(error) = unicast.send((from, response.into())).await {
+        if let Err(error) = unicast_tx.send((from, response.into())).await {
             event!(Level::ERROR, ?error, to = ?from, "Failed to respond to message");
         }
     }
 }
 
-fn spawn_receiver_loop(
+fn spawn_rx_loop(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     messages_built: Arc<AtomicU64>,
     network_address: NetworkAddress,
-    receiver: Receiver<(SocketAddr, Arc<[u8]>)>,
-    unicast: Sender<(SocketAddr, Box<[u8]>)>,
+    recv_socket_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
+    unicast_tx: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
     let address = network_address.address;
 
@@ -241,8 +241,8 @@ fn spawn_receiver_loop(
             config,
             message_handler,
             messages_built,
-            receiver,
-            unicast,
+            recv_socket_rx,
+            unicast_tx,
         )
         .await;
     });
@@ -276,8 +276,8 @@ mod tests {
 
         let cancellation_token = CancellationToken::new();
         let (_sender, receiver) = tokio::sync::mpsc::channel(10);
-        let (multicast, mut multicast_receiver) = tokio::sync::mpsc::channel(10);
-        let (unicast, _unicast_receiver) = tokio::sync::mpsc::channel(10);
+        let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(10);
+        let (unicast_tx, _unicast_rx) = tokio::sync::mpsc::channel(10);
 
         let _wsd_host = WSDHost::init(
             &cancellation_token,
@@ -288,12 +288,12 @@ mod tests {
                 Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
             ),
             receiver,
-            multicast,
-            unicast,
+            multicast_tx,
+            unicast_tx,
         )
         .await;
 
-        let hello = multicast_receiver.recv().await.unwrap();
+        let hello = multicast_rx.recv().await.unwrap();
 
         let expected = format!(
             include_str!("../../test/hello-template.xml"),
@@ -323,8 +323,8 @@ mod tests {
 
         let cancellation_token = CancellationToken::new();
         let (_sender, receiver) = tokio::sync::mpsc::channel(10);
-        let (multicast, mut multicast_receiver) = tokio::sync::mpsc::channel(10);
-        let (unicast, _unicast_receiver) = tokio::sync::mpsc::channel(10);
+        let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(10);
+        let (unicast_tx, _unicast_rx) = tokio::sync::mpsc::channel(10);
 
         let wsd_host = WSDHost::init(
             &cancellation_token,
@@ -335,16 +335,16 @@ mod tests {
                 Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
             ),
             receiver,
-            multicast,
-            unicast,
+            multicast_tx,
+            unicast_tx,
         )
         .await;
 
-        let _hello = multicast_receiver.recv().await.unwrap();
+        let _hello = multicast_rx.recv().await.unwrap();
 
         wsd_host.teardown(true).await;
 
-        let bye = multicast_receiver.recv().await.unwrap();
+        let bye = multicast_rx.recv().await.unwrap();
 
         let expected_message_number = 1_usize;
 

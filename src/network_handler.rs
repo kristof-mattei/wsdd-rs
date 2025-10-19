@@ -44,7 +44,7 @@ pub struct NetworkHandler {
     config: Arc<Config>,
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
     multicast_handlers: Vec<MulticastHandler>,
-    command_receiver: tokio::sync::mpsc::Receiver<Command>,
+    command_rx: tokio::sync::mpsc::Receiver<Command>,
     start_sender: tokio::sync::watch::Sender<()>,
 }
 
@@ -62,7 +62,7 @@ impl NetworkHandler {
     pub fn new(
         cancellation_token: CancellationToken,
         config: &Arc<Config>,
-        command_receiver: tokio::sync::mpsc::Receiver<Command>,
+        command_rx: tokio::sync::mpsc::Receiver<Command>,
         start_sender: tokio::sync::watch::Sender<()>,
     ) -> Self {
         Self {
@@ -71,7 +71,7 @@ impl NetworkHandler {
             cancellation_token,
             interfaces: HashMap::new(),
             multicast_handlers: vec![],
-            command_receiver,
+            command_rx,
             start_sender,
         }
     }
@@ -82,7 +82,7 @@ impl NetworkHandler {
                 () = self.cancellation_token.cancelled() => {
                     break;
                 },
-                command = self.command_receiver.recv() => {
+                command = self.command_rx.recv() => {
                     command
                 }
             };

@@ -34,9 +34,9 @@ const SIZE_OF_SOCKADDR_NL: u32 = const {
 
 pub struct NetlinkAddressMonitor {
     cancellation_token: CancellationToken,
-    command_sender: Sender<Command>,
+    command_tx: Sender<Command>,
     socket: tokio::net::UdpSocket,
-    state_receiver: tokio::sync::watch::Receiver<()>,
+    start_rx: tokio::sync::watch::Receiver<()>,
 }
 
 fn align_to(offset: usize, align_to: usize) -> usize {
@@ -50,8 +50,8 @@ impl NetlinkAddressMonitor {
     /// Implementation for Netlink sockets, i.e. Linux
     pub fn new(
         cancellation_token: CancellationToken,
-        command_sender: Sender<Command>,
-        state_receiver: tokio::sync::watch::Receiver<()>,
+        command_tx: Sender<Command>,
+        start_rx: tokio::sync::watch::Receiver<()>,
         config: &Config,
     ) -> Result<Self, std::io::Error> {
         let mut rtm_groups = RTMGRP_LINK;
@@ -105,9 +105,9 @@ impl NetlinkAddressMonitor {
 
         Ok(Self {
             cancellation_token,
-            command_sender,
+            command_tx,
             socket: tokio::net::UdpSocket::from_std(std::net::UdpSocket::from(socket))?,
-            state_receiver,
+            start_rx,
         })
     }
 
@@ -178,7 +178,7 @@ impl NetlinkAddressMonitor {
                 () = self.cancellation_token.cancelled() => {
                     break;
                 },
-                changed = self.state_receiver.changed() => {
+                changed = self.start_rx.changed() => {
                     if changed.is_err() {
                         break;
                     }
@@ -343,7 +343,7 @@ impl NetlinkAddressMonitor {
                     unreachable!()
                 };
 
-                if let Err(error) = self.command_sender.send(command).await {
+                if let Err(error) = self.command_tx.send(command).await {
                     event!(Level::ERROR, ?error, "Failed to announce command");
                 }
 

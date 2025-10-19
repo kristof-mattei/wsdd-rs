@@ -53,13 +53,13 @@ pub struct MulticastHandler {
     wsd_client: OnceCell<WSDClient>,
     http_server: OnceCell<WSDHttpServer>,
     /// receiving multicast traffic on the WSD Port
-    recv_socket_receiver: MessageReceiver,
+    recv_socket_rx: MessageReceiver,
     /// sending multicast from a socket bound to random / user provided port
-    mc_socket_sender: MessageSender<MulticastMessageSplitter>,
+    mc_socket_tx: MessageSender<MulticastMessageSplitter>,
     /// receiving unicast traffic on the random / user provided port
-    mc_socket_receiver: MessageReceiver,
+    mc_socket_rx: MessageReceiver,
     /// sending unicast messages from the WSD Port
-    uc_socket_sender: MessageSender<UnicastMessageSplitter>,
+    uc_socket_tx: MessageSender<UnicastMessageSplitter>,
 }
 
 impl MulticastHandler {
@@ -133,7 +133,7 @@ impl MulticastHandler {
         );
 
         let recv_socket = Arc::new(UdpSocket::from_std(recv_socket.into())?);
-        let recv_socket_receiver = MessageReceiver::new(Arc::clone(&recv_socket));
+        let recv_socket_rx = MessageReceiver::new(Arc::clone(&recv_socket));
 
         let mc_send_socket = Arc::new(UdpSocket::from_std(mc_send_socket.into())?);
         let mc_socket_sender = MessageSender::new(
@@ -142,7 +142,7 @@ impl MulticastHandler {
                 target: multicast_address.transport_address,
             },
         );
-        let mc_socket_receiver = MessageReceiver::new(Arc::clone(&mc_send_socket));
+        let mc_socket_rx = MessageReceiver::new(Arc::clone(&mc_send_socket));
 
         let uc_send_socket = Arc::new(UdpSocket::from_std(uc_send_socket.into())?);
         let uc_socket_sender =
@@ -159,10 +159,10 @@ impl MulticastHandler {
             wsd_client: OnceCell::new(),
             wsd_host: OnceCell::new(),
             http_server: OnceCell::new(),
-            recv_socket_receiver,
-            mc_socket_sender,
-            mc_socket_receiver,
-            uc_socket_sender,
+            recv_socket_rx,
+            mc_socket_tx: mc_socket_sender,
+            mc_socket_rx,
+            uc_socket_tx: uc_socket_sender,
         })
     }
 
@@ -189,10 +189,10 @@ impl MulticastHandler {
 
             // we have to rely on dropping the sender because that is the only way we can have the receiver run to completion
             // a cancellation token and tokio::select might cause the handle to top before parsing the rest of the messages
-            let sender = self.mc_socket_sender;
+            let sender = self.mc_socket_tx;
             sender.teardown().await;
 
-            let sender = self.uc_socket_sender;
+            let sender = self.uc_socket_tx;
             sender.teardown().await;
         }
 
@@ -394,9 +394,9 @@ impl MulticastHandler {
                     Arc::clone(&self.config),
                     Arc::clone(&self.messages_built),
                     self.address.clone(),
-                    self.recv_socket_receiver.get_listener().await,
-                    self.mc_socket_sender.get_sender(),
-                    self.uc_socket_sender.get_sender(),
+                    self.recv_socket_rx.get_listener().await,
+                    self.mc_socket_tx.get_sender(),
+                    self.uc_socket_tx.get_sender(),
                 )
                 .await;
 
@@ -417,10 +417,10 @@ impl MulticastHandler {
                     Arc::clone(&self.config),
                     Arc::clone(&self.devices),
                     self.address.clone(),
-                    self.recv_socket_receiver.get_listener().await,
-                    self.mc_socket_receiver.get_listener().await,
-                    self.mc_socket_sender.get_sender(),
-                    self.uc_socket_sender.get_sender(),
+                    self.recv_socket_rx.get_listener().await,
+                    self.mc_socket_rx.get_listener().await,
+                    self.mc_socket_tx.get_sender(),
+                    self.uc_socket_tx.get_sender(),
                 )
                 .await;
 
@@ -452,7 +452,7 @@ struct MessageReceiver {
 
 type Channels = Arc<RwLock<Vec<Sender<(SocketAddr, Arc<[u8]>)>>>>;
 
-async fn socket_receiver(socket: Arc<UdpSocket>, channels: Channels) {
+async fn socket_rx(socket: Arc<UdpSocket>, channels: Channels) {
     #[expect(clippy::infinite_loop, reason = "Endless task")]
     // TODO await cancellation token
     loop {
@@ -502,19 +502,19 @@ impl MessageReceiver {
         let channels = Arc::clone(&listeners);
 
         spawn_with_name(
-            format!("socket receiver ({})", socket.local_addr().unwrap()).as_str(),
-            socket_receiver(socket, channels),
+            format!("socket rx ({})", socket.local_addr().unwrap()).as_str(),
+            socket_rx(socket, channels),
         );
 
         Self { listeners }
     }
 
     async fn get_listener(&mut self) -> Receiver<(SocketAddr, Arc<[u8]>)> {
-        let (sender, receiver) = tokio::sync::mpsc::channel(10);
+        let (tx, rx) = tokio::sync::mpsc::channel(10);
 
-        self.listeners.write().await.push(sender);
+        self.listeners.write().await.push(tx);
 
-        receiver
+        rx
     }
 }
 
@@ -583,13 +583,13 @@ async fn repeatedly_send_buffer<T: MessageSplitter>(
 
 impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
     fn new(socket: Arc<UdpSocket>, message_splitter: T) -> Self {
-        let (sender, mut receiver) = tokio::sync::mpsc::channel::<T::Message>(10);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<T::Message>(10);
 
         let handler = spawn_with_name("sender", async move {
             let tracker = TaskTracker::new();
 
             loop {
-                let Some(buffer) = receiver.recv().await else {
+                let Some(buffer) = rx.recv().await else {
                     event!(Level::INFO, "All senders gone, shutting down");
                     break;
                 };
@@ -610,7 +610,10 @@ impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
             tracker.wait().await;
         });
 
-        Self { handler, sender }
+        Self {
+            handler,
+            sender: tx,
+        }
     }
 
     fn get_sender(&mut self) -> Sender<T::Message> {
