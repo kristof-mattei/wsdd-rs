@@ -25,7 +25,7 @@ pub struct WSDHost {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     messages_built: Arc<AtomicU64>,
-    multicast: Sender<Box<[u8]>>,
+    mc_local_port_tx: Sender<Box<[u8]>>,
 }
 
 impl WSDHost {
@@ -34,9 +34,9 @@ impl WSDHost {
         config: Arc<Config>,
         messages_built: Arc<AtomicU64>,
         network_address: NetworkAddress,
-        recv_socket_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-        multicast_tx: Sender<Box<[u8]>>,
-        unicast_tx: Sender<(SocketAddr, Box<[u8]>)>,
+        mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
+        mc_local_port_tx: Sender<Box<[u8]>>,
+        uc_wsd_port_tx: Sender<(SocketAddr, Box<[u8]>)>,
     ) -> Self {
         let cancellation_token = cancellation_token.child_token();
 
@@ -47,8 +47,8 @@ impl WSDHost {
             Arc::clone(&config),
             Arc::clone(&messages_built),
             network_address,
-            recv_socket_rx,
-            unicast_tx,
+            mc_wsd_port_rx,
+            uc_wsd_port_tx,
         );
 
         let host = Self {
@@ -56,7 +56,7 @@ impl WSDHost {
             cancellation_token,
             config,
             messages_built: Arc::clone(&messages_built),
-            multicast: multicast_tx,
+            mc_local_port_tx,
         };
 
         // avoid packet storm when hosts come up by delaying initial hello
@@ -92,7 +92,7 @@ impl WSDHost {
         // TODO move event to here and write properly
         event!(Level::INFO, "scheduling {} message", MessageType::Hello);
 
-        self.multicast.send(hello.into_boxed_slice()).await?;
+        self.mc_local_port_tx.send(hello.into_boxed_slice()).await?;
 
         Ok(())
     }
@@ -105,7 +105,7 @@ impl WSDHost {
         // TODO move event to here and write properly
         event!(Level::INFO, "scheduling {} message", MessageType::Bye);
 
-        Ok(self.multicast.send(bye.into_boxed_slice()).await?)
+        Ok(self.mc_local_port_tx.send(bye.into_boxed_slice()).await?)
     }
 }
 
@@ -148,15 +148,15 @@ async fn listen_forever(
     config: Arc<Config>,
     message_handler: MessageHandler,
     messages_built: Arc<AtomicU64>,
-    mut recv_socket_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-    unicast_tx: Sender<(SocketAddr, Box<[u8]>)>,
+    mut mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
+    uc_wsd_port_tx: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
     loop {
         let message = tokio::select! {
             () = cancellation_token.cancelled() => {
                 break;
             },
-            message = recv_socket_rx.recv() => {
+            message = mc_wsd_port_rx.recv() => {
                 message
             }
         };
@@ -216,7 +216,7 @@ async fn listen_forever(
         };
 
         // return to sender
-        if let Err(error) = unicast_tx.send((from, response.into())).await {
+        if let Err(error) = uc_wsd_port_tx.send((from, response.into())).await {
             event!(Level::ERROR, ?error, to = ?from, "Failed to respond to message");
         }
     }
@@ -227,8 +227,8 @@ fn spawn_rx_loop(
     config: Arc<Config>,
     messages_built: Arc<AtomicU64>,
     network_address: NetworkAddress,
-    recv_socket_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-    unicast_tx: Sender<(SocketAddr, Box<[u8]>)>,
+    mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
+    uc_wsd_port_tx: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
     let address = network_address.address;
 
@@ -241,8 +241,8 @@ fn spawn_rx_loop(
             config,
             message_handler,
             messages_built,
-            recv_socket_rx,
-            unicast_tx,
+            mc_wsd_port_rx,
+            uc_wsd_port_tx,
         )
         .await;
     });
