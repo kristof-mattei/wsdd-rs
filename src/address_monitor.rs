@@ -1,3 +1,9 @@
+#[cfg(target_os = "linux")]
+mod netlink_address_monitor;
+
+#[cfg(any(target_os = "freebsd", target_os = "macos", target_os = "openbsd"))]
+mod route_socket_address_monitor;
+
 use color_eyre::eyre;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
@@ -7,10 +13,10 @@ use crate::config::Config;
 use crate::network_handler::Command;
 
 #[cfg(target_os = "linux")]
-type Monitor = crate::netlink_address_monitor::NetlinkAddressMonitor;
+type Monitor = netlink_address_monitor::NetlinkAddressMonitor;
 
 #[cfg(any(target_os = "freebsd", target_os = "macos", target_os = "openbsd"))]
-type Monitor = RouteSocketAddressMonitor;
+type Monitor = route_socket_address_monitor::RouteSocketAddressMonitor;
 
 #[cfg(not(any(
     target_os = "linux",
