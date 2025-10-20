@@ -328,7 +328,7 @@ async fn perform_metadata_exchange(
 
     let body = build_getmetadata_message(config, endpoint)?;
 
-    let client_builder = reqwest::ClientBuilder::new().local_address(bound_to.address);
+    let client_builder = reqwest::ClientBuilder::new().interface(&bound_to.interface.name);
 
     let builder = client_builder
         .build()?
