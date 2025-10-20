@@ -48,7 +48,7 @@ impl PartialEq for NetworkInterface {
     }
 }
 
-fn if_nametoindex(name: &str) -> Result<u32, std::io::Error> {
+pub fn if_nametoindex(name: &str) -> Result<u32, std::io::Error> {
     let name = CString::new(name).expect("Couldn't convert name to CString");
 
     // SAFETY: libc call

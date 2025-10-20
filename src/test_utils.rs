@@ -1,9 +1,10 @@
 #![cfg(test)]
 
+use std::ffi::CStr;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
-use libc::RT_SCOPE_SITE;
+use libc::{RT_SCOPE_SITE, freeifaddrs, getifaddrs, ifaddrs};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -11,7 +12,7 @@ use crate::cli;
 use crate::config::Config;
 use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
-use crate::network_interface::NetworkInterface;
+use crate::network_interface::{NetworkInterface, if_nametoindex};
 use crate::soap::parser::MessageHandler;
 
 pub mod xml {
@@ -83,12 +84,71 @@ pub fn build_message_handler() -> MessageHandler {
     )
 }
 
+#[expect(unused, reason = "WIP")]
+fn find_first_non_lo_network_interface() -> Result<(Box<str>, u32), std::io::Error> {
+    let mut ifaddrs_p: *mut ifaddrs = std::ptr::null_mut();
+
+    // SAFETY: libc call
+    let result = unsafe { getifaddrs(&raw mut ifaddrs_p) };
+
+    if result == -1 {
+        return Err(std::io::Error::last_os_error());
+    }
+
+    let mut ifa_addr = ifaddrs_p;
+
+    let v = loop {
+        // SAFETY: initialized by libc
+        let Some(ifa) = (unsafe { ifa_addr.as_ref() }) else {
+            break None;
+        };
+
+        // SAFETY: libc guarantees
+        let name = unsafe { CStr::from_ptr(ifa.ifa_name) };
+
+        match name.to_str() {
+            Ok("lo") | Err(_) => {},
+            Ok(name) => {
+                break Some(name.to_owned().into_boxed_str());
+            },
+        }
+
+        ifa_addr = ifa.ifa_next;
+    };
+
+    // SAFETY: libc call
+    unsafe {
+        freeifaddrs(ifaddrs_p);
+    }
+
+    if let Some(v) = v {
+        let index = if_nametoindex(&v)?;
+
+        Ok((v, index))
+    } else {
+        Err(std::io::Error::other("Could not find suitable interface"))
+    }
+}
+
 pub fn build_message_handler_with_network_address(
     ip_address: IpAddr,
 ) -> (MessageHandler, NetworkAddress) {
+    let (name, index) = if ip_address == IpAddr::V4(Ipv4Addr::LOCALHOST) {
+        let name: Box<str> = Box::from("lo");
+        let index = if_nametoindex(&name).expect("Test needs lo's interface id");
+
+        (name, index)
+    } else {
+        (Box::from("eth0"), 1)
+    };
+
     let network_address = NetworkAddress::new(
         ip_address,
-        Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+        Arc::new(NetworkInterface::new_with_index(
+            name.into_string(),
+            RT_SCOPE_SITE,
+            index,
+        )),
     );
 
     (
