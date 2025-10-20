@@ -328,6 +328,10 @@ async fn perform_metadata_exchange(
 
     let body = build_getmetadata_message(config, endpoint)?;
 
+    // Note: we bind on the interface's name.
+    // This is to ensure we send out requests via the interface that we received the XML message on
+    // This is especially important when using IPv6 and resolving `fe80::` addresses which are local to the interface.
+    // Weirdly enough using `.local_address()` didn't work with IPv6
     let client_builder = reqwest::ClientBuilder::new().interface(&bound_to.interface.name);
 
     let builder = client_builder
