@@ -34,12 +34,12 @@ pub(crate) struct WSDClient {
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
 }
 
-/// Parameters:
-///
-/// * `mc_wsd_port_rx`: used to receive multicast messages on `WSD_PORT`
-/// * `mc_local_port_rx`: used to receive multicast messages sent to the local port
-/// * `mc_local_port_tx`: use to send multicast messages, from the local port to `WSD_PORT`
 impl WSDClient {
+    /// Parameters:
+    ///
+    /// * `mc_wsd_port_rx`: used to receive multicast messages on `WSD_PORT`
+    /// * `mc_local_port_rx`: used to receive multicast messages sent to the local port
+    /// * `mc_local_port_tx`: use to send multicast messages, from the local port to `WSD_PORT`
     pub async fn init(
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
