@@ -275,9 +275,9 @@ mod tests {
         let host_ip = Ipv4Addr::new(192, 168, 100, 1);
 
         let cancellation_token = CancellationToken::new();
-        let (_sender, receiver) = tokio::sync::mpsc::channel(10);
-        let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(10);
-        let (unicast_tx, _unicast_rx) = tokio::sync::mpsc::channel(10);
+        let (_mc_wsd_port_tx, mc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
+        let (mc_local_port_tx, mut mc_local_port_rx) = tokio::sync::mpsc::channel(10);
+        let (uc_wsd_port_tx, _uc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
 
         let _wsd_host = WSDHost::init(
             &cancellation_token,
@@ -287,13 +287,13 @@ mod tests {
                 host_ip.into(),
                 Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
             ),
-            receiver,
-            multicast_tx,
-            unicast_tx,
+            mc_wsd_port_rx,
+            mc_local_port_tx,
+            uc_wsd_port_tx,
         )
         .await;
 
-        let hello = multicast_rx.recv().await.unwrap();
+        let hello = mc_local_port_rx.recv().await.unwrap();
 
         let expected = format!(
             include_str!("../../test/hello-template.xml"),
@@ -322,9 +322,9 @@ mod tests {
         let host_ip = Ipv4Addr::new(192, 168, 100, 1);
 
         let cancellation_token = CancellationToken::new();
-        let (_sender, receiver) = tokio::sync::mpsc::channel(10);
-        let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(10);
-        let (unicast_tx, _unicast_rx) = tokio::sync::mpsc::channel(10);
+        let (_mc_wsd_port_tx, mc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
+        let (mc_local_port_tx, mut mc_local_port_rx) = tokio::sync::mpsc::channel(10);
+        let (uc_wsd_port_tx, _uc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
 
         let wsd_host = WSDHost::init(
             &cancellation_token,
@@ -334,17 +334,17 @@ mod tests {
                 host_ip.into(),
                 Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
             ),
-            receiver,
-            multicast_tx,
-            unicast_tx,
+            mc_wsd_port_rx,
+            mc_local_port_tx,
+            uc_wsd_port_tx,
         )
         .await;
 
-        let _hello = multicast_rx.recv().await.unwrap();
+        let _hello = mc_local_port_rx.recv().await.unwrap();
 
         wsd_host.teardown(true).await;
 
-        let bye = multicast_rx.recv().await.unwrap();
+        let bye = mc_local_port_rx.recv().await.unwrap();
 
         let expected_message_number = 1_usize;
 

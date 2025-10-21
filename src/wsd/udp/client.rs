@@ -34,13 +34,12 @@ pub(crate) struct WSDClient {
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
 }
 
-/// Parameters:
-///
-/// * `mc_wsd_port_rx`: used to receive multicast messages on `WSD_PORT`
-/// * `mc_local_port_rx`: used to receive unicast messages sent directly to us
-/// * `mc_local_port_tx`: use to send multicast messages, from a random port to `WSD_PORT`
-/// * `uc_wsd_port_tx`: used to send unicast messages FROM `WSD_PORT` to ...
 impl WSDClient {
+    /// Parameters:
+    ///
+    /// * `mc_wsd_port_rx`: used to receive multicast messages on `WSD_PORT`
+    /// * `mc_local_port_rx`: used to receive multicast messages sent to the local port
+    /// * `mc_local_port_tx`: use to send multicast messages, from the local port to `WSD_PORT`
     pub async fn init(
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
@@ -329,7 +328,12 @@ async fn perform_metadata_exchange(
 
     let body = build_getmetadata_message(config, endpoint)?;
 
-    let client_builder = reqwest::ClientBuilder::new().local_address(bound_to.address);
+    // Note: we bind on the interface's name.
+    // This is to ensure we send out requests via the interface that we received the XML message on
+    // This is especially important when using IPv6 and resolving `fe80::` addresses which are local to the interface.
+    // Using `.local_address()` didn't work with IPv6, because `fe80::` addresses (the ones we bind on) don't specify
+    // to which interface they belong
+    let client_builder = reqwest::ClientBuilder::new().interface(&bound_to.interface.name);
 
     let builder = client_builder
         .build()?
@@ -884,9 +888,9 @@ mod tests {
         let config = Arc::new(build_config(client_endpoint_id, client_instance_id));
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
 
-        let (_recv_socket_tx, recv_socket_rx) = tokio::sync::mpsc::channel(10);
-        let (_mc_send_socket_tx, mc_send_socket_rx) = tokio::sync::mpsc::channel(10);
-        let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(10);
+        let (_mc_wsd_port_tx, mc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
+        let (_mc_local_port_tx, mc_local_port_rx) = tokio::sync::mpsc::channel(10);
+        let (uc_wsd_port_tx, mut uc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
 
         let bound_to = crate::network_address::NetworkAddress::new(
             IpAddr::V4(Ipv4Addr::new(192, 168, 100, 5)),
@@ -898,13 +902,13 @@ mod tests {
             config,
             client_devices,
             bound_to,
-            recv_socket_rx,
-            mc_send_socket_rx,
-            multicast_tx,
+            mc_wsd_port_rx,
+            mc_local_port_rx,
+            uc_wsd_port_tx,
         )
         .await;
 
-        let probe = multicast_rx.recv().await.unwrap();
+        let probe = uc_wsd_port_rx.recv().await.unwrap();
 
         let expected = format!(include_str!("../../test/probe-template.xml"), Uuid::nil());
 
