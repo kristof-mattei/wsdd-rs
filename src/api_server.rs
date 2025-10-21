@@ -1,5 +1,6 @@
 mod generic;
 
+use std::convert::Into;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 use std::time::Duration;
@@ -212,6 +213,26 @@ async fn process_command(
             // elif command == 'list' and args.discovery:
             //   wsd_type = command_args[0] if command_args else None
             //   write_stream.write(bytes(self.get_list_reply(wsd_type), 'utf-8'))
+
+            let (children_tx, mut children_rx) = tokio::sync::mpsc::channel(20);
+
+            if command_sender
+                .send(Command::ListDevices(
+                    command_arg.map(Into::into),
+                    children_tx,
+                ))
+                .await
+                .is_err()
+            {
+                writer
+                    .write_all("Failed to issue list command. Please retry.".as_bytes())
+                    .await?;
+                return Ok(true);
+            }
+
+            while let Some(child) = children_rx.recv().await {
+                writer.write_all(format!("{:?}", child).as_bytes()).await?;
+            }
         },
         "quit" => {
             writer.shutdown().await?;

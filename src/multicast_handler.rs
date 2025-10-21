@@ -393,6 +393,10 @@ impl MulticastHandler {
             .await;
     }
 
+    pub fn wsd_client(&self) -> Option<&WSDClient> {
+        self.wsd_client.get()
+    }
+
     pub async fn enable_wsd_client(&mut self) {
         self.wsd_client
             .get_or_init(|| async {

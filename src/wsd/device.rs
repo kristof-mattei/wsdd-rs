@@ -19,6 +19,7 @@ use crate::soap::parser;
 use crate::soap::parser::generic::{GenericParsingError, parse_generic_body};
 use crate::xml::read_text;
 
+#[derive(Clone, Debug)]
 pub struct WSDDiscoveredDevice {
     addresses: HashMap<Box<str>, HashSet<Box<str>>>,
     props: HashMap<Box<str>, Box<str>>,
@@ -66,7 +67,6 @@ impl WSDDiscoveredDevice {
         &self.last_seen
     }
 
-    #[expect(unused, reason = "WIP")]
     pub fn types(&self) -> &HashSet<Box<str>> {
         &self.types
     }

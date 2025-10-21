@@ -21,6 +21,7 @@ use crate::config::Config;
 use crate::multicast_handler::MulticastHandler;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::{self, NetworkInterface};
+use crate::wsd::device::WSDDiscoveredDevice;
 
 pub enum Command {
     NewAddress {
@@ -33,6 +34,10 @@ pub enum Command {
         scope: u8,
         index: u32,
     },
+    ListDevices(
+        Option<Box<str>>,
+        tokio::sync::mpsc::Sender<WSDDiscoveredDevice>,
+    ),
     Start,
     Stop,
 }
@@ -126,6 +131,15 @@ impl NetworkHandler {
                         Arc::clone(&interface),
                     ))
                     .await;
+                },
+                Command::ListDevices(wsd_type, tx_children) => {
+                    for multicast_handler in &self.multicast_handlers {
+                        if let Some(wsd_client) = multicast_handler.wsd_client() {
+                            wsd_client
+                                .share_discovered_devices(wsd_type.as_deref(), tx_children.clone())
+                                .await;
+                        }
+                    }
                 },
                 Command::Start => {
                     self.set_active()?;

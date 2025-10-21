@@ -29,7 +29,8 @@ use crate::wsd::device::WSDDiscoveredDevice;
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    address: IpAddr,
+    bound_to: NetworkAddress,
+    devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     mc_local_port_tx: Sender<Box<[u8]>>,
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
 }
@@ -51,15 +52,13 @@ impl WSDClient {
     ) -> Self {
         let cancellation_token = cancellation_token.child_token();
 
-        let address = bound_to.address;
-
         let probes = Arc::new(RwLock::new(HashMap::<Urn, u128>::new()));
 
         spawn_rx_loop(
             cancellation_token.clone(),
             Arc::clone(&config),
-            devices,
-            bound_to,
+            Arc::clone(&devices),
+            bound_to.clone(),
             mc_wsd_port_rx,
             mc_local_port_rx,
             mc_local_port_tx.clone(),
@@ -69,7 +68,8 @@ impl WSDClient {
         let mut client = Self {
             cancellation_token,
             config,
-            address,
+            bound_to,
+            devices,
             mc_local_port_tx,
             probes,
         };
@@ -117,6 +117,42 @@ impl WSDClient {
             .write()
             .await
             .retain(|_, value| *value + (PROBE_TIMEOUT * 2) > now);
+    }
+
+    pub async fn share_discovered_devices(
+        &self,
+        wsd_type: Option<&str>,
+        tx_devices: Sender<WSDDiscoveredDevice>,
+    ) {
+        // take the lock once, clone, store locally, and then yield items
+        // that way we reduce the lifetime of the lock
+        let lock = self.devices.read().await;
+
+        let devices = lock.values();
+
+        let devices = if let Some(wsd_type) = wsd_type {
+            devices
+                .filter(|v| v.types().contains(wsd_type))
+                .cloned()
+                .collect::<Vec<_>>()
+        } else {
+            devices.cloned().collect::<Vec<_>>()
+        };
+
+        // purposfully fire and forget
+        tokio::task::spawn(async move {
+            for device in devices {
+                // TODO figure out if receiver disappears when the `nc` connection drops
+                if (tx_devices.send(device).await).is_err() {
+                    event!(
+                        Level::WARN,
+                        "Failed to send device on channel, aborting sending rest"
+                    );
+
+                    break;
+                }
+            }
+        });
     }
 }
 
