@@ -48,22 +48,18 @@ impl WSDDiscoveredDevice {
         Ok(device)
     }
 
-    #[expect(unused, reason = "WIP")]
     pub fn addresses(&self) -> &HashMap<Box<str>, HashSet<Box<str>>> {
         &self.addresses
     }
 
-    #[cfg_attr(not(test), expect(unused, reason = "WIP"))]
     pub fn props(&self) -> &HashMap<Box<str>, Box<str>> {
         &self.props
     }
 
-    #[expect(unused, reason = "WIP")]
     pub fn display_name(&self) -> Option<&str> {
         self.display_name.as_deref()
     }
 
-    #[expect(unused, reason = "WIP")]
     pub fn last_seen(&self) -> &OffsetDateTime {
         &self.last_seen
     }

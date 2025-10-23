@@ -5,17 +5,20 @@
 //             obj.enumerate()
 //         return obj
 
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use color_eyre::eyre;
+use hashbrown::HashMap;
+use hashbrown::hash_map::Entry;
 use thiserror::Error;
+use tokio::sync::RwLock;
+use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
+use uuid::Uuid;
 
 use crate::config::Config;
 use crate::multicast_handler::MulticastHandler;
@@ -34,10 +37,14 @@ pub enum Command {
         scope: u8,
         index: u32,
     },
-    ListDevices(
-        Option<Box<str>>,
-        tokio::sync::mpsc::Sender<WSDDiscoveredDevice>,
-    ),
+    ClearDevices,
+    ListDevices {
+        wsd_type_filter: Option<Box<str>>,
+        devices_tx: Sender<(Uuid, WSDDiscoveredDevice)>,
+    },
+    SendProbes {
+        interface_filter: Option<Box<str>>,
+    },
     Start,
     Stop,
 }
@@ -47,6 +54,7 @@ pub struct NetworkHandler {
     active: AtomicBool,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
+    devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
     multicast_handlers: Vec<MulticastHandler>,
     command_rx: tokio::sync::mpsc::Receiver<Command>,
@@ -74,6 +82,7 @@ impl NetworkHandler {
             active: AtomicBool::new(false),
             config: Arc::clone(config),
             cancellation_token,
+            devices: Arc::new(RwLock::new(HashMap::new())),
             interfaces: HashMap::new(),
             multicast_handlers: vec![],
             command_rx,
@@ -132,13 +141,22 @@ impl NetworkHandler {
                     ))
                     .await;
                 },
-                Command::ListDevices(wsd_type, tx_children) => {
-                    for multicast_handler in &self.multicast_handlers {
-                        if let Some(wsd_client) = multicast_handler.wsd_client() {
-                            wsd_client
-                                .share_discovered_devices(wsd_type.as_deref(), tx_children.clone())
-                                .await;
-                        }
+                Command::ClearDevices => {
+                    if self.config.discovery {
+                        self.devices.write().await.clear();
+                    }
+                },
+                Command::ListDevices {
+                    wsd_type_filter,
+                    devices_tx,
+                } => {
+                    if self.config.discovery {
+                        self.list_devices(wsd_type_filter, devices_tx).await;
+                    }
+                },
+                Command::SendProbes { interface_filter } => {
+                    if self.config.discovery {
+                        self.send_probes(interface_filter).await;
                     }
                 },
                 Command::Start => {
@@ -151,6 +169,69 @@ impl NetworkHandler {
         }
 
         Ok(())
+    }
+
+    async fn list_devices(
+        &self,
+        wsd_type_filter: Option<Box<str>>,
+        devices_tx: Sender<(Uuid, WSDDiscoveredDevice)>,
+    ) {
+        // take the lock once, clone, store locally, and then yield items
+        // that way we reduce the lifetime of the lock
+        let lock = self.devices.read().await;
+
+        let devices = lock;
+
+        let devices = if let Some(wsd_type) = wsd_type_filter.as_deref() {
+            devices
+                .iter()
+                .filter_map(|(key, value)| {
+                    if value.types().contains(wsd_type) {
+                        Some((*key, value.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+        } else {
+            devices.clone().into_iter().collect::<Vec<_>>()
+        };
+
+        // purposefully fire and forget
+        tokio::task::spawn(async move {
+            for device in devices {
+                // this will fail if the receiver is gone
+                // which happens when there is an issue writing to the buffer
+                // which usually means 'thing' connecting to the api is gone
+                if (devices_tx.send(device).await).is_err() {
+                    event!(
+                        Level::WARN,
+                        "Failed to send device on channel, aborting sending rest"
+                    );
+
+                    break;
+                }
+            }
+        });
+    }
+
+    async fn send_probes(&self, interface_filter: Option<Box<str>>) {
+        let interface_filter = interface_filter.as_ref();
+
+        for multicast_handler in &self.multicast_handlers {
+            let Some(wsd_client) = multicast_handler.wsd_client() else {
+                continue;
+            };
+
+            let should_send_probe = match interface_filter {
+                Some(interface) => multicast_handler.get_address().interface.name == *interface,
+                None => true,
+            };
+
+            if should_send_probe {
+                let _r = wsd_client.send_probe().await;
+            }
+        }
     }
 
     fn add_interface(
@@ -252,9 +333,13 @@ impl NetworkHandler {
         event!(Level::DEBUG, "handling traffic for {}", address);
 
         // TODO: Proper error handling here
-        let mut multicast_handler =
-            MulticastHandler::new(address, self.cancellation_token.clone(), &self.config)
-                .expect("FAIL");
+        let mut multicast_handler = MulticastHandler::new(
+            address,
+            self.cancellation_token.clone(),
+            &self.config,
+            Arc::clone(&self.devices),
+        )
+        .expect("FAIL");
 
         if !self.config.no_host {
             multicast_handler.enable_wsd_host().await;

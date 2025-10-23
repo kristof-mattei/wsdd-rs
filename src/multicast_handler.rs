@@ -67,6 +67,7 @@ impl MulticastHandler {
         address: NetworkAddress,
         cancellation_token: CancellationToken,
         config: &Arc<Config>,
+        devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     ) -> Result<Self, eyre::Report> {
         let domain = match address.address {
             IpAddr::V4(_) => Domain::IPV4,
@@ -144,7 +145,7 @@ impl MulticastHandler {
             config: Arc::clone(config),
             cancellation_token,
             address,
-            devices: Arc::new(RwLock::new(HashMap::new())),
+            devices,
             messages_built: Arc::new(AtomicU64::new(0)),
             multicast_address,
             http_listen_address,
@@ -428,6 +429,10 @@ impl MulticastHandler {
                 server
             })
             .await;
+    }
+
+    pub fn get_address(&self) -> &NetworkAddress {
+        &self.address
     }
 }
 

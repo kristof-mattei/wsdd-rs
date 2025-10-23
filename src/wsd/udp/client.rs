@@ -65,7 +65,7 @@ impl WSDClient {
             Arc::clone(&probes),
         );
 
-        let mut client = Self {
+        let client = Self {
             cancellation_token,
             config,
             bound_to,
@@ -94,7 +94,7 @@ impl WSDClient {
     }
 
     // WS-Discovery, Section 4.3, Probe message
-    async fn send_probe(&mut self) -> Result<(), eyre::Report> {
+    pub async fn send_probe(&self) -> Result<(), eyre::Report> {
         self.remove_outdated_probes().await;
 
         let (probe, message_id) = Builder::build_probe(&self.config)?;
@@ -110,51 +110,13 @@ impl WSDClient {
         Ok(())
     }
 
-    async fn remove_outdated_probes(&mut self) {
+    async fn remove_outdated_probes(&self) {
         let now = now();
 
         self.probes
             .write()
             .await
             .retain(|_, value| *value + (PROBE_TIMEOUT * 2) > now);
-    }
-
-    pub async fn share_discovered_devices(
-        &self,
-        wsd_type: Option<&str>,
-        tx_devices: Sender<WSDDiscoveredDevice>,
-    ) {
-        // take the lock once, clone, store locally, and then yield items
-        // that way we reduce the lifetime of the lock
-        let lock = self.devices.read().await;
-
-        let devices = lock.values();
-
-        let devices = if let Some(wsd_type) = wsd_type {
-            devices
-                .filter(|v| v.types().contains(wsd_type))
-                .cloned()
-                .collect::<Vec<_>>()
-        } else {
-            devices.cloned().collect::<Vec<_>>()
-        };
-
-        // purposefully fire and forget
-        tokio::task::spawn(async move {
-            for device in devices {
-                // this will fail if the receiver is gone
-                // which happens when there is an issue writing to the buffer
-                // which usually means 'thing' connecting to the api is gone
-                if (tx_devices.send(device).await).is_err() {
-                    event!(
-                        Level::WARN,
-                        "Failed to send device on channel, aborting sending rest"
-                    );
-
-                    break;
-                }
-            }
-        });
     }
 }
 
@@ -416,7 +378,7 @@ fn build_getmetadata_message(
 }
 
 async fn handle_metadata(
-    devices: Arc<RwLock<hashbrown::HashMap<Uuid, WSDDiscoveredDevice>>>,
+    devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     meta: &Bytes,
     endpoint: Uuid,
     xaddr: Url,
