@@ -249,7 +249,9 @@ where
             }
 
             while let Some((uuid, device)) = devices_rx.recv().await {
-                format_wsd_discovered_device(writer, uuid, &device).await;
+                let line = format_wsd_discovered_device(uuid, &device);
+
+                writer.write_all(line.as_bytes()).await?;
             }
 
             writer.write_all(".\n".as_bytes()).await?;
@@ -285,65 +287,40 @@ where
     Ok(true)
 }
 
-async fn format_wsd_discovered_device<W>(writer: &mut W, uuid: Uuid, device: &WSDDiscoveredDevice)
-where
-    W: AsyncWriteExt + Unpin,
-{
-    let _r = writer.write_all(uuid.to_string().as_bytes()).await;
-    let _r = writer.write_all("\t".as_bytes()).await;
-    let _r = writer
-        .write_all(device.display_name().unwrap_or_default().as_bytes())
-        .await;
-    let _r = writer.write_all("\t".as_bytes()).await;
-    let _r = writer
-        .write_all(
-            device
-                .props()
-                .get("BelongsTo")
-                .map(|b| &**b)
-                .unwrap_or_default()
-                .as_bytes(),
-        )
-        .await;
-    let _r = writer.write_all("\t".as_bytes()).await;
-    let _r = writer
-        .write_all(
-            device
-                .last_seen()
-                .format(&Iso8601::DEFAULT)
-                .unwrap()
-                .as_bytes(),
-        )
-        .await;
-    let _r = writer.write_all("\t".as_bytes()).await;
-    let addresses = device
-        .addresses()
-        .iter()
-        .map(|(interface_name, addresses)| {
-            let addresses = addresses
-                .iter()
-                .map(|a| &**a)
-                .collect::<Vec<_>>()
-                .join(", ");
+fn format_wsd_discovered_device(uuid: Uuid, device: &WSDDiscoveredDevice) -> Box<str> {
+    let line = format!(
+        "{}\t{}\t{}\t{}\t{}\t{}\n",
+        uuid,
+        device.display_name().unwrap_or_default(),
+        device
+            .props()
+            .get("BelongsTo")
+            .map(|b| &**b)
+            .unwrap_or_default(),
+        device.last_seen().format(&Iso8601::DEFAULT).unwrap(),
+        device
+            .addresses()
+            .iter()
+            .map(|(interface_name, addresses)| {
+                let addresses = addresses
+                    .iter()
+                    .map(|a| &**a)
+                    .collect::<Vec<_>>()
+                    .join(", ");
 
-            format!("{}, {{{}}}", interface_name, addresses)
-        })
-        .collect::<Vec<_>>()
-        .join(",");
-    let _r = writer.write_all(addresses.as_bytes()).await;
-    let _r = writer.write_all("\t".as_bytes()).await;
-    let _r = writer
-        .write_all(
-            device
-                .types()
-                .iter()
-                .map(|t| &**t)
-                .collect::<Vec<_>>()
-                .join(",")
-                .as_bytes(),
-        )
-        .await;
-    let _r = writer.write_all("\n".as_bytes()).await;
+                format!("{}, {{{}}}", interface_name, addresses)
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        device
+            .types()
+            .iter()
+            .map(|t| &**t)
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+
+    line.into_boxed_str()
 }
 
 //     async def cleanup(self) -> None:
