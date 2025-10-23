@@ -178,9 +178,7 @@ impl NetworkHandler {
     ) {
         // take the lock once, clone, store locally, and then yield items
         // that way we reduce the lifetime of the lock
-        let lock = self.devices.read().await;
-
-        let devices = lock;
+        let devices = self.devices.read().await;
 
         let devices = if let Some(wsd_type) = wsd_type_filter.as_deref() {
             devices
