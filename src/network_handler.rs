@@ -194,7 +194,10 @@ impl NetworkHandler {
                 })
                 .collect::<Vec<_>>()
         } else {
-            devices.clone().into_iter().collect::<Vec<_>>()
+            devices
+                .iter()
+                .map(|(key, value)| (*key, value.clone()))
+                .collect::<Vec<_>>()
         };
 
         // purposefully fire and forget
