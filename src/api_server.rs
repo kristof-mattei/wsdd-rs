@@ -5,15 +5,18 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use color_eyre::eyre;
-use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use time::format_description::well_known::Iso8601;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
+use uuid::Uuid;
 
-use crate::api_server::generic::{GenericListener, GenericStream, GenericWriteHalf};
+use crate::api_server::generic::{GenericListener, GenericStream};
 use crate::config::PortOrSocket;
 use crate::network_handler::Command;
+use crate::wsd::device::WSDDiscoveredDevice;
 
 const MAX_CONNECTION_BACKLOG: u32 = 100;
 const MAX_CONCURRENT_CONNECTIONS: usize = 10;
@@ -21,14 +24,14 @@ const MAX_CONCURRENT_CONNECTIONS: usize = 10;
 pub struct ApiServer {
     cancellation_token: CancellationToken,
     listener: GenericListener,
-    command_sender: tokio::sync::mpsc::Sender<Command>,
+    command_tx: tokio::sync::mpsc::Sender<Command>,
 }
 
 impl ApiServer {
     pub fn new(
         cancellation_token: CancellationToken,
         listen_on: &PortOrSocket,
-        command_sender: tokio::sync::mpsc::Sender<Command>,
+        command_tx: tokio::sync::mpsc::Sender<Command>,
     ) -> Result<ApiServer, std::io::Error> {
         let listener: GenericListener = match *listen_on {
             PortOrSocket::Port(port) => {
@@ -49,7 +52,7 @@ impl ApiServer {
         Ok(Self {
             cancellation_token,
             listener,
-            command_sender,
+            command_tx,
         })
     }
 
@@ -101,11 +104,11 @@ impl ApiServer {
                     let cancellation_token: CancellationToken =
                         self.cancellation_token.child_token();
 
-                    let command_sender = self.command_sender.clone();
+                    let command_tx = self.command_tx.clone();
 
                     tokio::task::spawn(handle_single_connection(
                         cancellation_token,
-                        command_sender,
+                        command_tx,
                         stream,
                         permit,
                     ));
@@ -123,7 +126,7 @@ impl ApiServer {
 
 async fn handle_single_connection(
     cancellation_token: CancellationToken,
-    command_sender: tokio::sync::mpsc::Sender<Command>,
+    command_tx: tokio::sync::mpsc::Sender<Command>,
     stream: GenericStream,
     _permit: OwnedSemaphorePermit,
 ) {
@@ -149,7 +152,7 @@ async fn handle_single_connection(
                 break;
             },
             Ok(bytes_read) => {
-                match process_command(&buffer[0..bytes_read], &command_sender, &mut writer).await {
+                match process_command(&buffer[0..bytes_read], &command_tx, &mut writer).await {
                     Ok(true) => {
                         // all good
                         continue;
@@ -174,16 +177,18 @@ async fn handle_single_connection(
 
     event!(Level::INFO, "API Client gone");
 
-    // RELEASE THE KRAKEN
-    // I mean permit
+    // `_permit` is released here
 }
 
 /// `raw_command` is newline terminated
-async fn process_command(
+async fn process_command<W>(
     raw_command: &[u8],
-    command_sender: &tokio::sync::mpsc::Sender<Command>,
-    writer: &mut GenericWriteHalf,
-) -> Result<bool, std::io::Error> {
+    command_tx: &tokio::sync::mpsc::Sender<Command>,
+    writer: &mut W,
+) -> Result<bool, std::io::Error>
+where
+    W: AsyncWriteExt + Unpin,
+{
     let command = match str::from_utf8(raw_command) {
         Ok(command) => command.trim(),
         Err(_error) => {
@@ -199,33 +204,71 @@ async fn process_command(
 
     match command {
         "probe" => {
-            // send probes
             event!(Level::DEBUG, interface = ?command_arg, "probing devices upon request");
-            // for client in self.get_clients_by_interface(intf):
-            //   client.send_probe()
+
+            if command_tx
+                .send(Command::SendProbes {
+                    interface_filter: command_arg.map(Into::into),
+                })
+                .await
+                .is_err()
+            {
+                writer
+                    .write_all("Failed to issue probe command. Please retry.".as_bytes())
+                    .await?;
+
+                return Ok(true);
+            }
         },
         "clear" => {
             event!(Level::DEBUG, "clearing list of known devices");
-            // WSDDiscoveredDevice.instances.clear()
+
+            if command_tx.send(Command::ClearDevices).await.is_err() {
+                writer
+                    .write_all("Failed to issue clear command. Please retry.".as_bytes())
+                    .await?;
+
+                return Ok(true);
+            }
         },
         "list" => {
-            // elif command == 'list' and args.discovery:
-            //   wsd_type = command_args[0] if command_args else None
-            //   write_stream.write(bytes(self.get_list_reply(wsd_type), 'utf-8'))
+            let (devices_tx, mut devices_rx) = tokio::sync::mpsc::channel(20);
+
+            if command_tx
+                .send(Command::ListDevices {
+                    wsd_type_filter: command_arg.map(Into::into),
+                    devices_tx,
+                })
+                .await
+                .is_err()
+            {
+                writer
+                    .write_all("Failed to issue list command. Please retry.".as_bytes())
+                    .await?;
+                return Ok(true);
+            }
+
+            while let Some((uuid, device)) = devices_rx.recv().await {
+                let line = format_wsd_discovered_device(uuid, &device);
+
+                writer.write_all(line.as_bytes()).await?;
+            }
+
+            writer.write_all(".\n".as_bytes()).await?;
         },
         "quit" => {
             writer.shutdown().await?;
             return Ok(false);
         },
         "start" => {
-            if command_sender.send(Command::Start).await.is_err() {
+            if command_tx.send(Command::Start).await.is_err() {
                 writer
                     .write_all("Failed to issue start command. Please retry.".as_bytes())
                     .await?;
             }
         },
         "stop" => {
-            if command_sender.send(Command::Stop).await.is_err() {
+            if command_tx.send(Command::Stop).await.is_err() {
                 writer
                     .write_all("Failed to issue stop command. Please retry.".as_bytes())
                     .await?;
@@ -244,26 +287,41 @@ async fn process_command(
     Ok(true)
 }
 
-//     def get_clients_by_interface(self, interface: Optional[str]) -> List[WSDClient]:
-//         return [c for c in WSDClient.instances if c.mch.address.interface.name == interface or not interface]
+fn format_wsd_discovered_device(uuid: Uuid, device: &WSDDiscoveredDevice) -> Box<str> {
+    let line = format!(
+        "{}\t{}\t{}\t{}\t{}\t{}\n",
+        uuid,
+        device.display_name().unwrap_or_default(),
+        device
+            .props()
+            .get("BelongsTo")
+            .map(|b| &**b)
+            .unwrap_or_default(),
+        device.last_seen().format(&Iso8601::DEFAULT).unwrap(),
+        device
+            .addresses()
+            .iter()
+            .map(|(interface_name, addresses)| {
+                let addresses = addresses
+                    .iter()
+                    .map(|a| &**a)
+                    .collect::<Vec<_>>()
+                    .join(", ");
 
-//     def get_list_reply(self, wsd_type: Optional[str]) -> str:
-//         retval = ''
-//         for dev_uuid, dev in WSDDiscoveredDevice.instances.items():
-//             if wsd_type and (wsd_type not in dev.types):
-//                 continue
+                format!("{}, {{{}}}", interface_name, addresses)
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        device
+            .types()
+            .iter()
+            .map(|t| &**t)
+            .collect::<Vec<_>>()
+            .join(","),
+    );
 
-//             addrs_str = []
-//             for addrs in dev.addresses.items():
-//                 addrs_str.append(', '.join(['{}'.format(a) for a in addrs]))
-
-//             retval = retval + '{}\t{}\t{}\t{}\t{}\t{}\n'.format(
-//                 dev_uuid, dev.display_name, dev.props['BelongsTo'] if 'BelongsTo' in dev.props else '',
-//                 datetime.datetime.fromtimestamp(dev.last_seen).isoformat('T', 'seconds'), ','.join(addrs_str), ','.join(
-//                     dev.types))
-
-//         retval += '.\n'
-//         return retval
+    line.into_boxed_str()
+}
 
 //     async def cleanup(self) -> None:
 //         # ensure the server is not created after we have teared down

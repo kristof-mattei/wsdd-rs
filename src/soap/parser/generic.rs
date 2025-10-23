@@ -175,35 +175,50 @@ where
     ))
 }
 
+type ParseGenericBodyPathResult<'full_path> = Result<
+    (Option<OwnedName>, Option<Vec<OwnedAttribute>>, usize),
+    GenericParsingError<'full_path>,
+>;
+
 pub fn parse_generic_body_paths<'full_path, 'namespace, 'path>(
     reader: &mut EventReader<BufReader<&[u8]>>,
     paths: &[(&'namespace str, &'path str)],
-) -> Result<usize, GenericParsingError<'full_path>>
+) -> ParseGenericBodyPathResult<'full_path>
 where
     'full_path: 'path + 'namespace,
 {
-    parse_generic_body_paths_recursive(reader, paths, 0)
+    parse_generic_body_paths_recursive(reader, paths, None, None, 0)
 }
 
 fn parse_generic_body_paths_recursive<'full_path, 'namespace, 'path>(
     reader: &mut EventReader<BufReader<&[u8]>>,
     paths: &[(&'namespace str, &'path str)],
+    name: Option<OwnedName>,
+    attributes: Option<Vec<OwnedAttribute>>,
     mut depth: usize,
-) -> Result<usize, GenericParsingError<'full_path>>
+) -> ParseGenericBodyPathResult<'full_path>
 where
     'full_path: 'path + 'namespace,
 {
     let [(namespace, path), ref rest @ ..] = *paths else {
-        return Ok(depth);
+        return Ok((name, attributes, depth));
     };
 
     loop {
         match reader.next()? {
-            XmlEvent::StartElement { name, .. } => {
+            XmlEvent::StartElement {
+                name, attributes, ..
+            } => {
                 depth += 1;
 
                 if name.namespace_ref() == Some(namespace) && name.local_name == path {
-                    return parse_generic_body_paths_recursive(reader, rest, depth);
+                    return parse_generic_body_paths_recursive(
+                        reader,
+                        rest,
+                        Some(name),
+                        Some(attributes),
+                        depth,
+                    );
                 }
             },
             XmlEvent::EndElement { .. } => {

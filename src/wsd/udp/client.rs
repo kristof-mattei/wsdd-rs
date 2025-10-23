@@ -29,7 +29,8 @@ use crate::wsd::device::WSDDiscoveredDevice;
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    address: IpAddr,
+    bound_to: NetworkAddress,
+    devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     mc_local_port_tx: Sender<Box<[u8]>>,
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
 }
@@ -51,25 +52,24 @@ impl WSDClient {
     ) -> Self {
         let cancellation_token = cancellation_token.child_token();
 
-        let address = bound_to.address;
-
         let probes = Arc::new(RwLock::new(HashMap::<Urn, u128>::new()));
 
         spawn_rx_loop(
             cancellation_token.clone(),
             Arc::clone(&config),
-            devices,
-            bound_to,
+            Arc::clone(&devices),
+            bound_to.clone(),
             mc_wsd_port_rx,
             mc_local_port_rx,
             mc_local_port_tx.clone(),
             Arc::clone(&probes),
         );
 
-        let mut client = Self {
+        let client = Self {
             cancellation_token,
             config,
-            address,
+            bound_to,
+            devices,
             mc_local_port_tx,
             probes,
         };
@@ -94,7 +94,7 @@ impl WSDClient {
     }
 
     // WS-Discovery, Section 4.3, Probe message
-    async fn send_probe(&mut self) -> Result<(), eyre::Report> {
+    pub async fn send_probe(&self) -> Result<(), eyre::Report> {
         self.remove_outdated_probes().await;
 
         let (probe, message_id) = Builder::build_probe(&self.config)?;
@@ -110,7 +110,7 @@ impl WSDClient {
         Ok(())
     }
 
-    async fn remove_outdated_probes(&mut self) {
+    async fn remove_outdated_probes(&self) {
         let now = now();
 
         self.probes
@@ -378,7 +378,7 @@ fn build_getmetadata_message(
 }
 
 async fn handle_metadata(
-    devices: Arc<RwLock<hashbrown::HashMap<Uuid, WSDDiscoveredDevice>>>,
+    devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     meta: &Bytes,
     endpoint: Uuid,
     xaddr: Url,
@@ -697,6 +697,8 @@ mod tests {
         let device = device.unwrap();
 
         let expected_props = HashMap::<_, _>::from_iter([
+            ("BelongsTo", "Workgroup:WORKGROUP"),
+            ("DisplayName", "diskstation"),
             ("Manufacturer", "Synology Inc"),
             ("FirmwareVersion", "6"),
             ("FriendlyName", "Synology DiskStation"),
@@ -714,7 +716,7 @@ mod tests {
             .map(|(key, value)| (&**key, &**value))
             .collect::<HashMap<_, _>>();
 
-        assert_eq!(device_props, expected_props);
+        assert_eq!(expected_props, device_props);
     }
 
     #[tokio::test]

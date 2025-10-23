@@ -198,7 +198,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
 
     let tasks = tokio_util::task::TaskTracker::new();
 
-    let (command_sender, command_rx) = tokio::sync::mpsc::channel(10);
+    let (command_tx, command_rx) = tokio::sync::mpsc::channel(10);
     let (start_sender, start_rx) = tokio::sync::watch::channel::<()>(());
 
     let mut network_handler = NetworkHandler::new(
@@ -211,7 +211,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     {
         let cancellation_token = cancellation_token.clone();
         let config = Arc::clone(&config);
-        let command_sender = command_sender.clone();
+        let command_sender = command_tx.clone();
 
         tasks.spawn(async move {
             let _guard = cancellation_token.clone().drop_guard();
@@ -262,13 +262,13 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     if let Some(listen_on) = config.listen.as_ref() {
         let cancellation_token = cancellation_token.clone();
         let listen_on = listen_on.clone();
-        let command_sender = command_sender.clone();
+        let command_tx = command_tx.clone();
 
         tasks.spawn(async move {
             let _guard = cancellation_token.clone().drop_guard();
 
             let api_server =
-                match api_server::ApiServer::new(cancellation_token, &listen_on, command_sender) {
+                match api_server::ApiServer::new(cancellation_token, &listen_on, command_tx) {
                     Ok(api_server) => api_server,
                     Err(error) => {
                         event!(Level::ERROR, ?error, "Failed to start ApiServer");
