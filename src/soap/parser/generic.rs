@@ -175,7 +175,7 @@ where
     ))
 }
 
-type ParseGenericPath<'full_path> = Result<
+type ParseGenericBodyPathResult<'full_path> = Result<
     (Option<OwnedName>, Option<Vec<OwnedAttribute>>, usize),
     GenericParsingError<'full_path>,
 >;
@@ -183,7 +183,7 @@ type ParseGenericPath<'full_path> = Result<
 pub fn parse_generic_body_paths<'full_path, 'namespace, 'path>(
     reader: &mut EventReader<BufReader<&[u8]>>,
     paths: &[(&'namespace str, &'path str)],
-) -> ParseGenericPath<'full_path>
+) -> ParseGenericBodyPathResult<'full_path>
 where
     'full_path: 'path + 'namespace,
 {
@@ -196,7 +196,7 @@ fn parse_generic_body_paths_recursive<'full_path, 'namespace, 'path>(
     name: Option<OwnedName>,
     attributes: Option<Vec<OwnedAttribute>>,
     mut depth: usize,
-) -> ParseGenericPath<'full_path>
+) -> ParseGenericBodyPathResult<'full_path>
 where
     'full_path: 'path + 'namespace,
 {

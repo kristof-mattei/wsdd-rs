@@ -9,7 +9,7 @@ use xml::reader::XmlEvent;
 use crate::constants::{XML_WSA_NAMESPACE, XML_WSD_NAMESPACE};
 use crate::xml::{TextReadError, read_text};
 
-type ParsedResolve = Result<(), ResolveParsingError>;
+type ParsedResolveResult = Result<(), ResolveParsingError>;
 
 #[derive(Error, Debug)]
 pub enum ResolveParsingError {
@@ -25,7 +25,10 @@ pub enum ResolveParsingError {
     AddressDoesntMatch,
 }
 
-fn parse_resolve(reader: &mut EventReader<BufReader<&[u8]>>, target_uuid: Uuid) -> ParsedResolve {
+fn parse_resolve(
+    reader: &mut EventReader<BufReader<&[u8]>>,
+    target_uuid: Uuid,
+) -> ParsedResolveResult {
     let mut addr = None;
 
     let mut resolve_depth = 0;
@@ -121,7 +124,7 @@ fn parse_resolve(reader: &mut EventReader<BufReader<&[u8]>>, target_uuid: Uuid) 
 pub fn parse_resolve_body(
     reader: &mut EventReader<BufReader<&[u8]>>,
     target_uuid: Uuid,
-) -> ParsedResolve {
+) -> ParsedResolveResult {
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {

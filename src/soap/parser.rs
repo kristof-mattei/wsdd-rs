@@ -31,7 +31,7 @@ pub struct Header {
     pub relates_to: Option<Urn>,
 }
 
-type ParsedHeader = Result<Header, HeaderError>;
+type ParsedHeaderResult = Result<Header, HeaderError>;
 
 #[derive(Error, Debug)]
 pub enum MessageHandlerError {
@@ -258,7 +258,7 @@ impl MessageHandler {
     }
 }
 
-fn parse_header(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedHeader {
+fn parse_header(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedHeaderResult {
     // <wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
     let mut to = None;
     // <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches</wsa:Action>

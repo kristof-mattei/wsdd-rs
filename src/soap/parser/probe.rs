@@ -8,7 +8,7 @@ use xml::reader::XmlEvent;
 use crate::constants::{WSDP_TYPE_DEVICE, XML_WSD_NAMESPACE};
 use crate::xml::{TextReadError, read_text};
 
-type ParsedProbe = Result<(), ProbeParsingError>;
+type ParsedProbeResult = Result<(), ProbeParsingError>;
 
 #[derive(Error, Debug)]
 pub enum ProbeParsingError {
@@ -26,7 +26,7 @@ pub enum ProbeParsingError {
     MissingProbeElement,
 }
 
-fn parse_probe(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedProbe {
+fn parse_probe(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedProbeResult {
     let mut types = None;
 
     loop {
@@ -96,7 +96,7 @@ fn parse_probe(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedProbe {
 }
 
 /// This takes in a reader that is stopped at the body tag.
-pub fn parse_probe_body(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedProbe {
+pub fn parse_probe_body(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedProbeResult {
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
