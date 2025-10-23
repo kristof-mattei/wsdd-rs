@@ -1,34 +1,14 @@
-use std::borrow::Cow;
 use std::io::BufReader;
 use std::str::FromStr as _;
 
-use thiserror::Error;
 use tracing::{Level, event};
 use uuid::Uuid;
 use uuid::fmt::Urn;
 use xml::EventReader;
-use xml::attribute::OwnedAttribute;
-use xml::name::OwnedName;
 use xml::reader::XmlEvent;
 
 use crate::constants::{XML_WSA_NAMESPACE, XML_WSD_NAMESPACE};
-use crate::xml::{TextReadError, read_text};
-
-#[derive(Error, Debug)]
-pub enum GenericParsingError<'p> {
-    #[error("Error parsing XML")]
-    XmlError(#[from] xml::reader::Error),
-    #[error("Error reading text")]
-    TextReadError(#[from] TextReadError),
-    #[error("Missing ./{0} in body")]
-    MissingElement(Cow<'p, str>),
-    #[error("Missing closing ./{0} in body")]
-    MissingClosingElement(Cow<'p, str>),
-    #[error("Invalid element order")]
-    InvalidElementOrder,
-    #[error("Invalid UUID")]
-    InvalidUuid(#[from] uuid::Error),
-}
+use crate::xml::{GenericParsingError, read_text};
 
 pub fn extract_endpoint_reference_address(
     reader: &mut EventReader<BufReader<&[u8]>>,
@@ -132,112 +112,4 @@ pub fn extract_endpoint_metadata(
     let endpoint = Urn::from_str(&endpoint)?.into_uuid();
 
     Ok((endpoint, xaddrs.map(String::into_boxed_str)))
-}
-
-/// TODO expand to make sure what we search for is at the right depth
-pub fn parse_generic_body<'full_path, 'namespace, 'path, 'reader>(
-    reader: &'reader mut EventReader<BufReader<&[u8]>>,
-    namespace: &'namespace str,
-    path: &'path str,
-) -> Result<(OwnedName, Vec<OwnedAttribute>, usize), GenericParsingError<'full_path>>
-where
-    'full_path: 'path + 'namespace,
-{
-    let mut depth = 0_usize;
-
-    loop {
-        match reader.next()? {
-            XmlEvent::StartElement {
-                name, attributes, ..
-            } => {
-                depth += 1;
-
-                if name.namespace_ref() == Some(namespace) && name.local_name == path {
-                    return Ok((name, attributes, depth));
-                }
-            },
-            XmlEvent::EndDocument => {
-                break;
-            },
-            XmlEvent::StartDocument { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::EndElement { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Comment(_)
-            | XmlEvent::Characters(_)
-            | XmlEvent::Whitespace(_)
-            | XmlEvent::Doctype { .. } => {},
-        }
-    }
-
-    Err(GenericParsingError::MissingElement(
-        format!("{}:{}", namespace, path).into(),
-    ))
-}
-
-type ParseGenericBodyPathResult<'full_path> = Result<
-    (Option<OwnedName>, Option<Vec<OwnedAttribute>>, usize),
-    GenericParsingError<'full_path>,
->;
-
-pub fn parse_generic_body_paths<'full_path, 'namespace, 'path>(
-    reader: &mut EventReader<BufReader<&[u8]>>,
-    paths: &[(&'namespace str, &'path str)],
-) -> ParseGenericBodyPathResult<'full_path>
-where
-    'full_path: 'path + 'namespace,
-{
-    parse_generic_body_paths_recursive(reader, paths, None, None, 0)
-}
-
-fn parse_generic_body_paths_recursive<'full_path, 'namespace, 'path>(
-    reader: &mut EventReader<BufReader<&[u8]>>,
-    paths: &[(&'namespace str, &'path str)],
-    name: Option<OwnedName>,
-    attributes: Option<Vec<OwnedAttribute>>,
-    mut depth: usize,
-) -> ParseGenericBodyPathResult<'full_path>
-where
-    'full_path: 'path + 'namespace,
-{
-    let [(namespace, path), ref rest @ ..] = *paths else {
-        return Ok((name, attributes, depth));
-    };
-
-    loop {
-        match reader.next()? {
-            XmlEvent::StartElement {
-                name, attributes, ..
-            } => {
-                depth += 1;
-
-                if name.namespace_ref() == Some(namespace) && name.local_name == path {
-                    return parse_generic_body_paths_recursive(
-                        reader,
-                        rest,
-                        Some(name),
-                        Some(attributes),
-                        depth,
-                    );
-                }
-            },
-            XmlEvent::EndElement { .. } => {
-                depth -= 1;
-            },
-            XmlEvent::EndDocument => {
-                break;
-            },
-            XmlEvent::StartDocument { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Comment(_)
-            | XmlEvent::Characters(_)
-            | XmlEvent::Whitespace(_)
-            | XmlEvent::Doctype { .. } => (),
-        }
-    }
-
-    Err(GenericParsingError::MissingElement(
-        format!("{}:{}", namespace, path).into(),
-    ))
 }
