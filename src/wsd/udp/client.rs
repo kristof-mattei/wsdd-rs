@@ -139,10 +139,12 @@ impl WSDClient {
             devices.cloned().collect::<Vec<_>>()
         };
 
-        // pupurposefully fire and forget
+        // purposefully fire and forget
         tokio::task::spawn(async move {
             for device in devices {
-                // TODO figure out if receiver disappears when the `nc` connection drops
+                // this will fail if the receiver is gone
+                // which happens when there is an issue writing to the buffer
+                // which usually means 'thing' connecting to the api is gone
                 if (tx_devices.send(device).await).is_err() {
                     event!(
                         Level::WARN,
@@ -559,7 +561,6 @@ fn spawn_rx_loop(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
 

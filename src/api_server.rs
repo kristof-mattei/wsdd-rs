@@ -230,7 +230,9 @@ async fn process_command(
             }
 
             while let Some(child) = children_rx.recv().await {
-                writer.write_all(format!("{:?}", child).as_bytes()).await?;
+                writer
+                    .write_all(format!("{:?}\n", child).as_bytes())
+                    .await?;
             }
         },
         "quit" => {
