@@ -49,7 +49,7 @@ fn parse_resolve(reader: &mut EventReader<BufReader<&[u8]>>, target_uuid: Uuid) 
                                     && name.namespace_ref() == Some(XML_WSA_NAMESPACE)
                                     && name.local_name == "Address"
                                 {
-                                    addr = read_text(reader, &name)?;
+                                    addr = read_text(reader, name.borrow())?;
 
                                     break;
                                 }

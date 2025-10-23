@@ -60,7 +60,7 @@ pub const WSDP_RELATIONSHIP_TYPE_HOST: &str = concatcp!(WSDP_URI, "/", WSDP_RELA
 // WSD_TYPE_DEVICE: str = 'wsdp:Device'
 pub const WSDP_TYPE_DEVICE: &str = "wsdp:Device";
 // PUB_COMPUTER: str = 'pub:Computer'
-const PUB_COMPUTER: &str = "pub:Computer";
+pub const PUB_COMPUTER: &str = "pub:Computer";
 // WSD_TYPE_DEVICE_COMPUTER: str = '{0} {1}'.format(WSD_TYPE_DEVICE, PUB_COMPUTER)
 // TODO: fix when format_args!() becomes const
 pub const WSDP_TYPE_DEVICE_COMPUTER: &str = concatcp!(WSDP_TYPE_DEVICE, " ", PUB_COMPUTER);

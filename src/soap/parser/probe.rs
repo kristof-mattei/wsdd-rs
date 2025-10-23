@@ -33,7 +33,7 @@ fn parse_probe(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedProbe {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
                 if name.namespace_ref() == Some(XML_WSD_NAMESPACE) && name.local_name == "Scopes" {
-                    let text = read_text(reader, &name)?;
+                    let text = read_text(reader, name.borrow())?;
 
                     let raw_scopes = text.unwrap_or_default();
 
@@ -52,7 +52,7 @@ fn parse_probe(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedProbe {
                 } else if name.namespace_ref() == Some(XML_WSD_NAMESPACE)
                     && name.local_name == "Types"
                 {
-                    types = read_text(reader, &name)?;
+                    types = read_text(reader, name.borrow())?;
                 } else {
                     // Ignore
                 }

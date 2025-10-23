@@ -277,13 +277,13 @@ fn parse_header(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedHeader {
                     // header items can be in any order, as per SOAP 1.1 and 1.2
                     match &*name.local_name {
                         "To" => {
-                            to = read_text(reader, &name)?.map(String::into_boxed_str);
+                            to = read_text(reader, name.borrow())?.map(String::into_boxed_str);
                         },
                         "Action" => {
-                            action = read_text(reader, &name)?.map(String::into_boxed_str);
+                            action = read_text(reader, name.borrow())?.map(String::into_boxed_str);
                         },
                         "MessageID" => {
-                            let m_id = read_text(reader, &name)?
+                            let m_id = read_text(reader, name.borrow())?
                                 .map(|m_id| {
                                     m_id.parse::<Urn>().map_err(HeaderError::InvalidMessageId)
                                 })
@@ -292,7 +292,7 @@ fn parse_header(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedHeader {
                             message_id = m_id;
                         },
                         "RelatesTo" => {
-                            let r_to = read_text(reader, &name)?
+                            let r_to = read_text(reader, name.borrow())?
                                 .map(|r_to| {
                                     r_to.parse::<Urn>().map_err(HeaderError::InvalidRelatesTo)
                                 })

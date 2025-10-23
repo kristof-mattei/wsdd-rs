@@ -1,3 +1,4 @@
+use std::borrow::ToOwned;
 use std::io::BufReader;
 
 use bytes::Bytes;
@@ -11,8 +12,8 @@ use xml::reader::XmlEvent;
 
 use crate::constants::{
     WSDP_RELATIONSHIP, WSDP_RELATIONSHIP_DIALECT, WSDP_RELATIONSHIP_TYPE_HOST, WSDP_THIS_DEVICE,
-    WSDP_THIS_DEVICE_DIALECT, WSDP_THIS_MODEL, WSDP_THIS_MODEL_DIALECT, XML_WSDP_NAMESPACE,
-    XML_WSX_NAMESPACE,
+    WSDP_THIS_DEVICE_DIALECT, WSDP_THIS_MODEL, WSDP_THIS_MODEL_DIALECT, WSDP_URI,
+    XML_PUB_NAMESPACE, XML_WSDP_NAMESPACE, XML_WSX_NAMESPACE,
 };
 use crate::network_address::NetworkAddress;
 use crate::soap::parser;
@@ -104,12 +105,29 @@ impl WSDDiscoveredDevice {
                 if attribute.name.namespace_ref().is_none()
                     && attribute.name.local_name == "Dialect"
                 {
-                    let new_props = if attribute.value == WSDP_THIS_DEVICE_DIALECT {
-                        extract_wsdp_props(&mut reader, XML_WSDP_NAMESPACE, WSDP_THIS_DEVICE)?
+                    if attribute.value == WSDP_THIS_DEVICE_DIALECT {
+                        let new_props =
+                            extract_wsdp_props(&mut reader, XML_WSDP_NAMESPACE, WSDP_THIS_DEVICE)?;
+
+                        for (new_prop_key, new_prop_value) in new_props {
+                            self.props.insert(new_prop_key, new_prop_value);
+                        }
                     } else if attribute.value == WSDP_THIS_MODEL_DIALECT {
-                        extract_wsdp_props(&mut reader, XML_WSDP_NAMESPACE, WSDP_THIS_MODEL)?
+                        let new_props =
+                            extract_wsdp_props(&mut reader, XML_WSDP_NAMESPACE, WSDP_THIS_MODEL)?;
+
+                        for (new_prop_key, new_prop_value) in new_props {
+                            self.props.insert(new_prop_key, new_prop_value);
+                        }
                     } else if attribute.value == WSDP_RELATIONSHIP_DIALECT {
-                        extract_host_props(&mut reader)?
+                        let (types, display_name_belongs_to) = extract_host_props(&mut reader)?;
+
+                        self.types = types;
+
+                        if let Some((display_name, belongs_to)) = display_name_belongs_to {
+                            self.props.insert("DisplayName".into(), display_name);
+                            self.props.insert("BelongsTo".into(), belongs_to);
+                        }
                     } else {
                         event!(
                             Level::DEBUG,
@@ -117,11 +135,8 @@ impl WSDDiscoveredDevice {
                             "unknown metadata dialect"
                         );
                         break;
-                    };
-
-                    for (new_prop_key, new_prop_value) in new_props {
-                        self.props.insert(new_prop_key, new_prop_value);
                     }
+
                     break;
                 }
             }
@@ -231,7 +246,7 @@ where
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
                 if name.namespace_ref() == Some(namespace) {
-                    let text = read_text(reader, &name)?;
+                    let text = read_text(reader, name.borrow())?;
                     let text = text.unwrap_or_default();
 
                     // add to bag
@@ -265,6 +280,9 @@ where
     ))
 }
 
+type ExtractHostProps<'full_path> =
+    Result<(HashSet<Box<str>>, Option<(Box<str>, Box<str>)>), GenericParsingError<'full_path>>;
+
 //     def extract_host_props(self, root: ElementTree.Element) -> None:
 //         self.types = set(root.findtext('wsdp:Types', '', namespaces).split(' '))
 //         if PUB_COMPUTER not in self.types:
@@ -274,7 +292,7 @@ where
 //         self.props['DisplayName'], _, self.props['BelongsTo'] = (comp.partition('/'))
 fn extract_host_props<'full_path>(
     reader: &'_ mut EventReader<BufReader<&[u8]>>,
-) -> Result<HashMap<Box<str>, Box<str>>, GenericParsingError<'full_path>> {
+) -> ExtractHostProps<'full_path> {
     // we are inside of the relationship metadata section, which contains ... RELATIONSHIPS
     // for each relationship, we find the one with Type=Host
     loop {
@@ -294,9 +312,20 @@ fn extract_host_props<'full_path>(
         for attribute in attributes {
             if attribute.name.namespace_ref().is_none() && attribute.name.local_name == "Type" {
                 if attribute.value == WSDP_RELATIONSHIP_TYPE_HOST {
-                    let new_props = HashMap::new();
+                    match parse_generic_body(reader, XML_WSDP_NAMESPACE, "Host") {
+                        Ok((_name, _attributes, _depth)) => {
+                            let (types, display_name_belongst_to) =
+                                read_types_and_pub_computer(reader)?;
 
-                    return Ok(new_props);
+                            return Ok((types, display_name_belongst_to));
+                        },
+
+                        Err(GenericParsingError::MissingElement(_)) => {
+                            // no more `MetadataSections to be found`
+                            break;
+                        },
+                        Err(error) => return Err(error),
+                    }
                 } else {
                     event!(
                         Level::DEBUG,
@@ -309,5 +338,80 @@ fn extract_host_props<'full_path>(
         }
     }
 
-    Ok(HashMap::new())
+    Ok((HashSet::new(), None))
+}
+
+fn read_types_and_pub_computer<'full_path>(
+    reader: &mut EventReader<BufReader<&[u8]>>,
+) -> ExtractHostProps<'full_path> {
+    let mut types = None;
+    let mut computer = None;
+    let mut computer_namespace_prefix = None;
+
+    loop {
+        match reader.next()? {
+            XmlEvent::StartElement { name, .. } => {
+                if name.namespace_ref() == Some(WSDP_URI) {
+                    if &*name.local_name == "Types" {
+                        // we're in wsdp:Types
+                        types = read_text(reader, name.borrow())?.map(String::into_boxed_str);
+                    } else {
+                        // Not a match, continue
+                    }
+                } else if name.namespace_ref() == Some(XML_PUB_NAMESPACE) {
+                    if &*name.local_name == "Computer" {
+                        computer = read_text(reader, name.borrow())?.map(String::into_boxed_str);
+
+                        // store the actual prefix, as it is not always `pub`
+                        computer_namespace_prefix.clone_from(&name.prefix);
+                    } else {
+                        // Not a match, continue
+                    }
+                } else {
+                    // ...
+                }
+            },
+            XmlEvent::EndElement { name, .. } => {
+                if name.namespace_ref() == Some(WSDP_URI) && name.local_name == "Host" {
+                    break;
+                }
+            },
+            XmlEvent::StartDocument { .. }
+            | XmlEvent::EndDocument
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::CData(_)
+            | XmlEvent::Comment(_)
+            | XmlEvent::Characters(_)
+            | XmlEvent::Whitespace(_)
+            | XmlEvent::Doctype { .. } => (),
+        }
+    }
+
+    let types = types
+        .as_deref()
+        .unwrap_or_default()
+        .split(' ')
+        .map(ToOwned::to_owned)
+        .map(String::into_boxed_str)
+        .collect::<HashSet<_>>();
+
+    if let Some(computer_namespace_prefix) = computer_namespace_prefix
+        && let Some(computer) = computer
+    {
+        let actual_pub_computer = &**&format!("{}:Computer", computer_namespace_prefix);
+
+        if types.contains(actual_pub_computer)
+            && let Some((display_name, belongs_to)) = computer.split_once('/')
+        {
+            return Ok((
+                types,
+                Some((
+                    display_name.to_owned().into_boxed_str(),
+                    belongs_to.to_owned().into_boxed_str(),
+                )),
+            ));
+        }
+    }
+
+    Ok((types, None))
 }
