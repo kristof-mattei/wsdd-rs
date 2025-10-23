@@ -394,8 +394,11 @@ fn read_types_and_pub_computer<'full_path>(
     if let Some(mut computer_namespace_prefix) = computer_namespace_prefix
         && let Some(computer) = computer
     {
-        computer_namespace_prefix.push_str(":Computer");
-        let actual_pub_computer = computer_namespace_prefix;
+        let actual_pub_computer = {
+            computer_namespace_prefix.push_str(":Computer");
+
+            computer_namespace_prefix
+        };
 
         if types.contains(&*actual_pub_computer)
             && let Some((display_name, belongs_to)) = computer.split_once('/')
