@@ -276,7 +276,7 @@ where
     ))
 }
 
-type ExtractHostProps<'full_path> =
+type ExtractHostPropsResult<'full_path> =
     Result<(HashSet<Box<str>>, Option<(Box<str>, Box<str>)>), GenericParsingError<'full_path>>;
 
 //     def extract_host_props(self, root: ElementTree.Element) -> None:
@@ -288,7 +288,7 @@ type ExtractHostProps<'full_path> =
 //         self.props['DisplayName'], _, self.props['BelongsTo'] = (comp.partition('/'))
 fn extract_host_props<'full_path>(
     reader: &'_ mut EventReader<BufReader<&[u8]>>,
-) -> ExtractHostProps<'full_path> {
+) -> ExtractHostPropsResult<'full_path> {
     // we are inside of the relationship metadata section, which contains ... RELATIONSHIPS
     // for each relationship, we find the one with Type=Host
     loop {
@@ -339,7 +339,7 @@ fn extract_host_props<'full_path>(
 
 fn read_types_and_pub_computer<'full_path>(
     reader: &mut EventReader<BufReader<&[u8]>>,
-) -> ExtractHostProps<'full_path> {
+) -> ExtractHostPropsResult<'full_path> {
     let mut types = None;
     let mut computer = None;
     let mut computer_namespace_prefix = None;
@@ -394,9 +394,9 @@ fn read_types_and_pub_computer<'full_path>(
     if let Some(computer_namespace_prefix) = computer_namespace_prefix
         && let Some(computer) = computer
     {
-        let actual_pub_computer = &*format!("{}:Computer", computer_namespace_prefix);
+        let actual_pub_computer = format!("{}:Computer", computer_namespace_prefix);
 
-        if types.contains(actual_pub_computer)
+        if types.contains(&*actual_pub_computer)
             && let Some((display_name, belongs_to)) = computer.split_once('/')
         {
             return Ok((
