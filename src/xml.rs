@@ -2,7 +2,7 @@ use std::io::BufReader;
 
 use thiserror::Error;
 use xml::EventReader;
-use xml::name::OwnedName;
+use xml::name::Name;
 use xml::reader::XmlEvent;
 
 #[derive(Debug, Error)]
@@ -19,7 +19,7 @@ pub enum TextReadError {
 /// * When it encounters anything other than text, comments or closing tag of `element_name`
 pub fn read_text(
     reader: &mut EventReader<BufReader<&[u8]>>,
-    element_name: &OwnedName,
+    element_name: Name<'_>,
 ) -> Result<Option<String>, TextReadError> {
     let mut text: Option<String> = None;
 
@@ -34,7 +34,7 @@ pub fn read_text(
                 }
             },
             XmlEvent::EndElement { name } => {
-                if &name == element_name {
+                if name.borrow() == element_name {
                     break;
                 }
             },

@@ -231,7 +231,7 @@ where
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
                 if name.namespace_ref() == Some(namespace) {
-                    let text = read_text(reader, &name)?;
+                    let text = read_text(reader, name.borrow())?;
                     let text = text.unwrap_or_default();
 
                     // add to bag
