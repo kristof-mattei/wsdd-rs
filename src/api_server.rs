@@ -1,6 +1,5 @@
 mod generic;
 
-use std::convert::Into;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 use std::time::Duration;

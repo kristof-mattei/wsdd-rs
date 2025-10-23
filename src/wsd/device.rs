@@ -314,10 +314,10 @@ fn extract_host_props<'full_path>(
                 if attribute.value == WSDP_RELATIONSHIP_TYPE_HOST {
                     match parse_generic_body(reader, XML_WSDP_NAMESPACE, "Host") {
                         Ok((_name, _attributes, _depth)) => {
-                            let (types, display_name_belongst_to) =
+                            let (types, display_name_belongs_to) =
                                 read_types_and_pub_computer(reader)?;
 
-                            return Ok((types, display_name_belongst_to));
+                            return Ok((types, display_name_belongs_to));
                         },
 
                         Err(GenericParsingError::MissingElement(_)) => {
@@ -398,7 +398,7 @@ fn read_types_and_pub_computer<'full_path>(
     if let Some(computer_namespace_prefix) = computer_namespace_prefix
         && let Some(computer) = computer
     {
-        let actual_pub_computer = &**&format!("{}:Computer", computer_namespace_prefix);
+        let actual_pub_computer = &*format!("{}:Computer", computer_namespace_prefix);
 
         if types.contains(actual_pub_computer)
             && let Some((display_name, belongs_to)) = computer.split_once('/')

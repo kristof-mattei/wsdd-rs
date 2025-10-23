@@ -139,7 +139,7 @@ impl WSDClient {
             devices.cloned().collect::<Vec<_>>()
         };
 
-        // purposfully fire and forget
+        // pupurposefully fire and forget
         tokio::task::spawn(async move {
             for device in devices {
                 // TODO figure out if receiver disappears when the `nc` connection drops
@@ -559,6 +559,7 @@ fn spawn_rx_loop(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
 
@@ -733,6 +734,8 @@ mod tests {
         let device = device.unwrap();
 
         let expected_props = HashMap::<_, _>::from_iter([
+            ("BelongsTo", "Workgroup:WORKGROUP"),
+            ("DisplayName", "diskstation"),
             ("Manufacturer", "Synology Inc"),
             ("FirmwareVersion", "6"),
             ("FriendlyName", "Synology DiskStation"),
@@ -750,7 +753,7 @@ mod tests {
             .map(|(key, value)| (&**key, &**value))
             .collect::<HashMap<_, _>>();
 
-        assert_eq!(device_props, expected_props);
+        assert_eq!(expected_props, device_props);
     }
 
     #[tokio::test]
