@@ -391,10 +391,11 @@ fn read_types_and_pub_computer<'full_path>(
         .map(String::into_boxed_str)
         .collect::<HashSet<_>>();
 
-    if let Some(computer_namespace_prefix) = computer_namespace_prefix
+    if let Some(mut computer_namespace_prefix) = computer_namespace_prefix
         && let Some(computer) = computer
     {
-        let actual_pub_computer = format!("{}:Computer", computer_namespace_prefix);
+        computer_namespace_prefix.push_str(":Computer");
+        let actual_pub_computer = computer_namespace_prefix;
 
         if types.contains(&*actual_pub_computer)
             && let Some((display_name, belongs_to)) = computer.split_once('/')
