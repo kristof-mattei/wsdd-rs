@@ -17,8 +17,7 @@ use crate::constants::{
 };
 use crate::network_address::NetworkAddress;
 use crate::soap::parser;
-use crate::soap::parser::generic::{GenericParsingError, parse_generic_body};
-use crate::xml::read_text;
+use crate::xml::{GenericParsingError, parse_generic_body, read_text};
 
 #[derive(Clone, Debug)]
 pub struct WSDDiscoveredDevice {

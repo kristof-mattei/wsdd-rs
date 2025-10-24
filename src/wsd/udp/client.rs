@@ -24,6 +24,7 @@ use crate::soap::parser::generic::extract_endpoint_metadata;
 use crate::soap::parser::{self, MessageHandler};
 use crate::utils::task::spawn_with_name;
 use crate::wsd::device::WSDDiscoveredDevice;
+use crate::xml::{parse_generic_body, parse_generic_body_paths};
 
 #[expect(unused, reason = "WIP")]
 pub(crate) struct WSDClient {
@@ -174,7 +175,7 @@ async fn handle_hello(
     multicast: &Sender<Box<[u8]>>,
     mut reader: EventReader<BufReader<&[u8]>>,
 ) -> Result<(), eyre::Report> {
-    parser::generic::parse_generic_body(&mut reader, XML_WSD_NAMESPACE, "Hello")?;
+    parse_generic_body(&mut reader, XML_WSD_NAMESPACE, "Hello")?;
 
     let (endpoint, xaddrs) = parser::generic::extract_endpoint_metadata(&mut reader)?;
 
@@ -204,7 +205,7 @@ async fn handle_bye(
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     mut reader: EventReader<BufReader<&[u8]>>,
 ) -> Result<(), eyre::Report> {
-    parser::generic::parse_generic_body(&mut reader, XML_WSD_NAMESPACE, "Bye")?;
+    parse_generic_body(&mut reader, XML_WSD_NAMESPACE, "Bye")?;
 
     let (endpoint, _) = parser::generic::extract_endpoint_metadata(&mut reader)?;
 
@@ -235,7 +236,7 @@ async fn handle_probe_match(
         return Ok(());
     };
 
-    parser::generic::parse_generic_body_paths(
+    parse_generic_body_paths(
         &mut reader,
         &[
             (XML_WSD_NAMESPACE, "ProbeMatches"),
@@ -280,7 +281,7 @@ async fn handle_resolve_match(
     bound_to: &NetworkAddress,
     mut reader: EventReader<BufReader<&[u8]>>,
 ) -> Result<(), eyre::Report> {
-    parser::generic::parse_generic_body_paths(
+    parse_generic_body_paths(
         &mut reader,
         &[
             (XML_WSD_NAMESPACE, "ResolveMatches"),
