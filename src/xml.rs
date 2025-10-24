@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::io::BufReader;
 
 use thiserror::Error;
@@ -83,15 +82,15 @@ pub fn read_text(
 }
 
 #[derive(Error, Debug)]
-pub enum GenericParsingError<'p> {
+pub enum GenericParsingError {
     #[error("Error parsing XML")]
     XmlError(#[from] xml::reader::Error),
     #[error("Error reading text")]
     TextReadError(#[from] TextReadError),
     #[error("Missing ./{0} in body")]
-    MissingElement(Cow<'p, str>),
+    MissingElement(Box<str>),
     #[error("Missing closing ./{0} in body")]
-    MissingClosingElement(Cow<'p, str>),
+    MissingClosingElement(Box<str>),
     #[error("Invalid element order")]
     InvalidElementOrder,
     #[error("Invalid UUID")]
@@ -99,14 +98,11 @@ pub enum GenericParsingError<'p> {
 }
 
 /// TODO expand to make sure what we search for is at the right depth
-pub fn parse_generic_body<'full_path, 'namespace, 'path, 'reader>(
-    reader: &'reader mut EventReader<BufReader<&[u8]>>,
-    namespace: &'namespace str,
-    path: &'path str,
-) -> Result<(OwnedName, Vec<OwnedAttribute>, usize), GenericParsingError<'full_path>>
-where
-    'full_path: 'path + 'namespace,
-{
+pub fn parse_generic_body(
+    reader: &mut EventReader<BufReader<&[u8]>>,
+    namespace: &str,
+    path: &str,
+) -> Result<(OwnedName, Vec<OwnedAttribute>, usize), GenericParsingError> {
     let mut depth = 0_usize;
 
     loop {
@@ -139,31 +135,23 @@ where
     ))
 }
 
-type ParseGenericBodyPathResult<'full_path> = Result<
-    (Option<OwnedName>, Option<Vec<OwnedAttribute>>, usize),
-    GenericParsingError<'full_path>,
->;
+type ParseGenericBodyPathResult =
+    Result<(Option<OwnedName>, Option<Vec<OwnedAttribute>>, usize), GenericParsingError>;
 
-pub fn parse_generic_body_paths<'full_path, 'namespace, 'path>(
+pub fn parse_generic_body_paths(
     reader: &mut EventReader<BufReader<&[u8]>>,
-    paths: &[(&'namespace str, &'path str)],
-) -> ParseGenericBodyPathResult<'full_path>
-where
-    'full_path: 'path + 'namespace,
-{
+    paths: &[(&str, &str)],
+) -> ParseGenericBodyPathResult {
     parse_generic_body_paths_recursive(reader, paths, None, None, 0)
 }
 
-fn parse_generic_body_paths_recursive<'full_path, 'namespace, 'path>(
+fn parse_generic_body_paths_recursive(
     reader: &mut EventReader<BufReader<&[u8]>>,
-    paths: &[(&'namespace str, &'path str)],
+    paths: &[(&str, &str)],
     name: Option<OwnedName>,
     attributes: Option<Vec<OwnedAttribute>>,
     mut depth: usize,
-) -> ParseGenericBodyPathResult<'full_path>
-where
-    'full_path: 'path + 'namespace,
-{
+) -> ParseGenericBodyPathResult {
     let [(namespace, path), ref rest @ ..] = *paths else {
         return Ok((name, attributes, depth));
     };
