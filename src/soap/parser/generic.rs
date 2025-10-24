@@ -12,7 +12,7 @@ use crate::xml::{GenericParsingError, read_text};
 
 pub fn extract_endpoint_reference_address(
     reader: &mut EventReader<BufReader<&[u8]>>,
-) -> Result<Box<str>, GenericParsingError<'static>> {
+) -> Result<Box<str>, GenericParsingError> {
     let mut address = None;
 
     loop {
@@ -56,7 +56,7 @@ pub fn extract_endpoint_reference_address(
 
 pub fn extract_endpoint_metadata(
     reader: &mut EventReader<BufReader<&[u8]>>,
-) -> Result<(Uuid, Option<Box<str>>), GenericParsingError<'static>> {
+) -> Result<(Uuid, Option<Box<str>>), GenericParsingError> {
     let mut endpoint = None;
     let mut xaddrs = None;
 

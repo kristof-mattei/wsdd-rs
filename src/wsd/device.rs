@@ -224,14 +224,11 @@ impl WSDDiscoveredDevice {
     }
 }
 
-fn extract_wsdp_props<'full_path, 'namespace, 'path, 'reader>(
-    reader: &'reader mut EventReader<BufReader<&[u8]>>,
-    namespace: &'namespace str,
-    path: &'path str,
-) -> Result<HashMap<Box<str>, Box<str>>, GenericParsingError<'full_path>>
-where
-    'full_path: 'path + 'namespace,
-{
+fn extract_wsdp_props(
+    reader: &mut EventReader<BufReader<&[u8]>>,
+    namespace: &str,
+    path: &str,
+) -> Result<HashMap<Box<str>, Box<str>>, GenericParsingError> {
     parse_generic_body(reader, namespace, path)?;
 
     // we're now in `namespace:path`
@@ -275,8 +272,8 @@ where
     ))
 }
 
-type ExtractHostPropsResult<'full_path> =
-    Result<(HashSet<Box<str>>, Option<(Box<str>, Box<str>)>), GenericParsingError<'full_path>>;
+type ExtractHostPropsResult =
+    Result<(HashSet<Box<str>>, Option<(Box<str>, Box<str>)>), GenericParsingError>;
 
 //     def extract_host_props(self, root: ElementTree.Element) -> None:
 //         self.types = set(root.findtext('wsdp:Types', '', namespaces).split(' '))
@@ -285,9 +282,7 @@ type ExtractHostPropsResult<'full_path> =
 
 //         comp = root.findtext(PUB_COMPUTER, '', namespaces)
 //         self.props['DisplayName'], _, self.props['BelongsTo'] = (comp.partition('/'))
-fn extract_host_props<'full_path>(
-    reader: &'_ mut EventReader<BufReader<&[u8]>>,
-) -> ExtractHostPropsResult<'full_path> {
+fn extract_host_props(reader: &mut EventReader<BufReader<&[u8]>>) -> ExtractHostPropsResult {
     // we are inside of the relationship metadata section, which contains ... RELATIONSHIPS
     // for each relationship, we find the one with Type=Host
     loop {
@@ -336,9 +331,9 @@ fn extract_host_props<'full_path>(
     Ok((HashSet::new(), None))
 }
 
-fn read_types_and_pub_computer<'full_path>(
+fn read_types_and_pub_computer(
     reader: &mut EventReader<BufReader<&[u8]>>,
-) -> ExtractHostPropsResult<'full_path> {
+) -> ExtractHostPropsResult {
     let mut types = None;
     let mut computer = None;
     let mut computer_namespace_prefix = None;
