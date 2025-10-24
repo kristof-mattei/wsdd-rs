@@ -282,7 +282,7 @@ type ExtractHostPropsResult =
 
 //         comp = root.findtext(PUB_COMPUTER, '', namespaces)
 //         self.props['DisplayName'], _, self.props['BelongsTo'] = (comp.partition('/'))
-fn extract_host_props(reader: &'_ mut EventReader<BufReader<&[u8]>>) -> ExtractHostPropsResult {
+fn extract_host_props(reader: &mut EventReader<BufReader<&[u8]>>) -> ExtractHostPropsResult {
     // we are inside of the relationship metadata section, which contains ... RELATIONSHIPS
     // for each relationship, we find the one with Type=Host
     loop {
