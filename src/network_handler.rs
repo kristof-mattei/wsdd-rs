@@ -26,6 +26,7 @@ use crate::network_address::NetworkAddress;
 use crate::network_interface::{self, NetworkInterface};
 use crate::wsd::device::WSDDiscoveredDevice;
 
+#[derive(Debug)]
 pub enum Command {
     NewAddress {
         address: IpAddr,
@@ -47,6 +48,20 @@ pub enum Command {
     },
     Start,
     Stop,
+}
+
+#[derive(Debug, Error)]
+pub enum Reason {
+    #[error("Application not active")]
+    NotActive,
+    #[error("IPv4 only")]
+    IPv4Only,
+    #[error("IPv6 only")]
+    IPv6Only,
+    #[error("Not multicastable")]
+    AddressNotMulticastable,
+    #[error("Interface is excluded")]
+    ExcludedInterface,
 }
 
 pub struct NetworkHandler {
@@ -271,23 +286,23 @@ impl NetworkHandler {
         Ok(interface)
     }
 
-    fn is_address_handled(&self, address: &NetworkAddress) -> bool {
+    fn is_address_handled(&self, address: &NetworkAddress) -> Result<(), Reason> {
         // do not handle anything when we are not active
         if !self.active.load(Ordering::Relaxed) {
-            return false;
+            return Err(Reason::NotActive);
         }
 
         // filter out address families we are not interested in
         if self.config.ipv4only && !address.address.is_ipv4() {
-            return false;
+            return Err(Reason::IPv4Only);
         }
 
         if self.config.ipv6only && !address.address.is_ipv6() {
-            return false;
+            return Err(Reason::IPv6Only);
         }
 
         if !address.is_multicastable() {
-            return false;
+            return Err(Reason::AddressNotMulticastable);
         }
 
         // Use interface only if it's in the list of user-provided interface names
@@ -303,21 +318,17 @@ impl NetworkHandler {
                 .iter()
                 .any(|i| **i == address.address.to_string())
         {
-            return false;
+            return Err(Reason::ExcludedInterface);
         }
 
-        true
+        Ok(())
     }
 
     pub async fn handle_new_address(&mut self, address: NetworkAddress) {
-        event!(Level::DEBUG, "new address {}", address);
+        event!(Level::DEBUG, address = %address.address, interface = %address.interface.name, "new address");
 
-        if !self.is_address_handled(&address) {
-            event!(
-                Level::DEBUG,
-                "ignoring that address on {}",
-                address.interface
-            );
+        if let Err(why) = self.is_address_handled(&address) {
+            event!(Level::DEBUG, ?why, address = %address.address, interface = %address.interface.name, "ignoring address");
 
             return;
         }
@@ -358,9 +369,9 @@ impl NetworkHandler {
     }
 
     pub async fn handle_deleted_address(&mut self, address: NetworkAddress) {
-        event!(Level::INFO, "deleted address {}", address);
+        event!(Level::INFO, address = %address.address, interface = %address.interface.name, "deleted address");
 
-        if !self.is_address_handled(&address) {
+        if self.is_address_handled(&address).is_err() {
             return;
         }
 

@@ -214,7 +214,7 @@ async fn handle_hello(
     multicast: &Sender<Box<[u8]>>,
     mut reader: EventReader<BufReader<&[u8]>>,
 ) -> Result<(), eyre::Report> {
-    parse_generic_body(&mut reader, XML_WSD_NAMESPACE, "Hello")?;
+    parse_generic_body(&mut reader, Some(XML_WSD_NAMESPACE), "Hello")?;
 
     let (endpoint, xaddrs) = parser::generic::extract_endpoint_metadata(&mut reader)?;
 
@@ -244,7 +244,7 @@ async fn handle_bye(
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     mut reader: EventReader<BufReader<&[u8]>>,
 ) -> Result<(), eyre::Report> {
-    parse_generic_body(&mut reader, XML_WSD_NAMESPACE, "Bye")?;
+    parse_generic_body(&mut reader, Some(XML_WSD_NAMESPACE), "Bye")?;
 
     let (endpoint, _) = parser::generic::extract_endpoint_metadata(&mut reader)?;
 
@@ -428,10 +428,10 @@ async fn handle_metadata(
 
     match devices.write().await.entry(device_uuid) {
         hashbrown::hash_map::Entry::Occupied(mut occupied_entry) => {
-            occupied_entry.get_mut().update(meta, xaddr, bound_to)?;
+            occupied_entry.get_mut().update(meta, &xaddr, bound_to)?;
         },
         hashbrown::hash_map::Entry::Vacant(vacant_entry) => {
-            vacant_entry.insert(WSDDiscoveredDevice::new(meta, xaddr, bound_to)?);
+            vacant_entry.insert(WSDDiscoveredDevice::new(meta, &xaddr, bound_to)?);
         },
     }
 

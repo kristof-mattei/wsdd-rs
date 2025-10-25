@@ -1,7 +1,5 @@
-use std::io::Error;
 use std::mem::MaybeUninit;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::os::fd::FromRawFd as _;
 
 use color_eyre::eyre;
 use libc::{
@@ -64,16 +62,11 @@ impl NetlinkAddressMonitor {
             rtm_groups |= RTMGRP_IPV4_IFADDR;
         }
 
-        let raw_socket_fd =
-            // SAFETY: libc call
-            unsafe { libc::socket(libc::AF_NETLINK, libc::SOCK_RAW, NETLINK_ROUTE) };
-
-        if raw_socket_fd < 0 {
-            return Err(Error::last_os_error());
-        }
-
-        // SAFETY: `raw_socket_fd` is a raw socket
-        let socket = unsafe { socket2::Socket::from_raw_fd(raw_socket_fd) };
+        let socket = socket2::Socket::new(
+            libc::AF_NETLINK.into(),
+            libc::SOCK_RAW.into(),
+            Some(NETLINK_ROUTE.into()),
+        )?;
 
         socket.set_nonblocking(true)?;
 
@@ -168,10 +161,13 @@ impl NetlinkAddressMonitor {
 
     #[expect(clippy::too_many_lines, reason = "WIP")]
     pub async fn process_changes(&mut self) -> Result<(), eyre::Report> {
-        loop {
-            // we originally had this on the stack (array) but tokio moves it to the heap because of size
-            let mut buffer = vec![MaybeUninit::<u8>::uninit(); 4096];
+        // we originally had this on the stack (array) but tokio then moves the whole task to the heap because of size
 
+        // we don't need to zero out the buffer between runs as `recv_buf` starts at 0 and returns `bytes_read`
+        // sine we only read that portion we don't need to worry about the leftovers
+        let mut buffer = vec![MaybeUninit::<u8>::uninit(); 4096];
+
+        loop {
             let mut buffer_slice = buffer.as_mut_slice();
 
             let bytes_read = tokio::select! {
@@ -344,7 +340,12 @@ impl NetlinkAddressMonitor {
                 };
 
                 if let Err(error) = self.command_tx.send(command).await {
-                    event!(Level::ERROR, ?error, "Failed to announce command");
+                    if self.cancellation_token.is_cancelled() {
+                        event!(Level::INFO, command = ?error.0, "Could not announce command due to shutting down");
+                        break;
+                    } else {
+                        event!(Level::ERROR, command = ?error.0, "Failed to announce command");
+                    }
                 }
 
                 offset += align_to(length, align_of::<nlmsghdr>());

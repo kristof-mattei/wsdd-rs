@@ -28,6 +28,7 @@ impl NetworkInterface {
 
     pub fn new_with_index<'a, I: Into<Cow<'a, str>>>(name: I, scope: u8, index: u32) -> Self {
         let name = name.into();
+
         Self {
             name: name.into(),
             index,
