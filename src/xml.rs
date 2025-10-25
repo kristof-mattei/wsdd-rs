@@ -85,13 +85,7 @@ pub fn read_text(
     }
 
     Err(TextReadError::MissingEndElement(
-        format!(
-            "{}{}{}",
-            element_name.prefix.unwrap_or_default(),
-            element_name.prefix.map(|_| ":").unwrap_or_default(),
-            element_name.local_name
-        )
-        .into_boxed_str(),
+        element_name.to_string().into_boxed_str(),
     ))
 }
 
@@ -132,12 +126,26 @@ pub fn parse_generic_body(
                     return Ok((name, attributes, depth));
                 }
             },
+            XmlEvent::EndElement { .. } => {
+                if depth == 0 {
+                    return Err(GenericParsingError::MissingElement(
+                        format!(
+                            "{}{}{}",
+                            namespace.unwrap_or_default(),
+                            namespace.map(|_| ":").unwrap_or_default(),
+                            path
+                        )
+                        .into_boxed_str(),
+                    ));
+                }
+
+                depth -= 1;
+            },
             XmlEvent::EndDocument => {
                 break;
             },
             XmlEvent::StartDocument { .. }
             | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::EndElement { .. }
             | XmlEvent::CData(_)
             | XmlEvent::Comment(_)
             | XmlEvent::Characters(_)

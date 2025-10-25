@@ -389,10 +389,10 @@ async fn handle_metadata(
 
     match devices.write().await.entry(device_uuid) {
         hashbrown::hash_map::Entry::Occupied(mut occupied_entry) => {
-            occupied_entry.get_mut().update(meta, xaddr, bound_to)?;
+            occupied_entry.get_mut().update(meta, &xaddr, bound_to)?;
         },
         hashbrown::hash_map::Entry::Vacant(vacant_entry) => {
-            vacant_entry.insert(WSDDiscoveredDevice::new(meta, xaddr, bound_to)?);
+            vacant_entry.insert(WSDDiscoveredDevice::new(meta, &xaddr, bound_to)?);
         },
     }
 
