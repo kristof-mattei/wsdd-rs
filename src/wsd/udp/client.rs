@@ -166,35 +166,6 @@ async fn remove_outdated_probes(probes: &Arc<RwLock<HashMap<Urn, u128>>>) {
         .retain(|_, value| *value + (PROBE_TIMEOUT * 2) > now);
 }
 
-async fn send_probe(
-    config: &Arc<Config>,
-    probes: &Arc<RwLock<HashMap<Urn, u128>>>,
-    mc_local_port_tx: &Sender<Box<[u8]>>,
-) -> Result<(), eyre::Report> {
-    remove_outdated_probes(probes).await;
-
-    let (probe, message_id) = Builder::build_probe(config)?;
-
-    probes.write().await.insert(message_id, now());
-
-    // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
-    // TODO move event to here and write properly
-    event!(Level::INFO, "scheduling {} message", MessageType::Probe);
-
-    mc_local_port_tx.send(probe.into_boxed_slice()).await?;
-
-    Ok(())
-}
-
-async fn remove_outdated_probes(probes: &Arc<RwLock<HashMap<Urn, u128>>>) {
-    let now = now();
-
-    probes
-        .write()
-        .await
-        .retain(|_, value| *value + (PROBE_TIMEOUT * 2) > now);
-}
-
 fn now() -> u128 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -243,7 +214,7 @@ async fn handle_hello(
     multicast: &Sender<Box<[u8]>>,
     mut reader: EventReader<BufReader<&[u8]>>,
 ) -> Result<(), eyre::Report> {
-    parse_generic_body(&mut reader, XML_WSD_NAMESPACE, "Hello")?;
+    parse_generic_body(&mut reader, Some(XML_WSD_NAMESPACE), "Hello")?;
 
     let (endpoint, xaddrs) = parser::generic::extract_endpoint_metadata(&mut reader)?;
 
@@ -273,7 +244,7 @@ async fn handle_bye(
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     mut reader: EventReader<BufReader<&[u8]>>,
 ) -> Result<(), eyre::Report> {
-    parse_generic_body(&mut reader, XML_WSD_NAMESPACE, "Bye")?;
+    parse_generic_body(&mut reader, Some(XML_WSD_NAMESPACE), "Bye")?;
 
     let (endpoint, _) = parser::generic::extract_endpoint_metadata(&mut reader)?;
 
@@ -457,10 +428,10 @@ async fn handle_metadata(
 
     match devices.write().await.entry(device_uuid) {
         hashbrown::hash_map::Entry::Occupied(mut occupied_entry) => {
-            occupied_entry.get_mut().update(meta, xaddr, bound_to)?;
+            occupied_entry.get_mut().update(meta, &xaddr, bound_to)?;
         },
         hashbrown::hash_map::Entry::Vacant(vacant_entry) => {
-            vacant_entry.insert(WSDDiscoveredDevice::new(meta, xaddr, bound_to)?);
+            vacant_entry.insert(WSDDiscoveredDevice::new(meta, &xaddr, bound_to)?);
         },
     }
 
