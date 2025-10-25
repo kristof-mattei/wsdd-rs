@@ -81,7 +81,9 @@ impl WSDDiscoveredDevice {
         let (_, _, depth) = parse_generic_body(&mut reader, Some(XML_WSX_NAMESPACE), "Metadata")?;
 
         if depth != 1 {
-            return Err(eyre::Report::msg("Invalid depth"));
+            return Err(eyre::Report::msg(
+                "`Metadata` not found at depth 1, invalid XML.",
+            ));
         }
 
         // we're now in metadata
