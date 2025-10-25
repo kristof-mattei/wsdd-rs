@@ -8,6 +8,7 @@ use time::OffsetDateTime;
 use tracing::{Level, event};
 use url::Url;
 use xml::EventReader;
+use xml::name::Name;
 use xml::reader::XmlEvent;
 
 use crate::constants::{
@@ -31,7 +32,7 @@ pub struct WSDDiscoveredDevice {
 impl WSDDiscoveredDevice {
     pub fn new(
         meta: &Bytes,
-        xaddr: Url,
+        xaddr: &Url,
         network_address: &NetworkAddress,
     ) -> Result<Self, eyre::Report> {
         let mut device = Self {
@@ -67,24 +68,30 @@ impl WSDDiscoveredDevice {
         &self.types
     }
 
-    //     def update(self, xml_str: str, xaddr: str, interface: NetworkInterface) -> None:
     // TODO better error type
+    #[expect(clippy::too_many_lines, reason = "WIP")]
     pub fn update(
         &mut self,
         meta: &Bytes,
-        xaddr: Url,
+        xaddr: &Url,
         network_address: &NetworkAddress,
     ) -> Result<(), eyre::Report> {
         let (_header, _has_body, mut reader) = parser::deconstruct_raw(meta)?;
 
-        parse_generic_body(&mut reader, XML_WSX_NAMESPACE, "Metadata")?;
+        let (_, _, depth) = parse_generic_body(&mut reader, Some(XML_WSX_NAMESPACE), "Metadata")?;
+
+        if depth != 1 {
+            return Err(eyre::Report::msg(
+                "`Metadata` not found at depth 1, invalid XML.",
+            ));
+        }
 
         // we're now in metadata
 
         // loop though the reader for each wsx:MetadataSection at depth 1 from where we are now
         loop {
-            let (_element, attributes) =
-                match parse_generic_body(&mut reader, XML_WSX_NAMESPACE, "MetadataSection") {
+            let (scope, attributes) =
+                match parse_generic_body(&mut reader, Some(XML_WSX_NAMESPACE), "MetadataSection") {
                     Ok((element, attributes, _depth)) => {
                         // we'll need to ensure that the depth is always the same
                         (element, attributes)
@@ -101,19 +108,35 @@ impl WSDDiscoveredDevice {
                     && attribute.name.local_name == "Dialect"
                 {
                     if attribute.value == WSDP_THIS_DEVICE_DIALECT {
-                        let new_props =
-                            extract_wsdp_props(&mut reader, XML_WSDP_NAMESPACE, WSDP_THIS_DEVICE)?;
+                        // open ThisDevice
+                        let (this_device_scope, ..) = parse_generic_body(
+                            &mut reader,
+                            Some(XML_WSDP_NAMESPACE),
+                            WSDP_THIS_DEVICE,
+                        )?;
 
-                        for (new_prop_key, new_prop_value) in new_props {
-                            self.props.insert(new_prop_key, new_prop_value);
-                        }
+                        let new_props = extract_wsdp_props(
+                            &mut reader,
+                            XML_WSDP_NAMESPACE,
+                            this_device_scope.borrow(),
+                        )?;
+
+                        self.props.extend(new_props);
                     } else if attribute.value == WSDP_THIS_MODEL_DIALECT {
-                        let new_props =
-                            extract_wsdp_props(&mut reader, XML_WSDP_NAMESPACE, WSDP_THIS_MODEL)?;
+                        // open ThisModel
+                        let (this_model_scope, ..) = parse_generic_body(
+                            &mut reader,
+                            Some(XML_WSDP_NAMESPACE),
+                            WSDP_THIS_MODEL,
+                        )?;
 
-                        for (new_prop_key, new_prop_value) in new_props {
-                            self.props.insert(new_prop_key, new_prop_value);
-                        }
+                        let new_props = extract_wsdp_props(
+                            &mut reader,
+                            XML_WSDP_NAMESPACE,
+                            this_model_scope.borrow(),
+                        )?;
+
+                        self.props.extend(new_props);
                     } else if attribute.value == WSDP_RELATIONSHIP_DIALECT {
                         let (types, display_name_belongs_to) = extract_host_props(&mut reader)?;
 
@@ -135,31 +158,40 @@ impl WSDDiscoveredDevice {
                     break;
                 }
             }
+
+            // read until the closing to ensure we only stop when we hit
+            // our closing element at our level (to avoid nested elements closing)
+            let mut depth: usize = 1;
+
+            loop {
+                match reader.next()? {
+                    XmlEvent::StartElement { name, .. } if name.borrow() == scope.borrow() => {
+                        depth += 1;
+                    },
+                    XmlEvent::EndElement { name } if name.borrow() == scope.borrow() => {
+                        depth -= 1;
+
+                        if depth == 0 {
+                            break;
+                        }
+                    },
+                    XmlEvent::StartDocument { .. }
+                    | XmlEvent::EndDocument
+                    | XmlEvent::ProcessingInstruction { .. }
+                    | XmlEvent::StartElement { .. }
+                    | XmlEvent::EndElement { .. }
+                    | XmlEvent::CData(_)
+                    | XmlEvent::Comment(_)
+                    | XmlEvent::Characters(_)
+                    | XmlEvent::Whitespace(_)
+                    | XmlEvent::Doctype { .. } => {},
+                }
+            }
         }
 
-        //         mds_path = 'soap:Body/wsx:Metadata/wsx:MetadataSection'
-        //         sections = tree.findall(mds_path, namespaces)
-        //         for section in sections:
-        //             dialect = section.attrib['Dialect']
-        //             if dialect == WSDP_URI + '/ThisDevice':
-        //                 self.extract_wsdp_props(section, dialect)
-        //             elif dialect == WSDP_URI + '/ThisModel':
-        //                 self.extract_wsdp_props(section, dialect)
-        //             elif dialect == WSDP_URI + '/Relationship':
-        //                 host_xpath = 'wsdp:Relationship[@Type="{}/host"]/wsdp:Host'.format(WSDP_URI)
-        //                 host_sec = section.find(host_xpath, namespaces)
-        //                 if (host_sec is not None):
-        //                     self.extract_host_props(host_sec)
-        //             else:
-        //                 logger.debug('unknown metadata dialect ({})'.format(dialect))
-
-        //         url = urllib.parse.urlparse(xaddr)
-        let url = xaddr;
-        //         addr, _, _ = url.netloc.rpartition(':')
-        // TODO error, don't blow up
-        let host = url
+        let host = xaddr
             .host_str()
-            .expect("addr must have host component")
+            .ok_or_else(|| eyre::Report::msg("Device's address does not have a host portion"))?
             .to_owned()
             .into_boxed_str();
 
@@ -199,7 +231,7 @@ impl WSDDiscoveredDevice {
                     Level::INFO,
                     display_name,
                     belongs_to,
-                    addr = %url,
+                    addr = %xaddr,
                     "discovered device"
                 );
             } else if let Some(friendly_name) = self.props.get("FriendlyName") {
@@ -207,12 +239,7 @@ impl WSDDiscoveredDevice {
                 //             self.display_name = self.props['FriendlyName']
                 self.display_name = Some(friendly_name.clone());
                 //             logger.info('discovered {} on {}'.format(self.display_name, addr))
-                event!(
-                    Level::INFO,
-                    display_name = friendly_name,
-                    addr = %url,
-                    "discovered device"
-                );
+                event!(Level::INFO, display_name = friendly_name, addr = %xaddr, "discovered device");
             } else {
                 // No way to get a display name
             }
@@ -227,14 +254,12 @@ impl WSDDiscoveredDevice {
 fn extract_wsdp_props(
     reader: &mut EventReader<BufReader<&[u8]>>,
     namespace: &str,
-    path: &str,
+    closing: Name<'_>,
 ) -> Result<HashMap<Box<str>, Box<str>>, GenericParsingError> {
-    parse_generic_body(reader, namespace, path)?;
+    // we're now in `namespace:path`, depth is already 1
+    let mut depth: usize = 1;
 
-    // we're now in `namespace:path`
-    let mut depth: isize = 1;
-
-    let mut bag = HashMap::<Box<str>, Box<str>>::new();
+    let mut bag: HashMap<Box<str>, Box<str>> = HashMap::<Box<str>, Box<str>>::new();
 
     loop {
         match reader.next()? {
@@ -257,12 +282,8 @@ fn extract_wsdp_props(
             XmlEvent::EndElement { name, .. } => {
                 depth -= 1;
 
-                if depth < 0 {
-                    return Err(GenericParsingError::InvalidDepth(depth));
-                }
-
                 // this is detection for the closing element of `namespace:path`
-                if name.namespace_ref() == Some(namespace) && name.local_name == path {
+                if name.borrow() == closing {
                     if depth != 0 {
                         return Err(GenericParsingError::InvalidDepth(depth));
                     }
@@ -284,7 +305,7 @@ fn extract_wsdp_props(
     }
 
     Err(GenericParsingError::MissingEndElement(
-        format!("{}:{}", namespace, path).into(),
+        closing.to_string().into_boxed_str(),
     ))
 }
 
@@ -303,7 +324,7 @@ fn extract_host_props(reader: &mut EventReader<BufReader<&[u8]>>) -> ExtractHost
     // for each relationship, we find the one with Type=Host
     loop {
         let (_element, attributes) =
-            match parse_generic_body(reader, XML_WSDP_NAMESPACE, WSDP_RELATIONSHIP) {
+            match parse_generic_body(reader, Some(XML_WSDP_NAMESPACE), WSDP_RELATIONSHIP) {
                 Ok((element, attributes, _depth)) => {
                     // we'll need to ensure that the depth is always the same
                     (element, attributes)
@@ -318,7 +339,7 @@ fn extract_host_props(reader: &mut EventReader<BufReader<&[u8]>>) -> ExtractHost
         for attribute in attributes {
             if attribute.name.namespace_ref().is_none() && attribute.name.local_name == "Type" {
                 if attribute.value == WSDP_RELATIONSHIP_TYPE_HOST {
-                    match parse_generic_body(reader, XML_WSDP_NAMESPACE, "Host") {
+                    match parse_generic_body(reader, Some(XML_WSDP_NAMESPACE), "Host") {
                         Ok((_name, _attributes, _depth)) => {
                             let (types, display_name_belongs_to) =
                                 read_types_and_pub_computer(reader)?;

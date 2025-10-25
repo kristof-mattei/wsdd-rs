@@ -1,4 +1,3 @@
-use std::borrow::ToOwned;
 use std::io::BufReader;
 
 use thiserror::Error;
@@ -9,7 +8,7 @@ use xml::reader::XmlEvent;
 
 #[derive(Debug, Error)]
 pub enum TextReadError {
-    #[error("Found non-text-contents: {0:?}")]
+    #[error("Found non-text-contents: `{0:?}`")]
     NonTextContents(XmlEvent),
     #[error("Error parsing XML")]
     XmlError(#[from] xml::reader::Error),
@@ -56,22 +55,20 @@ pub fn read_text(
             XmlEvent::EndElement { name } => {
                 depth -= 1;
 
-                if depth < 0 {
-                    return Err(TextReadError::InvalidDepth(depth));
-                }
-
                 if name.borrow() == element_name {
                     if depth != 0 {
                         return Err(TextReadError::InvalidDepth(depth));
                     }
 
-                    let trimmed = text.as_ref().map(|t| t.trim());
+                    return Ok(text.map(|original| {
+                        let trimmed = original.trim();
 
-                    if trimmed == text.as_deref() {
-                        return Ok(text);
-                    } else {
-                        return Ok(trimmed.map(ToOwned::to_owned));
-                    }
+                        if trimmed.len() == original.len() {
+                            original
+                        } else {
+                            trimmed.to_owned()
+                        }
+                    }));
                 }
             },
 
@@ -88,12 +85,7 @@ pub fn read_text(
     }
 
     Err(TextReadError::MissingEndElement(
-        format!(
-            "{}:{}",
-            element_name.prefix.unwrap_or_default(),
-            element_name.local_name
-        )
-        .into(),
+        element_name.to_string().into_boxed_str(),
     ))
 }
 
@@ -112,13 +104,13 @@ pub enum GenericParsingError {
     #[error("Invalid UUID")]
     InvalidUuid(#[from] uuid::Error),
     #[error("Invalid open/close element order")]
-    InvalidDepth(isize),
+    InvalidDepth(usize),
 }
 
 /// TODO expand to make sure what we search for is at the right depth
 pub fn parse_generic_body(
     reader: &mut EventReader<BufReader<&[u8]>>,
-    namespace: &str,
+    namespace: Option<&str>,
     path: &str,
 ) -> Result<(OwnedName, Vec<OwnedAttribute>, usize), GenericParsingError> {
     let mut depth = 0_usize;
@@ -130,16 +122,30 @@ pub fn parse_generic_body(
             } => {
                 depth += 1;
 
-                if name.namespace_ref() == Some(namespace) && name.local_name == path {
+                if name.namespace_ref() == namespace && name.local_name == path {
                     return Ok((name, attributes, depth));
                 }
+            },
+            XmlEvent::EndElement { .. } => {
+                if depth == 0 {
+                    return Err(GenericParsingError::MissingElement(
+                        format!(
+                            "{}{}{}",
+                            namespace.unwrap_or_default(),
+                            namespace.map(|_| ":").unwrap_or_default(),
+                            path
+                        )
+                        .into_boxed_str(),
+                    ));
+                }
+
+                depth -= 1;
             },
             XmlEvent::EndDocument => {
                 break;
             },
             XmlEvent::StartDocument { .. }
             | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::EndElement { .. }
             | XmlEvent::CData(_)
             | XmlEvent::Comment(_)
             | XmlEvent::Characters(_)
@@ -149,7 +155,13 @@ pub fn parse_generic_body(
     }
 
     Err(GenericParsingError::MissingElement(
-        format!("{}:{}", namespace, path).into(),
+        format!(
+            "{}{}{}",
+            namespace.unwrap_or_default(),
+            namespace.map(|_| ":").unwrap_or_default(),
+            path
+        )
+        .into_boxed_str(),
     ))
 }
 
@@ -208,6 +220,6 @@ fn parse_generic_body_paths_recursive(
     }
 
     Err(GenericParsingError::MissingElement(
-        format!("{}:{}", namespace, path).into(),
+        format!("{}:{}", namespace, path).into_boxed_str(),
     ))
 }

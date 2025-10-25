@@ -26,6 +26,7 @@ use crate::network_address::NetworkAddress;
 use crate::network_interface::{self, NetworkInterface};
 use crate::wsd::device::WSDDiscoveredDevice;
 
+#[derive(Debug)]
 pub enum Command {
     NewAddress {
         address: IpAddr,
@@ -368,7 +369,7 @@ impl NetworkHandler {
     }
 
     pub async fn handle_deleted_address(&mut self, address: NetworkAddress) {
-        event!(Level::INFO, "deleted address {}", address);
+        event!(Level::INFO, address = %address.address, interface = %address.interface.name, "deleted address");
 
         if self.is_address_handled(&address).is_err() {
             return;
