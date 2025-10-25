@@ -232,11 +232,15 @@ fn extract_wsdp_props(
     parse_generic_body(reader, namespace, path)?;
 
     // we're now in `namespace:path`
+    let mut depth: isize = 1;
+
     let mut bag = HashMap::<Box<str>, Box<str>>::new();
 
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
+                depth += 1;
+
                 if name.namespace_ref() == Some(namespace) {
                     let text = read_text(reader, name.borrow())?;
                     let text = text.unwrap_or_default();
@@ -245,12 +249,24 @@ fn extract_wsdp_props(
                     let tag_name = name.local_name;
 
                     bag.insert(tag_name.into_boxed_str(), text.into_boxed_str());
+
+                    // `read_text` reads until the closing, so goes up 1 level
+                    depth -= 1;
                 }
             },
             XmlEvent::EndElement { name, .. } => {
-                // this is detection for the closing element of `namespace:path`
+                depth -= 1;
 
+                if depth < 0 {
+                    return Err(GenericParsingError::InvalidDepth(depth));
+                }
+
+                // this is detection for the closing element of `namespace:path`
                 if name.namespace_ref() == Some(namespace) && name.local_name == path {
+                    if depth != 0 {
+                        return Err(GenericParsingError::InvalidDepth(depth));
+                    }
+
                     return Ok(bag);
                 }
             },
@@ -267,7 +283,7 @@ fn extract_wsdp_props(
         }
     }
 
-    Err(GenericParsingError::MissingClosingElement(
+    Err(GenericParsingError::MissingEndElement(
         format!("{}:{}", namespace, path).into(),
     ))
 }

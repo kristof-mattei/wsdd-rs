@@ -1,3 +1,4 @@
+use std::borrow::ToOwned;
 use std::io::BufReader;
 
 use thiserror::Error;
@@ -14,12 +15,17 @@ pub enum TextReadError {
     XmlError(#[from] xml::reader::Error),
     #[error("Invalid open/close element order")]
     InvalidDepth(isize),
+    #[error("Missing end `{0}` element")]
+    MissingEndElement(Box<str>),
 }
 
 /// Reads all text from current position in `reader` until closing tag of `element_name`
 ///
+/// Expects that reader has just read the opening tag and nothing further.
+///
 /// Errors:
 /// * When it encounters anything other than text, comments or closing tag of `element_name`
+/// * When the closing tag is not on the same depth as the opening tag
 pub fn read_text(
     reader: &mut EventReader<BufReader<&[u8]>>,
     element_name: Name<'_>,
@@ -55,11 +61,24 @@ pub fn read_text(
                 }
 
                 if name.borrow() == element_name {
-                    break;
+                    if depth != 0 {
+                        return Err(TextReadError::InvalidDepth(depth));
+                    }
+
+                    let trimmed = text.as_ref().map(|t| t.trim());
+
+                    if trimmed == text.as_deref() {
+                        return Ok(text);
+                    } else {
+                        return Ok(trimmed.map(ToOwned::to_owned));
+                    }
                 }
             },
+
+            XmlEvent::EndDocument => {
+                break;
+            },
             event @ (XmlEvent::StartDocument { .. }
-            | XmlEvent::EndDocument
             | XmlEvent::ProcessingInstruction { .. }
             | XmlEvent::CData(_)
             | XmlEvent::Doctype { .. }) => {
@@ -68,17 +87,14 @@ pub fn read_text(
         }
     }
 
-    if depth != 0 {
-        return Err(TextReadError::InvalidDepth(depth));
-    }
-
-    let trimmed = text.as_ref().map(|t| t.trim());
-
-    if trimmed == text.as_deref() {
-        Ok(text)
-    } else {
-        Ok(trimmed.map(std::borrow::ToOwned::to_owned))
-    }
+    Err(TextReadError::MissingEndElement(
+        format!(
+            "{}:{}",
+            element_name.prefix.unwrap_or_default(),
+            element_name.local_name
+        )
+        .into(),
+    ))
 }
 
 #[derive(Error, Debug)]
@@ -87,14 +103,16 @@ pub enum GenericParsingError {
     XmlError(#[from] xml::reader::Error),
     #[error("Error reading text")]
     TextReadError(#[from] TextReadError),
-    #[error("Missing ./{0} in body")]
+    #[error("Missing `{0}`")]
     MissingElement(Box<str>),
-    #[error("Missing closing ./{0} in body")]
-    MissingClosingElement(Box<str>),
+    #[error("Missing end `{0}` element")]
+    MissingEndElement(Box<str>),
     #[error("Invalid element order")]
     InvalidElementOrder,
     #[error("Invalid UUID")]
     InvalidUuid(#[from] uuid::Error),
+    #[error("Invalid open/close element order")]
+    InvalidDepth(isize),
 }
 
 /// TODO expand to make sure what we search for is at the right depth
