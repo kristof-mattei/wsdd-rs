@@ -2,7 +2,6 @@ use std::io::BufReader;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
-use std::time::Duration;
 
 use color_eyre::eyre;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -77,20 +76,21 @@ impl WSDHost {
 
     // WS-Discovery, Section 4.1, Hello message
     fn schedule_send_hello(&self) {
+        let cancellation_token = self.cancellation_token.clone();
         let config = Arc::clone(&self.config);
         let address = self.address;
         let messages_built = Arc::clone(&self.messages_built);
         let mc_local_port_tx = self.mc_local_port_tx.clone();
 
         tokio::task::spawn(async move {
-            // avoid packet storm when hosts come up by delaying initial hello
-            tokio::time::sleep(Duration::from_millis(rand::random_range(
-                0..=constants::APP_MAX_DELAY,
-            )))
-            .await;
-
-            if let Err(error) =
-                send_hello(&config, address, &messages_built, &mc_local_port_tx).await
+            if let Err(error) = send_hello(
+                &cancellation_token,
+                &config,
+                address,
+                &messages_built,
+                &mc_local_port_tx,
+            )
+            .await
             {
                 // TODO is this fatal? What should we do?
                 event!(Level::ERROR, ?error, "Failed to send hello");
@@ -111,20 +111,29 @@ impl WSDHost {
 }
 
 async fn send_hello(
+    cancellation_token: &CancellationToken,
     config: &Config,
     address: IpAddr,
     messages_built: &AtomicU64,
     mc_local_port_tx: &Sender<Box<[u8]>>,
 ) -> Result<(), eyre::Report> {
-    let hello = Builder::build_hello(config, messages_built, address)?;
+    let future = async move {
+        let hello = Builder::build_hello(config, messages_built, address)?;
 
-    // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
-    // TODO move event to here and write properly
-    event!(Level::INFO, "scheduling {} message", MessageType::Hello);
+        // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
+        // TODO move event to here and write properly
+        event!(Level::INFO, "scheduling {} message", MessageType::Hello);
 
-    mc_local_port_tx.send(hello.into_boxed_slice()).await?;
+        mc_local_port_tx
+            .send(hello.into_boxed_slice())
+            .await
+            .map_err(|_| eyre::Report::msg("Receiver gone, failed to send hello"))
+    };
 
-    Ok(())
+    cancellation_token
+        .run_until_cancelled(future)
+        .await
+        .unwrap_or(Ok(()))
 }
 
 fn handle_probe(
