@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::network_interface::NetworkInterface;
 
-#[derive(Eq, Clone)]
+#[derive(Eq, Clone, Debug)]
 pub struct NetworkAddress {
     pub address: IpAddr,
     pub interface: Arc<NetworkInterface>,
