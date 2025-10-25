@@ -26,6 +26,7 @@ use crate::network_address::NetworkAddress;
 use crate::network_interface::{self, NetworkInterface};
 use crate::wsd::device::WSDDiscoveredDevice;
 
+#[derive(Debug)]
 pub enum Command {
     NewAddress {
         address: IpAddr,

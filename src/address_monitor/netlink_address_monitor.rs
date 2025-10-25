@@ -344,7 +344,12 @@ impl NetlinkAddressMonitor {
                 };
 
                 if let Err(error) = self.command_tx.send(command).await {
-                    event!(Level::ERROR, ?error, "Failed to announce command");
+                    if self.cancellation_token.is_cancelled() {
+                        event!(Level::INFO, command = ?error.0, "Could not announce command due to shutting down");
+                        break;
+                    } else {
+                        event!(Level::ERROR, command = ?error.0, "Failed to announce command");
+                    }
                 }
 
                 offset += align_to(length, align_of::<nlmsghdr>());
