@@ -386,8 +386,7 @@ impl MulticastHandler {
                     self.mc_wsd_port_rx.get_listener().await,
                     self.mc_local_port_tx.get_sender(),
                     self.uc_wsd_port_tx.get_sender(),
-                )
-                .await;
+                );
 
                 host
             })
@@ -409,8 +408,7 @@ impl MulticastHandler {
                     self.mc_wsd_port_rx.get_listener().await,
                     self.mc_local_port_rx.get_listener().await,
                     self.mc_local_port_tx.get_sender(),
-                )
-                .await;
+                );
 
                 client
             })
