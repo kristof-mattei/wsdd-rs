@@ -60,11 +60,11 @@ pub fn read_text(
                         return Err(TextReadError::InvalidDepth(depth));
                     }
 
-                    return Ok(text.map(|t| {
-                        let trimmed = t.trim();
+                    return Ok(text.map(|original| {
+                        let trimmed = original.trim();
 
-                        if trimmed.len() == t.len() {
-                            t
+                        if trimmed.len() == original.len() {
+                            original
                         } else {
                             trimmed.to_owned()
                         }
