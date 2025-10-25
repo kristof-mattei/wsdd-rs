@@ -172,8 +172,8 @@ impl WSDDiscoveredDevice {
                         depth -= 1;
 
                         if depth == 0 {
-                    break;
-                }
+                            break;
+                        }
                     },
                     XmlEvent::StartDocument { .. }
                     | XmlEvent::EndDocument
