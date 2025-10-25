@@ -101,7 +101,7 @@ impl WSDClient {
             // avoid packet storm when hosts come up by delaying initial probe
             tokio::select! {
                 biased;
-                () = cancellation_token.cancelled() => { return ; },
+                () = cancellation_token.cancelled() => { return; },
                 () = tokio::time::sleep(Duration::from_millis(rand::random_range(0..=APP_MAX_DELAY))) => { }
             }
 

@@ -2,7 +2,6 @@ use std::io::BufReader;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
-use std::time::Duration;
 
 use color_eyre::eyre;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -14,7 +13,6 @@ use xml::EventReader;
 use super::HANDLED_MESSAGES;
 use crate::config::Config;
 use crate::constants;
-use crate::constants::APP_MAX_DELAY;
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::{self, Builder, MessageType};
 use crate::soap::parser::{self, MessageHandler};
@@ -85,13 +83,6 @@ impl WSDHost {
         let mc_local_port_tx = self.mc_local_port_tx.clone();
 
         tokio::task::spawn(async move {
-            // avoid packet storm when hosts come up by delaying initial hello
-            tokio::select! {
-                biased;
-                () = cancellation_token.cancelled() => { return ; },
-                () = tokio::time::sleep(Duration::from_millis(rand::random_range(0..=APP_MAX_DELAY))) => { }
-            }
-
             if let Err(error) = send_hello(
                 &cancellation_token,
                 &config,
