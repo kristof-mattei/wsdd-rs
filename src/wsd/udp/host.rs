@@ -29,7 +29,7 @@ pub struct WSDHost {
 }
 
 impl WSDHost {
-    pub async fn init(
+    pub fn init(
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
         messages_built: Arc<AtomicU64>,
@@ -55,20 +55,11 @@ impl WSDHost {
             address,
             cancellation_token,
             config,
-            messages_built: Arc::clone(&messages_built),
+            messages_built,
             mc_local_port_tx,
         };
 
-        // avoid packet storm when hosts come up by delaying initial hello
-        tokio::time::sleep(Duration::from_millis(rand::random_range(
-            0..=constants::APP_MAX_DELAY,
-        )))
-        .await;
-
-        if let Err(error) = host.send_hello(&messages_built).await {
-            // TODO is this fatal? What should we do?
-            event!(Level::ERROR, ?error, "Failed to send hello");
-        }
+        host.schedule_send_hello();
 
         host
     }
@@ -85,16 +76,26 @@ impl WSDHost {
     }
 
     // WS-Discovery, Section 4.1, Hello message
-    async fn send_hello(&self, messages_built: &AtomicU64) -> Result<(), eyre::Report> {
-        let hello = Builder::build_hello(&self.config, messages_built, self.address)?;
+    fn schedule_send_hello(&self) {
+        let config = Arc::clone(&self.config);
+        let address = self.address;
+        let messages_built = Arc::clone(&self.messages_built);
+        let mc_local_port_tx = self.mc_local_port_tx.clone();
 
-        // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
-        // TODO move event to here and write properly
-        event!(Level::INFO, "scheduling {} message", MessageType::Hello);
+        tokio::task::spawn(async move {
+            // avoid packet storm when hosts come up by delaying initial hello
+            tokio::time::sleep(Duration::from_millis(rand::random_range(
+                0..=constants::APP_MAX_DELAY,
+            )))
+            .await;
 
-        self.mc_local_port_tx.send(hello.into_boxed_slice()).await?;
-
-        Ok(())
+            if let Err(error) =
+                send_hello(&config, address, &messages_built, &mc_local_port_tx).await
+            {
+                // TODO is this fatal? What should we do?
+                event!(Level::ERROR, ?error, "Failed to send hello");
+            }
+        });
     }
 
     /// WS-Discovery, Section 4.2, Bye message
@@ -107,6 +108,23 @@ impl WSDHost {
 
         Ok(self.mc_local_port_tx.send(bye.into_boxed_slice()).await?)
     }
+}
+
+async fn send_hello(
+    config: &Config,
+    address: IpAddr,
+    messages_built: &AtomicU64,
+    mc_local_port_tx: &Sender<Box<[u8]>>,
+) -> Result<(), eyre::Report> {
+    let hello = Builder::build_hello(config, messages_built, address)?;
+
+    // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
+    // TODO move event to here and write properly
+    event!(Level::INFO, "scheduling {} message", MessageType::Hello);
+
+    mc_local_port_tx.send(hello.into_boxed_slice()).await?;
+
+    Ok(())
 }
 
 fn handle_probe(
@@ -290,8 +308,7 @@ mod tests {
             mc_wsd_port_rx,
             mc_local_port_tx,
             uc_wsd_port_tx,
-        )
-        .await;
+        );
 
         let hello = mc_local_port_rx.recv().await.unwrap();
 
@@ -337,8 +354,7 @@ mod tests {
             mc_wsd_port_rx,
             mc_local_port_tx,
             uc_wsd_port_tx,
-        )
-        .await;
+        );
 
         let _hello = mc_local_port_rx.recv().await.unwrap();
 
