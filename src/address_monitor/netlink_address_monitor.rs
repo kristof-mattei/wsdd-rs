@@ -1,7 +1,5 @@
-use std::io::Error;
 use std::mem::MaybeUninit;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::os::fd::FromRawFd as _;
 
 use color_eyre::eyre;
 use libc::{
@@ -64,16 +62,11 @@ impl NetlinkAddressMonitor {
             rtm_groups |= RTMGRP_IPV4_IFADDR;
         }
 
-        let raw_socket_fd =
-            // SAFETY: libc call
-            unsafe { libc::socket(libc::AF_NETLINK, libc::SOCK_RAW, NETLINK_ROUTE) };
-
-        if raw_socket_fd < 0 {
-            return Err(Error::last_os_error());
-        }
-
-        // SAFETY: `raw_socket_fd` is a raw socket
-        let socket = unsafe { socket2::Socket::from_raw_fd(raw_socket_fd) };
+        let socket = socket2::Socket::new(
+            libc::AF_NETLINK.into(),
+            libc::SOCK_RAW.into(),
+            Some(NETLINK_ROUTE.into()),
+        )?;
 
         socket.set_nonblocking(true)?;
 
