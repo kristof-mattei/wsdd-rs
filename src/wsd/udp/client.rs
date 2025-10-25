@@ -42,7 +42,7 @@ impl WSDClient {
     /// * `mc_wsd_port_rx`: used to receive multicast messages on `WSD_PORT`
     /// * `mc_local_port_rx`: used to receive multicast messages sent to the local port
     /// * `mc_local_port_tx`: use to send multicast messages, from the local port to `WSD_PORT`
-    pub async fn init(
+    pub fn init(
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
         devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
@@ -75,19 +75,15 @@ impl WSDClient {
             probes,
         };
 
-        // avoid packet storm when hosts come up by delaying initial probe
-        tokio::time::sleep(Duration::from_millis(rand::random_range(0..=APP_MAX_DELAY))).await;
-
-        if let Err(error) = client.send_probe().await {
-            event!(Level::ERROR, ?error, "Failed to send probe");
-        }
+        client.schedule_send_probe();
 
         client
     }
 
-    #[expect(clippy::unused_async, reason = "WIP")]
     pub async fn teardown(self, graceful: bool) {
         self.cancellation_token.cancel();
+
+        self.remove_outdated_probes().await;
 
         if graceful {
             // ??
@@ -95,30 +91,79 @@ impl WSDClient {
     }
 
     // WS-Discovery, Section 4.3, Probe message
+    fn schedule_send_probe(&self) {
+        let cancellation_token = self.cancellation_token.clone();
+        let config = Arc::clone(&self.config);
+        let probes = Arc::clone(&self.probes);
+        let mc_local_port_tx = self.mc_local_port_tx.clone();
+
+        tokio::task::spawn(async move {
+            // avoid packet storm when hosts come up by delaying initial probe
+            tokio::select! {
+                biased;
+                () = cancellation_token.cancelled() => { return; },
+                () = tokio::time::sleep(Duration::from_millis(rand::random_range(0..=APP_MAX_DELAY))) => { }
+            }
+
+            if let Err(error) =
+                send_probe(&cancellation_token, &config, &probes, &mc_local_port_tx).await
+            {
+                event!(Level::ERROR, ?error, "Failed to send probe");
+            }
+        });
+    }
+
     pub async fn send_probe(&self) -> Result<(), eyre::Report> {
-        self.remove_outdated_probes().await;
+        send_probe(
+            &self.cancellation_token,
+            &self.config,
+            &self.probes,
+            &self.mc_local_port_tx,
+        )
+        .await
+    }
 
-        let (probe, message_id) = Builder::build_probe(&self.config)?;
+    async fn remove_outdated_probes(&self) {
+        remove_outdated_probes(&self.probes).await;
+    }
+}
 
-        self.probes.write().await.insert(message_id, now());
+async fn send_probe(
+    cancellation_token: &CancellationToken,
+    config: &Arc<Config>,
+    probes: &Arc<RwLock<HashMap<Urn, u128>>>,
+    mc_local_port_tx: &Sender<Box<[u8]>>,
+) -> Result<(), eyre::Report> {
+    let future = async move {
+        remove_outdated_probes(probes).await;
+
+        let (probe, message_id) = Builder::build_probe(config)?;
+
+        probes.write().await.insert(message_id, now());
 
         // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
         // TODO move event to here and write properly
         event!(Level::INFO, "scheduling {} message", MessageType::Probe);
 
-        self.mc_local_port_tx.send(probe.into_boxed_slice()).await?;
-
-        Ok(())
-    }
-
-    async fn remove_outdated_probes(&self) {
-        let now = now();
-
-        self.probes
-            .write()
+        mc_local_port_tx
+            .send(probe.into_boxed_slice())
             .await
-            .retain(|_, value| *value + (PROBE_TIMEOUT * 2) > now);
-    }
+            .map_err(|_| eyre::Report::msg("Receiver gone, failed to send probe"))
+    };
+
+    cancellation_token
+        .run_until_cancelled(future)
+        .await
+        .unwrap_or(Ok(()))
+}
+
+async fn remove_outdated_probes(probes: &Arc<RwLock<HashMap<Urn, u128>>>) {
+    let now = now();
+
+    probes
+        .write()
+        .await
+        .retain(|_, value| *value + (PROBE_TIMEOUT * 2) > now);
 }
 
 fn now() -> u128 {
@@ -128,18 +173,12 @@ fn now() -> u128 {
         .as_millis()
 }
 
-//         self.probes = {}
-
 //     def cleanup(self) -> None:
 //         super().cleanup()
 //         WSDClient.instances.remove(self)
 
 //         self.mch.remove_handler(self.mch.mc_send_socket, self)
 //         self.mch.remove_handler(self.mch.recv_socket, self)
-
-//     def teardown(self) -> None:
-//         super().teardown()
-//         self.remove_outdated_probes()
 
 fn __extract_xaddr(bound_to: IpAddr, xaddrs: &str) -> Option<url::Url> {
     for addr in xaddrs.trim().split(' ') {
@@ -908,8 +947,7 @@ mod tests {
             mc_wsd_port_rx,
             mc_local_port_rx,
             uc_wsd_port_tx,
-        )
-        .await;
+        );
 
         let probe = uc_wsd_port_rx.recv().await.unwrap();
 
