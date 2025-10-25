@@ -161,7 +161,10 @@ impl NetlinkAddressMonitor {
 
     #[expect(clippy::too_many_lines, reason = "WIP")]
     pub async fn process_changes(&mut self) -> Result<(), eyre::Report> {
-        // we originally had this on the stack (array) but tokio moves it to the heap because of size
+        // we originally had this on the stack (array) but tokio then moves the whole task to the heap because of size
+
+        // we don't need to zero out the buffer between runs as `recv_buf` starts at 0 and returns `bytes_read`
+        // sine we only read that portion we don't need to worry about the leftovers
         let mut buffer = vec![MaybeUninit::<u8>::uninit(); 4096];
 
         loop {
