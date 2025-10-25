@@ -191,7 +191,7 @@ impl WSDDiscoveredDevice {
 
         let host = xaddr
             .host_str()
-            .ok_or_else(|| eyre::Report::msg("Device has bad address"))?
+            .ok_or_else(|| eyre::Report::msg("Device's address does not have a host portion"))?
             .to_owned()
             .into_boxed_str();
 
