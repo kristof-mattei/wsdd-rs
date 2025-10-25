@@ -45,6 +45,8 @@ pub enum MessageHandlerError {
     XmlError(#[from] xml::reader::Error),
     #[error("Header Error")]
     HeaderError(#[from] HeaderError),
+    #[error("Text Read Error")]
+    TextReadError(#[from] TextReadError),
 }
 impl MessageHandlerError {
     #[track_caller]
@@ -59,6 +61,14 @@ impl MessageHandlerError {
                     ?missing,
                     message = &*String::from_utf8_lossy(buffer),
                     "XML Message did not have required elements",
+                );
+            },
+            &MessageHandlerError::TextReadError(ref error) => {
+                event!(
+                    Level::TRACE,
+                    %error,
+                    message = &*String::from_utf8_lossy(buffer),
+                    "XML Message text read error",
                 );
             },
             &MessageHandlerError::HeaderError(
@@ -82,15 +92,25 @@ impl MessageHandlerError {
                     "XML Message Header is missing pieces",
                 );
             },
-            &MessageHandlerError::HeaderError(
-                ref error @ HeaderError::TextReadError(TextReadError::NonTextContents(ref content)),
-            ) => {
+            &MessageHandlerError::HeaderError(HeaderError::TextReadError(
+                ref error @ TextReadError::NonTextContents(ref content),
+            )) => {
                 event!(
                     Level::ERROR,
                     ?error,
                     ?content,
                     message = &*String::from_utf8_lossy(buffer),
                     "Invalid contents in text element",
+                );
+            },
+            &MessageHandlerError::HeaderError(HeaderError::TextReadError(
+                TextReadError::MissingEndElement(ref end_element),
+            )) => {
+                event!(
+                    Level::ERROR,
+                    ?end_element,
+                    message = &*String::from_utf8_lossy(buffer),
+                    "Missing end element",
                 );
             },
             &MessageHandlerError::HeaderError(HeaderError::TextReadError(

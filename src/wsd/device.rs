@@ -77,14 +77,14 @@ impl WSDDiscoveredDevice {
     ) -> Result<(), eyre::Report> {
         let (_header, _has_body, mut reader) = parser::deconstruct_raw(meta)?;
 
-        parse_generic_body(&mut reader, XML_WSX_NAMESPACE, "Metadata")?;
+        parse_generic_body(&mut reader, Some(XML_WSX_NAMESPACE), "Metadata")?;
 
         // we're now in metadata
 
         // loop though the reader for each wsx:MetadataSection at depth 1 from where we are now
         loop {
             let (_element, attributes) =
-                match parse_generic_body(&mut reader, XML_WSX_NAMESPACE, "MetadataSection") {
+                match parse_generic_body(&mut reader, Some(XML_WSX_NAMESPACE), "MetadataSection") {
                     Ok((element, attributes, _depth)) => {
                         // we'll need to ensure that the depth is always the same
                         (element, attributes)
@@ -101,15 +101,21 @@ impl WSDDiscoveredDevice {
                     && attribute.name.local_name == "Dialect"
                 {
                     if attribute.value == WSDP_THIS_DEVICE_DIALECT {
-                        let new_props =
-                            extract_wsdp_props(&mut reader, XML_WSDP_NAMESPACE, WSDP_THIS_DEVICE)?;
+                        let new_props = extract_wsdp_props(
+                            &mut reader,
+                            Some(XML_WSDP_NAMESPACE),
+                            WSDP_THIS_DEVICE,
+                        )?;
 
                         for (new_prop_key, new_prop_value) in new_props {
                             self.props.insert(new_prop_key, new_prop_value);
                         }
                     } else if attribute.value == WSDP_THIS_MODEL_DIALECT {
-                        let new_props =
-                            extract_wsdp_props(&mut reader, XML_WSDP_NAMESPACE, WSDP_THIS_MODEL)?;
+                        let new_props = extract_wsdp_props(
+                            &mut reader,
+                            Some(XML_WSDP_NAMESPACE),
+                            WSDP_THIS_MODEL,
+                        )?;
 
                         for (new_prop_key, new_prop_value) in new_props {
                             self.props.insert(new_prop_key, new_prop_value);
@@ -226,18 +232,22 @@ impl WSDDiscoveredDevice {
 
 fn extract_wsdp_props(
     reader: &mut EventReader<BufReader<&[u8]>>,
-    namespace: &str,
+    namespace: Option<&str>,
     path: &str,
 ) -> Result<HashMap<Box<str>, Box<str>>, GenericParsingError> {
     parse_generic_body(reader, namespace, path)?;
 
-    // we're now in `namespace:path`
+    // we're now in `namespace:path`, depth is already 1
+    let mut depth: usize = 1;
+
     let mut bag = HashMap::<Box<str>, Box<str>>::new();
 
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
-                if name.namespace_ref() == Some(namespace) {
+                depth += 1;
+
+                if name.namespace_ref() == namespace {
                     let text = read_text(reader, name.borrow())?;
                     let text = text.unwrap_or_default();
 
@@ -245,12 +255,20 @@ fn extract_wsdp_props(
                     let tag_name = name.local_name;
 
                     bag.insert(tag_name.into_boxed_str(), text.into_boxed_str());
+
+                    // `read_text` reads until the closing, so goes up 1 level
+                    depth -= 1;
                 }
             },
             XmlEvent::EndElement { name, .. } => {
-                // this is detection for the closing element of `namespace:path`
+                depth -= 1;
 
-                if name.namespace_ref() == Some(namespace) && name.local_name == path {
+                // this is detection for the closing element of `namespace:path`
+                if name.namespace_ref() == namespace && name.local_name == path {
+                    if depth != 0 {
+                        return Err(GenericParsingError::InvalidDepth(depth));
+                    }
+
                     return Ok(bag);
                 }
             },
@@ -267,8 +285,14 @@ fn extract_wsdp_props(
         }
     }
 
-    Err(GenericParsingError::MissingClosingElement(
-        format!("{}:{}", namespace, path).into(),
+    Err(GenericParsingError::MissingEndElement(
+        format!(
+            "{}{}{}",
+            namespace.unwrap_or_default(),
+            namespace.map(|_| ":").unwrap_or_default(),
+            path
+        )
+        .into_boxed_str(),
     ))
 }
 
@@ -287,7 +311,7 @@ fn extract_host_props(reader: &mut EventReader<BufReader<&[u8]>>) -> ExtractHost
     // for each relationship, we find the one with Type=Host
     loop {
         let (_element, attributes) =
-            match parse_generic_body(reader, XML_WSDP_NAMESPACE, WSDP_RELATIONSHIP) {
+            match parse_generic_body(reader, Some(XML_WSDP_NAMESPACE), WSDP_RELATIONSHIP) {
                 Ok((element, attributes, _depth)) => {
                     // we'll need to ensure that the depth is always the same
                     (element, attributes)
@@ -302,7 +326,7 @@ fn extract_host_props(reader: &mut EventReader<BufReader<&[u8]>>) -> ExtractHost
         for attribute in attributes {
             if attribute.name.namespace_ref().is_none() && attribute.name.local_name == "Type" {
                 if attribute.value == WSDP_RELATIONSHIP_TYPE_HOST {
-                    match parse_generic_body(reader, XML_WSDP_NAMESPACE, "Host") {
+                    match parse_generic_body(reader, Some(XML_WSDP_NAMESPACE), "Host") {
                         Ok((_name, _attributes, _depth)) => {
                             let (types, display_name_belongs_to) =
                                 read_types_and_pub_computer(reader)?;

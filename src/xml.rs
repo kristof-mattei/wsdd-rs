@@ -8,18 +8,23 @@ use xml::reader::XmlEvent;
 
 #[derive(Debug, Error)]
 pub enum TextReadError {
-    #[error("Found non-text-contents: {0:?}")]
+    #[error("Found non-text-contents: `{0:?}`")]
     NonTextContents(XmlEvent),
     #[error("Error parsing XML")]
     XmlError(#[from] xml::reader::Error),
     #[error("Invalid open/close element order")]
     InvalidDepth(isize),
+    #[error("Missing end `{0}` element")]
+    MissingEndElement(Box<str>),
 }
 
 /// Reads all text from current position in `reader` until closing tag of `element_name`
 ///
+/// Expects that reader has just read the opening tag and nothing further.
+///
 /// Errors:
 /// * When it encounters anything other than text, comments or closing tag of `element_name`
+/// * When the closing tag is not on the same depth as the opening tag
 pub fn read_text(
     reader: &mut EventReader<BufReader<&[u8]>>,
     element_name: Name<'_>,
@@ -50,16 +55,27 @@ pub fn read_text(
             XmlEvent::EndElement { name } => {
                 depth -= 1;
 
-                if depth < 0 {
-                    return Err(TextReadError::InvalidDepth(depth));
-                }
-
                 if name.borrow() == element_name {
-                    break;
+                    if depth != 0 {
+                        return Err(TextReadError::InvalidDepth(depth));
+                    }
+
+                    return Ok(text.map(|t| {
+                        let trimmed = t.trim();
+
+                        if trimmed.len() == t.len() {
+                            t
+                        } else {
+                            trimmed.to_owned()
+                        }
+                    }));
                 }
             },
+
+            XmlEvent::EndDocument => {
+                break;
+            },
             event @ (XmlEvent::StartDocument { .. }
-            | XmlEvent::EndDocument
             | XmlEvent::ProcessingInstruction { .. }
             | XmlEvent::CData(_)
             | XmlEvent::Doctype { .. }) => {
@@ -68,17 +84,15 @@ pub fn read_text(
         }
     }
 
-    if depth != 0 {
-        return Err(TextReadError::InvalidDepth(depth));
-    }
-
-    let trimmed = text.as_ref().map(|t| t.trim());
-
-    if trimmed == text.as_deref() {
-        Ok(text)
-    } else {
-        Ok(trimmed.map(std::borrow::ToOwned::to_owned))
-    }
+    Err(TextReadError::MissingEndElement(
+        format!(
+            "{}{}{}",
+            element_name.prefix.unwrap_or_default(),
+            element_name.prefix.map(|_| ":").unwrap_or_default(),
+            element_name.local_name
+        )
+        .into_boxed_str(),
+    ))
 }
 
 #[derive(Error, Debug)]
@@ -87,20 +101,22 @@ pub enum GenericParsingError {
     XmlError(#[from] xml::reader::Error),
     #[error("Error reading text")]
     TextReadError(#[from] TextReadError),
-    #[error("Missing ./{0} in body")]
+    #[error("Missing `{0}`")]
     MissingElement(Box<str>),
-    #[error("Missing closing ./{0} in body")]
-    MissingClosingElement(Box<str>),
+    #[error("Missing end `{0}` element")]
+    MissingEndElement(Box<str>),
     #[error("Invalid element order")]
     InvalidElementOrder,
     #[error("Invalid UUID")]
     InvalidUuid(#[from] uuid::Error),
+    #[error("Invalid open/close element order")]
+    InvalidDepth(usize),
 }
 
 /// TODO expand to make sure what we search for is at the right depth
 pub fn parse_generic_body(
     reader: &mut EventReader<BufReader<&[u8]>>,
-    namespace: &str,
+    namespace: Option<&str>,
     path: &str,
 ) -> Result<(OwnedName, Vec<OwnedAttribute>, usize), GenericParsingError> {
     let mut depth = 0_usize;
@@ -112,7 +128,7 @@ pub fn parse_generic_body(
             } => {
                 depth += 1;
 
-                if name.namespace_ref() == Some(namespace) && name.local_name == path {
+                if name.namespace_ref() == namespace && name.local_name == path {
                     return Ok((name, attributes, depth));
                 }
             },
@@ -131,7 +147,13 @@ pub fn parse_generic_body(
     }
 
     Err(GenericParsingError::MissingElement(
-        format!("{}:{}", namespace, path).into(),
+        format!(
+            "{}{}{}",
+            namespace.unwrap_or_default(),
+            namespace.map(|_| ":").unwrap_or_default(),
+            path
+        )
+        .into_boxed_str(),
     ))
 }
 
@@ -190,6 +212,6 @@ fn parse_generic_body_paths_recursive(
     }
 
     Err(GenericParsingError::MissingElement(
-        format!("{}:{}", namespace, path).into(),
+        format!("{}:{}", namespace, path).into_boxed_str(),
     ))
 }
