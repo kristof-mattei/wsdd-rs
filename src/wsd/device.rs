@@ -159,14 +159,32 @@ impl WSDDiscoveredDevice {
                 }
             }
 
-            // read until the closing
-            loop {
-                let next = reader.next()?;
+            // read until the closing to ensure we only stop when we hit
+            // our closing element at our level (to avoid nested elements closing)
+            let mut depth: usize = 1;
 
-                if let XmlEvent::EndElement { name } = next
-                    && name.borrow() == scope.borrow()
-                {
+            loop {
+                match reader.next()? {
+                    XmlEvent::StartElement { name, .. } if name.borrow() == scope.borrow() => {
+                        depth += 1;
+                    },
+                    XmlEvent::EndElement { name } if name.borrow() == scope.borrow() => {
+                        depth -= 1;
+
+                        if depth == 0 {
                     break;
+                }
+                    },
+                    XmlEvent::StartDocument { .. }
+                    | XmlEvent::EndDocument
+                    | XmlEvent::ProcessingInstruction { .. }
+                    | XmlEvent::StartElement { .. }
+                    | XmlEvent::EndElement { .. }
+                    | XmlEvent::CData(_)
+                    | XmlEvent::Comment(_)
+                    | XmlEvent::Characters(_)
+                    | XmlEvent::Whitespace(_)
+                    | XmlEvent::Doctype { .. } => {},
                 }
             }
         }
