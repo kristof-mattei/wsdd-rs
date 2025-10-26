@@ -17,6 +17,10 @@ pub fn parse_userspec(user_spec: &str) -> Result<(u32, u32), String> {
     Ok((uid, gid))
 }
 
+#[expect(
+    clippy::multiple_unsafe_ops_per_block,
+    reason = "Deref of unsafe fn that returns a ptr"
+)]
 fn getpwname(user: &str) -> Result<u32, String> {
     let u = CString::new(user).unwrap();
 
@@ -42,6 +46,10 @@ fn getpwname(user: &str) -> Result<u32, String> {
     }
 }
 
+#[expect(
+    clippy::multiple_unsafe_ops_per_block,
+    reason = "Deref of unsafe fn that returns a ptr"
+)]
 fn getgrname(group: &str) -> Result<u32, String> {
     let g = CString::new(group).unwrap();
 
@@ -68,15 +76,15 @@ fn getgrname(group: &str) -> Result<u32, String> {
 }
 
 pub fn drop_privileges(uid: u32, gid: u32) -> Result<(), String> {
-    // SAFETY: libc call
-    if unsafe { -1 == setgid(gid) || -1 == setegid(gid) } {
+    // SAFETY: libc calls
+    if unsafe { -1 == setgid(gid) } || unsafe { -1 == setegid(gid) } {
         return Err(format!("setgid/setegid failed: {}", Error::last_os_error()));
     }
 
     event!(Level::DEBUG, "Switched gid to {}", gid);
 
-    // SAFETY: libc call
-    if unsafe { -1 == setuid(uid) || -1 == seteuid(uid) } {
+    // SAFETY: libc calls
+    if unsafe { -1 == setuid(uid) } || unsafe { -1 == seteuid(uid) } {
         return Err(format!("setuid/seteuid failed: {}", Error::last_os_error()));
     }
 

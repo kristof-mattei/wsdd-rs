@@ -70,6 +70,10 @@ impl NetlinkAddressMonitor {
 
         socket.set_nonblocking(true)?;
 
+        #[expect(
+            clippy::multiple_unsafe_ops_per_block,
+            reason = "Lint limitations on nested `unsafe`"
+        )]
         // SAFETY: this is how to do it as per the API docs
         let ((), socket_addr) = unsafe {
             socket2::SockAddr::try_init(|addr_storage, len| {
@@ -130,6 +134,10 @@ impl NetlinkAddressMonitor {
             },
         };
 
+        #[expect(
+            clippy::multiple_unsafe_ops_per_block,
+            reason = "Lint limitations on nested `unsafe`"
+        )]
         // SAFETY: this is how to do it as per the API docs
         let ((), socket_addr) = unsafe {
             socket2::SockAddr::try_init(|addr_storage, len| {
