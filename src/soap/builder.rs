@@ -19,8 +19,8 @@ use crate::constants::{
 use crate::soap::builder::body::WriteBody;
 use crate::soap::builder::body::bye::Bye;
 use crate::soap::builder::body::empty_body::EmptyBody;
-use crate::soap::builder::body::metadata::MetaData;
 use crate::soap::builder::body::hello::Hello;
+use crate::soap::builder::body::metadata::MetaData;
 use crate::soap::builder::body::probe::Probe;
 use crate::soap::builder::body::probe_matches::ProbeMatches;
 use crate::soap::builder::body::resolve::Resolve;

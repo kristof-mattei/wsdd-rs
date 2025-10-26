@@ -16,7 +16,10 @@ use uuid::fmt::Urn;
 use xml::EventReader;
 
 use crate::config::Config;
-use crate::constants::{self, APP_MAX_DELAY, PROBE_TIMEOUT, XML_WSD_NAMESPACE};
+use crate::constants::{
+    APP_MAX_DELAY, MIME_TYPE_SOAP_XML, PROBE_TIMEOUT, WSD_BYE, WSD_HELLO, WSD_PROBE_MATCH,
+    WSD_RESOLVE_MATCH, XML_WSD_NAMESPACE,
+};
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::{Builder, MessageType};
 use crate::soap::parser::generic::extract_endpoint_metadata;
@@ -55,16 +58,31 @@ impl WSDClient {
 
         let probes = Arc::new(RwLock::new(HashMap::<Urn, u128>::new()));
 
-        spawn_rx_loop(
-            cancellation_token.clone(),
-            Arc::clone(&config),
-            Arc::clone(&devices),
-            bound_to.clone(),
-            mc_wsd_port_rx,
-            mc_local_port_rx,
-            mc_local_port_tx.clone(),
-            Arc::clone(&probes),
-        );
+        {
+            let cancellation_token = cancellation_token.clone();
+            let config = Arc::clone(&config);
+            let bound_to = bound_to.clone();
+            let devices = Arc::clone(&devices);
+            let mc_local_port_tx = mc_local_port_tx.clone();
+            let probes = Arc::clone(&probes);
+
+            spawn_with_name(
+                format!("wsd client ({})", bound_to.address).as_str(),
+                async move {
+                    listen_forever(
+                        bound_to,
+                        cancellation_token,
+                        config,
+                        devices,
+                        mc_wsd_port_rx,
+                        mc_local_port_rx,
+                        mc_local_port_tx,
+                        probes,
+                    )
+                    .await;
+                },
+            );
+        };
 
         let client = Self {
             cancellation_token,
@@ -208,6 +226,7 @@ fn __extract_xaddr(bound_to: IpAddr, xaddrs: &str) -> Option<url::Url> {
 }
 
 async fn handle_hello(
+    client: &reqwest::Client,
     config: &Config,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
@@ -235,7 +254,7 @@ async fn handle_hello(
     // TODO serve variables and static text
     event!(Level::INFO, "Hello from {} on {}", endpoint, xaddr);
 
-    perform_metadata_exchange(config, devices, bound_to, endpoint, xaddr).await?;
+    perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddr).await?;
 
     Ok(())
 }
@@ -261,7 +280,9 @@ async fn handle_bye(
     Ok(())
 }
 
+#[expect(clippy::too_many_arguments, reason = "WIP")]
 async fn handle_probe_match(
+    client: &reqwest::Client,
     config: &Config,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
@@ -309,12 +330,21 @@ async fn handle_probe_match(
 
     event!(Level::DEBUG, %endpoint, %xaddr, "Probe match");
 
-    perform_metadata_exchange(config, Arc::clone(&devices), bound_to, endpoint, xaddr).await?;
+    perform_metadata_exchange(
+        client,
+        config,
+        Arc::clone(&devices),
+        bound_to,
+        endpoint,
+        xaddr,
+    )
+    .await?;
 
     Ok(())
 }
 
 async fn handle_resolve_match(
+    client: &reqwest::Client,
     config: &Config,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
@@ -347,12 +377,13 @@ async fn handle_resolve_match(
 
     event!(Level::DEBUG, %endpoint, ?xaddr, "Resolve match");
 
-    perform_metadata_exchange(config, devices, bound_to, endpoint, xaddr).await?;
+    perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddr).await?;
 
     Ok(())
 }
 
 async fn perform_metadata_exchange(
+    client: &reqwest::Client,
     config: &Config,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
@@ -368,17 +399,9 @@ async fn perform_metadata_exchange(
 
     let body = build_getmetadata_message(config, endpoint)?;
 
-    // Note: we bind on the interface's name.
-    // This is to ensure we send out requests via the interface that we received the XML message on
-    // This is especially important when using IPv6 and resolving `fe80::` addresses which are local to the interface.
-    // Using `.local_address()` didn't work with IPv6, because `fe80::` addresses (the ones we bind on) don't specify
-    // to which interface they belong
-    let client_builder = reqwest::ClientBuilder::new().interface(&bound_to.interface.name);
-
-    let builder = client_builder
-        .build()?
+    let builder = client
         .post(xaddr.clone())
-        .header("Content-Type", "application/soap+xml")
+        .header("Content-Type", MIME_TYPE_SOAP_XML)
         .header("User-Agent", "wsdd-rs");
 
     let response = builder
@@ -440,16 +463,27 @@ async fn handle_metadata(
 
 #[expect(clippy::too_many_arguments, reason = "WIP")]
 async fn listen_forever(
+    bound_to: NetworkAddress,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
-    message_handler: MessageHandler,
-    bound_to: NetworkAddress,
     mut mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
     mut mc_local_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
     mc_local_port_tx: Sender<Box<[u8]>>,
     probes: Arc<RwLock<HashMap<Urn, u128>>>,
 ) {
+    // Note: we bind on the interface's name.
+    // This is to ensure we send out requests via the interface that we received the XML message on
+    // This is especially important when using IPv6 and resolving `fe80::` addresses which are local to the interface.
+    // Using `.local_address()` didn't work with IPv6, because `fe80::` addresses (the ones we bind on) don't specify
+    // to which interface they belong
+    let client = reqwest::ClientBuilder::new()
+        .interface(&bound_to.interface.name)
+        .build()
+        .expect("WSD Client cannot operate without HTTP Client");
+
+    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to.clone());
+
     loop {
         let message = tokio::select! {
             () = cancellation_token.cancelled() => {
@@ -482,8 +516,9 @@ async fn listen_forever(
 
         // handle based on action
         if let Err(error) = match &*header.action {
-            constants::WSD_HELLO => {
+            WSD_HELLO => {
                 handle_hello(
+                    &client,
                     &config,
                     Arc::clone(&devices),
                     &bound_to,
@@ -492,9 +527,10 @@ async fn listen_forever(
                 )
                 .await
             },
-            constants::WSD_BYE => handle_bye(Arc::clone(&devices), body_reader).await,
-            constants::WSD_PROBE_MATCH => {
+            WSD_BYE => handle_bye(Arc::clone(&devices), body_reader).await,
+            WSD_PROBE_MATCH => {
                 handle_probe_match(
+                    &client,
                     &config,
                     Arc::clone(&devices),
                     &bound_to,
@@ -505,8 +541,15 @@ async fn listen_forever(
                 )
                 .await
             },
-            constants::WSD_RESOLVE_MATCH => {
-                handle_resolve_match(&config, Arc::clone(&devices), &bound_to, body_reader).await
+            WSD_RESOLVE_MATCH => {
+                handle_resolve_match(
+                    &client,
+                    &config,
+                    Arc::clone(&devices),
+                    &bound_to,
+                    body_reader,
+                )
+                .await
             },
             _ => {
                 event!(
@@ -527,38 +570,6 @@ async fn listen_forever(
             continue;
         }
     }
-}
-
-#[expect(clippy::too_many_arguments, reason = "WIP")]
-fn spawn_rx_loop(
-    cancellation_token: CancellationToken,
-    config: Arc<Config>,
-    devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
-    bound_to: NetworkAddress,
-    mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-    mc_local_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-    mc_local_port_tx: Sender<Box<[u8]>>,
-    probes: Arc<RwLock<HashMap<Urn, u128>>>,
-) {
-    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to.clone());
-
-    spawn_with_name(
-        format!("wsd client ({})", bound_to.address).as_str(),
-        async move {
-            listen_forever(
-                cancellation_token,
-                config,
-                devices,
-                message_handler,
-                bound_to,
-                mc_wsd_port_rx,
-                mc_local_port_rx,
-                mc_local_port_tx,
-                probes,
-            )
-            .await;
-        },
-    );
 }
 
 #[cfg(test)]
@@ -610,6 +621,7 @@ mod tests {
             .unwrap();
 
         handle_hello(
+            &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
@@ -674,7 +686,7 @@ mod tests {
             .with_status(200)
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
-                    include_str!("../../test/get-response-template.xml"),
+                    include_str!("../../test/get-response-template-other-device.xml"),
                     Uuid::new_v4(),
                     Uuid::new_v4(),
                 );
@@ -713,6 +725,7 @@ mod tests {
             .unwrap();
 
         handle_hello(
+            &reqwest::ClientBuilder::new().build().unwrap(),
             &config,
             Arc::clone(&client_devices),
             &bound_to,
@@ -830,7 +843,7 @@ mod tests {
             .with_status(200)
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
-                    include_str!("../../test/get-response-template.xml"),
+                    include_str!("../../test/get-response-template-other-device.xml"),
                     Uuid::new_v4(),
                     Uuid::new_v4(),
                 );
@@ -869,6 +882,7 @@ mod tests {
             .unwrap();
 
         handle_hello(
+            &reqwest::ClientBuilder::new().build().unwrap(),
             &config,
             Arc::clone(&client_devices),
             &network_address,

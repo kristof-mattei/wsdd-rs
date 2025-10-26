@@ -8,7 +8,7 @@ use axum::response::{AppendHeaders, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Router, debug_handler};
 use bytes::Bytes;
-use color_eyre::eyre::{self, Context as _};
+use color_eyre::eyre;
 use http::StatusCode;
 use http::header::CONTENT_TYPE;
 use tokio_util::sync::CancellationToken;
@@ -28,29 +28,39 @@ use crate::wsd::HANDLED_MESSAGES;
 pub struct WSDHttpServer {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    address: NetworkAddress,
+    bound_to: NetworkAddress,
 }
 
 impl WSDHttpServer {
-    pub fn init(
+    pub async fn init(
         bound_to: NetworkAddress,
-        cancellation_token: CancellationToken,
+        cancellation_token: &CancellationToken,
         config: Arc<Config>,
         http_listen_address: SocketAddr,
     ) -> WSDHttpServer {
+        let cancellation_token = cancellation_token.child_token();
+
         let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to.clone());
 
+        event!(Level::INFO, ?http_listen_address, "Trying to bind");
+
+        let listener = tokio::net::TcpListener::bind(http_listen_address)
+            .await
+            .expect("Failed to bind to port");
+
+        event!(Level::INFO, ?listener, "Bound successfully");
+
         // launch axum server on http_listen_address
-        let _handle = tokio::task::spawn(setup_server(
+        let _handle = tokio::task::spawn(launch_http_server(
             cancellation_token.clone(),
-            http_listen_address,
+            listener,
             build_router(Arc::clone(&config), message_handler),
         ));
 
         Self {
             cancellation_token,
             config,
-            address: bound_to,
+            bound_to,
         }
     }
 }
@@ -141,26 +151,93 @@ async fn build_response(
     Ok(response)
 }
 
-/// Set up server on socket, with a router, and a cancellation token for graceful shutdown
+/// Set up server on a bound listener, with a router, and a cancellation token for graceful shutdown
 ///
 /// # Errors
-/// * Couldn't bind to address
 /// * Server failure
-pub async fn setup_server(
+pub async fn launch_http_server(
     token: CancellationToken,
-    bind_to: SocketAddr,
+    listener: tokio::net::TcpListener,
     router: Router,
 ) -> Result<(), eyre::Report> {
-    event!(Level::INFO, ?bind_to, "Trying to bind");
-
-    let listener = tokio::net::TcpListener::bind(bind_to)
-        .await
-        .wrap_err("Failed to bind Webserver to port")?;
-
-    event!(Level::INFO, ?bind_to, "Webserver bound successfully");
-
     axum::serve(listener, router)
         .with_graceful_shutdown(token.cancelled_owned())
         .await
         .map_err(Into::into)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+    use std::sync::Arc;
+
+    use libc::RT_SCOPE_SITE;
+    use pretty_assertions::assert_eq;
+    use tokio_util::sync::CancellationToken;
+    use uuid::Uuid;
+
+    use crate::constants::MIME_TYPE_SOAP_XML;
+    use crate::network_address::NetworkAddress;
+    use crate::network_interface::NetworkInterface;
+    use crate::test_utils::build_config;
+    use crate::test_utils::xml::to_string_pretty;
+    use crate::wsd::http::http_server::WSDHttpServer;
+
+    #[tokio::test]
+    async fn http_server_listens() {
+        // host
+        let host_endpoint_uuid = Uuid::new_v4();
+        let host_instance_id = "host-instance-id";
+        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
+        let host_ip = Ipv4Addr::LOCALHOST;
+        let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 6000));
+
+        let cancellation_token = CancellationToken::new();
+
+        let _http_server = WSDHttpServer::init(
+            NetworkAddress::new(
+                host_ip.into(),
+                Arc::new(NetworkInterface::new_with_index("lo", RT_SCOPE_SITE, 5)),
+            ),
+            &cancellation_token,
+            Arc::clone(&host_config),
+            host_http_listening_address,
+        )
+        .await;
+
+        let body = format!(
+            include_str!("../../test/get-template.xml"),
+            host_endpoint_uuid,
+            Uuid::new_v4()
+        );
+
+        let builder = reqwest::ClientBuilder::new()
+            .build()
+            .unwrap()
+            .post(format!("http://127.0.0.1:6000/{}", host_endpoint_uuid))
+            .header("Content-Type", MIME_TYPE_SOAP_XML)
+            .header("User-Agent", "wsdd-rs");
+
+        let response = builder
+            .body(body)
+            .timeout(host_config.metadata_timeout)
+            .send()
+            .await
+            .unwrap();
+
+        let expected_response = format!(
+            include_str!("../../test/get-response-template.xml"),
+            Uuid::nil(),
+            Uuid::nil(),
+            "test-host-name",
+            host_endpoint_uuid,
+            host_endpoint_uuid,
+            "TEST-HOST-NAME/Workgroup:WORKGROUP"
+        );
+
+        assert_eq!(
+            to_string_pretty(expected_response.as_bytes()).unwrap(),
+            to_string_pretty(&response.bytes().await.unwrap()).unwrap()
+        );
+    }
 }

@@ -422,10 +422,11 @@ impl MulticastHandler {
             .get_or_init(|| async {
                 let server = WSDHttpServer::init(
                     self.address.clone(),
-                    self.cancellation_token.clone(),
+                    &self.cancellation_token,
                     Arc::clone(&self.config),
                     self.http_listen_address,
-                );
+                )
+                .await;
 
                 server
             })

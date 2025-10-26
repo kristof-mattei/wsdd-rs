@@ -32,23 +32,35 @@ impl WSDHost {
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
         messages_built: Arc<AtomicU64>,
-        network_address: NetworkAddress,
+        bound_to: NetworkAddress,
         mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
         mc_local_port_tx: Sender<Box<[u8]>>,
         uc_wsd_port_tx: Sender<(SocketAddr, Box<[u8]>)>,
     ) -> Self {
         let cancellation_token = cancellation_token.child_token();
 
-        let address = network_address.address;
+        let address = bound_to.address;
 
-        spawn_rx_loop(
-            cancellation_token.clone(),
-            Arc::clone(&config),
-            Arc::clone(&messages_built),
-            network_address,
-            mc_wsd_port_rx,
-            uc_wsd_port_tx,
-        );
+        {
+            let cancellation_token = cancellation_token.clone();
+            let config = Arc::clone(&config);
+            let messages_built = Arc::clone(&messages_built);
+
+            spawn_with_name(
+                format!("wsd host ({})", bound_to.address).as_str(),
+                async move {
+                    listen_forever(
+                        bound_to,
+                        cancellation_token,
+                        config,
+                        messages_built,
+                        mc_wsd_port_rx,
+                        uc_wsd_port_tx,
+                    )
+                    .await;
+                },
+            );
+        };
 
         let host = Self {
             address,
@@ -170,14 +182,17 @@ fn handle_resolve(
 }
 
 async fn listen_forever(
-    address: IpAddr,
+    bound_to: NetworkAddress,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    message_handler: MessageHandler,
     messages_built: Arc<AtomicU64>,
     mut mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
     uc_wsd_port_tx: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
+    let address = bound_to.address;
+
+    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to);
+
     loop {
         let message = tokio::select! {
             () = cancellation_token.cancelled() => {
@@ -247,32 +262,6 @@ async fn listen_forever(
             event!(Level::ERROR, ?error, to = ?from, "Failed to respond to message");
         }
     }
-}
-
-fn spawn_rx_loop(
-    cancellation_token: CancellationToken,
-    config: Arc<Config>,
-    messages_built: Arc<AtomicU64>,
-    bound_to: NetworkAddress,
-    mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-    uc_wsd_port_tx: Sender<(SocketAddr, Box<[u8]>)>,
-) {
-    let address = bound_to.address;
-
-    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to);
-
-    spawn_with_name(format!("wsd host ({})", address).as_str(), async move {
-        listen_forever(
-            address,
-            cancellation_token,
-            config,
-            message_handler,
-            messages_built,
-            mc_wsd_port_rx,
-            uc_wsd_port_tx,
-        )
-        .await;
-    });
 }
 
 #[cfg(test)]
