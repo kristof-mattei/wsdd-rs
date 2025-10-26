@@ -10,13 +10,13 @@ use tracing::{Level, event};
 use uuid::fmt::Urn;
 use xml::EventReader;
 
-use super::HANDLED_MESSAGES;
 use crate::config::Config;
 use crate::constants;
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::{self, Builder, MessageType};
 use crate::soap::parser::{self, MessageHandler};
 use crate::utils::task::spawn_with_name;
+use crate::wsd::HANDLED_MESSAGES;
 
 /// handles WSD requests coming from UDP datagrams.
 pub struct WSDHost {
@@ -152,8 +152,8 @@ fn handle_probe(
 }
 
 fn handle_resolve(
-    config: &Config,
     address: IpAddr,
+    config: &Config,
     messages_built: &AtomicU64,
     target_uuid: uuid::Uuid,
     relates_to: Urn,
@@ -211,8 +211,8 @@ async fn listen_forever(
                 handle_probe(&config, &messages_built, header.message_id, body_reader)
             },
             constants::WSD_RESOLVE => handle_resolve(
-                &config,
                 address,
+                &config,
                 &messages_built,
                 config.uuid,
                 header.message_id,
@@ -253,13 +253,13 @@ fn spawn_rx_loop(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     messages_built: Arc<AtomicU64>,
-    network_address: NetworkAddress,
+    bound_to: NetworkAddress,
     mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
     uc_wsd_port_tx: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
-    let address = network_address.address;
+    let address = bound_to.address;
 
-    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_address);
+    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to);
 
     spawn_with_name(format!("wsd host ({})", address).as_str(), async move {
         listen_forever(
@@ -417,8 +417,8 @@ mod tests {
 
         // host produces answer
         let response = handle_resolve(
+            IpAddr::from(client_ip),
             &host_config,
-            IpAddr::V4(client_ip),
             &host_messages_built,
             host_config.uuid,
             header.message_id,

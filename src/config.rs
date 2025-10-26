@@ -5,16 +5,16 @@ use tracing::{Level, event};
 use uuid::Uuid;
 
 #[expect(clippy::struct_excessive_bools, reason = "Main config")]
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct Config {
     pub interfaces: Vec<Box<str>>,
     pub hoplimit: u8,
     pub uuid: Uuid,
     pub uuid_as_urn_str: Box<str>,
+    #[cfg_attr(not(test), expect(unused, reason = "WIP"))]
     pub verbosity: Level,
-    pub domain: Option<Box<str>>,
     pub hostname: Box<str>,
-    pub workgroup: Box<str>,
+    pub full_hostname: Box<str>,
     pub no_autostart: bool,
     pub no_http: bool,
     pub ipv4only: bool,
@@ -26,7 +26,9 @@ pub struct Config {
 
     //     logging.basicConfig(level=log_level, format=fmt)
     //     logger = logging.getLogger('wsdd')
+    #[expect(unused, reason = "WIP")]
     pub shortlog: bool,
+    #[expect(unused, reason = "WIP")]
     pub preserve_case: bool,
     pub chroot: Option<PathBuf>,
     pub user: Option<(u32, u32)>,

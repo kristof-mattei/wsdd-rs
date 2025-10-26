@@ -233,25 +233,49 @@ where
 
     let listen = matches.get_one::<PortOrSocket>("listen").cloned();
 
+    let preserve_case = matches.get_one("preserve-case").copied().unwrap_or(false);
+
+    let full_hostname = if let Some(domain) = matches.get_one::<String>("domain").cloned() {
+        format!(
+            "{}/Domain:{}",
+            if preserve_case {
+                &*hostname
+            } else {
+                &*hostname.to_lowercase()
+            },
+            domain
+        )
+    } else {
+        let workgroup = matches
+            .get_one::<String>("workgroup")
+            .cloned()
+            .expect("workgroup has a default");
+
+        format!(
+            "{}/Workgroup:{}",
+            if preserve_case {
+                &*hostname
+            } else {
+                &*hostname.to_uppercase()
+            },
+            workgroup
+        )
+    };
+
     let config = Config {
         interfaces,
         hoplimit: *matches.get_one("hoplimit").expect("hoplimit has a default"),
         uuid,
         uuid_as_urn_str,
         verbosity,
-        domain: matches.get_one("domain").cloned(),
         hostname,
-        workgroup: matches
-            .get_one::<String>("workgroup")
-            .expect("workgroup has a default")
-            .to_owned()
-            .into_boxed_str(),
+        full_hostname: full_hostname.into_boxed_str(),
         no_autostart: matches.get_one("no-autostart").copied().unwrap_or(false),
         no_http: matches.get_one("no-http").copied().unwrap_or(false),
         ipv4only: matches.get_one("ipv4only").copied().unwrap_or(false),
         ipv6only: matches.get_one("ipv6only").copied().unwrap_or(false),
         shortlog: matches.get_one("shortlog").copied().unwrap_or(false),
-        preserve_case: matches.get_one("preserve-case").copied().unwrap_or(false),
+        preserve_case,
         chroot: matches.get_one("chroot").cloned(),
         user: matches.get_one("user").copied(),
         discovery: matches.get_one("discovery").copied().unwrap_or(false),
@@ -272,10 +296,6 @@ where
             .to_string()
             .into_boxed_str(),
     };
-
-    // TODO
-    //     for prefix, uri in namespaces.items():
-    //         ElementTree.register_namespace(prefix, uri)
 
     Ok(config)
 }

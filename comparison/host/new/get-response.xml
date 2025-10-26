@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope
+    xmlns:pnpx="http://schemas.microsoft.com/windows/pnpx/2005/10"
+    xmlns:pub="http://schemas.microsoft.com/windows/pub/2005/07"
+    xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+    xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+    xmlns:wsdp="http://schemas.xmlsoap.org/ws/2006/02/devprof"
+    xmlns:wsx="http://schemas.xmlsoap.org/ws/2004/09/mex"
+>
+    <soap:Header>
+        <wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
+        <wsa:Action>http://schemas.xmlsoap.org/ws/2004/09/transfer/GetResponse</wsa:Action>
+        <wsa:MessageID>urn:uuid:a88cc508-5f04-40d6-aa49-5f2c7d61604a</wsa:MessageID>
+        <wsa:RelatesTo>urn:uuid:2fd812aa-731b-45d1-8f99-e3998a0c8e34</wsa:RelatesTo>
+    </soap:Header>
+    <soap:Body>
+        <wsx:Metadata>
+            <wsx:MetadataSection Dialect="http://schemas.xmlsoap.org/ws/2006/02/devprof/ThisDevice">
+                <wsdp:ThisDevice>
+                    <wsdp:FriendlyName>WSD Device server</wsdp:FriendlyName>
+                    <wsdp:FirmwareVersion>1.0</wsdp:FirmwareVersion>
+                    <wsdp:SerialNumber>1</wsdp:SerialNumber>
+                </wsdp:ThisDevice>
+            </wsx:MetadataSection>
+            <wsx:MetadataSection Dialect="http://schemas.xmlsoap.org/ws/2006/02/devprof/ThisModel">
+                <wsdp:ThisModel>
+                    <wsdp:Manufacturer>wsdd</wsdp:Manufacturer>
+                    <wsdp:ModelName>wsdd</wsdp:ModelName>
+                    <pnpx:DeviceCategory>Computers</pnpx:DeviceCategory>
+                </wsdp:ThisModel>
+            </wsx:MetadataSection>
+            <wsx:MetadataSection Dialect="http://schemas.xmlsoap.org/ws/2006/02/devprof/Relationship">
+                <wsdp:Relationship Type="http://schemas.xmlsoap.org/ws/2006/02/devprof/host">
+                    <wsdp:Host>
+                        <wsa:EndpointReference>
+                            <wsa:Address>urn:uuid:6bf93afb-f524-4e2e-9fa9-82ac80a366dd</wsa:Address>
+                        </wsa:EndpointReference>
+                        <wsdp:Types>pub:Computer</wsdp:Types>
+                        <wsdp:ServiceId>urn:uuid:6bf93afb-f524-4e2e-9fa9-82ac80a366dd</wsdp:ServiceId>
+                        <pub:Computer>SERVER/Workgroup:WORKGROUP</pub:Computer>
+                    </wsdp:Host>
+                </wsdp:Relationship>
+            </wsx:MetadataSection>
+        </wsx:Metadata>
+    </soap:Body>
+</soap:Envelope>

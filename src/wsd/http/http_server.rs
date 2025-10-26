@@ -1,64 +1,166 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
+use axum::extract::State;
+use axum::handler::HandlerWithoutStateExt as _;
+use axum::http::HeaderMap;
+use axum::response::{AppendHeaders, IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::{Router, debug_handler};
+use bytes::Bytes;
+use color_eyre::eyre::{self, Context as _};
+use http::StatusCode;
+use http::header::CONTENT_TYPE;
 use tokio_util::sync::CancellationToken;
+use tower_http::trace::{DefaultOnRequest, DefaultOnResponse, TraceLayer};
+use tracing::{Level, event};
+use uuid::fmt::Urn;
 
 use crate::config::Config;
+use crate::constants;
 use crate::network_address::NetworkAddress;
+use crate::soap::builder;
+use crate::soap::parser::MessageHandler;
+use crate::span::MakeSpanWithUuid;
+use crate::wsd::HANDLED_MESSAGES;
 
 #[expect(unused, reason = "WIP")]
 pub struct WSDHttpServer {
-    address: NetworkAddress,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
+    address: NetworkAddress,
 }
 
 impl WSDHttpServer {
-    pub(crate) fn init(
-        address: NetworkAddress,
+    pub fn init(
+        bound_to: NetworkAddress,
         cancellation_token: CancellationToken,
         config: Arc<Config>,
+        http_listen_address: SocketAddr,
     ) -> WSDHttpServer {
+        let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to.clone());
+
+        // launch axum server on http_listen_address
+        let _handle = tokio::task::spawn(setup_server(
+            cancellation_token.clone(),
+            http_listen_address,
+            build_router(Arc::clone(&config), message_handler),
+        ));
+
         Self {
-            address,
             cancellation_token,
             config,
+            address: bound_to,
         }
     }
 }
 
-// class WSDHttpServer(http.server.HTTPServer):
-//     """ HTTP server both with IPv6 support and WSD handling """
+fn build_router(config: Arc<Config>, message_handler: MessageHandler) -> Router {
+    let post_path = format!("/{}", config.uuid);
 
-//     mch: MulticastHandler
-//     aio_loop: asyncio.AbstractEventLoop
-//     wsd_handler: WSDHttpMessageHandler
-//     registered: bool
+    let router = Router::new()
+        .route(&post_path, post(handle_post))
+        .fallback_service(handler_404.into_service())
+        .route("/healthz", get(healthz))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(MakeSpanWithUuid::new().level(Level::INFO))
+                .on_request(DefaultOnRequest::new().level(Level::TRACE))
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+        )
+        .with_state((config, Arc::new(message_handler)));
 
-//     def __init__(self, mch: MulticastHandler, aio_loop: asyncio.AbstractEventLoop):
-//         # hacky way to convince HTTP/SocketServer of the address family
-//         type(self).address_family = mch.address.family
+    router
+}
 
-//         self.mch = mch
-//         self.aio_loop = aio_loop
-//         self.wsd_handler = WSDHttpMessageHandler()
-//         self.registered = False
+async fn healthz() -> impl IntoResponse {
+    (StatusCode::OK, "Hello, world!")
+}
 
-//         # WSDHttpRequestHandler is a BaseHTTPRequestHandler. Passing to the parent constructor is therefore safe and
-//         # we can ignore the type error reported by mypy
-//         super().__init__(mch.listen_address, WSDHttpRequestHandler)  # type: ignore
+async fn handler_404() -> impl IntoResponse {
+    StatusCode::NOT_FOUND
+}
 
-//     def server_bind(self) -> None:
-//         if self.mch.address.family == socket.AF_INET6:
-//             self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+#[debug_handler]
+async fn handle_post(
+    headers: HeaderMap,
+    State((config, message_handler)): State<(Arc<Config>, Arc<MessageHandler>)>,
+    body: Bytes,
+) -> Response {
+    let valid_content_type = headers
+        .get(CONTENT_TYPE)
+        .and_then(|raw| raw.to_str().ok())
+        .is_some_and(|raw| raw.starts_with(constants::MIME_TYPE_SOAP_XML));
 
-//         super().server_bind()
+    if !valid_content_type {
+        return (StatusCode::BAD_REQUEST, "Invalid Content-Type").into_response();
+    }
 
-//     def server_activate(self) -> None:
-//         super().server_activate()
-//         self.aio_loop.add_reader(self.fileno(), self.handle_request)
-//         self.registered = True
+    match build_response(&config, &message_handler, body).await {
+        Ok(ok) => (
+            StatusCode::OK,
+            AppendHeaders([(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)]),
+            ok,
+        )
+            .into_response(),
+        Err(error) => {
+            event!(Level::ERROR, ?error);
+            (StatusCode::BAD_REQUEST).into_response()
+        },
+    }
+}
 
-//     def server_close(self) -> None:
-//         if self.registered:
-//             self.aio_loop.remove_reader(self.fileno())
-//         super().server_close()
+fn handle_get(config: &Config, relates_to: Urn) -> Result<Vec<u8>, eyre::Report> {
+    Ok(builder::Builder::build_get_response(config, relates_to)?)
+}
+
+async fn build_response(
+    config: &Config,
+    message_handler: &MessageHandler,
+    buffer: Bytes,
+) -> Result<Vec<u8>, eyre::Report> {
+    let (header, _body_reader) = match message_handler.deconstruct_message(&buffer, None).await {
+        Ok(pieces) => pieces,
+        Err(error) => {
+            error.log(&buffer);
+
+            return Err(eyre::Report::msg("Invalid XML"));
+        },
+    };
+
+    if &*header.action != constants::WSD_GET {
+        return Err(eyre::Report::msg("Invalid Action"));
+    }
+
+    if header.to.as_deref() != Some(&config.uuid_as_urn_str) {
+        return Err(eyre::Report::msg("Invalid To"));
+    }
+
+    let response = handle_get(config, header.message_id)?;
+
+    Ok(response)
+}
+
+/// Set up server on socket, with a router, and a cancellation token for graceful shutdown
+///
+/// # Errors
+/// * Couldn't bind to address
+/// * Server failure
+pub async fn setup_server(
+    token: CancellationToken,
+    bind_to: SocketAddr,
+    router: Router,
+) -> Result<(), eyre::Report> {
+    event!(Level::INFO, ?bind_to, "Trying to bind");
+
+    let listener = tokio::net::TcpListener::bind(bind_to)
+        .await
+        .wrap_err("Failed to bind Webserver to port")?;
+
+    event!(Level::INFO, ?bind_to, "Webserver bound successfully");
+
+    axum::serve(listener, router)
+        .with_graceful_shutdown(token.cancelled_owned())
+        .await
+        .map_err(Into::into)
+}

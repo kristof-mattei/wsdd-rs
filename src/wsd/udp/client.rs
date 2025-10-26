@@ -15,7 +15,6 @@ use uuid::Uuid;
 use uuid::fmt::Urn;
 use xml::EventReader;
 
-use super::HANDLED_MESSAGES;
 use crate::config::Config;
 use crate::constants::{self, APP_MAX_DELAY, PROBE_TIMEOUT, XML_WSD_NAMESPACE};
 use crate::network_address::NetworkAddress;
@@ -23,6 +22,7 @@ use crate::soap::builder::{Builder, MessageType};
 use crate::soap::parser::generic::extract_endpoint_metadata;
 use crate::soap::parser::{self, MessageHandler};
 use crate::utils::task::spawn_with_name;
+use crate::wsd::HANDLED_MESSAGES;
 use crate::wsd::device::WSDDiscoveredDevice;
 use crate::xml::{parse_generic_body, parse_generic_body_paths};
 

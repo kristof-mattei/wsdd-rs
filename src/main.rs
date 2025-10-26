@@ -15,6 +15,7 @@ mod security;
 mod signal_handlers;
 mod soap;
 mod socket;
+mod span;
 mod test_utils;
 mod udp_address;
 mod url_ip_addr;

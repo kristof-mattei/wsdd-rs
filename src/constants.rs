@@ -26,7 +26,6 @@ pub const XML_WSA_NAMESPACE: &str = WSA_URI;
 pub const XML_WSD_NAMESPACE: &str = WSD_URI;
 pub const XML_WSX_NAMESPACE: &str = "http://schemas.xmlsoap.org/ws/2004/09/mex";
 pub const XML_WSDP_NAMESPACE: &str = WSDP_URI;
-#[expect(unused, reason = "WIP")]
 pub const XML_PNPX_NAMESPACE: &str = "http://schemas.microsoft.com/windows/pnpx/2005/10";
 pub const XML_PUB_NAMESPACE: &str = "http://schemas.microsoft.com/windows/pub/2005/07";
 
@@ -47,6 +46,7 @@ pub const WSD_BYE: &str = concatcp!(WSD_URI, "/Bye");
 // WSD_GET: str = 'http://schemas.xmlsoap.org/ws/2004/09/transfer/Get'
 pub const WSD_GET: &str = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Get";
 // WSD_GET_RESPONSE: str = 'http://schemas.xmlsoap.org/ws/2004/09/transfer/GetResponse'
+pub const WSD_GET_RESPONSE: &str = "http://schemas.xmlsoap.org/ws/2004/09/transfer/GetResponse";
 
 pub const WSDP_THIS_DEVICE: &str = "ThisDevice";
 pub const WSDP_THIS_DEVICE_DIALECT: &str = concatcp!(WSDP_URI, "/", WSDP_THIS_DEVICE);
@@ -77,6 +77,7 @@ pub const WSA_ANON: &str = concatcp!(WSA_URI, "/role/anonymous");
 pub const WSA_DISCOVERY: &str = "urn:schemas-xmlsoap-org:ws:2005:04:discovery";
 
 // MIME_TYPE_SOAP_XML: str = 'application/soap+xml'
+pub const MIME_TYPE_SOAP_XML: &str = "application/soap+xml";
 
 // # protocol assignments (WSD spec/Section 2.4)
 // WSD_UDP_PORT: int = 3702

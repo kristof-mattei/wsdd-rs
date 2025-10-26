@@ -1,5 +1,6 @@
 pub mod bye;
 pub mod empty_body;
+pub mod metadata;
 pub mod hello;
 pub mod probe;
 pub mod probe_matches;
