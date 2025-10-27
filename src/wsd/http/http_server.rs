@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::{ConnectInfo, State};
+use axum::extract::State;
 use axum::handler::HandlerWithoutStateExt as _;
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
