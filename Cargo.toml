@@ -62,7 +62,7 @@ tracing-subscriber = { version = "0.3.20", features = [
 ] }
 url = "2.5.7"
 uuid = { version = "1.18.1", features = ["v1", "v4", "v5", "v7"] }
-xml = "1.0.1"
+xml = "1.1.0"
 zerocopy = { version = "0.8.27", features = ["derive"] }
 
 [dev-dependencies]
