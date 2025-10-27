@@ -4,7 +4,7 @@ use std::sync::Arc;
 use axum::extract::{ConnectInfo, State};
 use axum::handler::HandlerWithoutStateExt as _;
 use axum::http::HeaderMap;
-use axum::response::{AppendHeaders, IntoResponse, Response};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Router, debug_handler};
 use bytes::Bytes;
@@ -109,7 +109,7 @@ async fn handle_post(
     match build_response(&config, &message_handler, body).await {
         Ok(ok) => (
             StatusCode::OK,
-            AppendHeaders([(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)]),
+            [(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)],
             ok,
         )
             .into_response(),
