@@ -14,3 +14,5 @@ fn assert_world_ok2() {
     let cls2 = || false;
     assert_eq!(cls1(), cls2());
 }
+
+// TODO test that tests http server and client at the same time

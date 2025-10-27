@@ -354,11 +354,13 @@ impl NetworkHandler {
         .expect("FAIL");
 
         if !self.config.no_host {
-            multicast_handler.enable_wsd_host().await;
-
+            // it's important that the HTTP server is ready before we enable the WSD Host
+            // which schedules the hello. We must be ready before that
             if !self.config.no_http {
                 multicast_handler.enable_http_server().await;
             }
+
+            multicast_handler.enable_wsd_host().await;
         }
 
         if self.config.discovery {

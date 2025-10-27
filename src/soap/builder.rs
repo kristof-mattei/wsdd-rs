@@ -13,13 +13,14 @@ use xml::writer::XmlEvent;
 
 use crate::config::Config;
 use crate::constants::{
-    WSA_ANON, WSA_DISCOVERY, WSD_BYE, WSD_GET, WSD_HELLO, WSD_PROBE, WSD_PROBE_MATCH, WSD_RESOLVE,
-    WSD_RESOLVE_MATCH, XML_SOAP_NAMESPACE, XML_WSA_NAMESPACE,
+    WSA_ANON, WSA_DISCOVERY, WSD_BYE, WSD_GET, WSD_GET_RESPONSE, WSD_HELLO, WSD_PROBE,
+    WSD_PROBE_MATCH, WSD_RESOLVE, WSD_RESOLVE_MATCH, XML_SOAP_NAMESPACE, XML_WSA_NAMESPACE,
 };
 use crate::soap::builder::body::WriteBody;
 use crate::soap::builder::body::bye::Bye;
 use crate::soap::builder::body::empty_body::EmptyBody;
 use crate::soap::builder::body::hello::Hello;
+use crate::soap::builder::body::metadata::MetaData;
 use crate::soap::builder::body::probe::Probe;
 use crate::soap::builder::body::probe_matches::ProbeMatches;
 use crate::soap::builder::body::resolve::Resolve;
@@ -329,6 +330,23 @@ impl<'config> Builder<'config> {
                 None,
                 ReplyToFrom::new(&config.uuid_as_urn_str),
                 EmptyBody::new(),
+            )
+            .map(|(m, _)| m)
+    }
+
+    pub fn build_get_response(
+        config: &Config,
+        relates_to: Urn,
+    ) -> Result<Vec<u8>, xml::writer::Error> {
+        let mut builder = Builder::new(config);
+
+        builder
+            .build_message(
+                WSA_ANON,
+                WSD_GET_RESPONSE,
+                Some(relates_to),
+                NoExtraHeaders::new(),
+                MetaData::new(),
             )
             .map(|(m, _)| m)
     }

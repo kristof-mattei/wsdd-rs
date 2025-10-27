@@ -1,11 +1,12 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <soap:Envelope
-    xmlns:pnpx="http://schemas.microsoft.com/windows/pnpx/2005/10"
-    xmlns:pub="http://schemas.microsoft.com/windows/pub/2005/07"
     xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+    xmlns:pub="http://schemas.microsoft.com/windows/pub/2005/07"
     xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+    xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery"
     xmlns:wsdp="http://schemas.xmlsoap.org/ws/2006/02/devprof"
     xmlns:wsx="http://schemas.xmlsoap.org/ws/2004/09/mex"
+    xmlns:un0="http://schemas.microsoft.com/windows/pnpx/2005/10"
 >
     <soap:Header>
         <wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
@@ -17,27 +18,31 @@
         <wsx:Metadata>
             <wsx:MetadataSection Dialect="http://schemas.xmlsoap.org/ws/2006/02/devprof/ThisDevice">
                 <wsdp:ThisDevice>
-                    <wsdp:FriendlyName>WSD Device {}</wsdp:FriendlyName>
-                    <wsdp:FirmwareVersion>1.0</wsdp:FirmwareVersion>
-                    <wsdp:SerialNumber>1</wsdp:SerialNumber>
+                    <wsdp:FriendlyName>Synology DiskStation</wsdp:FriendlyName>
+                    <wsdp:FirmwareVersion>6</wsdp:FirmwareVersion>
+                    <wsdp:SerialNumber>6</wsdp:SerialNumber>
                 </wsdp:ThisDevice>
             </wsx:MetadataSection>
             <wsx:MetadataSection Dialect="http://schemas.xmlsoap.org/ws/2006/02/devprof/ThisModel">
                 <wsdp:ThisModel>
-                    <wsdp:Manufacturer>wsdd</wsdp:Manufacturer>
-                    <wsdp:ModelName>wsdd</wsdp:ModelName>
-                    <pnpx:DeviceCategory>Computers</pnpx:DeviceCategory>
+                    <wsdp:Manufacturer>Synology Inc</wsdp:Manufacturer>
+                    <wsdp:ManufacturerUrl>http://www.synology.com</wsdp:ManufacturerUrl>
+                    <wsdp:ModelName>Synology DiskStation</wsdp:ModelName>
+                    <wsdp:ModelNumber>1</wsdp:ModelNumber>
+                    <wsdp:ModelUrl>http://www.synology.com</wsdp:ModelUrl>
+                    <wsdp:PresentationUrl>http://www.synology.com</wsdp:PresentationUrl>
+                    <un0:DeviceCategory>Computers</un0:DeviceCategory>
                 </wsdp:ThisModel>
             </wsx:MetadataSection>
             <wsx:MetadataSection Dialect="http://schemas.xmlsoap.org/ws/2006/02/devprof/Relationship">
                 <wsdp:Relationship Type="http://schemas.xmlsoap.org/ws/2006/02/devprof/host">
                     <wsdp:Host>
                         <wsa:EndpointReference>
-                            <wsa:Address>urn:uuid:{}</wsa:Address>
+                            <wsa:Address>urn:uuid:dea604bb-e526-46a1-8bdb-121125389a9d</wsa:Address>
                         </wsa:EndpointReference>
                         <wsdp:Types>pub:Computer</wsdp:Types>
-                        <wsdp:ServiceId>urn:uuid:{}</wsdp:ServiceId>
-                        <pub:Computer>{}</pub:Computer>
+                        <wsdp:ServiceId>urn:uuid:dea604bb-e526-46a1-8bdb-121125389a9d</wsdp:ServiceId>
+                        <pub:Computer>diskstation/Workgroup:WORKGROUP</pub:Computer>
                     </wsdp:Host>
                 </wsdp:Relationship>
             </wsx:MetadataSection>

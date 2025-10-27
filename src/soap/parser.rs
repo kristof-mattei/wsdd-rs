@@ -24,7 +24,6 @@ pub struct MessageHandler {
 }
 
 pub struct Header {
-    #[expect(unused, reason = "WIP")]
     pub to: Option<Box<str>>,
     pub action: Box<str>,
     pub message_id: Urn,

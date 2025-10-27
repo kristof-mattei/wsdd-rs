@@ -38,8 +38,11 @@ use crate::wsd::udp::host::WSDHost;
 pub struct MulticastHandler {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
+
+    /// Shared reference to all discovered devices
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
 
+    /// Shared reference for global message counter
     messages_built: Arc<AtomicU64>,
     /// The address and interface we're bound on
     address: NetworkAddress,
@@ -47,7 +50,6 @@ pub struct MulticastHandler {
     /// The multicast group on which we broadcast our messages
     #[expect(unused, reason = "WIP")]
     multicast_address: UdpAddress,
-    #[expect(unused, reason = "WIP")]
     http_listen_address: SocketAddr,
     wsd_host: OnceCell<WSDHost>,
     wsd_client: OnceCell<WSDClient>,
@@ -416,17 +418,28 @@ impl MulticastHandler {
     }
 
     pub async fn enable_http_server(&self) {
-        self.http_server
-            .get_or_init(|| async {
+        let result = self
+            .http_server
+            .get_or_try_init(|| async {
                 let server = WSDHttpServer::init(
                     self.address.clone(),
-                    self.cancellation_token.clone(),
+                    &self.cancellation_token,
                     Arc::clone(&self.config),
-                );
+                    self.http_listen_address,
+                )
+                .await;
 
                 server
             })
             .await;
+
+        if let Err(error) = result {
+            event!(
+                Level::ERROR,
+                ?error,
+                "Failed to initialize the http server, probably failed to bind to addr:port"
+            );
+        }
     }
 
     pub fn get_address(&self) -> &NetworkAddress {

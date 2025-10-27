@@ -10,14 +10,14 @@
     <soap:Header>
         <wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
         <wsa:Action>http://schemas.xmlsoap.org/ws/2004/09/transfer/GetResponse</wsa:Action>
-        <wsa:MessageID>urn:uuid:{}</wsa:MessageID>
-        <wsa:RelatesTo>urn:uuid:{}</wsa:RelatesTo>
+        <wsa:MessageID>urn:uuid:a88cc508-5f04-40d6-aa49-5f2c7d61604a</wsa:MessageID>
+        <wsa:RelatesTo>urn:uuid:2fd812aa-731b-45d1-8f99-e3998a0c8e34</wsa:RelatesTo>
     </soap:Header>
     <soap:Body>
         <wsx:Metadata>
             <wsx:MetadataSection Dialect="http://schemas.xmlsoap.org/ws/2006/02/devprof/ThisDevice">
                 <wsdp:ThisDevice>
-                    <wsdp:FriendlyName>WSD Device {}</wsdp:FriendlyName>
+                    <wsdp:FriendlyName>WSD Device server</wsdp:FriendlyName>
                     <wsdp:FirmwareVersion>1.0</wsdp:FirmwareVersion>
                     <wsdp:SerialNumber>1</wsdp:SerialNumber>
                 </wsdp:ThisDevice>
@@ -33,11 +33,11 @@
                 <wsdp:Relationship Type="http://schemas.xmlsoap.org/ws/2006/02/devprof/host">
                     <wsdp:Host>
                         <wsa:EndpointReference>
-                            <wsa:Address>urn:uuid:{}</wsa:Address>
+                            <wsa:Address>urn:uuid:6bf93afb-f524-4e2e-9fa9-82ac80a366dd</wsa:Address>
                         </wsa:EndpointReference>
                         <wsdp:Types>pub:Computer</wsdp:Types>
-                        <wsdp:ServiceId>urn:uuid:{}</wsdp:ServiceId>
-                        <pub:Computer>{}</pub:Computer>
+                        <wsdp:ServiceId>urn:uuid:6bf93afb-f524-4e2e-9fa9-82ac80a366dd</wsdp:ServiceId>
+                        <pub:Computer>SERVER/Workgroup:WORKGROUP</pub:Computer>
                     </wsdp:Host>
                 </wsdp:Relationship>
             </wsx:MetadataSection>
