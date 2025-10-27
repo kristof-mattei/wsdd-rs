@@ -415,7 +415,6 @@ fn read_types_and_pub_computer(
     }
 
     let types = types
-        .as_deref()
         .unwrap_or_default()
         .split(' ')
         .map(ToOwned::to_owned)

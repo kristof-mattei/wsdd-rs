@@ -598,7 +598,6 @@ impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
                         socket = %socket
                             .local_addr()
                             .map(|l| l.to_string())
-                            .as_deref()
                             .unwrap_or_default(),
                         "All senders gone, shutting down"
                     );
