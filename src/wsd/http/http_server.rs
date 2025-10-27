@@ -49,7 +49,9 @@ impl WSDHttpServer {
         event!(Level::INFO, ?listener, "Bound successfully");
 
         // launch axum server on http_listen_address
-        let _handle = tokio::task::spawn(launch_http_server(
+        // this will never fail unless shut down
+        // see `axum::serve`
+        tokio::task::spawn(launch_http_server(
             cancellation_token.clone(),
             listener,
             build_router(Arc::clone(&config), message_handler),
