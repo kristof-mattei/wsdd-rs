@@ -418,8 +418,9 @@ impl MulticastHandler {
     }
 
     pub async fn enable_http_server(&self) {
-        self.http_server
-            .get_or_init(|| async {
+        let result = self
+            .http_server
+            .get_or_try_init(|| async {
                 let server = WSDHttpServer::init(
                     self.address.clone(),
                     &self.cancellation_token,
@@ -431,6 +432,14 @@ impl MulticastHandler {
                 server
             })
             .await;
+
+        if let Err(error) = result {
+            event!(
+                Level::ERROR,
+                ?error,
+                "Failed to initialize the http server, probably failed to bind to addr:port"
+            );
+        }
     }
 
     pub fn get_address(&self) -> &NetworkAddress {

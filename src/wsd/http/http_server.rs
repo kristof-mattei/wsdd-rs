@@ -37,16 +37,14 @@ impl WSDHttpServer {
         cancellation_token: &CancellationToken,
         config: Arc<Config>,
         http_listen_address: SocketAddr,
-    ) -> WSDHttpServer {
+    ) -> Result<WSDHttpServer, std::io::Error> {
         let cancellation_token = cancellation_token.child_token();
 
         let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to.clone());
 
         event!(Level::INFO, ?http_listen_address, "Trying to bind");
 
-        let listener = tokio::net::TcpListener::bind(http_listen_address)
-            .await
-            .expect("Failed to bind to port");
+        let listener = tokio::net::TcpListener::bind(http_listen_address).await?;
 
         event!(Level::INFO, ?listener, "Bound successfully");
 
@@ -57,11 +55,11 @@ impl WSDHttpServer {
             build_router(Arc::clone(&config), message_handler),
         ));
 
-        Self {
+        Ok(Self {
             cancellation_token,
             config,
             bound_to,
-        }
+        })
     }
 }
 
@@ -203,7 +201,8 @@ mod tests {
             Arc::clone(&host_config),
             host_http_listening_address,
         )
-        .await;
+        .await
+        .unwrap();
 
         let body = format!(
             include_str!("../../test/get-template.xml"),
