@@ -231,10 +231,10 @@ mod tests {
             include_str!("../../test/get-response-template.xml"),
             Uuid::nil(),
             Uuid::nil(),
-            "test-host-name",
+            host_config.hostname,
             host_endpoint_uuid,
             host_endpoint_uuid,
-            "TEST-HOST-NAME/Workgroup:WORKGROUP"
+            host_config.full_hostname
         );
 
         assert_eq!(
