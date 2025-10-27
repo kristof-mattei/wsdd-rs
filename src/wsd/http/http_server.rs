@@ -4,7 +4,7 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::handler::HandlerWithoutStateExt as _;
 use axum::http::HeaderMap;
-use axum::response::{AppendHeaders, IntoResponse, Response};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Router, debug_handler};
 use bytes::Bytes;
@@ -109,7 +109,7 @@ async fn handle_post(
     match build_response(&config, &message_handler, body).await {
         Ok(ok) => (
             StatusCode::OK,
-            AppendHeaders([(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)]),
+            [(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)],
             ok,
         )
             .into_response(),
@@ -160,10 +160,13 @@ pub async fn launch_http_server(
     listener: tokio::net::TcpListener,
     router: Router,
 ) -> Result<(), eyre::Report> {
-    axum::serve(listener, router)
-        .with_graceful_shutdown(token.cancelled_owned())
-        .await
-        .map_err(Into::into)
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(token.cancelled_owned())
+    .await
+    .map_err(Into::into)
 }
 
 #[cfg(test)]

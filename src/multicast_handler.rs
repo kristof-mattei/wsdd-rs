@@ -593,7 +593,14 @@ impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
 
             loop {
                 let Some(buffer) = rx.recv().await else {
-                    event!(Level::INFO, "All senders gone, shutting down");
+                    event!(
+                        Level::INFO,
+                        socket = %socket
+                            .local_addr()
+                            .map(|l| l.to_string())
+                            .unwrap_or_default(),
+                        "All senders gone, shutting down"
+                    );
                     break;
                 };
 
