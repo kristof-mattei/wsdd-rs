@@ -214,7 +214,10 @@ mod tests {
         let builder = reqwest::ClientBuilder::new()
             .build()
             .unwrap()
-            .post(format!("http://127.0.0.1:6000/{}", host_endpoint_uuid))
+            .post(format!(
+                "http://{}/{}",
+                host_http_listening_address, host_endpoint_uuid
+            ))
             .header("Content-Type", MIME_TYPE_SOAP_XML)
             .header("User-Agent", "wsdd-rs");
 
