@@ -84,7 +84,7 @@ fn build_router(config: Arc<Config>, message_handler: MessageHandler) -> Router 
 }
 
 async fn healthz() -> impl IntoResponse {
-    (StatusCode::OK, "Hello, world!")
+    (StatusCode::OK, "All systems go!")
 }
 
 async fn handler_404() -> impl IntoResponse {
