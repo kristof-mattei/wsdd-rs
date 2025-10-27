@@ -43,6 +43,9 @@ use crate::network_handler::NetworkHandler;
 use crate::security::{chroot, drop_privileges};
 use crate::utils::flatten_handle;
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn build_filter() -> (EnvFilter, Option<eyre::Report>) {
     fn build_default_filter() -> EnvFilter {
         EnvFilter::builder()
