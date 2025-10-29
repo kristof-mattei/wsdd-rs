@@ -122,11 +122,11 @@ fn print_header() {
 
     event!(
         Level::INFO,
-        "{} v{} - built for {}-{}",
+        "{} v{} - built for {} ({})",
         NAME,
         VERSION,
         build_env.get_target(),
-        build_env.get_target_cpu().unwrap_or("base variant"),
+        build_env.get_target_cpu().unwrap_or("base cpu variant"),
     );
 }
 
