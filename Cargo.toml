@@ -10,6 +10,7 @@ categories = ["starter", "seed"]
 keywords = ["integrity", "seed", "starter", "docker", "release"]
 repository = "https://github.com/kristof-mattei/wsdd-rs"
 include = ["src/**", "/LICENSE", "/LICENSE-*"]
+build = "src/build.rs"
 
 [features]
 default = []
