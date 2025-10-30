@@ -144,7 +144,7 @@ impl NetlinkAddressMonitor {
                 const {
                     assert!(
                         size_of::<libc::sockaddr_nl>() <= size_of::<SockAddrStorage>(),
-                        "allocated space not large enough"
+                        "`SockAddrStorage`'s size should be larger `libc::sockaddr_nl`'s size"
                     );
                 }
 
