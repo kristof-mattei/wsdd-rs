@@ -31,7 +31,7 @@ impl NetworkAddress {
 
 impl std::fmt::Display for NetworkAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}%{}", self.address, self.interface.name)
+        write!(f, "{}%{}", self.address, self.interface.name())
     }
 }
 

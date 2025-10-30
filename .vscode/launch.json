@@ -5,23 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Debug executable 'wsdd-rs'",
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'wsdd-rs'",
             "cargo": {
-                "args": [
-                    "build",
-                    "--bin=wsdd-rs",
-                    "--package=wsdd-rs",
-                    "--features=tokio-console"
-                ],
-                "filter": {
-                    "name": "wsdd-rs",
-                    "kind": "bin"
-                }
+                "args": ["run", "--bin=wsdd-rs"]
             },
             "args": [],
-            "cwd": "${workspaceFolder}",
             "env": {
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
@@ -30,23 +20,13 @@
             "terminal": "integrated"
         },
         {
+            "name": "Debug executable 'wsdd-rs' with --version",
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'wsdd-rs' with --version",
             "cargo": {
-                "args": [
-                    "build",
-                    "--bin=wsdd-rs",
-                    "--package=wsdd-rs",
-                    "--features=tokio-console"
-                ],
-                "filter": {
-                    "name": "wsdd-rs",
-                    "kind": "bin"
-                }
+                "args": ["run", "--bin=wsdd-rs"]
             },
             "args": ["-V"],
-            "cwd": "${workspaceFolder}",
             "env": {
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
@@ -55,23 +35,13 @@
             "terminal": "integrated"
         },
         {
+            "name": "Debug executable 'wsdd-rs' with incorrect uuid",
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'wsdd-rs' with incorrect uuid",
             "cargo": {
-                "args": [
-                    "build",
-                    "--bin=wsdd-rs",
-                    "--package=wsdd-rs",
-                    "--features=tokio-console"
-                ],
-                "filter": {
-                    "name": "wsdd-rs",
-                    "kind": "bin"
-                }
+                "args": ["run", "--bin=wsdd-rs"]
             },
             "args": ["--uuid", "dc5806ac-724f-40e3-b477-80325"],
-            "cwd": "${workspaceFolder}",
             "env": {
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
@@ -80,23 +50,13 @@
             "terminal": "integrated"
         },
         {
+            "name": "Debug executable 'wsdd-rs' with --interface enp4s0 -4",
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'wsdd-rs' with --interface enp4s0 -4",
             "cargo": {
-                "args": [
-                    "build",
-                    "--bin=wsdd-rs",
-                    "--package=wsdd-rs",
-                    "--features=tokio-console"
-                ],
-                "filter": {
-                    "name": "wsdd-rs",
-                    "kind": "bin"
-                }
+                "args": ["run", "--bin=wsdd-rs"]
             },
             "args": ["--interface", "enp4s0", "-4"],
-            "cwd": "${workspaceFolder}",
             "env": {
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
@@ -105,23 +65,13 @@
             "terminal": "integrated"
         },
         {
+            "name": "Debug executable 'wsdd-rs' with --interface enp4s0 -4 --discovery",
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'wsdd-rs' with --interface enp4s0 -4 --discovery",
             "cargo": {
-                "args": [
-                    "build",
-                    "--bin=wsdd-rs",
-                    "--package=wsdd-rs",
-                    "--features=tokio-console"
-                ],
-                "filter": {
-                    "name": "wsdd-rs",
-                    "kind": "bin"
-                }
+                "args": ["run", "--bin=wsdd-rs"]
             },
             "args": ["--interface", "enp4s0", "-4", "--discovery"],
-            "cwd": "${workspaceFolder}",
             "env": {
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
@@ -130,20 +80,11 @@
             "terminal": "integrated"
         },
         {
+            "name": "Debug executable 'wsdd-rs' with --interface enp4s0 -4 --discovery --listen 5555",
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'wsdd-rs' with --interface enp4s0 -4 --discovery --listen 5555",
             "cargo": {
-                "args": [
-                    "build",
-                    "--bin=wsdd-rs",
-                    "--package=wsdd-rs",
-                    "--features=tokio-console"
-                ],
-                "filter": {
-                    "name": "wsdd-rs",
-                    "kind": "bin"
-                }
+                "args": ["run", "--bin=wsdd-rs"]
             },
             "args": [
                 "--interface",
@@ -153,7 +94,6 @@
                 "--listen",
                 "5555"
             ],
-            "cwd": "${workspaceFolder}",
             "env": {
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
@@ -162,23 +102,13 @@
             "terminal": "integrated"
         },
         {
+            "name": "Debug executable 'wsdd-rs' with --interface enp4s0 -4 --no-host --discovery",
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'wsdd-rs' with --interface enp4s0 -4 --no-host --discovery",
             "cargo": {
-                "args": [
-                    "build",
-                    "--bin=wsdd-rs",
-                    "--package=wsdd-rs",
-                    "--features=tokio-console"
-                ],
-                "filter": {
-                    "name": "wsdd-rs",
-                    "kind": "bin"
-                }
+                "args": ["run", "--bin=wsdd-rs"]
             },
             "args": ["--interface", "enp4s0", "-4", "--no-host", "--discovery"],
-            "cwd": "${workspaceFolder}",
             "env": {
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
@@ -187,23 +117,13 @@
             "terminal": "integrated"
         },
         {
+            "name": "Debug executable 'wsdd-rs' with --interface lo",
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'wsdd-rs' with --interface lo",
             "cargo": {
-                "args": [
-                    "build",
-                    "--bin=wsdd-rs",
-                    "--package=wsdd-rs",
-                    "--features=tokio-console"
-                ],
-                "filter": {
-                    "name": "wsdd-rs",
-                    "kind": "bin"
-                }
+                "args": ["run", "--bin=wsdd-rs"]
             },
             "args": ["--interface", "lo"],
-            "cwd": "${workspaceFolder}",
             "env": {
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
@@ -212,23 +132,13 @@
             "terminal": "integrated"
         },
         {
+            "name": "Debug executable 'wsdd-rs' with -h",
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'wsdd-rs' with -h",
             "cargo": {
-                "args": [
-                    "build",
-                    "--bin=wsdd-rs",
-                    "--package=wsdd-rs",
-                    "--features=tokio-console"
-                ],
-                "filter": {
-                    "name": "wsdd-rs",
-                    "kind": "bin"
-                }
+                "args": ["run", "--bin=wsdd-rs"]
             },
             "args": ["-h"],
-            "cwd": "${workspaceFolder}",
             "env": {
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
@@ -237,23 +147,12 @@
             "terminal": "integrated"
         },
         {
-            "type": "lldb",
-            "request": "launch",
             "name": "Debug unit tests in executable 'wsdd-rs'",
+            "type": "lldb",
+            "request": "launch",
             "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=wsdd-rs",
-                    "--package=wsdd-rs"
-                ],
-                "filter": {
-                    "name": "wsdd-rs",
-                    "kind": "bin"
-                }
+                "args": ["test", "--bin=wsdd-rs"]
             },
-            "args": [],
-            "cwd": "${workspaceFolder}",
             "env": {
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
@@ -262,23 +161,12 @@
             "terminal": "integrated"
         },
         {
+            "name": "Debug integration test 'integration_tests'",
             "type": "lldb",
             "request": "launch",
-            "name": "Debug integration test 'integration_tests'",
             "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--test=integration_tests",
-                    "--package=wsdd-rs"
-                ],
-                "filter": {
-                    "name": "integration_tests",
-                    "kind": "test"
-                }
+                "args": ["test", "--test=integration_tests"]
             },
-            "args": [],
-            "cwd": "${workspaceFolder}",
             "env": {
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "DEBUG,wsdd_rs=TRACE"

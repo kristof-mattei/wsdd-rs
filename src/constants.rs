@@ -85,6 +85,10 @@ pub const WSD_UDP_PORT: NonZeroU16 = NonZeroU16::new(3702).unwrap();
 // WSD_HTTP_PORT: int = 5357
 pub const WSD_HTTP_PORT: NonZeroU16 = NonZeroU16::new(5357).unwrap();
 // WSD_MAX_LEN: int = 32767
+#[expect(
+    clippy::decimal_literal_representation,
+    reason = "Copied from original source code"
+)]
 pub const WSD_MAX_LEN: usize = 32767;
 
 // WSDD_LISTEN_PORT = 5359
