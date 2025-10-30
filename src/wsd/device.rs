@@ -203,11 +203,11 @@ impl WSDDiscoveredDevice {
         //             else:
         //                 report = False
         let report =
-            if let Some(addresses) = self.addresses.get_mut(&network_address.interface.name) {
+            if let Some(addresses) = self.addresses.get_mut(network_address.interface.name()) {
                 addresses.insert(host)
             } else {
                 self.addresses.insert(
-                    network_address.interface.name.clone(),
+                    network_address.interface.name().to_owned().into_boxed_str(),
                     HashSet::from_iter([host]),
                 );
 

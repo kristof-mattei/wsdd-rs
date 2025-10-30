@@ -118,7 +118,7 @@ impl MulticastHandler {
         event!(
             Level::DEBUG,
             "transport address on {} is {}",
-            address.interface.name,
+            address.interface.name(),
             UrlIpAddr::from(address.address)
         );
         event!(
@@ -207,7 +207,7 @@ impl MulticastHandler {
         uc_wsd_port_socket: &Socket,
         config: &Arc<Config>,
     ) -> Result<(UdpAddress, SocketAddr), eyre::Report> {
-        let idx = interface.index;
+        let idx = interface.index();
 
         let multicast_address = UdpAddress::new(
             SocketAddrV6::new(
@@ -287,7 +287,7 @@ impl MulticastHandler {
         uc_wsd_port_socket: &Socket,
         config: &Arc<Config>,
     ) -> Result<(UdpAddress, SocketAddr), eyre::Report> {
-        let idx = interface.index;
+        let idx = interface.index();
 
         let multicast_address = UdpAddress::new(
             SocketAddrV4::new(WSD_MCAST_GRP_V4, WSD_UDP_PORT.into()).into(),

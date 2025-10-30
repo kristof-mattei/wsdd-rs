@@ -240,7 +240,7 @@ impl NetworkHandler {
             };
 
             let should_send_probe = match interface_filter {
-                Some(interface) => multicast_handler.get_address().interface.name == *interface,
+                Some(interface) => multicast_handler.get_address().interface.name() == &**interface,
                 None => true,
             };
 
@@ -311,7 +311,7 @@ impl NetworkHandler {
                 .config
                 .interfaces
                 .iter()
-                .any(|i| *i == address.interface.name)
+                .any(|i| &**i == address.interface.name())
             && !self
                 .config
                 .interfaces
@@ -325,10 +325,10 @@ impl NetworkHandler {
     }
 
     pub async fn handle_new_address(&mut self, address: NetworkAddress) {
-        event!(Level::DEBUG, address = %address.address, interface = %address.interface.name, "new address");
+        event!(Level::DEBUG, address = %address.address, interface = %address.interface.name(), "new address");
 
         if let Err(why) = self.is_address_handled(&address) {
-            event!(Level::DEBUG, ?why, address = %address.address, interface = %address.interface.name, "ignoring address");
+            event!(Level::DEBUG, ?why, address = %address.address, interface = %address.interface.name(), "ignoring address");
 
             return;
         }
@@ -371,7 +371,7 @@ impl NetworkHandler {
     }
 
     pub async fn handle_deleted_address(&mut self, address: NetworkAddress) {
-        event!(Level::INFO, address = %address.address, interface = %address.interface.name, "deleted address");
+        event!(Level::INFO, address = %address.address, interface = %address.interface.name(), "deleted address");
 
         if self.is_address_handled(&address).is_err() {
             return;

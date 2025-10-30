@@ -8,8 +8,8 @@ use libc::IF_NAMESIZE;
 
 #[derive(Debug, Eq, Clone)]
 pub struct NetworkInterface {
-    pub name: Box<str>,
-    pub index: u32,
+    name: Box<str>,
+    index: u32,
     scope: u8,
 }
 
@@ -34,6 +34,14 @@ impl NetworkInterface {
             index,
             scope,
         }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn index(&self) -> u32 {
+        self.index
     }
 }
 
