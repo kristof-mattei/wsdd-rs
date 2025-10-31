@@ -2,7 +2,7 @@
 name = "wsdd-rs"
 version = "0.0.0-development"
 edition = "2024"
-rust-version = "1.90.0"
+rust-version = "1.91.0"
 authors = ["Kristof Mattei"]
 description = "A Web Service Discovery host daemon."
 license = "MIT"
