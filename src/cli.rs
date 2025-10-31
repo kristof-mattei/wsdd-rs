@@ -236,30 +236,25 @@ where
     let preserve_case = matches.get_one("preserve-case").copied().unwrap_or(false);
 
     let full_hostname = if let Some(domain) = matches.get_one::<String>("domain").cloned() {
-        format!(
-            "{}/Domain:{}",
-            if preserve_case {
-                &*hostname
-            } else {
-                &*hostname.to_lowercase()
-            },
-            domain
-        )
+        let hostname = if preserve_case {
+            &*hostname
+        } else {
+            &*hostname.to_lowercase()
+        };
+        format!("{}/Domain:{}", hostname, domain)
     } else {
         let workgroup = matches
             .get_one::<String>("workgroup")
             .cloned()
             .expect("workgroup has a default");
 
-        format!(
-            "{}/Workgroup:{}",
-            if preserve_case {
-                &*hostname
-            } else {
-                &*hostname.to_uppercase()
-            },
-            workgroup
-        )
+        let hostname = if preserve_case {
+            &*hostname
+        } else {
+            &*hostname.to_uppercase()
+        };
+
+        format!("{}/Workgroup:{}", hostname, workgroup)
     };
 
     let config = Config {
