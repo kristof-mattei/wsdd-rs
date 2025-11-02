@@ -3,19 +3,22 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use color_eyre::eyre;
 use libc::{
-    AF_INET, AF_INET6, AF_PACKET, IFA_ADDRESS, IFA_F_DADFAILED, IFA_F_DEPRECATED,
-    IFA_F_HOMEADDRESS, IFA_F_TENTATIVE, IFA_FLAGS, IFA_LABEL, IFA_LOCAL, NETLINK_ROUTE, NLM_F_DUMP,
-    NLM_F_REQUEST, RTM_DELADDR, RTM_GETADDR, RTM_NEWADDR, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR,
-    RTMGRP_LINK,
+    AF_PACKET, IFA_ADDRESS, IFA_F_DADFAILED, IFA_F_DEPRECATED, IFA_F_HOMEADDRESS, IFA_F_TENTATIVE,
+    IFA_FLAGS, IFA_LABEL, IFA_LOCAL, NETLINK_ROUTE, NLM_F_DUMP, NLM_F_REQUEST, NLMSG_DONE,
+    NLMSG_ERROR, NLMSG_NOOP, RTM_DELADDR, RTM_GETADDR, RTM_NEWADDR, RTMGRP_IPV4_IFADDR,
+    RTMGRP_IPV6_IFADDR, RTMGRP_LINK,
 };
 use socket2::SockAddrStorage;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
-use zerocopy::{FromBytes as _, Immutable, IntoBytes};
+use zerocopy::IntoBytes as _;
 
 use crate::config::Config;
-use crate::ffi::{NLMSG_ALIGNTO, RTA_ALIGNTO, ifaddrmsg, nlmsghdr, rtattr};
+use crate::ffi::{
+    IFA_PAYLOAD, IFA_RTA, NLMSG_DATA, NLMSG_NEXT, NLMSG_OK, RTA_DATA, RTA_NEXT, RTA_OK,
+    RTA_PAYLOAD, ifaddrmsg, netlink_req, nlmsghdr, rtattr,
+};
 use crate::network_handler::Command;
 
 #[expect(clippy::cast_possible_truncation, reason = "Compile-time checked")]
@@ -35,13 +38,6 @@ pub struct NetlinkAddressMonitor {
     command_tx: Sender<Command>,
     socket: tokio::net::UdpSocket,
     start_rx: tokio::sync::watch::Receiver<()>,
-}
-
-fn align_to(offset: usize, align_to: usize) -> usize {
-    // this doesn't work for offset = 0
-    // offset + align_to - (offset % align_to)
-
-    offset.div_ceil(align_to) * align_to
 }
 
 impl NetlinkAddressMonitor {
@@ -109,16 +105,9 @@ impl NetlinkAddressMonitor {
     }
 
     pub fn request_current_state(&mut self) -> Result<(), std::io::Error> {
-        #[derive(IntoBytes, Immutable)]
-        #[repr(C)]
-        struct Request {
-            nh: nlmsghdr,
-            ifa: ifaddrmsg,
-        }
-
-        let request = Request {
+        let request = netlink_req {
             nh: nlmsghdr {
-                nlmsg_len: size_of::<Request>().try_into().unwrap(),
+                nlmsg_len: size_of::<netlink_req>().try_into().unwrap(),
                 nlmsg_type: RTM_GETADDR,
                 nlmsg_flags: u16::try_from(NLM_F_REQUEST | NLM_F_DUMP).unwrap(),
                 nlmsg_seq: 1,
@@ -199,159 +188,171 @@ impl NetlinkAddressMonitor {
             event!(Level::DEBUG, "netlink message with {} bytes", bytes_read);
 
             // `recv_buf` tells us that `bytes_read` were read from the socket into our `buffer`, so they're initialized
-            // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
-            let buffer = unsafe { &*(&raw const buffer[0..bytes_read] as *const [u8]) };
+            // SaAbFcEdTeY: we are only initializing the parts of the buffer `recv_buf_from` has written to
+            // let buffer = unsafe { &*(&raw const buffer[0..bytes_read] as *const [u8]) };
 
-            let mut offset = 0;
+            #[expect(clippy::cast_possible_truncation, reason = "")]
+            let mut len = { bytes_read as u32 };
 
-            while offset < bytes_read {
-                let (message, _suffix) = nlmsghdr::ref_from_prefix(&buffer[offset..])
-                    .map_err(|error| eyre::Report::msg(error.to_string()))?;
+            #[expect(clippy::cast_ptr_alignment, reason = "")]
+            // SAFETY: This is how it's done
+            let mut nlh = unsafe { &mut *buffer.as_mut_ptr().cast::<nlmsghdr>() };
 
-                offset += size_of::<nlmsghdr>();
-
-                let Some(length) = (message.nlmsg_len as usize).checked_sub(size_of::<nlmsghdr>())
-                else {
+            while NLMSG_OK(nlh, len) {
+                if i32::from(nlh.nlmsg_type) == NLMSG_NOOP {
+                    event!(Level::DEBUG, "NOOP");
+                } else if i32::from(nlh.nlmsg_type) == NLMSG_DONE {
+                    event!(Level::DEBUG, "DONE");
+                } else if i32::from(nlh.nlmsg_type) == NLMSG_ERROR {
+                    event!(Level::DEBUG, "ERROR");
                     break;
-                };
-
-                if message.nlmsg_type != RTM_NEWADDR && message.nlmsg_type != RTM_DELADDR {
-                    event!(
-                        Level::DEBUG,
-                        "invalid rtm_message type {}",
-                        message.nlmsg_type
-                    );
-
-                    offset += align_to(length, NLMSG_ALIGNTO);
-
-                    continue;
-                }
-
-                // decode ifaddrmsg as in if_addr.h
-                let (ifaddr_message, _suffix) = ifaddrmsg::ref_from_prefix(&buffer[offset..])
-                    .map_err(|error| eyre::Report::msg(error.to_string()))?;
-
-                let ifa_flags = u32::from(ifaddr_message.ifa_flags);
-
-                if ((ifa_flags) & IFA_F_DADFAILED == IFA_F_DADFAILED)
-                    || (ifa_flags & IFA_F_HOMEADDRESS == IFA_F_HOMEADDRESS)
-                    || (ifa_flags & IFA_F_DEPRECATED == IFA_F_DEPRECATED)
-                    || (ifa_flags & IFA_F_TENTATIVE == IFA_F_TENTATIVE)
-                {
-                    event!(
-                        Level::DEBUG,
-                        "ignore address with invalid state {:#x}",
-                        ifa_flags
-                    );
-
-                    offset += align_to(length, NLMSG_ALIGNTO);
-
-                    continue;
-                }
-
-                event!(
-                    Level::DEBUG,
-                    "RTM new/del addr family: {} flags: {} scope: {} idx: {}",
-                    ifaddr_message.ifa_family,
-                    ifaddr_message.ifa_flags,
-                    ifaddr_message.ifa_scope,
-                    ifaddr_message.ifa_index
-                );
-
-                let mut addr: Option<IpAddr> = None;
-
-                let mut i = offset + size_of::<ifaddrmsg>();
-
-                #[expect(clippy::big_endian_bytes, reason = "We're reading network data")]
-                while i - offset < length {
-                    let rta = match rtattr::ref_from_prefix(&buffer[i..]) {
-                        Ok((rta, _suffix)) => rta,
-                        Err(error) => {
-                            event!(Level::ERROR, ?error, "Error mapping buffer to `rtattr`");
-
-                            // TODO use thiserror
-                            return Err(eyre::Report::msg(
-                                "ConvertError: Error mapping buffer to `rtattr`",
-                            ));
-                        },
-                    };
-
-                    event!(Level::DEBUG, "rt_attr {} {}", rta.rta_len, rta.rta_type);
-
-                    if usize::from(rta.rta_len) < size_of::<rtattr>() {
-                        event!(Level::DEBUG, "Invalid `rta_len`. skipping remainder.");
-                        break;
-                    }
-
-                    if rta.rta_type == IFA_LABEL {
-                        // unused, original codebase extracted
-                        // the labels in here for ipv4, but ipv6 requires another way
-                        // we do both the ipv6 way
-                    } else if rta.rta_type == IFA_LOCAL
-                        && i32::from(ifaddr_message.ifa_family) == AF_INET
-                    {
-                        let (ipv4_in_network_order, _suffix) =
-                            <[u8; 4]>::ref_from_prefix(&buffer[i + size_of::<rtattr>()..]).unwrap();
-
-                        addr = Some(
-                            Ipv4Addr::from_bits(u32::from_be_bytes(*ipv4_in_network_order)).into(),
-                        );
-                    } else if rta.rta_type == IFA_ADDRESS
-                        && i32::from(ifaddr_message.ifa_family) == AF_INET6
-                    {
-                        let (ipv6_in_network_order, _suffix) =
-                            <[u8; 16]>::ref_from_prefix(&buffer[i + size_of::<rtattr>()..])
-                                .unwrap();
-
-                        addr = Some(
-                            Ipv6Addr::from_bits(u128::from_be_bytes(*ipv6_in_network_order)).into(),
-                        );
-                    } else if rta.rta_type == IFA_FLAGS {
-
-                        // https://github.com/torvalds/linux/blob/febbc555cf0fff895546ddb8ba2c9a523692fb55/include/uapi/linux/if_addr.h#L35
-                        // unused
-                        // original:
-                        // _, ifa_flags = struct.unpack_from('HI', buf, i)
-                    } else {
-                        // ...
-                    }
-
-                    i += align_to(usize::from(rta.rta_len), RTA_ALIGNTO);
-                }
-
-                let Some(addr) = addr else {
-                    event!(Level::DEBUG, "no address in RTM message");
-                    offset += align_to(length, NLMSG_ALIGNTO);
-                    continue;
-                };
-
-                let command = if message.nlmsg_type == RTM_NEWADDR {
-                    Command::NewAddress {
-                        address: addr,
-                        scope: ifaddr_message.ifa_scope,
-                        index: ifaddr_message.ifa_index,
-                    }
-                } else if message.nlmsg_type == RTM_DELADDR {
-                    Command::DeleteAddress {
-                        address: addr,
-                        scope: ifaddr_message.ifa_scope,
-                        index: ifaddr_message.ifa_index,
-                    }
+                } else if nlh.nlmsg_type != RTM_NEWADDR && nlh.nlmsg_type != RTM_DELADDR {
+                    event!(Level::DEBUG, "invalid rtm_message type {}", nlh.nlmsg_type);
                 } else {
-                    // unreachable because we checked above
-                    unreachable!()
-                };
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        reason = "Payload cannot be larger than `u16`"
+                    )]
+                    let mut attr_len = { IFA_PAYLOAD(nlh) as u16 };
 
-                if let Err(error) = self.command_tx.send(command).await {
-                    if self.cancellation_token.is_cancelled() {
-                        event!(Level::INFO, command = ?error.0, "Could not announce command due to shutting down");
-                        break;
+                    let ifa: &mut ifaddrmsg = NLMSG_DATA(nlh);
+
+                    // TODO: these are repeated on the `IFA_FLAGS` below, can we remove this checks?
+                    // Are we at risk of discarding packages?
+                    // How do the `ifa_flags` here relate to the `IFA_FLAGS` on the `rtattr` below?
+                    let ifa_flags = u32::from(ifa.ifa_flags);
+
+                    if ((ifa_flags) & IFA_F_DADFAILED == IFA_F_DADFAILED)
+                        || (ifa_flags & IFA_F_HOMEADDRESS == IFA_F_HOMEADDRESS)
+                        || (ifa_flags & IFA_F_DEPRECATED == IFA_F_DEPRECATED)
+                        || (ifa_flags & IFA_F_TENTATIVE == IFA_F_TENTATIVE)
+                    {
+                        event!(
+                            Level::DEBUG,
+                            "ignore address with invalid state {:#x}",
+                            ifa_flags
+                        );
                     } else {
-                        event!(Level::ERROR, command = ?error.0, "Failed to announce command");
+                        event!(
+                            Level::DEBUG,
+                            "RTM new/del addr family: {} flags: {} scope: {} idx: {}",
+                            ifa.ifa_family,
+                            ifa.ifa_flags,
+                            ifa.ifa_scope,
+                            ifa.ifa_index
+                        );
+
+                        let ifa_scope = ifa.ifa_scope;
+                        let ifa_index = ifa.ifa_index;
+
+                        let mut rta: &mut rtattr = IFA_RTA(ifa);
+
+                        let mut addr: Option<IpAddr> = None;
+
+                        #[expect(clippy::big_endian_bytes, reason = "Networking code")]
+                        while RTA_OK(rta, attr_len) {
+                            event!(Level::DEBUG, "rt_attr {} {}", rta.rta_len, rta.rta_type);
+
+                            // TODO validate if we need `IFA_LOCAL`, it only matters for PPP connections, and I'm unsure if we can do broadcasts on that?
+                            // If we can remove it we can rely solely on `IFA_ADDR`
+
+                            if rta.rta_type == IFA_LABEL {
+                                // unused, original codebase extracted
+                                // the labels in here for ipv4, but ipv6 requires another way
+                                // we do both the ipv6 way
+                            } else if rta.rta_type == IFA_LOCAL {
+                                let payload_size = RTA_PAYLOAD(rta);
+
+                                if payload_size == 4 {
+                                    let ipv4_in_network_order: &[u8; 4] = &*RTA_DATA(rta);
+
+                                    let new = Ipv4Addr::from_bits(u32::from_be_bytes(
+                                        *ipv4_in_network_order,
+                                    ));
+
+                                    if let Some(addr) = addr {
+                                        event!(Level::ERROR, old = %addr, %new);
+                                    }
+
+                                    addr = Some(new.into());
+                                } else {
+                                    // `IFA_LOCAL` is only issued for IPv4 addresses
+                                }
+                            } else if rta.rta_type == IFA_ADDRESS {
+                                let payload_size = RTA_PAYLOAD(rta);
+
+                                if payload_size == 4 {
+                                    let ipv4_in_network_order: &[u8; 4] = &*RTA_DATA(rta);
+
+                                    let new = Ipv4Addr::from_bits(u32::from_be_bytes(
+                                        *ipv4_in_network_order,
+                                    ));
+
+                                    if let Some(addr) = addr {
+                                        event!(Level::ERROR, old = %addr, %new);
+                                    }
+
+                                    addr = Some(new.into());
+                                } else if payload_size == 16 {
+                                    let ipv6_in_network_order: &[u8; 16] = &*RTA_DATA(rta);
+
+                                    let new = Ipv6Addr::from_bits(u128::from_be_bytes(
+                                        *ipv6_in_network_order,
+                                    ));
+
+                                    if let Some(addr) = addr {
+                                        event!(Level::ERROR, old = %addr, %new);
+                                    }
+
+                                    addr = Some(new.into());
+                                } else {
+                                    // IPv4, IPv6, what's next? IPv8?
+                                }
+                            } else if rta.rta_type == IFA_FLAGS {
+                                // https://github.com/torvalds/linux/blob/febbc555cf0fff895546ddb8ba2c9a523692fb55/include/uapi/linux/if_addr.h#L35
+                                // unused
+                                // original:
+                                // _, ifa_flags = struct.unpack_from('HI', buf, i)
+                            } else {
+                                // ...
+                            }
+
+                            rta = RTA_NEXT(rta, &mut attr_len);
+                        }
+
+                        if let Some(addr) = addr {
+                            let command = if nlh.nlmsg_type == RTM_NEWADDR {
+                                Command::NewAddress {
+                                    address: addr,
+                                    scope: ifa_scope,
+                                    index: ifa_index,
+                                }
+                            } else if nlh.nlmsg_type == RTM_DELADDR {
+                                Command::DeleteAddress {
+                                    address: addr,
+                                    scope: ifa_scope,
+                                    index: ifa_index,
+                                }
+                            } else {
+                                // unreachable because we checked above
+                                unreachable!()
+                            };
+
+                            if let Err(error) = self.command_tx.send(command).await {
+                                if self.cancellation_token.is_cancelled() {
+                                    event!(Level::INFO, command = ?error.0, "Could not announce command due to shutting down");
+                                    break;
+                                } else {
+                                    event!(Level::ERROR, command = ?error.0, "Failed to announce command");
+                                }
+                            }
+                        } else {
+                            event!(Level::DEBUG, "no address in RTM message");
+                        }
                     }
                 }
 
-                offset += align_to(length, NLMSG_ALIGNTO);
+                nlh = NLMSG_NEXT(nlh, &mut len);
             }
         }
 
