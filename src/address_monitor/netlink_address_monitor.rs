@@ -15,7 +15,7 @@ use tracing::{Level, event};
 use zerocopy::{FromBytes as _, Immutable, IntoBytes};
 
 use crate::config::Config;
-use crate::ffi::{self, NLMSG_ALIGNTO, ifaddrmsg, nlmsghdr, rtattr};
+use crate::ffi::{NLMSG_ALIGNTO, RTA_ALIGNTO, ifaddrmsg, nlmsghdr, rtattr};
 use crate::network_handler::Command;
 
 #[expect(clippy::cast_possible_truncation, reason = "Compile-time checked")]
@@ -112,12 +112,12 @@ impl NetlinkAddressMonitor {
         #[derive(IntoBytes, Immutable)]
         #[repr(C)]
         struct Request {
-            nh: ffi::nlmsghdr,
-            ifa: ffi::ifaddrmsg,
+            nh: nlmsghdr,
+            ifa: ifaddrmsg,
         }
 
         let request = Request {
-            nh: ffi::nlmsghdr {
+            nh: nlmsghdr {
                 nlmsg_len: size_of::<Request>().try_into().unwrap(),
                 nlmsg_type: RTM_GETADDR,
                 nlmsg_flags: u16::try_from(NLM_F_REQUEST | NLM_F_DUMP).unwrap(),
@@ -125,7 +125,7 @@ impl NetlinkAddressMonitor {
                 nlmsg_pid: 0,
             },
 
-            ifa: ffi::ifaddrmsg {
+            ifa: ifaddrmsg {
                 ifa_family: AF_PACKET.try_into().unwrap(),
                 ifa_prefixlen: 0,
                 ifa_flags: 0,
@@ -208,10 +208,9 @@ impl NetlinkAddressMonitor {
                 let (message, _suffix) = nlmsghdr::ref_from_prefix(&buffer[offset..])
                     .map_err(|error| eyre::Report::msg(error.to_string()))?;
 
-                offset += size_of::<ffi::nlmsghdr>();
+                offset += size_of::<nlmsghdr>();
 
-                let Some(length) =
-                    (message.nlmsg_len as usize).checked_sub(size_of::<ffi::nlmsghdr>())
+                let Some(length) = (message.nlmsg_len as usize).checked_sub(size_of::<nlmsghdr>())
                 else {
                     break;
                 };
@@ -223,13 +222,13 @@ impl NetlinkAddressMonitor {
                         message.nlmsg_type
                     );
 
-                    offset += align_to(length, align_of::<nlmsghdr>());
+                    offset += align_to(length, NLMSG_ALIGNTO);
 
                     continue;
                 }
 
                 // decode ifaddrmsg as in if_addr.h
-                let (ifaddr_message, _suffix) = ffi::ifaddrmsg::ref_from_prefix(&buffer[offset..])
+                let (ifaddr_message, _suffix) = ifaddrmsg::ref_from_prefix(&buffer[offset..])
                     .map_err(|error| eyre::Report::msg(error.to_string()))?;
 
                 let ifa_flags = u32::from(ifaddr_message.ifa_flags);
@@ -246,6 +245,7 @@ impl NetlinkAddressMonitor {
                     );
 
                     offset += align_to(length, NLMSG_ALIGNTO);
+
                     continue;
                 }
 
@@ -264,8 +264,8 @@ impl NetlinkAddressMonitor {
 
                 #[expect(clippy::big_endian_bytes, reason = "We're reading network data")]
                 while i - offset < length {
-                    let ifa_header = match ffi::rtattr::ref_from_prefix(&buffer[i..]) {
-                        Ok((ifa_header, _suffix)) => ifa_header,
+                    let rta = match rtattr::ref_from_prefix(&buffer[i..]) {
+                        Ok((rta, _suffix)) => rta,
                         Err(error) => {
                             event!(Level::ERROR, ?error, "Error mapping buffer to `rtattr`");
 
@@ -276,23 +276,18 @@ impl NetlinkAddressMonitor {
                         },
                     };
 
-                    event!(
-                        Level::DEBUG,
-                        "rt_attr {} {}",
-                        ifa_header.rta_len,
-                        ifa_header.rta_type
-                    );
+                    event!(Level::DEBUG, "rt_attr {} {}", rta.rta_len, rta.rta_type);
 
-                    if usize::from(ifa_header.rta_len) < size_of::<rtattr>() {
+                    if usize::from(rta.rta_len) < size_of::<rtattr>() {
                         event!(Level::DEBUG, "Invalid `rta_len`. skipping remainder.");
                         break;
                     }
 
-                    if ifa_header.rta_type == IFA_LABEL {
+                    if rta.rta_type == IFA_LABEL {
                         // unused, original codebase extracted
                         // the labels in here for ipv4, but ipv6 requires another way
                         // we do both the ipv6 way
-                    } else if ifa_header.rta_type == IFA_LOCAL
+                    } else if rta.rta_type == IFA_LOCAL
                         && i32::from(ifaddr_message.ifa_family) == AF_INET
                     {
                         let (ipv4_in_network_order, _suffix) =
@@ -301,7 +296,7 @@ impl NetlinkAddressMonitor {
                         addr = Some(
                             Ipv4Addr::from_bits(u32::from_be_bytes(*ipv4_in_network_order)).into(),
                         );
-                    } else if ifa_header.rta_type == IFA_ADDRESS
+                    } else if rta.rta_type == IFA_ADDRESS
                         && i32::from(ifaddr_message.ifa_family) == AF_INET6
                     {
                         let (ipv6_in_network_order, _suffix) =
@@ -311,7 +306,7 @@ impl NetlinkAddressMonitor {
                         addr = Some(
                             Ipv6Addr::from_bits(u128::from_be_bytes(*ipv6_in_network_order)).into(),
                         );
-                    } else if ifa_header.rta_type == IFA_FLAGS {
+                    } else if rta.rta_type == IFA_FLAGS {
 
                         // https://github.com/torvalds/linux/blob/febbc555cf0fff895546ddb8ba2c9a523692fb55/include/uapi/linux/if_addr.h#L35
                         // unused
@@ -321,12 +316,12 @@ impl NetlinkAddressMonitor {
                         // ...
                     }
 
-                    i += align_to(usize::from(ifa_header.rta_len), ffi::RTA_ALIGNTO);
+                    i += align_to(usize::from(rta.rta_len), RTA_ALIGNTO);
                 }
 
                 let Some(addr) = addr else {
                     event!(Level::DEBUG, "no address in RTM message");
-                    offset += align_to(length, align_of::<nlmsghdr>());
+                    offset += align_to(length, NLMSG_ALIGNTO);
                     continue;
                 };
 
@@ -356,7 +351,7 @@ impl NetlinkAddressMonitor {
                     }
                 }
 
-                offset += align_to(length, align_of::<nlmsghdr>());
+                offset += align_to(length, NLMSG_ALIGNTO);
             }
         }
 
