@@ -222,7 +222,7 @@ impl NetlinkAddressMonitor {
                         message.nlmsg_type
                     );
 
-                    offset += align_to(length, align_of::<nlmsghdr>());
+                    offset += align_to(length, NLMSG_ALIGNTO);
 
                     continue;
                 }
@@ -245,6 +245,7 @@ impl NetlinkAddressMonitor {
                     );
 
                     offset += align_to(length, NLMSG_ALIGNTO);
+
                     continue;
                 }
 
@@ -320,7 +321,7 @@ impl NetlinkAddressMonitor {
 
                 let Some(addr) = addr else {
                     event!(Level::DEBUG, "no address in RTM message");
-                    offset += align_to(length, align_of::<nlmsghdr>());
+                    offset += align_to(length, NLMSG_ALIGNTO);
                     continue;
                 };
 
@@ -350,7 +351,7 @@ impl NetlinkAddressMonitor {
                     }
                 }
 
-                offset += align_to(length, align_of::<nlmsghdr>());
+                offset += align_to(length, NLMSG_ALIGNTO);
             }
         }
 
