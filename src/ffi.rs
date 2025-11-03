@@ -1,6 +1,5 @@
-#![expect(clippy::struct_field_names, reason = "WIP")]
-#![expect(non_snake_case, reason = "WIP")]
 #![expect(clippy::multiple_unsafe_ops_per_block, reason = "FFI")]
+#![expect(non_snake_case, reason = "Mirror the macro names")]
 use zerocopy::{Immutable, IntoBytes};
 
 pub fn IFA_RTA(r: &mut ifaddrmsg) -> &mut rtattr {
@@ -197,6 +196,7 @@ pub struct rtattr {
 
 #[derive(IntoBytes, Immutable)]
 #[repr(C)]
+#[expect(clippy::struct_field_names, reason = "Mirror the libc struct names")]
 /// Copy from `libc::nlmsghdr`, but we need zerocopy
 pub struct nlmsghdr {
     pub nlmsg_len: u32,
@@ -208,6 +208,7 @@ pub struct nlmsghdr {
 
 #[derive(IntoBytes, Immutable)]
 #[repr(C)]
+#[expect(clippy::struct_field_names, reason = "Mirror the libc struct names")]
 pub struct ifaddrmsg {
     pub ifa_family: u8,    /* Address type */
     pub ifa_prefixlen: u8, /* Prefixlength of address */
