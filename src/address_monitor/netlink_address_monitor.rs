@@ -263,8 +263,8 @@ impl NetlinkAddressMonitor {
 
                 #[expect(clippy::big_endian_bytes, reason = "We're reading network data")]
                 while i - offset < length {
-                    let ifa_header = match rtattr::ref_from_prefix(&buffer[i..]) {
-                        Ok((ifa_header, _suffix)) => ifa_header,
+                    let rta = match rtattr::ref_from_prefix(&buffer[i..]) {
+                        Ok((rta, _suffix)) => rta,
                         Err(error) => {
                             event!(Level::ERROR, ?error, "Error mapping buffer to `rtattr`");
 
@@ -275,23 +275,18 @@ impl NetlinkAddressMonitor {
                         },
                     };
 
-                    event!(
-                        Level::DEBUG,
-                        "rt_attr {} {}",
-                        ifa_header.rta_len,
-                        ifa_header.rta_type
-                    );
+                    event!(Level::DEBUG, "rt_attr {} {}", rta.rta_len, rta.rta_type);
 
-                    if usize::from(ifa_header.rta_len) < size_of::<rtattr>() {
+                    if usize::from(rta.rta_len) < size_of::<rtattr>() {
                         event!(Level::DEBUG, "Invalid `rta_len`. skipping remainder.");
                         break;
                     }
 
-                    if ifa_header.rta_type == IFA_LABEL {
+                    if rta.rta_type == IFA_LABEL {
                         // unused, original codebase extracted
                         // the labels in here for ipv4, but ipv6 requires another way
                         // we do both the ipv6 way
-                    } else if ifa_header.rta_type == IFA_LOCAL
+                    } else if rta.rta_type == IFA_LOCAL
                         && i32::from(ifaddr_message.ifa_family) == AF_INET
                     {
                         let (ipv4_in_network_order, _suffix) =
@@ -300,7 +295,7 @@ impl NetlinkAddressMonitor {
                         addr = Some(
                             Ipv4Addr::from_bits(u32::from_be_bytes(*ipv4_in_network_order)).into(),
                         );
-                    } else if ifa_header.rta_type == IFA_ADDRESS
+                    } else if rta.rta_type == IFA_ADDRESS
                         && i32::from(ifaddr_message.ifa_family) == AF_INET6
                     {
                         let (ipv6_in_network_order, _suffix) =
@@ -310,7 +305,7 @@ impl NetlinkAddressMonitor {
                         addr = Some(
                             Ipv6Addr::from_bits(u128::from_be_bytes(*ipv6_in_network_order)).into(),
                         );
-                    } else if ifa_header.rta_type == IFA_FLAGS {
+                    } else if rta.rta_type == IFA_FLAGS {
 
                         // https://github.com/torvalds/linux/blob/febbc555cf0fff895546ddb8ba2c9a523692fb55/include/uapi/linux/if_addr.h#L35
                         // unused
@@ -320,7 +315,7 @@ impl NetlinkAddressMonitor {
                         // ...
                     }
 
-                    i += align_to(usize::from(ifa_header.rta_len), RTA_ALIGNTO);
+                    i += align_to(usize::from(rta.rta_len), RTA_ALIGNTO);
                 }
 
                 let Some(addr) = addr else {
