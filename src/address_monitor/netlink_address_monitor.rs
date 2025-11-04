@@ -12,10 +12,10 @@ use socket2::SockAddrStorage;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
-use zerocopy::{FromBytes as _, Immutable, IntoBytes};
+use zerocopy::{FromBytes as _, IntoBytes as _};
 
 use crate::config::Config;
-use crate::ffi::{NLMSG_ALIGNTO, RTA_ALIGNTO, ifaddrmsg, nlmsghdr, rtattr};
+use crate::ffi::{NLMSG_ALIGNTO, RTA_ALIGNTO, ifaddrmsg, netlink_req, nlmsghdr, rtattr};
 use crate::network_handler::Command;
 
 #[expect(clippy::cast_possible_truncation, reason = "Compile-time checked")]
@@ -109,16 +109,9 @@ impl NetlinkAddressMonitor {
     }
 
     pub fn request_current_state(&mut self) -> Result<(), std::io::Error> {
-        #[derive(IntoBytes, Immutable)]
-        #[repr(C)]
-        struct Request {
-            nh: nlmsghdr,
-            ifa: ifaddrmsg,
-        }
-
-        let request = Request {
+        let request = netlink_req {
             nh: nlmsghdr {
-                nlmsg_len: size_of::<Request>().try_into().unwrap(),
+                nlmsg_len: size_of::<netlink_req>().try_into().unwrap(),
                 nlmsg_type: RTM_GETADDR,
                 nlmsg_flags: u16::try_from(NLM_F_REQUEST | NLM_F_DUMP).unwrap(),
                 nlmsg_seq: 1,
