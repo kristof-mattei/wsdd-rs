@@ -39,6 +39,13 @@ pub const fn NLMSG_SPACE(len: usize) -> usize {
 // 			   (nlh)->nlmsg_len <= (len))
 // #define NLMSG_PAYLOAD(nlh,len) ((nlh)->nlmsg_len - NLMSG_SPACE((len)))
 
+#[derive(IntoBytes, Immutable)]
+#[repr(C)]
+pub struct netlink_req {
+    pub nh: nlmsghdr,
+    pub ifa: ifaddrmsg,
+}
+
 #[derive(KnownLayout, FromBytes, Immutable)]
 #[repr(C)]
 pub struct rtattr {
