@@ -17,7 +17,7 @@ macro_rules! syscall {
     }};
 }
 
-#[expect(unused, reason = "WIP")]
+#[expect(unused, reason = "socket2 now supports all the settings we use")]
 /// Caller must ensure `T` is the correct type for `opt` and `val`.
 pub unsafe fn setsockopt<F: AsFd, T>(
     fd: F,
@@ -28,7 +28,8 @@ pub unsafe fn setsockopt<F: AsFd, T>(
     let payload = std::ptr::addr_of!(*payload).cast();
 
     #[expect(clippy::cast_possible_truncation, reason = "Standard way of doing")]
-    let length = std::mem::size_of::<T>() as libc::socklen_t;
+    // TODO switch to `try_into().unwrap()` once `try_into()` becomes `const`
+    let length: u32 = const { std::mem::size_of::<T>() as libc::socklen_t };
 
     syscall!(
         setsockopt(fd.as_fd().as_raw_fd(), opt, val, payload, length),

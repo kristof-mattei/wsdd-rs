@@ -215,7 +215,7 @@ impl NetlinkAddressMonitor {
                         message.nlmsg_type
                     );
 
-                    offset += align_to(length, NLMSG_ALIGNTO);
+                    offset += align_to(length, NLMSG_ALIGNTO as usize);
 
                     continue;
                 }
@@ -237,7 +237,7 @@ impl NetlinkAddressMonitor {
                         ifa_flags
                     );
 
-                    offset += align_to(length, NLMSG_ALIGNTO);
+                    offset += align_to(length, NLMSG_ALIGNTO as usize);
 
                     continue;
                 }
@@ -309,12 +309,12 @@ impl NetlinkAddressMonitor {
                         // ...
                     }
 
-                    i += align_to(usize::from(rta.rta_len), RTA_ALIGNTO);
+                    i += align_to(usize::from(rta.rta_len), RTA_ALIGNTO as usize);
                 }
 
                 let Some(addr) = addr else {
                     event!(Level::DEBUG, "no address in RTM message");
-                    offset += align_to(length, NLMSG_ALIGNTO);
+                    offset += align_to(length, NLMSG_ALIGNTO as usize);
                     continue;
                 };
 
@@ -344,7 +344,7 @@ impl NetlinkAddressMonitor {
                     }
                 }
 
-                offset += align_to(length, NLMSG_ALIGNTO);
+                offset += align_to(length, NLMSG_ALIGNTO as usize);
             }
         }
 
