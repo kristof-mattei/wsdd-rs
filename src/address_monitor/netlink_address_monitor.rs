@@ -215,16 +215,16 @@ impl NetlinkAddressMonitor {
                         message.nlmsg_type
                     );
 
-                    offset += align_to(length, NLMSG_ALIGNTO);
+                    offset += align_to(length, NLMSG_ALIGNTO as usize);
 
                     continue;
                 }
 
                 // decode ifaddrmsg as in if_addr.h
-                let (ifaddr_message, _suffix) = ifaddrmsg::ref_from_prefix(&buffer[offset..])
+                let (ifa, _suffix) = ifaddrmsg::ref_from_prefix(&buffer[offset..])
                     .map_err(|error| eyre::Report::msg(error.to_string()))?;
 
-                let ifa_flags = u32::from(ifaddr_message.ifa_flags);
+                let ifa_flags = u32::from(ifa.ifa_flags);
 
                 if ((ifa_flags) & IFA_F_DADFAILED == IFA_F_DADFAILED)
                     || (ifa_flags & IFA_F_HOMEADDRESS == IFA_F_HOMEADDRESS)
@@ -237,7 +237,7 @@ impl NetlinkAddressMonitor {
                         ifa_flags
                     );
 
-                    offset += align_to(length, NLMSG_ALIGNTO);
+                    offset += align_to(length, NLMSG_ALIGNTO as usize);
 
                     continue;
                 }
@@ -245,10 +245,10 @@ impl NetlinkAddressMonitor {
                 event!(
                     Level::DEBUG,
                     "RTM new/del addr family: {} flags: {} scope: {} idx: {}",
-                    ifaddr_message.ifa_family,
-                    ifaddr_message.ifa_flags,
-                    ifaddr_message.ifa_scope,
-                    ifaddr_message.ifa_index
+                    ifa.ifa_family,
+                    ifa.ifa_flags,
+                    ifa.ifa_scope,
+                    ifa.ifa_index
                 );
 
                 let mut addr: Option<IpAddr> = None;
@@ -280,18 +280,14 @@ impl NetlinkAddressMonitor {
                         // unused, original codebase extracted
                         // the labels in here for ipv4, but ipv6 requires another way
                         // we do both the ipv6 way
-                    } else if rta.rta_type == IFA_LOCAL
-                        && i32::from(ifaddr_message.ifa_family) == AF_INET
-                    {
+                    } else if rta.rta_type == IFA_LOCAL && i32::from(ifa.ifa_family) == AF_INET {
                         let (ipv4_in_network_order, _suffix) =
                             <[u8; 4]>::ref_from_prefix(&buffer[i + size_of::<rtattr>()..]).unwrap();
 
                         addr = Some(
                             Ipv4Addr::from_bits(u32::from_be_bytes(*ipv4_in_network_order)).into(),
                         );
-                    } else if rta.rta_type == IFA_ADDRESS
-                        && i32::from(ifaddr_message.ifa_family) == AF_INET6
-                    {
+                    } else if rta.rta_type == IFA_ADDRESS && i32::from(ifa.ifa_family) == AF_INET6 {
                         let (ipv6_in_network_order, _suffix) =
                             <[u8; 16]>::ref_from_prefix(&buffer[i + size_of::<rtattr>()..])
                                 .unwrap();
@@ -309,26 +305,26 @@ impl NetlinkAddressMonitor {
                         // ...
                     }
 
-                    i += align_to(usize::from(rta.rta_len), RTA_ALIGNTO);
+                    i += align_to(usize::from(rta.rta_len), RTA_ALIGNTO as usize);
                 }
 
                 let Some(addr) = addr else {
                     event!(Level::DEBUG, "no address in RTM message");
-                    offset += align_to(length, NLMSG_ALIGNTO);
+                    offset += align_to(length, NLMSG_ALIGNTO as usize);
                     continue;
                 };
 
                 let command = if message.nlmsg_type == RTM_NEWADDR {
                     Command::NewAddress {
                         address: addr,
-                        scope: ifaddr_message.ifa_scope,
-                        index: ifaddr_message.ifa_index,
+                        scope: ifa.ifa_scope,
+                        index: ifa.ifa_index,
                     }
                 } else if message.nlmsg_type == RTM_DELADDR {
                     Command::DeleteAddress {
                         address: addr,
-                        scope: ifaddr_message.ifa_scope,
-                        index: ifaddr_message.ifa_index,
+                        scope: ifa.ifa_scope,
+                        index: ifa.ifa_index,
                     }
                 } else {
                     // unreachable because we checked above
@@ -344,7 +340,7 @@ impl NetlinkAddressMonitor {
                     }
                 }
 
-                offset += align_to(length, NLMSG_ALIGNTO);
+                offset += align_to(length, NLMSG_ALIGNTO as usize);
             }
         }
 
