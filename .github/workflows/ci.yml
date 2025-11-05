@@ -393,7 +393,7 @@ jobs:
       - *set_up_toolchain
 
       - name: Run Clippy for GitHub Actions report
-        uses: actions-rs-plus/clippy-check@fe8905c5766416f0593a503a2230a7c83141a8f0 # v2.3.0
+        uses: actions-rs-plus/clippy-check@3cdfce3c54e442afeeaad8f4c2ade25106bb8da5 # v2.4.1
         with:
           args: ${{ env.CARGO_FEATURES }} --all-targets --locked --workspace --verbose
 
@@ -538,7 +538,7 @@ jobs:
       # Extract metadata (tags, labels) for Docker
       # https://github.com/docker/metadata-action
       - name: Extract Docker metadata
-        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
         id: meta
         with:
           labels: |
@@ -627,7 +627,7 @@ jobs:
       github.event_name == 'pull_request'
     steps:
       - name: Set up Docker
-        uses: docker/setup-docker-action@3fb92d6d9c634363128c8cce4bc3b2826526370a # v4.4.0
+        uses: docker/setup-docker-action@efe9e3891a4f7307e689f2100b33a155b900a608 # v4.5.0
         with:
           daemon-config: |
             {
@@ -644,7 +644,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Docker metadata
-        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
         id: meta
         with:
           images: ${{ needs.docker-build.outputs.full_image_name_remote_registry }}
