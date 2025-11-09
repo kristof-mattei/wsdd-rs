@@ -172,7 +172,7 @@ impl NetlinkAddressMonitor {
         // are aligned to 4 bytes
         let mut buffer = vec![MaybeUninit::<u32>::uninit(); 1024];
 
-        // SAFETY: created from a valid vector, so all the slice quarantees are upheld
+        // SAFETY: created from a valid vector, so all the slice guarantees are upheld
         let buffer = unsafe {
             std::slice::from_raw_parts_mut(
                 buffer.as_mut_ptr().cast::<MaybeUninit<u8>>(),
@@ -205,7 +205,7 @@ impl NetlinkAddressMonitor {
 
             event!(Level::DEBUG, "netlink message with {} bytes", bytes_read);
 
-            // SAFETY: created from a valid vector, so all the slice quarantees are upheld
+            // SAFETY: created from a valid vector, so all the slice guarantees are upheld
             let buffer = unsafe {
                 std::slice::from_raw_parts(
                     buffer.as_ptr().cast::<MaybeUninit<u8>>(),
@@ -349,7 +349,7 @@ fn parse_attributes(
 ) -> Result<Option<IpAddr>, eyre::Report> {
     let mut addr: Option<IpAddr> = None;
 
-    while attribute_offset <= data_length + data_offset {
+    while attribute_offset < data_length + data_offset {
         let rta = match rtattr::ref_from_prefix(&buffer[attribute_offset..]) {
             Ok((rta, _suffix)) => rta,
             Err(error) => {
