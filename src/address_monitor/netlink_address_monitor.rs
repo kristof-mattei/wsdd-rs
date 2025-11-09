@@ -15,7 +15,9 @@ use tracing::{Level, event};
 use zerocopy::{FromBytes as _, IntoBytes as _};
 
 use crate::config::Config;
-use crate::ffi::{NLMSG_ALIGNTO, RTA_ALIGNTO, ifaddrmsg, netlink_req, nlmsghdr, rtattr};
+use crate::ffi::{
+    NLMSG_ALIGNTO, RTA_ALIGNTO, ifaddrmsg, netlink_req, nlmsghdr, rta_type_to_label, rtattr,
+};
 use crate::network_handler::Command;
 
 #[expect(clippy::cast_possible_truncation, reason = "Compile-time checked")]
@@ -166,47 +168,59 @@ impl NetlinkAddressMonitor {
 
         // we don't need to zero out the buffer between runs as `recv_buf` starts at 0 and returns `bytes_read`
         // sine we only read that portion we don't need to worry about the leftovers
-        let mut buffer = vec![MaybeUninit::<u8>::uninit(); 4096];
+        // Notice the buffer is u32 because all of our structs written here by the kernel
+        // are aligned to 4 bytes
+        let mut buffer = vec![MaybeUninit::<u32>::uninit(); 1024];
+
+        // SAFETY: created from a valid vector, so all the slice guarantees are upheld
+        let buffer = unsafe {
+            std::slice::from_raw_parts_mut(
+                buffer.as_mut_ptr().cast::<MaybeUninit<u8>>(),
+                buffer.len() * std::mem::size_of::<MaybeUninit<u32>>(),
+            )
+        };
 
         loop {
-            let mut buffer_slice = buffer.as_mut_slice();
+            let bytes_read = {
+                let mut buffer_byte_cursor = &mut *buffer;
 
-            let bytes_read = tokio::select! {
-                () = self.cancellation_token.cancelled() => {
-                    break;
-                },
-                changed = self.start_rx.changed() => {
-                    if changed.is_err() {
-                        break;
-                    }
+                tokio::select! {
+                        () = self.cancellation_token.cancelled() => {
+                            break;
+                        },
+                        changed = self.start_rx.changed() => {
+                            if changed.is_err() {
+                                break;
+                            }
 
-                    self.request_current_state()?;
+                            self.request_current_state()?;
 
-                    continue;
-                },
-                result = self.socket.recv_buf(&mut buffer_slice) => {
-                    result?
+                            continue;
+                        },
+                        result = self.socket.recv_buf(&mut buffer_byte_cursor) => {
+                            result?
+                        }
                 }
             };
 
             event!(Level::DEBUG, "netlink message with {} bytes", bytes_read);
 
-            // `recv_buf` tells us that `bytes_read` were read from the socket into our `buffer`, so they're initialized
+            // SAFETY: created from a valid vector, so all the slice guarantees are upheld
+            let buffer = unsafe {
+                std::slice::from_raw_parts(
+                    buffer.as_ptr().cast::<MaybeUninit<u8>>(),
+                    buffer.len() * std::mem::size_of::<MaybeUninit<u32>>(),
+                )
+            };
+
             // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
-            let buffer = unsafe { &*(&raw const buffer[0..bytes_read] as *const [u8]) };
+            let buffer = unsafe { &*(&raw const buffer[..bytes_read] as *const [u8]) };
 
-            let mut offset = 0;
+            let mut message_offset = 0;
 
-            while offset < bytes_read {
-                let (message, _suffix) = nlmsghdr::ref_from_prefix(&buffer[offset..])
+            while message_offset < bytes_read {
+                let (message, _suffix) = nlmsghdr::ref_from_prefix(&buffer[message_offset..])
                     .map_err(|error| eyre::Report::msg(error.to_string()))?;
-
-                offset += size_of::<nlmsghdr>();
-
-                let Some(length) = (message.nlmsg_len as usize).checked_sub(size_of::<nlmsghdr>())
-                else {
-                    break;
-                };
 
                 if message.nlmsg_type != RTM_NEWADDR && message.nlmsg_type != RTM_DELADDR {
                     event!(
@@ -215,13 +229,17 @@ impl NetlinkAddressMonitor {
                         message.nlmsg_type
                     );
 
-                    offset += align_to(length, NLMSG_ALIGNTO as usize);
+                    // skip this message and its data
+                    message_offset += align_to(message.nlmsg_len as usize, NLMSG_ALIGNTO as usize);
 
                     continue;
                 }
 
+                let data_offset =
+                    message_offset + align_to(size_of::<nlmsghdr>(), NLMSG_ALIGNTO as usize);
+
                 // decode ifaddrmsg as in if_addr.h
-                let (ifa, _suffix) = ifaddrmsg::ref_from_prefix(&buffer[offset..])
+                let (ifa, _suffix) = ifaddrmsg::ref_from_prefix(&buffer[data_offset..])
                     .map_err(|error| eyre::Report::msg(error.to_string()))?;
 
                 let ifa_flags = u32::from(ifa.ifa_flags);
@@ -237,7 +255,8 @@ impl NetlinkAddressMonitor {
                         ifa_flags
                     );
 
-                    offset += align_to(length, NLMSG_ALIGNTO as usize);
+                    // skip this message and its data
+                    message_offset += align_to(message.nlmsg_len as usize, NLMSG_ALIGNTO as usize);
 
                     continue;
                 }
@@ -251,66 +270,29 @@ impl NetlinkAddressMonitor {
                     ifa.ifa_index
                 );
 
-                let mut addr: Option<IpAddr> = None;
+                // Based on `RTA_LENGTH`
+                let data_length = message.nlmsg_len as usize
+                    - (align_to(
+                        size_of::<ifaddrmsg>()
+                            + align_to(size_of::<nlmsghdr>(), NLMSG_ALIGNTO as usize),
+                        NLMSG_ALIGNTO as usize,
+                    ));
 
-                let mut i = offset + size_of::<ifaddrmsg>();
-
-                #[expect(clippy::big_endian_bytes, reason = "We're reading network data")]
-                while i - offset < length {
-                    let rta = match rtattr::ref_from_prefix(&buffer[i..]) {
-                        Ok((rta, _suffix)) => rta,
-                        Err(error) => {
-                            event!(Level::ERROR, ?error, "Error mapping buffer to `rtattr`");
-
-                            // TODO use thiserror
-                            return Err(eyre::Report::msg(
-                                "ConvertError: Error mapping buffer to `rtattr`",
-                            ));
-                        },
-                    };
-
-                    event!(Level::DEBUG, "rt_attr {} {}", rta.rta_len, rta.rta_type);
-
-                    if usize::from(rta.rta_len) < size_of::<rtattr>() {
-                        event!(Level::DEBUG, "Invalid `rta_len`. skipping remainder.");
-                        break;
-                    }
-
-                    if rta.rta_type == IFA_LABEL {
-                        // unused, original codebase extracted
-                        // the labels in here for ipv4, but ipv6 requires another way
-                        // we do both the ipv6 way
-                    } else if rta.rta_type == IFA_LOCAL && i32::from(ifa.ifa_family) == AF_INET {
-                        let (ipv4_in_network_order, _suffix) =
-                            <[u8; 4]>::ref_from_prefix(&buffer[i + size_of::<rtattr>()..]).unwrap();
-
-                        addr = Some(
-                            Ipv4Addr::from_bits(u32::from_be_bytes(*ipv4_in_network_order)).into(),
-                        );
-                    } else if rta.rta_type == IFA_ADDRESS && i32::from(ifa.ifa_family) == AF_INET6 {
-                        let (ipv6_in_network_order, _suffix) =
-                            <[u8; 16]>::ref_from_prefix(&buffer[i + size_of::<rtattr>()..])
-                                .unwrap();
-
-                        addr = Some(
-                            Ipv6Addr::from_bits(u128::from_be_bytes(*ipv6_in_network_order)).into(),
-                        );
-                    } else if rta.rta_type == IFA_FLAGS {
-
-                        // https://github.com/torvalds/linux/blob/febbc555cf0fff895546ddb8ba2c9a523692fb55/include/uapi/linux/if_addr.h#L35
-                        // unused
-                        // original:
-                        // _, ifa_flags = struct.unpack_from('HI', buf, i)
-                    } else {
-                        // ...
-                    }
-
-                    i += align_to(usize::from(rta.rta_len), RTA_ALIGNTO as usize);
-                }
+                // Second parameter is based on `IFA_RTA`
+                // to find out the start of the first `rtattr`
+                let addr = parse_attributes(
+                    buffer,
+                    data_offset + align_to(size_of::<ifaddrmsg>(), NLMSG_ALIGNTO as usize),
+                    data_offset,
+                    data_length,
+                    ifa,
+                )?;
 
                 let Some(addr) = addr else {
                     event!(Level::DEBUG, "no address in RTM message");
-                    offset += align_to(length, NLMSG_ALIGNTO as usize);
+
+                    message_offset += align_to(message.nlmsg_len as usize, NLMSG_ALIGNTO as usize);
+
                     continue;
                 };
 
@@ -331,6 +313,8 @@ impl NetlinkAddressMonitor {
                     unreachable!()
                 };
 
+                // event!(Level::INFO, ?command);
+
                 if let Err(error) = self.command_tx.send(command).await {
                     if self.cancellation_token.is_cancelled() {
                         event!(Level::INFO, command = ?error.0, "Could not announce command due to shutting down");
@@ -340,7 +324,7 @@ impl NetlinkAddressMonitor {
                     }
                 }
 
-                offset += align_to(length, NLMSG_ALIGNTO as usize);
+                message_offset += align_to(message.nlmsg_len as usize, NLMSG_ALIGNTO as usize);
             }
         }
 
@@ -353,4 +337,82 @@ impl NetlinkAddressMonitor {
         // self.socket.close()
         // super().cleanup()
     }
+}
+
+#[expect(clippy::big_endian_bytes, reason = "We're reading network data")]
+fn parse_attributes(
+    buffer: &[u8],
+    mut attribute_offset: usize,
+    data_offset: usize,
+    data_length: usize,
+    ifa: &ifaddrmsg,
+) -> Result<Option<IpAddr>, eyre::Report> {
+    let mut addr: Option<IpAddr> = None;
+
+    while attribute_offset < data_length + data_offset {
+        let rta = match rtattr::ref_from_prefix(&buffer[attribute_offset..]) {
+            Ok((rta, _suffix)) => rta,
+            Err(error) => {
+                event!(Level::ERROR, ?error, "Error mapping buffer to `rtattr`");
+
+                // TODO use thiserror
+                return Err(eyre::Report::msg(
+                    "ConvertError: Error mapping buffer to `rtattr`",
+                ));
+            },
+        };
+
+        let rta_payload =
+            Into::<usize>::into(rta.rta_len) - align_to(size_of::<rtattr>(), RTA_ALIGNTO.into());
+
+        event!(
+            Level::DEBUG,
+            "rt_attr type: {} ({}), payload length: {}",
+            rta.rta_type,
+            rta_type_to_label(rta.rta_type).unwrap_or("Unknown type"),
+            rta_payload,
+        );
+
+        if usize::from(rta.rta_len) < size_of::<rtattr>() {
+            event!(Level::DEBUG, "Invalid `rta_len`. skipping remainder.");
+            break;
+        }
+
+        if rta.rta_type == IFA_LABEL {
+            // unused, original codebase extracted
+            // the labels in here for ipv4, but ipv6 requires another way
+            // we do both the ipv6 way
+        } else if rta.rta_type == IFA_LOCAL && i32::from(ifa.ifa_family) == AF_INET {
+            if rta_payload == 4 {
+                // for `IFA_LOCAL` and a payload of 4 we have an IPv4 address
+                let (ipv4_in_network_order, _suffix) =
+                    <[u8; 4]>::ref_from_prefix(&buffer[attribute_offset + size_of::<rtattr>()..])
+                        .unwrap();
+
+                addr = Some(Ipv4Addr::from_bits(u32::from_be_bytes(*ipv4_in_network_order)).into());
+            }
+        } else if rta.rta_type == IFA_ADDRESS && i32::from(ifa.ifa_family) == AF_INET6 {
+            if rta_payload == 16 {
+                // for `IFA_ADDRESS` and a payload of 16 we have an IPv6 address
+                let (ipv6_in_network_order, _suffix) =
+                    <[u8; 16]>::ref_from_prefix(&buffer[attribute_offset + size_of::<rtattr>()..])
+                        .unwrap();
+
+                addr =
+                    Some(Ipv6Addr::from_bits(u128::from_be_bytes(*ipv6_in_network_order)).into());
+            }
+        } else if rta.rta_type == IFA_FLAGS {
+
+            // https://github.com/torvalds/linux/blob/febbc555cf0fff895546ddb8ba2c9a523692fb55/include/uapi/linux/if_addr.h#L35
+            // unused
+            // original:
+            // _, ifa_flags = struct.unpack_from('HI', buf, i)
+        } else {
+            // ...
+        }
+
+        attribute_offset += align_to(usize::from(rta.rta_len), RTA_ALIGNTO as usize);
+    }
+
+    Ok(addr)
 }
