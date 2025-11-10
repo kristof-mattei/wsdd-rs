@@ -28,8 +28,6 @@ pub struct Config {
     //     logger = logging.getLogger('wsdd')
     #[expect(unused, reason = "WIP")]
     pub shortlog: bool,
-    #[expect(unused, reason = "WIP")]
-    pub preserve_case: bool,
     pub chroot: Option<PathBuf>,
     pub user: Option<(u32, u32)>,
     pub discovery: bool,
