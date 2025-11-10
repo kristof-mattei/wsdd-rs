@@ -96,7 +96,7 @@ impl WSDClient {
         client
     }
 
-    pub async fn teardown(self, _graceful: bool) {
+    pub async fn teardown(self) {
         self.cancellation_token.cancel();
 
         self.remove_outdated_probes().await;

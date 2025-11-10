@@ -63,7 +63,7 @@ impl WSDHttpServer {
     }
 
     #[expect(clippy::unused_async, reason = "API consistency")]
-    pub async fn teardown(self, _graceful: bool) {
+    pub async fn teardown(self) {
         self.cancellation_token.cancel();
     }
 }

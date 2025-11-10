@@ -171,13 +171,13 @@ impl MulticastHandler {
         }
 
         if let Some(client) = self.wsd_client.into_inner() {
-            client.teardown(graceful).await;
+            client.teardown().await;
 
             // client is dropped
         }
 
         if let Some(http_server) = self.http_server.into_inner() {
-            http_server.teardown(graceful).await;
+            http_server.teardown().await;
 
             // http_server is dropped
         }

@@ -79,12 +79,12 @@ impl WSDHost {
         // note that this is a child token, so we only cancel ourselves
         self.cancellation_token.cancel();
 
-        // if we're shutting down gracefully, announce that we're shutting down
-        // in the case the address dropped from the interface, `graceful` will be `false`
         if graceful {
             if let Err(error) = self.send_bye(&self.messages_built).await {
                 event!(Level::DEBUG, ?error, "Failed to schedule bye message");
             }
+        } else {
+            // in the case the address dropped from the interface, there is nowhere to send the bye to
         }
     }
 
