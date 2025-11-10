@@ -46,7 +46,7 @@ impl WSDClient {
     /// * `mc_local_port_rx`: used to receive multicast messages sent to the local port
     /// * `mc_local_port_tx`: use to send multicast messages, from the local port to `WSD_PORT`
     pub fn init(
-        cancellation_token: &CancellationToken,
+        cancellation_token: CancellationToken,
         config: Arc<Config>,
         devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
         bound_to: NetworkAddress,
@@ -54,8 +54,6 @@ impl WSDClient {
         mc_local_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
         mc_local_port_tx: Sender<Box<[u8]>>,
     ) -> Self {
-        let cancellation_token = cancellation_token.child_token();
-
         let probes = Arc::new(RwLock::new(HashMap::<Urn, u128>::new()));
 
         {
@@ -98,14 +96,10 @@ impl WSDClient {
         client
     }
 
-    pub async fn teardown(self, graceful: bool) {
+    pub async fn teardown(self, _graceful: bool) {
         self.cancellation_token.cancel();
 
         self.remove_outdated_probes().await;
-
-        if graceful {
-            // ??
-        }
     }
 
     // WS-Discovery, Section 4.3, Probe message
@@ -954,7 +948,7 @@ mod tests {
         );
 
         let _client = WSDClient::init(
-            &cancellation_token,
+            cancellation_token.child_token(),
             config,
             client_devices,
             bound_to,

@@ -347,7 +347,7 @@ impl NetworkHandler {
         // TODO: Proper error handling here
         let mut multicast_handler = MulticastHandler::new(
             address,
-            self.cancellation_token.clone(),
+            self.cancellation_token.child_token(),
             &self.config,
             Arc::clone(&self.devices),
         )

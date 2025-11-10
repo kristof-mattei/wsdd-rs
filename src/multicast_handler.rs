@@ -170,14 +170,17 @@ impl MulticastHandler {
             // host is dropped
         }
 
-        // TODO drop client
         if let Some(client) = self.wsd_client.into_inner() {
             client.teardown(graceful).await;
 
             // client is dropped
         }
 
-        // TODO drop http
+        if let Some(http_server) = self.http_server.into_inner() {
+            http_server.teardown(graceful).await;
+
+            // http_server is dropped
+        }
 
         if graceful {
             // we drop the sender first, which makes the handle go into cleanup mode, and gracefully try to send the lsat messages to the sockets
@@ -381,7 +384,7 @@ impl MulticastHandler {
         self.wsd_host
             .get_or_init(|| async {
                 let host = WSDHost::init(
-                    &self.cancellation_token,
+                    self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
                     Arc::clone(&self.messages_built),
                     self.address.clone(),
@@ -403,7 +406,7 @@ impl MulticastHandler {
         self.wsd_client
             .get_or_init(|| async {
                 let client = WSDClient::init(
-                    &self.cancellation_token,
+                    self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
                     Arc::clone(&self.devices),
                     self.address.clone(),
@@ -423,7 +426,7 @@ impl MulticastHandler {
             .get_or_try_init(|| async {
                 let server = WSDHttpServer::init(
                     self.address.clone(),
-                    &self.cancellation_token,
+                    self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
                     self.http_listen_address,
                 )
@@ -631,6 +634,8 @@ impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
     }
 
     async fn teardown(self) {
+        // all senders need to be dropped to ensure the handler can shutdown properly
+        // the clones have their own shutdown handlers
         drop(self.sender);
 
         let _r = self.handler.await;

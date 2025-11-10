@@ -220,13 +220,6 @@ impl NetlinkAddressMonitor {
 
         Ok(())
     }
-
-    #[expect(unused, reason = "WIP")]
-    fn cleanup() {
-        // self.aio_loop.remove_reader(self.socket.fileno())
-        // self.socket.close()
-        // super().cleanup()
-    }
 }
 
 async fn parse_netlink_response(
