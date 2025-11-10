@@ -236,6 +236,7 @@ where
     let preserve_case = matches.get_one("preserve-case").copied().unwrap_or(false);
 
     let full_hostname = if let Some(domain) = matches.get_one::<String>("domain").cloned() {
+        // for `domain` the default is to lowercase the `hostname`
         let hostname = if preserve_case {
             &*hostname
         } else {
@@ -248,6 +249,7 @@ where
             .cloned()
             .expect("workgroup has a default");
 
+        // for `workgroup` the default is to UPPERCASE the `hostname`
         let hostname = if preserve_case {
             &*hostname
         } else {
@@ -270,7 +272,6 @@ where
         ipv4only: matches.get_one("ipv4only").copied().unwrap_or(false),
         ipv6only: matches.get_one("ipv6only").copied().unwrap_or(false),
         shortlog: matches.get_one("shortlog").copied().unwrap_or(false),
-        preserve_case,
         chroot: matches.get_one("chroot").cloned(),
         user: matches.get_one("user").copied(),
         discovery: matches.get_one("discovery").copied().unwrap_or(false),
