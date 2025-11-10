@@ -1,5 +1,6 @@
 use std::mem::MaybeUninit;
 use std::net::IpAddr;
+use std::sync::Arc;
 
 use color_eyre::eyre;
 use libc::{NETLINK_ROUTE, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK};
@@ -16,6 +17,7 @@ use tracing::{Level, event};
 
 use crate::config::Config;
 use crate::network_handler::Command;
+use crate::utils::task::spawn_with_name;
 
 #[expect(clippy::cast_possible_truncation, reason = "Compile-time checked")]
 const SIZE_OF_SOCKADDR_NL: u32 = const {
@@ -32,8 +34,7 @@ const SIZE_OF_SOCKADDR_NL: u32 = const {
 pub struct NetlinkAddressMonitor {
     cancellation_token: CancellationToken,
     command_tx: Sender<Command>,
-    socket: tokio::net::UdpSocket,
-    start_rx: tokio::sync::watch::Receiver<()>,
+    socket: Arc<tokio::net::UdpSocket>,
 }
 
 impl NetlinkAddressMonitor {
@@ -92,73 +93,45 @@ impl NetlinkAddressMonitor {
 
         socket.bind(&socket_addr)?;
 
+        let socket = {
+            let socket = std::net::UdpSocket::from(socket);
+            let socket = tokio::net::UdpSocket::from_std(socket)?;
+            Arc::new(socket)
+        };
+
+        {
+            let cancellation_token = cancellation_token.clone();
+            let socket = Arc::clone(&socket);
+            let mut start_rx = start_rx;
+
+            spawn_with_name("start processing task", async move {
+                loop {
+                    tokio::select! {
+                        () = cancellation_token.cancelled() => {
+                            break;
+                        },
+                        changed = start_rx.changed() => {
+                            if changed.is_err() {
+                                break;
+                            }
+
+                            if let Err(error) = request_current_state(&socket) {
+                                event!(Level::ERROR, ?error, "Failed to send start packet");
+                            }
+                        },
+                    }
+                }
+            });
+        };
+
         Ok(Self {
             cancellation_token,
             command_tx,
-            socket: tokio::net::UdpSocket::from_std(std::net::UdpSocket::from(socket))?,
-            start_rx,
+            socket,
         })
     }
 
-    pub fn request_current_state(&mut self) -> Result<(), std::io::Error> {
-        let address_message = {
-            let mut address_message = AddressMessage::default();
-
-            address_message.header.family = netlink_packet_route::AddressFamily::Packet;
-
-            address_message
-        };
-
-        let packet = {
-            let mut packet = NetlinkMessage::new(
-                NetlinkHeader::default(),
-                NetlinkPayload::from(RouteNetlinkMessage::GetAddress(address_message)),
-            );
-            packet.header.flags = NLM_F_DUMP | NLM_F_REQUEST;
-            packet.header.sequence_number = 1;
-            packet.finalize();
-
-            packet
-        };
-
-        let mut buffer = vec![0; packet.header.length as usize];
-
-        packet.serialize(&mut buffer);
-
-        #[expect(
-            clippy::multiple_unsafe_ops_per_block,
-            reason = "Lint limitations on nested `unsafe`"
-        )]
-        // SAFETY: this is how to do it as per the API docs
-        let ((), socket_addr) = unsafe {
-            socket2::SockAddr::try_init(|addr_storage, len| {
-                const {
-                    assert!(
-                        size_of::<libc::sockaddr_nl>() <= size_of::<SockAddrStorage>(),
-                        "`SockAddrStorage`'s size should be larger `libc::sockaddr_nl`'s size"
-                    );
-                }
-
-                // SAFETY: see `SockAddr::try_init` for guarantees that `addr_storage` is zeroed
-                let sockaddr_nl = &mut *addr_storage.cast::<libc::sockaddr_nl>();
-
-                sockaddr_nl.nl_family = libc::AF_NETLINK.try_into().unwrap();
-                sockaddr_nl.nl_pid = 0;
-                sockaddr_nl.nl_groups = 0;
-
-                // SAFETY: `len` is initialized and `non-null`
-                *len = SIZE_OF_SOCKADDR_NL;
-
-                Ok(())
-            })
-        }?;
-
-        socket2::SockRef::from(&self.socket).send_to(&buffer, &socket_addr)?;
-
-        Ok(())
-    }
-
-    pub async fn process_changes(&mut self) -> Result<(), eyre::Report> {
+    pub async fn process_changes(&self) -> Result<(), eyre::Report> {
         // we originally had this on the stack (array) but tokio then moves the whole task to the heap because of size
 
         // we don't need to zero out the buffer between runs as `recv_buf` starts at 0 and returns `bytes_read`
@@ -182,15 +155,6 @@ impl NetlinkAddressMonitor {
                 tokio::select! {
                         () = self.cancellation_token.cancelled() => {
                             break;
-                        },
-                        changed = self.start_rx.changed() => {
-                            if changed.is_err() {
-                                break;
-                            }
-
-                            self.request_current_state()?;
-
-                            continue;
                         },
                         result = self.socket.recv_buf(&mut buffer_byte_cursor) => {
                             result?
@@ -220,13 +184,64 @@ impl NetlinkAddressMonitor {
 
         Ok(())
     }
+}
 
-    #[expect(unused, reason = "WIP")]
-    fn cleanup() {
-        // self.aio_loop.remove_reader(self.socket.fileno())
-        // self.socket.close()
-        // super().cleanup()
-    }
+fn request_current_state(socket: &tokio::net::UdpSocket) -> Result<(), std::io::Error> {
+    let address_message = {
+        let mut address_message = AddressMessage::default();
+
+        address_message.header.family = netlink_packet_route::AddressFamily::Packet;
+
+        address_message
+    };
+
+    let packet = {
+        let mut packet = NetlinkMessage::new(
+            NetlinkHeader::default(),
+            NetlinkPayload::from(RouteNetlinkMessage::GetAddress(address_message)),
+        );
+        packet.header.flags = NLM_F_DUMP | NLM_F_REQUEST;
+        packet.header.sequence_number = 1;
+        packet.finalize();
+
+        packet
+    };
+
+    let mut buffer = vec![0; packet.header.length as usize];
+
+    packet.serialize(&mut buffer);
+
+    #[expect(
+        clippy::multiple_unsafe_ops_per_block,
+        reason = "Lint limitations on nested `unsafe`"
+    )]
+    // SAFETY: this is how to do it as per the API docs
+    let ((), socket_addr) = unsafe {
+        socket2::SockAddr::try_init(|addr_storage, len| {
+            const {
+                assert!(
+                    size_of::<libc::sockaddr_nl>() <= size_of::<SockAddrStorage>(),
+                    "`SockAddrStorage`'s size should be larger `libc::sockaddr_nl`'s size"
+                );
+            }
+
+            // SAFETY: see `SockAddr::try_init` for guarantees that `addr_storage` is zeroed
+            let sockaddr_nl = &mut *addr_storage.cast::<libc::sockaddr_nl>();
+
+            sockaddr_nl.nl_family = libc::AF_NETLINK.try_into().unwrap();
+            sockaddr_nl.nl_pid = 0;
+            sockaddr_nl.nl_groups = 0;
+
+            // SAFETY: `len` is initialized and `non-null`
+            *len = SIZE_OF_SOCKADDR_NL;
+
+            Ok(())
+        })
+    }?;
+
+    socket2::SockRef::from(&socket).send_to(&buffer, &socket_addr)?;
+
+    Ok(())
 }
 
 async fn parse_netlink_response(
