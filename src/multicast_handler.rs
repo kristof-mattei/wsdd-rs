@@ -163,9 +163,8 @@ impl MulticastHandler {
 
     pub async fn teardown(self, graceful: bool) {
         if let Some(host) = self.wsd_host.into_inner() {
-            host.teardown(graceful).await;
-
             // graceful teardown makes the host queue up a goodbye, so when we're here we have made an honest try to schedule the goodbye message
+            host.teardown(graceful).await;
 
             // host is dropped
         }
