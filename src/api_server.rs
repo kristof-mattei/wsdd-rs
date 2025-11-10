@@ -23,8 +23,8 @@ const MAX_CONCURRENT_CONNECTIONS: usize = 10;
 
 pub struct ApiServer {
     cancellation_token: CancellationToken,
-    listener: GenericListener,
     command_tx: tokio::sync::mpsc::Sender<Command>,
+    listener: GenericListener,
 }
 
 impl ApiServer {
@@ -51,8 +51,8 @@ impl ApiServer {
 
         Ok(Self {
             cancellation_token,
-            listener,
             command_tx,
+            listener,
         })
     }
 
@@ -120,8 +120,9 @@ impl ApiServer {
         }
     }
 
-    #[expect(clippy::unused_async, reason = "WIP")]
-    pub(crate) async fn teardown(&self) {}
+    pub fn teardown(self) {
+        self.cancellation_token.cancel();
+    }
 }
 
 async fn handle_single_connection(
