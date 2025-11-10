@@ -239,7 +239,7 @@ async fn parse_netlink_response(
     loop {
         let message: NetlinkMessage<RouteNetlinkMessage> =
             match NetlinkMessage::deserialize(&buffer[message_offset..]) {
-                Ok(msg) => msg,
+                Ok(message) => message,
                 Err(error) => {
                     event!(
                         Level::ERROR,
@@ -293,10 +293,13 @@ async fn parse_netlink_response(
             if let Err(error) = command_tx.send(command).await {
                 if cancellation_token.is_cancelled() {
                     event!(Level::INFO, command = ?error.0, "Could not announce command due to shutting down");
-                    break Ok(());
                 } else {
                     event!(Level::ERROR, command = ?error.0, "Failed to announce command");
                 }
+
+                break Err(eyre::Report::msg(
+                    "Command receiver gone, nothing left to do but abandon buffer",
+                ));
             }
         }
 
