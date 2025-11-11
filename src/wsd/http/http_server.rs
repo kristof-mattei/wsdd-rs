@@ -190,7 +190,8 @@ mod tests {
     use crate::test_utils::xml::to_string_pretty;
     use crate::wsd::http::http_server::WSDHttpServer;
 
-    #[tokio::test]
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn http_server_listens() {
         // host
         let host_endpoint_uuid = Uuid::new_v4();

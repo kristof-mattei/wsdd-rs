@@ -1,7 +1,7 @@
 use std::io::BufReader;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use bytes::Bytes;
 use color_eyre::eyre;
@@ -181,9 +181,19 @@ async fn remove_outdated_probes(probes: &Arc<RwLock<HashMap<Urn, Duration>>>) {
 }
 
 fn now() -> Duration {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("Before epoch? Time travel?")
+    #[cfg(miri)]
+    {
+        Duration::from_secs(1_762_802_693)
+    }
+
+    #[cfg(not(miri))]
+    {
+        use std::time::SystemTime;
+
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("Before epoch? Time travel?")
+    }
 }
 
 //     def cleanup(self) -> None:
@@ -643,7 +653,8 @@ mod tests {
         assert_eq!(response, expected);
     }
 
-    #[tokio::test]
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn handles_hello_with_xaddr() {
         let (message_handler, bound_to) =
             build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::LOCALHOST));
@@ -801,7 +812,8 @@ mod tests {
             .unwrap();
     }
 
-    #[tokio::test]
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn handles_hello_bye() {
         let (message_handler, network_address) =
             build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::LOCALHOST));
