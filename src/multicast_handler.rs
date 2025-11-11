@@ -631,9 +631,10 @@ impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
 
     async fn teardown(self) {
         // all senders need to be dropped to ensure the handler can shutdown properly
-        // the clones have their own shutdown handlers
         drop(self.tx);
 
+        // we're explicitely not forcefully cancelling our own handler
+        // to allow everbody to send their messages and shut down gracefully before we shut down
         let _r = self.handler.await;
     }
 }
