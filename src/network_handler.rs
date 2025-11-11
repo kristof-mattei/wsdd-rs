@@ -73,7 +73,7 @@ pub struct NetworkHandler {
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
     multicast_handlers: Vec<MulticastHandler>,
     command_rx: tokio::sync::mpsc::Receiver<Command>,
-    start_sender: tokio::sync::watch::Sender<()>,
+    start_tx: tokio::sync::watch::Sender<()>,
 }
 
 #[derive(Error, Debug)]
@@ -91,7 +91,7 @@ impl NetworkHandler {
         cancellation_token: CancellationToken,
         config: &Arc<Config>,
         command_rx: tokio::sync::mpsc::Receiver<Command>,
-        start_sender: tokio::sync::watch::Sender<()>,
+        start_tx: tokio::sync::watch::Sender<()>,
     ) -> Self {
         Self {
             active: AtomicBool::new(false),
@@ -101,7 +101,7 @@ impl NetworkHandler {
             interfaces: HashMap::new(),
             multicast_handlers: vec![],
             command_rx,
-            start_sender,
+            start_tx,
         }
     }
 
@@ -493,7 +493,7 @@ impl NetworkHandler {
                 Ordering::Relaxed,
             ) {
                 Ok(_) => {
-                    self.start_sender
+                    self.start_tx
                         .send(())
                         .map_err(|_| eyre::Report::msg("channel gone"))?;
                     break;
