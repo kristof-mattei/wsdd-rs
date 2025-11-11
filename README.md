@@ -30,7 +30,7 @@ XSD validation:
 - `mc_send_socket` SENDS multicast messages, on a custom port, RECEIVES unicast
 - `uc_send_socket` is used REPLY with unicast, it is bound to the interface's address, on the WSD Port
 
-I _think_ we can merge `recv_socket` & `uc_send_socket` in the future.
+The sockets are separate for a reason: https://github.com/christgau/wsdd/commit/ee8783ce71a408a3d9923b5d67659f7ce2712166
 
 `mc_send_socket` receives messages in `WSDClient`, because it sends out a probe over the `mc_send_socket`, and hosts reply FROM 3072 (in our case `uc_send_socket` TO the `mc_send_socket`, that port)
 
