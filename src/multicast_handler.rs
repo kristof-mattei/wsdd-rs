@@ -388,8 +388,8 @@ impl MulticastHandler {
                     Arc::clone(&self.messages_built),
                     self.address.clone(),
                     self.mc_wsd_port_rx.get_listener().await,
-                    self.mc_local_port_tx.get_sender(),
-                    self.uc_wsd_port_tx.get_sender(),
+                    self.mc_local_port_tx.get_tx(),
+                    self.uc_wsd_port_tx.get_tx(),
                 );
 
                 host
@@ -411,7 +411,7 @@ impl MulticastHandler {
                     self.address.clone(),
                     self.mc_wsd_port_rx.get_listener().await,
                     self.mc_local_port_rx.get_listener().await,
-                    self.mc_local_port_tx.get_sender(),
+                    self.mc_local_port_tx.get_tx(),
                 );
 
                 client
@@ -628,7 +628,7 @@ impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
         }
     }
 
-    fn get_sender(&mut self) -> Sender<T::Message> {
+    fn get_tx(&mut self) -> Sender<T::Message> {
         self.sender.clone()
     }
 

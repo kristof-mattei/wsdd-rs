@@ -28,11 +28,11 @@ type Monitor = !;
 
 pub fn create_address_monitor(
     cancellation_token: CancellationToken,
-    new_address_sender: Sender<Command>,
+    new_address_tx: Sender<Command>,
     start_rx: tokio::sync::watch::Receiver<()>,
     config: &Config,
 ) -> Result<Monitor, eyre::Report> {
-    Monitor::new(cancellation_token, new_address_sender, start_rx, config).map_err(|error| {
+    Monitor::new(cancellation_token, new_address_tx, start_rx, config).map_err(|error| {
         event!(Level::ERROR, ?error);
         error.into()
     })

@@ -604,7 +604,7 @@ mod tests {
             host_endpoint_uuid
         );
 
-        let (multicast_sender, mut multicast_rx) = tokio::sync::mpsc::channel(1);
+        let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
         let (_, reader) = message_handler
             .deconstruct_message(
@@ -619,7 +619,7 @@ mod tests {
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
-            &multicast_sender,
+            &multicast_tx,
             reader,
         )
         .await
@@ -706,7 +706,7 @@ mod tests {
             host_endpoint_uuid
         );
 
-        let (multicast_sender, mut multicast_rx) = tokio::sync::mpsc::channel(1);
+        let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
         let config = Arc::new(build_config(client_endpoint_id, client_instance_id));
 
@@ -723,7 +723,7 @@ mod tests {
             &config,
             Arc::clone(&client_devices),
             &bound_to,
-            &multicast_sender,
+            &multicast_tx,
             reader,
         )
         .await
@@ -863,7 +863,7 @@ mod tests {
             host_endpoint_uuid
         );
 
-        let (multicast_sender, mut multicast_rx) = tokio::sync::mpsc::channel(1);
+        let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
         let config = Arc::new(build_config(client_endpoint_id, client_instance_id));
 
@@ -880,7 +880,7 @@ mod tests {
             &config,
             Arc::clone(&client_devices),
             &network_address,
-            &multicast_sender,
+            &multicast_tx,
             reader,
         )
         .await
