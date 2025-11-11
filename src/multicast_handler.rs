@@ -524,6 +524,7 @@ impl MessageReceiver {
 }
 
 trait MessageSplitter {
+    const NAME: &str;
     const REPEAT: usize;
 
     type Message: Send;
@@ -536,6 +537,7 @@ struct MulticastMessageSplitter {
 }
 
 impl MessageSplitter for MulticastMessageSplitter {
+    const NAME: &str = "MulticastMessageSplitter";
     const REPEAT: usize = MULTICAST_UDP_REPEAT;
 
     type Message = Box<[u8]>;
@@ -548,6 +550,7 @@ impl MessageSplitter for MulticastMessageSplitter {
 struct UnicastMessageSplitter {}
 
 impl MessageSplitter for UnicastMessageSplitter {
+    const NAME: &str = "UnicastMessageSplitter";
     const REPEAT: usize = UNICAST_UDP_REPEAT;
 
     type Message = (SocketAddr, Box<[u8]>);
@@ -586,7 +589,10 @@ async fn repeatedly_send_buffer<T: MessageSplitter>(
     }
 }
 
-impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
+impl<T> MessageSender<T>
+where
+    T: MessageSplitter + Send + 'static,
+{
     fn new(socket: Arc<UdpSocket>, message_splitter: T) -> Self {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<T::Message>(10);
 
@@ -601,7 +607,8 @@ impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
                             .local_addr()
                             .map(|l| l.to_string())
                             .unwrap_or_default(),
-                        "All senders gone, shutting down"
+                        splitter = %T::NAME,
+                        "All senders gone, stopping sender"
                     );
                     break;
                 };
