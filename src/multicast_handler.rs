@@ -182,7 +182,7 @@ impl MulticastHandler {
         }
 
         if graceful {
-            // we drop the sender first, which makes the handle go into cleanup mode, and gracefully try to send the lsat messages to the sockets
+            // we drop the sender first, which makes the handle go into cleanup mode, and gracefully try to send the last messages to the sockets
 
             // we have to rely on dropping the sender because that is the only way we can have the receiver run to completion
             // a cancellation token and tokio::select might cause the handle to top before parsing the rest of the messages
@@ -640,8 +640,8 @@ where
         // all senders need to be dropped to ensure the handler can shutdown properly
         drop(self.tx);
 
-        // we're explicitely not forcefully cancelling our own handler
-        // to allow everbody to send their messages and shut down gracefully before we shut down
+        // we're explicitly not forcefully cancelling our own handler
+        // to allow everybody to send their messages and shut down gracefully before we shut down
         let _r = self.handler.await;
     }
 }
