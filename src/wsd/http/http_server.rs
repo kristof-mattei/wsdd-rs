@@ -29,6 +29,7 @@ pub struct WSDHttpServer {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     bound_to: NetworkAddress,
+    http_handler: tokio::task::JoinHandle<Result<(), eyre::Error>>,
 }
 
 impl WSDHttpServer {
@@ -49,7 +50,7 @@ impl WSDHttpServer {
         // launch axum server on http_listen_address
         // this will never fail unless shut down
         // see `axum::serve`
-        tokio::task::spawn(launch_http_server(
+        let http_handler = tokio::task::spawn(launch_http_server(
             cancellation_token.clone(),
             listener,
             build_router(Arc::clone(&config), message_handler),
@@ -59,12 +60,14 @@ impl WSDHttpServer {
             cancellation_token,
             config,
             bound_to,
+            http_handler,
         })
     }
 
-    #[expect(clippy::unused_async, reason = "API consistency")]
     pub async fn teardown(self) {
         self.cancellation_token.cancel();
+
+        let _r = self.http_handler.await;
     }
 }
 
