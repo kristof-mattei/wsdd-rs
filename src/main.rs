@@ -220,7 +220,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
         tasks.spawn(async move {
             let _guard = cancellation_token.clone().drop_guard();
 
-            let mut address_monitor = match create_address_monitor(
+            let address_monitor = match create_address_monitor(
                 cancellation_token.clone(),
                 command_sender,
                 start_rx,
