@@ -203,26 +203,22 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     let tasks = tokio_util::task::TaskTracker::new();
 
     let (command_tx, command_rx) = tokio::sync::mpsc::channel(10);
-    let (start_sender, start_rx) = tokio::sync::watch::channel::<()>(());
+    let (start_tx, start_rx) = tokio::sync::watch::channel::<()>(());
 
-    let mut network_handler = NetworkHandler::new(
-        cancellation_token.clone(),
-        &config,
-        command_rx,
-        start_sender,
-    );
+    let mut network_handler =
+        NetworkHandler::new(cancellation_token.clone(), &config, command_rx, start_tx);
 
     {
         let cancellation_token = cancellation_token.clone();
         let config = Arc::clone(&config);
-        let command_sender = command_tx.clone();
+        let command_tx = command_tx.clone();
 
         tasks.spawn(async move {
             let _guard = cancellation_token.clone().drop_guard();
 
             let address_monitor = match create_address_monitor(
                 cancellation_token.clone(),
-                command_sender,
+                command_tx,
                 start_rx,
                 &config,
             ) {

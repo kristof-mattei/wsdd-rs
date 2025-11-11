@@ -385,9 +385,9 @@ impl MulticastHandler {
                     Arc::clone(&self.config),
                     Arc::clone(&self.messages_built),
                     self.address.clone(),
-                    self.mc_wsd_port_rx.get_listener().await,
-                    self.mc_local_port_tx.get_sender(),
-                    self.uc_wsd_port_tx.get_sender(),
+                    self.mc_wsd_port_rx.get_rx().await,
+                    self.mc_local_port_tx.get_tx(),
+                    self.uc_wsd_port_tx.get_tx(),
                 );
 
                 host
@@ -407,9 +407,9 @@ impl MulticastHandler {
                     Arc::clone(&self.config),
                     Arc::clone(&self.devices),
                     self.address.clone(),
-                    self.mc_wsd_port_rx.get_listener().await,
-                    self.mc_local_port_rx.get_listener().await,
-                    self.mc_local_port_tx.get_sender(),
+                    self.mc_wsd_port_rx.get_rx().await,
+                    self.mc_local_port_rx.get_rx().await,
+                    self.mc_local_port_tx.get_tx(),
                 );
 
                 client
@@ -512,7 +512,7 @@ impl MessageReceiver {
         Self { listeners }
     }
 
-    async fn get_listener(&mut self) -> Receiver<(SocketAddr, Arc<[u8]>)> {
+    async fn get_rx(&mut self) -> Receiver<(SocketAddr, Arc<[u8]>)> {
         let (tx, rx) = tokio::sync::mpsc::channel(10);
 
         self.listeners.write().await.push(tx);
@@ -557,7 +557,7 @@ impl MessageSplitter for UnicastMessageSplitter {
 
 struct MessageSender<T: MessageSplitter> {
     handler: JoinHandle<()>,
-    sender: Sender<T::Message>,
+    tx: Sender<T::Message>,
 }
 
 async fn repeatedly_send_buffer<T: MessageSplitter>(
@@ -620,18 +620,15 @@ impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
             tracker.wait().await;
         });
 
-        Self {
-            handler,
-            sender: tx,
-        }
+        Self { handler, tx }
     }
 
-    fn get_sender(&mut self) -> Sender<T::Message> {
-        self.sender.clone()
+    fn get_tx(&mut self) -> Sender<T::Message> {
+        self.tx.clone()
     }
 
     async fn teardown(self) {
-        drop(self.sender);
+        drop(self.tx);
 
         let _r = self.handler.await;
     }
