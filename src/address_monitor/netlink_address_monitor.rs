@@ -107,8 +107,6 @@ impl NetlinkAddressMonitor {
 
             spawn_with_name("start processing task", async move {
                 loop {
-                    let socket = &*socket;
-
                     tokio::select! {
                         () = cancellation_token.cancelled() => {
                             break;
@@ -118,7 +116,7 @@ impl NetlinkAddressMonitor {
                                 break;
                             }
 
-                            if let Err(error) = request_current_state(socket) {
+                            if let Err(error) = request_current_state(&socket) {
                                 event!(Level::ERROR, ?error, "Failed to send start packet");
                             }
                         },
