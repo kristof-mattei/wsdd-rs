@@ -1,12 +1,12 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use axum::Router;
 use axum::extract::State;
 use axum::handler::HandlerWithoutStateExt as _;
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::{Router, debug_handler};
 use bytes::Bytes;
 use color_eyre::eyre;
 use http::StatusCode;
@@ -24,12 +24,11 @@ use crate::soap::parser::MessageHandler;
 use crate::span::MakeSpanWithUuid;
 use crate::wsd::HANDLED_MESSAGES;
 
-#[expect(unused, reason = "WIP")]
 pub struct WSDHttpServer {
+    _bound_to: NetworkAddress,
     cancellation_token: CancellationToken,
-    config: Arc<Config>,
-    bound_to: NetworkAddress,
-    http_handler: tokio::task::JoinHandle<Result<(), eyre::Error>>,
+    _config: Arc<Config>,
+    handle: tokio::task::JoinHandle<Result<(), eyre::Error>>,
 }
 
 impl WSDHttpServer {
@@ -50,24 +49,24 @@ impl WSDHttpServer {
         // launch axum server on http_listen_address
         // this will never fail unless shut down
         // see `axum::serve`
-        let http_handler = tokio::task::spawn(launch_http_server(
+        let handle = tokio::task::spawn(launch_http_server(
             cancellation_token.clone(),
             listener,
             build_router(Arc::clone(&config), message_handler),
         ));
 
         Ok(Self {
+            _bound_to: bound_to,
             cancellation_token,
-            config,
-            bound_to,
-            http_handler,
+            _config: config,
+            handle,
         })
     }
 
     pub async fn teardown(self) {
         self.cancellation_token.cancel();
 
-        let _r = self.http_handler.await;
+        let _r = self.handle.await;
     }
 }
 
@@ -97,7 +96,6 @@ async fn handler_404() -> impl IntoResponse {
     StatusCode::NOT_FOUND
 }
 
-#[debug_handler]
 async fn handle_post(
     headers: HeaderMap,
     State((config, message_handler)): State<(Arc<Config>, Arc<MessageHandler>)>,
