@@ -17,8 +17,8 @@ use xml::EventReader;
 
 use crate::config::Config;
 use crate::constants::{
-    APP_MAX_DELAY, MIME_TYPE_SOAP_XML, PROBE_TIMEOUT, WSD_BYE, WSD_HELLO, WSD_PROBE_MATCH,
-    WSD_RESOLVE_MATCH, XML_WSD_NAMESPACE,
+    APP_MAX_DELAY, MIME_TYPE_SOAP_XML, PROBE_TIMEOUT_MILLISECONDS, WSD_BYE, WSD_HELLO,
+    WSD_PROBE_MATCH, WSD_RESOLVE_MATCH, XML_WSD_NAMESPACE,
 };
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::{Builder, MessageType};
@@ -36,7 +36,7 @@ pub(crate) struct WSDClient {
     bound_to: NetworkAddress,
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     mc_local_port_tx: Sender<Box<[u8]>>,
-    probes: Arc<RwLock<HashMap<Urn, u128>>>,
+    probes: Arc<RwLock<HashMap<Urn, Duration>>>,
 }
 
 impl WSDClient {
@@ -54,7 +54,7 @@ impl WSDClient {
         mc_local_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
         mc_local_port_tx: Sender<Box<[u8]>>,
     ) -> Self {
-        let probes = Arc::new(RwLock::new(HashMap::<Urn, u128>::new()));
+        let probes = Arc::new(RwLock::new(HashMap::<Urn, Duration>::new()));
 
         {
             let cancellation_token = cancellation_token.clone();
@@ -143,7 +143,7 @@ impl WSDClient {
 async fn send_probe(
     cancellation_token: &CancellationToken,
     config: &Arc<Config>,
-    probes: &Arc<RwLock<HashMap<Urn, u128>>>,
+    probes: &Arc<RwLock<HashMap<Urn, Duration>>>,
     mc_local_port_tx: &Sender<Box<[u8]>>,
 ) -> Result<(), eyre::Report> {
     let future = async move {
@@ -169,7 +169,9 @@ async fn send_probe(
         .unwrap_or(Ok(()))
 }
 
-async fn remove_outdated_probes(probes: &Arc<RwLock<HashMap<Urn, u128>>>) {
+async fn remove_outdated_probes(probes: &Arc<RwLock<HashMap<Urn, Duration>>>) {
+    const PROBE_TIMEOUT: Duration = const { Duration::from_millis(PROBE_TIMEOUT_MILLISECONDS) };
+
     let now = now();
 
     probes
@@ -178,11 +180,10 @@ async fn remove_outdated_probes(probes: &Arc<RwLock<HashMap<Urn, u128>>>) {
         .retain(|_, value| *value + (PROBE_TIMEOUT * 2) > now);
 }
 
-fn now() -> u128 {
+fn now() -> Duration {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("Before epoch?")
-        .as_millis()
+        .expect("Before epoch? Time travel?")
 }
 
 //     def cleanup(self) -> None:
@@ -281,7 +282,7 @@ async fn handle_probe_match(
     devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
     relates_to: Option<Urn>,
-    probes: Arc<RwLock<HashMap<Urn, u128>>>,
+    probes: Arc<RwLock<HashMap<Urn, Duration>>>,
     mc_local_port_tx: &Sender<Box<[u8]>>,
     mut reader: EventReader<BufReader<&[u8]>>,
 ) -> Result<(), eyre::Report> {
@@ -464,7 +465,7 @@ async fn listen_forever(
     mut mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
     mut mc_local_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
     mc_local_port_tx: Sender<Box<[u8]>>,
-    probes: Arc<RwLock<HashMap<Urn, u128>>>,
+    probes: Arc<RwLock<HashMap<Urn, Duration>>>,
 ) {
     // Note: we bind on the interface's name.
     // This is to ensure we send out requests via the interface that we received the XML message on
