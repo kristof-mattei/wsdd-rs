@@ -217,7 +217,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
             let _guard = cancellation_token.clone().drop_guard();
 
             let address_monitor = match create_address_monitor(
-                cancellation_token.clone(),
+                cancellation_token.child_token(),
                 command_tx,
                 start_rx,
                 &config,
@@ -235,6 +235,8 @@ async fn start_tasks() -> Result<(), eyre::Report> {
                     event!(Level::ERROR, ?error, "Address Monitor stopped unexpectedly");
                 },
             }
+
+            address_monitor.teardown().await;
         });
     }
 
@@ -267,14 +269,17 @@ async fn start_tasks() -> Result<(), eyre::Report> {
         tasks.spawn(async move {
             let _guard = cancellation_token.clone().drop_guard();
 
-            let api_server =
-                match api_server::ApiServer::new(cancellation_token, &listen_on, command_tx) {
-                    Ok(api_server) => api_server,
-                    Err(error) => {
-                        event!(Level::ERROR, ?error, "Failed to start ApiServer");
-                        return;
-                    },
-                };
+            let api_server = match api_server::ApiServer::new(
+                cancellation_token.child_token(),
+                &listen_on,
+                command_tx,
+            ) {
+                Ok(api_server) => api_server,
+                Err(error) => {
+                    event!(Level::ERROR, ?error, "Failed to start API Server");
+                    return;
+                },
+            };
 
             match api_server.handle_connections().await {
                 Ok(()) => event!(Level::INFO, "API Server stopped listening"),
@@ -283,7 +288,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
                 },
             }
 
-            api_server.teardown().await;
+            api_server.teardown();
         });
     }
 

@@ -163,24 +163,26 @@ impl MulticastHandler {
 
     pub async fn teardown(self, graceful: bool) {
         if let Some(host) = self.wsd_host.into_inner() {
-            host.teardown(graceful).await;
-
             // graceful teardown makes the host queue up a goodbye, so when we're here we have made an honest try to schedule the goodbye message
+            host.teardown(graceful).await;
 
             // host is dropped
         }
 
-        // TODO drop client
         if let Some(client) = self.wsd_client.into_inner() {
-            client.teardown(graceful).await;
+            client.teardown().await;
 
             // client is dropped
         }
 
-        // TODO drop http
+        if let Some(http_server) = self.http_server.into_inner() {
+            http_server.teardown().await;
+
+            // http_server is dropped
+        }
 
         if graceful {
-            // we drop the sender first, which makes the handle go into cleanup mode, and gracefully try to send the lsat messages to the sockets
+            // we drop the sender first, which makes the handle go into cleanup mode, and gracefully try to send the last messages to the sockets
 
             // we have to rely on dropping the sender because that is the only way we can have the receiver run to completion
             // a cancellation token and tokio::select might cause the handle to top before parsing the rest of the messages
@@ -381,7 +383,7 @@ impl MulticastHandler {
         self.wsd_host
             .get_or_init(|| async {
                 let host = WSDHost::init(
-                    &self.cancellation_token,
+                    self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
                     Arc::clone(&self.messages_built),
                     self.address.clone(),
@@ -403,7 +405,7 @@ impl MulticastHandler {
         self.wsd_client
             .get_or_init(|| async {
                 let client = WSDClient::init(
-                    &self.cancellation_token,
+                    self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
                     Arc::clone(&self.devices),
                     self.address.clone(),
@@ -423,7 +425,7 @@ impl MulticastHandler {
             .get_or_try_init(|| async {
                 let server = WSDHttpServer::init(
                     self.address.clone(),
-                    &self.cancellation_token,
+                    self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
                     self.http_listen_address,
                 )
@@ -522,6 +524,7 @@ impl MessageReceiver {
 }
 
 trait MessageSplitter {
+    const NAME: &str;
     const REPEAT: usize;
 
     type Message: Send;
@@ -534,6 +537,7 @@ struct MulticastMessageSplitter {
 }
 
 impl MessageSplitter for MulticastMessageSplitter {
+    const NAME: &str = "MulticastMessageSplitter";
     const REPEAT: usize = MULTICAST_UDP_REPEAT;
 
     type Message = Box<[u8]>;
@@ -546,6 +550,7 @@ impl MessageSplitter for MulticastMessageSplitter {
 struct UnicastMessageSplitter {}
 
 impl MessageSplitter for UnicastMessageSplitter {
+    const NAME: &str = "UnicastMessageSplitter";
     const REPEAT: usize = UNICAST_UDP_REPEAT;
 
     type Message = (SocketAddr, Box<[u8]>);
@@ -584,7 +589,10 @@ async fn repeatedly_send_buffer<T: MessageSplitter>(
     }
 }
 
-impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
+impl<T> MessageSender<T>
+where
+    T: MessageSplitter + Send + 'static,
+{
     fn new(socket: Arc<UdpSocket>, message_splitter: T) -> Self {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<T::Message>(10);
 
@@ -599,7 +607,8 @@ impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
                             .local_addr()
                             .map(|l| l.to_string())
                             .unwrap_or_default(),
-                        "All senders gone, shutting down"
+                        splitter = %T::NAME,
+                        "All senders gone, stopping sender"
                     );
                     break;
                 };
@@ -628,8 +637,11 @@ impl<T: MessageSplitter + Send + 'static> MessageSender<T> {
     }
 
     async fn teardown(self) {
+        // all senders need to be dropped to ensure the handler can shutdown properly
         drop(self.tx);
 
+        // we're explicitly not forcefully cancelling our own handler
+        // to allow everybody to send their messages and shut down gracefully before we shut down
         let _r = self.handler.await;
     }
 }

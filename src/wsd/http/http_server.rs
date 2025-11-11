@@ -29,17 +29,16 @@ pub struct WSDHttpServer {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     bound_to: NetworkAddress,
+    http_handler: tokio::task::JoinHandle<Result<(), eyre::Error>>,
 }
 
 impl WSDHttpServer {
     pub async fn init(
         bound_to: NetworkAddress,
-        cancellation_token: &CancellationToken,
+        cancellation_token: CancellationToken,
         config: Arc<Config>,
         http_listen_address: SocketAddr,
     ) -> Result<WSDHttpServer, std::io::Error> {
-        let cancellation_token = cancellation_token.child_token();
-
         let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to.clone());
 
         event!(Level::INFO, ?http_listen_address, "Trying to bind");
@@ -51,7 +50,7 @@ impl WSDHttpServer {
         // launch axum server on http_listen_address
         // this will never fail unless shut down
         // see `axum::serve`
-        tokio::task::spawn(launch_http_server(
+        let http_handler = tokio::task::spawn(launch_http_server(
             cancellation_token.clone(),
             listener,
             build_router(Arc::clone(&config), message_handler),
@@ -61,7 +60,14 @@ impl WSDHttpServer {
             cancellation_token,
             config,
             bound_to,
+            http_handler,
         })
+    }
+
+    pub async fn teardown(self) {
+        self.cancellation_token.cancel();
+
+        let _r = self.http_handler.await;
     }
 }
 
@@ -156,7 +162,7 @@ async fn build_response(
 /// # Errors
 /// * Server failure
 pub async fn launch_http_server(
-    token: CancellationToken,
+    cancellation_token: CancellationToken,
     listener: tokio::net::TcpListener,
     router: Router,
 ) -> Result<(), eyre::Report> {
@@ -164,7 +170,7 @@ pub async fn launch_http_server(
         listener,
         router.into_make_service_with_connect_info::<SocketAddr>(),
     )
-    .with_graceful_shutdown(token.cancelled_owned())
+    .with_graceful_shutdown(cancellation_token.cancelled_owned())
     .await
     .map_err(Into::into)
 }
@@ -202,7 +208,7 @@ mod tests {
                 host_ip.into(),
                 Arc::new(NetworkInterface::new_with_index("lo", RT_SCOPE_SITE, 5)),
             ),
-            &cancellation_token,
+            cancellation_token.child_token(),
             Arc::clone(&host_config),
             host_http_listening_address,
         )

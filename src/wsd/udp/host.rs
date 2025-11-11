@@ -29,7 +29,7 @@ pub struct WSDHost {
 
 impl WSDHost {
     pub fn init(
-        cancellation_token: &CancellationToken,
+        cancellation_token: CancellationToken,
         config: Arc<Config>,
         messages_built: Arc<AtomicU64>,
         bound_to: NetworkAddress,
@@ -37,8 +37,6 @@ impl WSDHost {
         mc_local_port_tx: Sender<Box<[u8]>>,
         uc_wsd_port_tx: Sender<(SocketAddr, Box<[u8]>)>,
     ) -> Self {
-        let cancellation_token = cancellation_token.child_token();
-
         let address = bound_to.address;
 
         {
@@ -81,8 +79,12 @@ impl WSDHost {
         // note that this is a child token, so we only cancel ourselves
         self.cancellation_token.cancel();
 
-        if graceful && let Err(error) = self.send_bye(&self.messages_built).await {
-            event!(Level::DEBUG, ?error, "Failed to schedule bye message");
+        if graceful {
+            if let Err(error) = self.send_bye(&self.messages_built).await {
+                event!(Level::DEBUG, ?error, "Failed to schedule bye message");
+            }
+        } else {
+            // in the case the address dropped from the interface, there is nowhere to send the bye to
         }
     }
 
@@ -296,7 +298,7 @@ mod tests {
         let (uc_wsd_port_tx, _uc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
 
         let _wsd_host = WSDHost::init(
-            &cancellation_token,
+            cancellation_token.child_token(),
             Arc::clone(&host_config),
             Arc::clone(&host_messages_built),
             NetworkAddress::new(
@@ -342,7 +344,7 @@ mod tests {
         let (uc_wsd_port_tx, _uc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
 
         let wsd_host = WSDHost::init(
-            &cancellation_token,
+            cancellation_token.child_token(),
             Arc::clone(&host_config),
             Arc::clone(&host_messages_built),
             NetworkAddress::new(

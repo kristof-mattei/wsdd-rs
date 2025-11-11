@@ -35,6 +35,7 @@ pub struct NetlinkAddressMonitor {
     cancellation_token: CancellationToken,
     command_tx: Sender<Command>,
     socket: Arc<tokio::net::UdpSocket>,
+    start_handler: tokio::task::JoinHandle<()>,
 }
 
 impl NetlinkAddressMonitor {
@@ -99,7 +100,7 @@ impl NetlinkAddressMonitor {
             Arc::new(socket)
         };
 
-        {
+        let start_handler = {
             let cancellation_token = cancellation_token.clone();
             let socket = Arc::clone(&socket);
             let mut start_rx = start_rx;
@@ -121,14 +122,21 @@ impl NetlinkAddressMonitor {
                         },
                     }
                 }
-            });
+            })
         };
 
         Ok(Self {
             cancellation_token,
             command_tx,
             socket,
+            start_handler,
         })
+    }
+
+    pub async fn teardown(self) {
+        self.cancellation_token.cancel();
+
+        let _r = self.start_handler.await;
     }
 
     pub async fn process_changes(&self) -> Result<(), eyre::Report> {
