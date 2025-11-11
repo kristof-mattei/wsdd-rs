@@ -6,6 +6,9 @@ use color_eyre::eyre;
 use libc::{setegid, seteuid, setgid, setuid};
 use tracing::{Level, event};
 
+#[cfg(test)]
+const I_DO_NOT_EXIST: &str = "I_DO_NOT_EXIST";
+
 pub fn parse_userspec(user_spec: &str) -> Result<(u32, u32), String> {
     let (user_id, group_id) = user_spec
         .split_once(':')
@@ -22,28 +25,44 @@ pub fn parse_userspec(user_spec: &str) -> Result<(u32, u32), String> {
     reason = "Deref of unsafe fn that returns a ptr"
 )]
 fn getpwname(user: &str) -> Result<u32, String> {
-    let u = CString::new(user).unwrap();
-
-    // SAFETY: libc call, needed before calling `getpwnam`
-    unsafe {
-        *libc::__errno_location() = 0;
+    #[cfg(miri)]
+    fn getpwname(user: &str) -> Result<u32, String> {
+        if user == I_DO_NOT_EXIST {
+            Err(format!("User `{}` not found in /etc/passwd", user))
+        } else if user == "root" {
+            Ok(0)
+        } else {
+            Ok(1000)
+        }
     }
 
-    // SAFETY: libc call
-    let result = unsafe { libc::getpwnam(u.as_ptr()) };
+    #[cfg(not(miri))]
+    fn getpwname(user: &str) -> Result<u32, String> {
+        let u = CString::new(user).unwrap();
 
-    // SAFETY: when `Some(_)` the contents are a valid passwd preference
-    match unsafe { result.as_ref() } {
-        None => {
-            // SAFETY: libc call
-            if unsafe { *libc::__errno_location() } == 0 {
-                Err(format!("User `{}` not found in /etc/passwd", user))
-            } else {
-                Err(format!("{}", Error::last_os_error()))
-            }
-        },
-        Some(passwd) => Ok(passwd.pw_uid),
+        // SAFETY: libc call, needed before calling `getpwnam`
+        unsafe {
+            *libc::__errno_location() = 0;
+        }
+
+        // SAFETY: libc call
+        let result = unsafe { libc::getpwnam(u.as_ptr()) };
+
+        // SAFETY: when `Some(_)` the contents are a valid passwd preference
+        match unsafe { result.as_ref() } {
+            None => {
+                // SAFETY: libc call
+                if unsafe { *libc::__errno_location() } == 0 {
+                    Err(format!("User `{}` not found in /etc/passwd", user))
+                } else {
+                    Err(format!("{}", Error::last_os_error()))
+                }
+            },
+            Some(passwd) => Ok(passwd.pw_uid),
+        }
     }
+
+    getpwname(user)
 }
 
 #[expect(
@@ -51,28 +70,44 @@ fn getpwname(user: &str) -> Result<u32, String> {
     reason = "Deref of unsafe fn that returns a ptr"
 )]
 fn getgrname(group: &str) -> Result<u32, String> {
-    let g = CString::new(group).unwrap();
-
-    // SAFETY: libc call, needed before calling `getgrnam`
-    unsafe {
-        *libc::__errno_location() = 0;
+    #[cfg(miri)]
+    fn getgrname(group: &str) -> Result<u32, String> {
+        if group == I_DO_NOT_EXIST {
+            Err(format!("Group `{}` not found in /etc/group", group))
+        } else if group == "root" {
+            Ok(0)
+        } else {
+            Ok(1000)
+        }
     }
 
-    // SAFETY: libc call
-    let result = unsafe { libc::getgrnam(g.as_ptr()) };
+    #[cfg(not(miri))]
+    fn getgrname(group: &str) -> Result<u32, String> {
+        let g = CString::new(group).unwrap();
 
-    // SAFETY: when `Some(_)` the contents are a valid group reference
-    match unsafe { result.as_ref() } {
-        None => {
-            // SAFETY: libc call
-            if unsafe { *libc::__errno_location() } == 0 {
-                Err(format!("Group `{}` not found in /etc/group", group))
-            } else {
-                Err(format!("{}", Error::last_os_error()))
-            }
-        },
-        Some(group) => Ok(group.gr_gid),
+        // SAFETY: libc call, needed before calling `getgrnam`
+        unsafe {
+            *libc::__errno_location() = 0;
+        }
+
+        // SAFETY: libc call
+        let result = unsafe { libc::getgrnam(g.as_ptr()) };
+
+        // SAFETY: when `Some(_)` the contents are a valid group reference
+        match unsafe { result.as_ref() } {
+            None => {
+                // SAFETY: libc call
+                if unsafe { *libc::__errno_location() } == 0 {
+                    Err(format!("Group `{}` not found in /etc/group", group))
+                } else {
+                    Err(format!("{}", Error::last_os_error()))
+                }
+            },
+            Some(group) => Ok(group.gr_gid),
+        }
     }
+
+    getgrname(group)
 }
 
 pub fn drop_privileges(uid: u32, gid: u32) -> Result<(), String> {
@@ -125,7 +160,7 @@ pub fn chroot(root: &Path) -> Result<(), eyre::Report> {
 
 #[cfg(test)]
 mod tests {
-    use crate::security::parse_userspec;
+    use crate::security::{I_DO_NOT_EXIST, parse_userspec};
 
     #[test]
     fn parse_userspec_root_root() {
@@ -145,7 +180,7 @@ mod tests {
 
     #[test]
     fn parse_userspec_non_existing_user() {
-        let result = parse_userspec("I_DO_NOT_EXIST:root");
+        let result = parse_userspec(&format!("{}:root", I_DO_NOT_EXIST));
 
         assert!(
             matches!(result, Err(error) if error == "User `I_DO_NOT_EXIST` not found in /etc/passwd")
@@ -154,7 +189,7 @@ mod tests {
 
     #[test]
     fn parse_userspec_non_existing_group() {
-        let result = parse_userspec("root:I_DO_NOT_EXIST");
+        let result = parse_userspec(&format!("root:{}", I_DO_NOT_EXIST));
 
         assert!(
             matches!(result, Err(error) if error == "Group `I_DO_NOT_EXIST` not found in /etc/group")

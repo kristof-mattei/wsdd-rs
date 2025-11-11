@@ -3,6 +3,7 @@
     "lldb.launch.expressions": "simple",
     "lldb.launch.terminal": "integrated",
     "prettier.configPath": "./prettier.config.mjs",
+    "rust-analyzer.cargo.cfgs": ["-miri"],
     "rust-analyzer.cargo.extraEnv": {
         // "RUSTC_BOOTSTRAP": "1"
     },

@@ -45,7 +45,8 @@ use crate::network_handler::NetworkHandler;
 use crate::security::{chroot, drop_privileges};
 use crate::utils::flatten_handle;
 
-#[global_allocator]
+#[cfg_attr(not(miri), global_allocator)]
+#[cfg_attr(miri, expect(unused, reason = "Not supported in Miri"))]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn build_filter() -> (EnvFilter, Option<eyre::Report>) {

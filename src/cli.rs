@@ -1,9 +1,8 @@
 use core::str;
 use std::env;
-use std::ffi::{CStr, OsString};
-use std::io::Error;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use clap::parser::ValueSource;
 use clap::{Arg, ArgAction, Command, command, value_parser};
@@ -285,15 +284,26 @@ where
             .get_one("source-port")
             .copied()
             .expect("source-port has a default"),
-        wsd_instance_id: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Before epoch? Time travel?")
-            .as_secs()
-            .to_string()
-            .into_boxed_str(),
+        wsd_instance_id: now().as_secs().to_string().into_boxed_str(),
     };
 
     Ok(config)
+}
+
+fn now() -> Duration {
+    #[cfg(miri)]
+    {
+        Duration::from_secs(1_762_802_693)
+    }
+
+    #[cfg(not(miri))]
+    {
+        use std::time::SystemTime;
+
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("Before epoch? Time travel?")
+    }
 }
 
 fn to_listen(listen: &str) -> Result<PortOrSocket, String> {
@@ -311,23 +321,42 @@ fn to_listen(listen: &str) -> Result<PortOrSocket, String> {
 }
 
 fn gethostname() -> Result<Box<str>, eyre::Report> {
-    let mut buffer = [0_u8; 255 /* POSIX LIMIT */ + 1 /* for the \0 */];
-
-    // SAFETY: libc call
-    let length = unsafe { libc::gethostname(buffer.as_mut_ptr().cast(), buffer.len()) };
-
-    if length == -1 {
-        return Err(Error::last_os_error().into());
+    #[cfg(miri)]
+    fn gethostname() -> Result<Box<str>, eyre::Report> {
+        Ok(Box::from("hostname"))
     }
 
-    let hostname = CStr::from_bytes_until_nul(&buffer)
-        .expect("We used oversized buffer, so not finding a null is impossible")
-        .to_str()?;
+    #[cfg(not(miri))]
+    fn gethostname() -> Result<Box<str>, eyre::Report> {
+        use std::ffi::CStr;
+        use std::io::Error;
 
-    Ok(String::from(hostname).into_boxed_str())
+        let mut buffer = [0_u8; 255 /* POSIX LIMIT */ + 1 /* for the \0 */];
+
+        // SAFETY: libc call
+        let length = unsafe { libc::gethostname(buffer.as_mut_ptr().cast(), buffer.len()) };
+
+        if length == -1 {
+            return Err(Error::last_os_error().into());
+        }
+
+        let hostname = CStr::from_bytes_until_nul(&buffer)
+            .expect("We used oversized buffer, so not finding a null is impossible")
+            .to_str()?;
+
+        Ok(String::from(hostname).into_boxed_str())
+    }
+
+    gethostname()
 }
 
 fn get_uuid_from_machine() -> Result<Uuid, eyre::Report> {
+    #[cfg(miri)]
+    fn read_uuid_from_file(_path: &Path) -> Option<uuid::Uuid> {
+        None
+    }
+
+    #[cfg(not(miri))]
     fn read_uuid_from_file(path: &Path) -> Option<uuid::Uuid> {
         let content = std::fs::read_to_string(path).ok()?;
 
