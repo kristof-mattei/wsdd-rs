@@ -34,7 +34,7 @@ where
     ) -> Result<(), xml::writer::Error> {
         writer.write(XmlEvent::start_element("wsd:Hello"))?;
 
-        add_endpoint_reference(writer, &config.uuid_as_urn_str, None)?;
+        add_endpoint_reference(writer, &config.uuid_as_urn_str)?;
 
         // THINK: Microsoft does not send the transport address here due to privacy reasons. Could make this optional.
         add_xaddr(writer, config, self.xaddr)?;

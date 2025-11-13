@@ -103,7 +103,7 @@ where
         )?;
 
         writer.write(XmlEvent::start_element("wsdp:Host"))?;
-        add_endpoint_reference(writer, &config.uuid_as_urn_str, None)?;
+        add_endpoint_reference(writer, &config.uuid_as_urn_str)?;
 
         writer.write(XmlEvent::start_element("wsdp:Types"))?;
         writer.write(XmlEvent::Characters(PUB_COMPUTER))?;
