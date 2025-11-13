@@ -22,13 +22,13 @@ use crate::soap::parser;
 use crate::xml::{GenericParsingError, parse_generic_body, read_text};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct DeviceUri {
-    device_uri: Box<str>,
-}
+#[repr(transparent)]
+/// Represents an opaque Device URI
+pub struct DeviceUri(Box<str>);
 
 impl DeviceUri {
     pub fn new(device_uri: Box<str>) -> Self {
-        Self { device_uri }
+        Self(device_uri)
     }
 }
 
@@ -36,19 +36,19 @@ impl Deref for DeviceUri {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
-        &self.device_uri
+        &self.0
     }
 }
 
 impl AsRef<str> for DeviceUri {
     fn as_ref(&self) -> &str {
-        &self.device_uri
+        &self.0
     }
 }
 
 impl std::fmt::Display for DeviceUri {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.device_uri)
+        f.write_str(&self.0)
     }
 }
 
