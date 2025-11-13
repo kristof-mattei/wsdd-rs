@@ -16,6 +16,7 @@ use xml::{EventReader, ParserConfig};
 use crate::constants::{WSA_URI, XML_SOAP_NAMESPACE};
 use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
+use crate::wsd::device::DeviceUri;
 use crate::xml::{TextReadError, read_text};
 
 pub struct MessageHandler {
@@ -24,7 +25,7 @@ pub struct MessageHandler {
 }
 
 pub struct Header {
-    pub to: Option<Box<str>>,
+    pub to: Option<DeviceUri>,
     pub action: Box<str>,
     pub message_id: Urn,
     pub relates_to: Option<Urn>,
@@ -305,7 +306,8 @@ fn parse_header(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedHeaderResul
                     // header items can be in any order, as per SOAP 1.1 and 1.2
                     match &*name.local_name {
                         "To" => {
-                            to = read_text(reader, name.borrow())?.map(String::into_boxed_str);
+                            to = read_text(reader, name.borrow())?
+                                .map(|to| DeviceUri::new(to.into_boxed_str()));
                         },
                         "Action" => {
                             action = read_text(reader, name.borrow())?.map(String::into_boxed_str);

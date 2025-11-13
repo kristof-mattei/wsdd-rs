@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::config::{Config, PortOrSocket};
 use crate::security::parse_userspec;
+use crate::wsd::device::DeviceUri;
 
 #[expect(clippy::too_many_lines, reason = "Lots of argument")]
 fn build_clap_command() -> Command {
@@ -228,7 +229,7 @@ where
         None => get_uuid_from_machine(),
     }?;
 
-    let uuid_as_urn_str = uuid.urn().to_string().into_boxed_str();
+    let uuid_as_device_uri = DeviceUri::new(uuid.urn().to_string().into_boxed_str());
 
     let listen = matches.get_one::<PortOrSocket>("listen").cloned();
 
@@ -262,7 +263,7 @@ where
         interfaces,
         hoplimit: *matches.get_one("hoplimit").expect("hoplimit has a default"),
         uuid,
-        uuid_as_urn_str,
+        uuid_as_device_uri,
         verbosity,
         hostname,
         full_hostname: full_hostname.into_boxed_str(),

@@ -44,7 +44,7 @@ where
         writer.write(XmlEvent::start_element("wsd:ResolveMatches"))?;
         writer.write(XmlEvent::start_element("wsd:ResolveMatch"))?;
 
-        add_endpoint_reference(writer, &config.uuid_as_urn_str)?;
+        add_endpoint_reference(writer, &config.uuid_as_device_uri)?;
         add_types(writer, WSDP_TYPE_DEVICE_COMPUTER)?;
         add_xaddr(writer, config, self.address)?;
         add_metadata_version(writer)?;

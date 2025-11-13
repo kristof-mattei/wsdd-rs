@@ -29,6 +29,7 @@ use crate::soap::builder::header::WriteExtraHeaders;
 use crate::soap::builder::header::app_sequence::AppSequence;
 use crate::soap::builder::header::none::NoExtraHeaders;
 use crate::soap::builder::header::reply_to_from::ReplyToFrom;
+use crate::wsd::device::DeviceUri;
 
 pub enum MessageType {
     Hello,
@@ -93,21 +94,27 @@ impl<'config> Builder<'config> {
         Self { config }
     }
 
-    fn build_message<H, B, W>(
+    fn build_message<D, H, B, W>(
         &mut self,
-        to_addr: &str,
+        to_addr: D,
         action: &str,
         relates_to: Option<Urn>,
         extra_headers: H,
         body: B,
     ) -> Result<(W, Urn), xml::writer::Error>
     where
+        D: AsRef<str>,
         H: WriteExtraHeaders<W>,
         B: WriteBody<W>,
         W: Write + Default + AsRef<[u8]>,
     {
-        let response =
-            self.build_message_tree::<H, B, W>(to_addr, action, relates_to, extra_headers, body)?;
+        let response = self.build_message_tree::<D, H, B, W>(
+            to_addr,
+            action,
+            relates_to,
+            extra_headers,
+            body,
+        )?;
 
         event!(
             Level::DEBUG,
@@ -123,15 +130,16 @@ impl<'config> Builder<'config> {
     /// The message can be constructed based on a response to another
     /// message (given by its header) and with a optional response that
     /// serves as the message's body
-    fn build_message_tree<H, B, W>(
+    fn build_message_tree<D, H, B, W>(
         &mut self,
-        to_addr: &str,
+        to_addr: D,
         action: &str,
         relates_to: Option<Urn>,
         extra_headers: H,
         body: B,
     ) -> Result<(W, Urn), xml::writer::Error>
     where
+        D: AsRef<str>,
         H: WriteExtraHeaders<W>,
         B: WriteBody<W>,
         W: Write + Default,
@@ -162,7 +170,7 @@ impl<'config> Builder<'config> {
 
         header_and_body.write(XmlEvent::start_element("soap:Header"))?;
         header_and_body.write(XmlEvent::start_element("wsa:To"))?;
-        header_and_body.write(XmlEvent::Characters(to_addr))?;
+        header_and_body.write(XmlEvent::Characters(to_addr.as_ref()))?;
         header_and_body.write(XmlEvent::end_element())?;
 
         header_and_body.write(XmlEvent::start_element("wsa:Action"))?;
@@ -209,7 +217,7 @@ impl<'config> Builder<'config> {
     ) -> Result<Vec<u8>, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
-        let message = builder.build_message::<_, _, Vec<u8>>(
+        let message = builder.build_message::<_, _, _, Vec<u8>>(
             WSA_DISCOVERY,
             WSD_HELLO,
             None,
@@ -262,7 +270,7 @@ impl<'config> Builder<'config> {
     // WS-Discovery, Section 6.1, Resolve message
     pub fn build_resolve(
         config: &Config,
-        endpoint: Uuid,
+        endpoint: &DeviceUri,
     ) -> Result<(Vec<u8>, Urn), xml::writer::Error> {
         let mut builder = Builder::new(config);
 
@@ -320,15 +328,15 @@ impl<'config> Builder<'config> {
         Ok(message.0)
     }
 
-    pub fn build_get(config: &Config, endpoint: Uuid) -> Result<Vec<u8>, xml::writer::Error> {
+    pub fn build_get(config: &Config, endpoint: &DeviceUri) -> Result<Vec<u8>, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
         builder
             .build_message(
-                endpoint.as_urn().to_string().as_str(),
+                endpoint,
                 WSD_GET,
                 None,
-                ReplyToFrom::new(&config.uuid_as_urn_str),
+                ReplyToFrom::new(&config.uuid_as_device_uri),
                 EmptyBody::new(),
             )
             .map(|(m, _)| m)

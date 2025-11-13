@@ -103,14 +103,14 @@ where
         )?;
 
         writer.write(XmlEvent::start_element("wsdp:Host"))?;
-        add_endpoint_reference(writer, &config.uuid_as_urn_str)?;
+        add_endpoint_reference(writer, &config.uuid_as_device_uri)?;
 
         writer.write(XmlEvent::start_element("wsdp:Types"))?;
         writer.write(XmlEvent::Characters(PUB_COMPUTER))?;
         writer.write(XmlEvent::end_element())?;
 
         writer.write(XmlEvent::start_element("wsdp:ServiceId"))?;
-        writer.write(XmlEvent::Characters(&config.uuid_as_urn_str))?;
+        writer.write(XmlEvent::Characters(&config.uuid_as_device_uri))?;
         writer.write(XmlEvent::end_element())?;
 
         writer.write(XmlEvent::start_element(PUB_COMPUTER))?;

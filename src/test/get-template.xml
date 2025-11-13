@@ -4,14 +4,14 @@
     xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
 >
     <soap:Header>
-        <wsa:To>urn:uuid:{}</wsa:To>
+        <wsa:To>{}</wsa:To>
         <wsa:Action>http://schemas.xmlsoap.org/ws/2004/09/transfer/Get</wsa:Action>
         <wsa:MessageID>urn:uuid:00000000-0000-0000-0000-000000000000</wsa:MessageID>
         <wsa:ReplyTo>
             <wsa:Address>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:Address>
         </wsa:ReplyTo>
         <wsa:From>
-            <wsa:Address>urn:uuid:{}</wsa:Address>
+            <wsa:Address>{}</wsa:Address>
         </wsa:From>
     </soap:Header>
     <soap:Body />

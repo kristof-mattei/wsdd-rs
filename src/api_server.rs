@@ -11,12 +11,11 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
-use uuid::Uuid;
 
 use crate::api_server::generic::{GenericListener, GenericStream};
 use crate::config::PortOrSocket;
 use crate::network_handler::Command;
-use crate::wsd::device::WSDDiscoveredDevice;
+use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 
 const MAX_CONNECTION_BACKLOG: u32 = 100;
 const MAX_CONCURRENT_CONNECTIONS: usize = 10;
@@ -249,8 +248,8 @@ where
                 return Ok(true);
             }
 
-            while let Some((uuid, device)) = devices_rx.recv().await {
-                let line = format_wsd_discovered_device(uuid, &device);
+            while let Some((device_uri, device)) = devices_rx.recv().await {
+                let line = format_wsd_discovered_device(&device_uri, &device);
 
                 writer.write_all(line.as_bytes()).await?;
             }
@@ -288,10 +287,10 @@ where
     Ok(true)
 }
 
-fn format_wsd_discovered_device(uuid: Uuid, device: &WSDDiscoveredDevice) -> Box<str> {
+fn format_wsd_discovered_device(device_uri: &DeviceUri, device: &WSDDiscoveredDevice) -> Box<str> {
     let line = format!(
         "{}\t{}\t{}\t{}\t{}\t{}\n",
-        uuid,
+        device_uri,
         device.display_name().unwrap_or_default(),
         device
             .props()

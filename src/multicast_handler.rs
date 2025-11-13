@@ -16,7 +16,6 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
-use uuid::Uuid;
 
 use crate::config::Config;
 use crate::constants::{
@@ -28,7 +27,7 @@ use crate::network_interface::NetworkInterface;
 use crate::udp_address::UdpAddress;
 use crate::url_ip_addr::UrlIpAddr;
 use crate::utils::task::spawn_with_name;
-use crate::wsd::device::WSDDiscoveredDevice;
+use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 use crate::wsd::http::http_server::WSDHttpServer;
 use crate::wsd::udp::client::WSDClient;
 use crate::wsd::udp::host::WSDHost;
@@ -40,7 +39,7 @@ pub struct MulticastHandler {
     config: Arc<Config>,
 
     /// Shared reference to all discovered devices
-    devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
+    devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
 
     /// Shared reference for global message counter
     messages_built: Arc<AtomicU64>,
@@ -69,7 +68,7 @@ impl MulticastHandler {
         address: NetworkAddress,
         cancellation_token: CancellationToken,
         config: &Arc<Config>,
-        devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
+        devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     ) -> Result<Self, eyre::Report> {
         let domain = match address.address {
             IpAddr::V4(_) => Domain::IPV4,

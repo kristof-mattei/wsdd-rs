@@ -40,7 +40,7 @@ where
         writer.write(XmlEvent::start_element("wsd:ProbeMatches"))?;
         writer.write(XmlEvent::start_element("wsd:ProbeMatch"))?;
 
-        add_endpoint_reference(writer, &config.uuid_as_urn_str)?;
+        add_endpoint_reference(writer, &config.uuid_as_device_uri)?;
         add_types(writer, WSDP_TYPE_DEVICE_COMPUTER)?;
         add_metadata_version(writer)?;
 

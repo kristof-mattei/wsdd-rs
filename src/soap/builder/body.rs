@@ -16,6 +16,7 @@ use xml::writer::XmlEvent;
 use crate::config::Config;
 use crate::constants::WSD_HTTP_PORT;
 use crate::url_ip_addr::UrlIpAddr;
+use crate::wsd::device::DeviceUri;
 
 pub trait WriteBody<W>
 where
@@ -36,11 +37,11 @@ where
 
 fn add_endpoint_reference<W: Write>(
     writer: &mut EventWriter<W>,
-    address: &str,
+    endpoint: &DeviceUri,
 ) -> Result<(), xml::writer::Error> {
     writer.write(XmlEvent::start_element("wsa:EndpointReference"))?;
     writer.write(XmlEvent::start_element("wsa:Address"))?;
-    writer.write(XmlEvent::Characters(address))?;
+    writer.write(XmlEvent::Characters(endpoint))?;
     writer.write(XmlEvent::end_element())?;
     writer.write(XmlEvent::end_element())?;
 
