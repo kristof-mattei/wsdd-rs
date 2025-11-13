@@ -336,7 +336,7 @@ impl<'config> Builder<'config> {
                 endpoint,
                 WSD_GET,
                 None,
-                ReplyToFrom::new(&config.uuid_as_urn_str),
+                ReplyToFrom::new(&config.uuid_as_device_uri),
                 EmptyBody::new(),
             )
             .map(|(m, _)| m)

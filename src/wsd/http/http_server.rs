@@ -146,7 +146,7 @@ async fn build_response(
         return Err(eyre::Report::msg("Invalid Action"));
     }
 
-    if header.to.as_deref() != Some(&config.uuid_as_urn_str) {
+    if header.to.as_deref() != Some(&config.uuid_as_device_uri) {
         return Err(eyre::Report::msg("Invalid To"));
     }
 

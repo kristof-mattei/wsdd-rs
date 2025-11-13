@@ -229,7 +229,7 @@ where
         None => get_uuid_from_machine(),
     }?;
 
-    let uuid_as_urn_str = DeviceUri::new(uuid.urn().to_string().into_boxed_str());
+    let uuid_as_device_uri = DeviceUri::new(uuid.urn().to_string().into_boxed_str());
 
     let listen = matches.get_one::<PortOrSocket>("listen").cloned();
 
@@ -263,7 +263,7 @@ where
         interfaces,
         hoplimit: *matches.get_one("hoplimit").expect("hoplimit has a default"),
         uuid,
-        uuid_as_urn_str,
+        uuid_as_device_uri,
         verbosity,
         hostname,
         full_hostname: full_hostname.into_boxed_str(),

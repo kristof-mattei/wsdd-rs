@@ -32,7 +32,7 @@ where
     ) -> Result<(), xml::writer::Error> {
         writer.write(XmlEvent::start_element("wsd:Bye"))?;
 
-        add_endpoint_reference(writer, &config.uuid_as_urn_str)?;
+        add_endpoint_reference(writer, &config.uuid_as_device_uri)?;
 
         writer.write(XmlEvent::end_element())?;
 

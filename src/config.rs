@@ -12,7 +12,7 @@ pub struct Config {
     pub interfaces: Vec<Box<str>>,
     pub hoplimit: u8,
     pub uuid: Uuid,
-    pub uuid_as_urn_str: DeviceUri,
+    pub uuid_as_device_uri: DeviceUri,
     #[cfg_attr(not(test), expect(unused, reason = "WIP"))]
     pub verbosity: Level,
     pub hostname: Box<str>,
