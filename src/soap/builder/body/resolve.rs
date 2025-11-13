@@ -29,12 +29,12 @@ where
 
     fn write_body(
         self,
-        config: &Config,
+        _config: &Config,
         writer: &mut EventWriter<W>,
     ) -> Result<(), xml::writer::Error> {
         writer.write(XmlEvent::start_element("wsd:Resolve"))?;
 
-        add_endpoint_reference(writer, &config.uuid_as_urn_str, Some(self.endpoint))?;
+        add_endpoint_reference(writer, &self.endpoint.urn().to_string())?;
 
         writer.write(XmlEvent::end_element())?;
 

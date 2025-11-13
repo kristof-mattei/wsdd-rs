@@ -10,7 +10,6 @@ pub mod resolve_matches;
 use std::io::Write;
 use std::net::IpAddr;
 
-use uuid::Uuid;
 use xml::EventWriter;
 use xml::writer::XmlEvent;
 
@@ -37,16 +36,11 @@ where
 
 fn add_endpoint_reference<W: Write>(
     writer: &mut EventWriter<W>,
-    uuid_as_str: &str,
-    endpoint: Option<Uuid>,
+    address: &str,
 ) -> Result<(), xml::writer::Error> {
-    let endpoint = endpoint.map(|endpoint| endpoint.urn().to_string());
-
-    let endpoint = endpoint.as_deref().unwrap_or(uuid_as_str);
-
     writer.write(XmlEvent::start_element("wsa:EndpointReference"))?;
     writer.write(XmlEvent::start_element("wsa:Address"))?;
-    writer.write(XmlEvent::Characters(endpoint))?;
+    writer.write(XmlEvent::Characters(address))?;
     writer.write(XmlEvent::end_element())?;
     writer.write(XmlEvent::end_element())?;
 
