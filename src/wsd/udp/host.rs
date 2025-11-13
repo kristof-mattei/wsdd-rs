@@ -281,12 +281,16 @@ mod tests {
     use crate::network_interface::NetworkInterface;
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler};
+    use crate::wsd::device::DeviceUri;
     use crate::wsd::udp::host::{WSDHost, handle_probe, handle_resolve};
 
     #[tokio::test]
     async fn sends_hello() {
         // host
+
         let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_device_uri =
+            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
         let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
         let host_messages_built = Arc::new(AtomicU64::new(0));
@@ -317,7 +321,7 @@ mod tests {
             Uuid::nil(),
             host_instance_id,
             Uuid::nil(),
-            host_endpoint_uuid,
+            host_endpoint_device_uri,
             host_ip,
             5357,
             host_endpoint_uuid
@@ -332,7 +336,10 @@ mod tests {
     #[tokio::test]
     async fn sends_bye() {
         // host
+
         let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_device_uri =
+            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
         let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
         let host_messages_built = Arc::new(AtomicU64::new(0));
@@ -370,7 +377,7 @@ mod tests {
             host_instance_id,
             Uuid::nil(),
             expected_message_number,
-            host_endpoint_uuid,
+            host_endpoint_device_uri,
         );
 
         let response = to_string_pretty(&bye).unwrap();
@@ -384,7 +391,10 @@ mod tests {
         let host_message_handler = build_message_handler();
 
         // host
+
         let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_device_uri =
+            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
         let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
         let host_messages_built = AtomicU64::new(0);
@@ -394,7 +404,7 @@ mod tests {
         let client_message_id = Uuid::new_v4();
         let resolve = format!(
             include_str!("../../test/resolve-template.xml"),
-            client_message_id, host_endpoint_uuid,
+            client_message_id, host_endpoint_device_uri,
         );
 
         // host receives client's probe
@@ -422,7 +432,7 @@ mod tests {
             client_message_id,
             host_instance_id,
             host_messages_built.load(Ordering::Relaxed) - 1,
-            host_endpoint_uuid,
+            host_endpoint_device_uri,
             client_ip,
             host_endpoint_uuid
         );
@@ -438,7 +448,10 @@ mod tests {
         let message_handler = build_message_handler();
 
         // host
+
         let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_device_uri =
+            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
         let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
         let host_messages_built = AtomicU64::new(0);
@@ -474,7 +487,7 @@ mod tests {
             client_message_id,
             host_instance_id,
             host_messages_built.load(Ordering::Relaxed) - 1,
-            host_endpoint_uuid
+            host_endpoint_device_uri
         );
 
         let response = to_string_pretty(&response).unwrap();

@@ -62,7 +62,7 @@ pub fn build_config(endpoint_uuid: Uuid, instance_id: &str) -> Config {
     let mut config = cli::parse_cli_from([
         "-4",
         "--uuid",
-        &endpoint_uuid.to_string(),
+        endpoint_uuid.to_string().as_str(),
         "--hostname",
         "test-host-name",
     ])

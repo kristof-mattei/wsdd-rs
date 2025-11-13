@@ -18,13 +18,12 @@ use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
-use uuid::Uuid;
 
 use crate::config::Config;
 use crate::multicast_handler::MulticastHandler;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::{self, NetworkInterface};
-use crate::wsd::device::WSDDiscoveredDevice;
+use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 
 #[derive(Debug)]
 pub enum Command {
@@ -40,8 +39,8 @@ pub enum Command {
     },
     ClearDevices,
     ListDevices {
+        devices_tx: Sender<(DeviceUri, WSDDiscoveredDevice)>,
         wsd_type_filter: Option<Box<str>>,
-        devices_tx: Sender<(Uuid, WSDDiscoveredDevice)>,
     },
     SendProbes {
         interface_filter: Option<Box<str>>,
@@ -65,11 +64,10 @@ pub enum Reason {
 }
 
 pub struct NetworkHandler {
-    // TODO this should _probably_ be an AtomicBool
     active: AtomicBool,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    devices: Arc<RwLock<HashMap<Uuid, WSDDiscoveredDevice>>>,
+    devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
     multicast_handlers: Vec<MulticastHandler>,
     command_rx: tokio::sync::mpsc::Receiver<Command>,
@@ -162,11 +160,11 @@ impl NetworkHandler {
                     }
                 },
                 Command::ListDevices {
-                    wsd_type_filter,
                     devices_tx,
+                    wsd_type_filter,
                 } => {
                     if self.config.discovery {
-                        self.list_devices(wsd_type_filter, devices_tx).await;
+                        self.list_devices(devices_tx, wsd_type_filter).await;
                     }
                 },
                 Command::SendProbes { interface_filter } => {
@@ -188,8 +186,8 @@ impl NetworkHandler {
 
     async fn list_devices(
         &self,
+        devices_tx: Sender<(DeviceUri, WSDDiscoveredDevice)>,
         wsd_type_filter: Option<Box<str>>,
-        devices_tx: Sender<(Uuid, WSDDiscoveredDevice)>,
     ) {
         // take the lock once, clone, store locally, and then yield items
         // that way we reduce the lifetime of the lock
@@ -200,7 +198,7 @@ impl NetworkHandler {
                 .iter()
                 .filter_map(|(key, value)| {
                     if value.types().contains(wsd_type) {
-                        Some((*key, value.clone()))
+                        Some((key.clone(), value.clone()))
                     } else {
                         None
                     }
@@ -209,7 +207,7 @@ impl NetworkHandler {
         } else {
             devices
                 .iter()
-                .map(|(key, value)| (*key, value.clone()))
+                .map(|(key, value)| (key.clone(), value.clone()))
                 .collect::<Vec<_>>()
         };
 

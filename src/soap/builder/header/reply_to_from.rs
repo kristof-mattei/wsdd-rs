@@ -4,13 +4,14 @@ use xml::writer::XmlEvent;
 
 use crate::constants::{WSA_ANON, XML_WSA_NAMESPACE};
 use crate::soap::builder::WriteExtraHeaders;
+use crate::wsd::device::DeviceUri;
 
 pub struct ReplyToFrom<'s> {
-    urn: &'s str,
+    urn: &'s DeviceUri,
 }
 
 impl<'s> ReplyToFrom<'s> {
-    pub fn new(urn: &'s str) -> Self {
+    pub fn new(urn: &'s DeviceUri) -> Self {
         Self { urn }
     }
 }

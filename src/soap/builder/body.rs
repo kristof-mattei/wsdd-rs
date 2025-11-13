@@ -10,13 +10,13 @@ pub mod resolve_matches;
 use std::io::Write;
 use std::net::IpAddr;
 
-use uuid::Uuid;
 use xml::EventWriter;
 use xml::writer::XmlEvent;
 
 use crate::config::Config;
 use crate::constants::WSD_HTTP_PORT;
 use crate::url_ip_addr::UrlIpAddr;
+use crate::wsd::device::DeviceUri;
 
 pub trait WriteBody<W>
 where
@@ -37,13 +37,8 @@ where
 
 fn add_endpoint_reference<W: Write>(
     writer: &mut EventWriter<W>,
-    uuid_as_str: &str,
-    endpoint: Option<Uuid>,
+    endpoint: &DeviceUri,
 ) -> Result<(), xml::writer::Error> {
-    let endpoint = endpoint.map(|endpoint| endpoint.urn().to_string());
-
-    let endpoint = endpoint.as_deref().unwrap_or(uuid_as_str);
-
     writer.write(XmlEvent::start_element("wsa:EndpointReference"))?;
     writer.write(XmlEvent::start_element("wsa:Address"))?;
     writer.write(XmlEvent::Characters(endpoint))?;

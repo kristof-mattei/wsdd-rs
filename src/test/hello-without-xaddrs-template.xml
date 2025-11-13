@@ -13,7 +13,7 @@
     <soap:Body>
         <wsd:Hello>
             <wsa:EndpointReference>
-                <wsa:Address>urn:uuid:{}</wsa:Address>
+                <wsa:Address>{}</wsa:Address>
             </wsa:EndpointReference>
             <wsd:MetadataVersion>0</wsd:MetadataVersion>
         </wsd:Hello>

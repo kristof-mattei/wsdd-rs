@@ -1,6 +1,5 @@
 use std::io::Write;
 
-use uuid::Uuid;
 use xml::EventWriter;
 use xml::writer::XmlEvent;
 
@@ -8,18 +7,19 @@ use crate::config::Config;
 use crate::constants::XML_WSD_NAMESPACE;
 use crate::soap::builder::WriteBody;
 use crate::soap::builder::body::add_endpoint_reference;
+use crate::wsd::device::DeviceUri;
 
-pub struct Resolve {
-    endpoint: Uuid,
+pub struct Resolve<'e> {
+    endpoint: &'e DeviceUri,
 }
 
-impl Resolve {
-    pub fn new(endpoint: Uuid) -> Self {
+impl<'e> Resolve<'e> {
+    pub fn new(endpoint: &'e DeviceUri) -> Self {
         Self { endpoint }
     }
 }
 
-impl<W> WriteBody<W> for Resolve
+impl<W> WriteBody<W> for Resolve<'_>
 where
     W: Write,
 {
@@ -29,12 +29,12 @@ where
 
     fn write_body(
         self,
-        config: &Config,
+        _config: &Config,
         writer: &mut EventWriter<W>,
     ) -> Result<(), xml::writer::Error> {
         writer.write(XmlEvent::start_element("wsd:Resolve"))?;
 
-        add_endpoint_reference(writer, &config.uuid_as_urn_str, Some(self.endpoint))?;
+        add_endpoint_reference(writer, self.endpoint)?;
 
         writer.write(XmlEvent::end_element())?;
 

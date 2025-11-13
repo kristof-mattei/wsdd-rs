@@ -188,6 +188,7 @@ mod tests {
     use crate::network_interface::NetworkInterface;
     use crate::test_utils::build_config;
     use crate::test_utils::xml::to_string_pretty;
+    use crate::wsd::device::DeviceUri;
     use crate::wsd::http::http_server::WSDHttpServer;
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -195,6 +196,8 @@ mod tests {
     async fn http_server_listens() {
         // host
         let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_device_uri =
+            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
         let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
         let host_ip = Ipv4Addr::LOCALHOST;
@@ -216,7 +219,7 @@ mod tests {
 
         let body = format!(
             include_str!("../../test/get-template.xml"),
-            host_endpoint_uuid,
+            host_endpoint_device_uri,
             Uuid::new_v4()
         );
 
@@ -242,8 +245,8 @@ mod tests {
             Uuid::nil(),
             Uuid::nil(),
             host_config.hostname,
-            host_endpoint_uuid,
-            host_endpoint_uuid,
+            host_endpoint_device_uri,
+            host_endpoint_device_uri,
             host_config.full_hostname
         );
 

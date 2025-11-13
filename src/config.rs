@@ -4,13 +4,15 @@ use std::time::Duration;
 use tracing::{Level, event};
 use uuid::Uuid;
 
+use crate::wsd::device::DeviceUri;
+
 #[expect(clippy::struct_excessive_bools, reason = "Main config")]
 #[derive(Debug)]
 pub struct Config {
     pub interfaces: Vec<Box<str>>,
     pub hoplimit: u8,
     pub uuid: Uuid,
-    pub uuid_as_urn_str: Box<str>,
+    pub uuid_as_urn_str: DeviceUri,
     #[cfg_attr(not(test), expect(unused, reason = "WIP"))]
     pub verbosity: Level,
     pub hostname: Box<str>,

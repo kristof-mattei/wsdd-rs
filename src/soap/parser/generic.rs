@@ -1,13 +1,11 @@
 use std::io::BufReader;
-use std::str::FromStr as _;
 
 use tracing::{Level, event};
-use uuid::Uuid;
-use uuid::fmt::Urn;
 use xml::EventReader;
 use xml::reader::XmlEvent;
 
 use crate::constants::{XML_WSA_NAMESPACE, XML_WSD_NAMESPACE};
+use crate::wsd::device::DeviceUri;
 use crate::xml::{GenericParsingError, read_text};
 
 pub fn extract_endpoint_reference_address(
@@ -56,7 +54,7 @@ pub fn extract_endpoint_reference_address(
 
 pub fn extract_endpoint_metadata(
     reader: &mut EventReader<BufReader<&[u8]>>,
-) -> Result<(Uuid, Option<Box<str>>), GenericParsingError> {
+) -> Result<(DeviceUri, Option<Box<str>>), GenericParsingError> {
     let mut endpoint = None;
     let mut xaddrs = None;
 
@@ -109,7 +107,5 @@ pub fn extract_endpoint_metadata(
         ));
     };
 
-    let endpoint = Urn::from_str(&endpoint)?.into_uuid();
-
-    Ok((endpoint, xaddrs.map(String::into_boxed_str)))
+    Ok((DeviceUri::new(endpoint), xaddrs.map(String::into_boxed_str)))
 }
