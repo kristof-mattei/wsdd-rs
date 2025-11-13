@@ -287,7 +287,6 @@ mod tests {
     #[tokio::test]
     async fn sends_hello() {
         // host
-
         let host_endpoint_uuid = Uuid::new_v4();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
@@ -336,7 +335,6 @@ mod tests {
     #[tokio::test]
     async fn sends_bye() {
         // host
-
         let host_endpoint_uuid = Uuid::new_v4();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
@@ -391,7 +389,6 @@ mod tests {
         let host_message_handler = build_message_handler();
 
         // host
-
         let host_endpoint_uuid = Uuid::new_v4();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
@@ -445,10 +442,9 @@ mod tests {
 
     #[tokio::test]
     async fn handles_probe() {
-        let message_handler = build_message_handler();
+        let host_message_handler = build_message_handler();
 
         // host
-
         let host_endpoint_uuid = Uuid::new_v4();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
@@ -465,7 +461,7 @@ mod tests {
         );
 
         // host receives client's probe
-        let (header, reader) = message_handler
+        let (header, reader) = host_message_handler
             .deconstruct_message(
                 probe.as_bytes(),
                 Some(SocketAddr::V4(SocketAddrV4::new(client_ip, 5000))),
