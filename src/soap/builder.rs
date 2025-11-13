@@ -217,7 +217,7 @@ impl<'config> Builder<'config> {
     ) -> Result<Vec<u8>, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
-        let message = builder.build_message::<_, _, _, Vec<u8>>(
+        let message = builder.build_message(
             WSA_DISCOVERY,
             WSD_HELLO,
             None,

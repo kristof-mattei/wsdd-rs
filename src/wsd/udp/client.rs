@@ -761,7 +761,7 @@ mod tests {
 
         let device = device.unwrap();
 
-        let expected_props = HashMap::<_, _>::from_iter([
+        let expected_props = HashMap::from_iter([
             ("BelongsTo", "Workgroup:WORKGROUP"),
             ("DisplayName", "diskstation"),
             ("Manufacturer", "Synology Inc"),
