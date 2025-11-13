@@ -236,8 +236,8 @@ where
 
             if command_tx
                 .send(Command::ListDevices {
-                    wsd_type_filter: command_arg.map(Into::into),
                     devices_tx,
+                    wsd_type_filter: command_arg.map(Into::into),
                 })
                 .await
                 .is_err()
