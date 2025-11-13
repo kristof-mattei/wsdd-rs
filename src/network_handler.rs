@@ -40,8 +40,8 @@ pub enum Command {
     },
     ClearDevices,
     ListDevices {
-        wsd_type_filter: Option<Box<str>>,
         devices_tx: Sender<(Uuid, WSDDiscoveredDevice)>,
+        wsd_type_filter: Option<Box<str>>,
     },
     SendProbes {
         interface_filter: Option<Box<str>>,
@@ -162,11 +162,11 @@ impl NetworkHandler {
                     }
                 },
                 Command::ListDevices {
-                    wsd_type_filter,
                     devices_tx,
+                    wsd_type_filter,
                 } => {
                     if self.config.discovery {
-                        self.list_devices(wsd_type_filter, devices_tx).await;
+                        self.list_devices(devices_tx, wsd_type_filter).await;
                     }
                 },
                 Command::SendProbes { interface_filter } => {
@@ -188,8 +188,8 @@ impl NetworkHandler {
 
     async fn list_devices(
         &self,
-        wsd_type_filter: Option<Box<str>>,
         devices_tx: Sender<(Uuid, WSDDiscoveredDevice)>,
+        wsd_type_filter: Option<Box<str>>,
     ) {
         // take the lock once, clone, store locally, and then yield items
         // that way we reduce the lifetime of the lock
