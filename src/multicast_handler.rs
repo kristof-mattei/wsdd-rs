@@ -127,7 +127,8 @@ impl MulticastHandler {
         );
 
         let mc_wsd_port_socket = Arc::new(UdpSocket::from_std(mc_wsd_port_socket.into())?);
-        let mc_wsd_port_rx = MessageReceiver::new(Arc::clone(&mc_wsd_port_socket));
+        let mc_wsd_port_rx =
+            MessageReceiver::new(cancellation_token.clone(), Arc::clone(&mc_wsd_port_socket));
 
         let mc_local_port_socket = Arc::new(UdpSocket::from_std(mc_local_port_socket.into())?);
         let mc_local_port_tx = MessageSender::new(
@@ -136,7 +137,10 @@ impl MulticastHandler {
                 target: multicast_address.transport_address,
             },
         );
-        let mc_local_port_rx = MessageReceiver::new(Arc::clone(&mc_local_port_socket));
+        let mc_local_port_rx = MessageReceiver::new(
+            cancellation_token.clone(),
+            Arc::clone(&mc_local_port_socket),
+        );
 
         let uc_wsd_port_socket = Arc::new(UdpSocket::from_std(uc_wsd_port_socket.into())?);
         let uc_wsd_port_tx =
@@ -191,6 +195,9 @@ impl MulticastHandler {
             let sender = self.uc_wsd_port_tx;
             sender.teardown().await;
         }
+
+        self.mc_wsd_port_rx.teardown().await;
+        self.mc_local_port_rx.teardown().await;
 
         // since this consumes self, now the sockets etc are closed. We awaited all tasks, and thus are sure that messages were either
         // sent, or failed to send, but we avoided the 'schedule but shut down too soon' situation.
@@ -451,18 +458,32 @@ impl MulticastHandler {
 type Receivers = Arc<RwLock<Vec<Sender<(SocketAddr, Arc<[u8]>)>>>>;
 
 struct MessageReceiver {
+    cancellation_token: CancellationToken,
+    handle: JoinHandle<()>,
     listeners: Receivers,
 }
 
 type Channels = Arc<RwLock<Vec<Sender<(SocketAddr, Arc<[u8]>)>>>>;
 
-async fn socket_rx(socket: Arc<UdpSocket>, channels: Channels) {
-    #[expect(clippy::infinite_loop, reason = "Endless task")]
-    // TODO await cancellation token
+async fn socket_rx_forever(
+    cancellation_token: CancellationToken,
+    channels: Channels,
+    socket: Arc<UdpSocket>,
+) {
     loop {
         let mut buffer = vec![MaybeUninit::<u8>::uninit(); WSD_MAX_LEN];
+        let mut slice = buffer.as_mut_slice();
 
-        let (bytes_read, from) = match socket.recv_buf_from(&mut buffer.as_mut_slice()).await {
+        let result = tokio::select! {
+            () = cancellation_token.cancelled() => {
+                break;
+            }
+            result = socket.recv_buf_from(&mut slice) => {
+                result
+            },
+        };
+
+        let (bytes_read, from) = match result {
             Ok(read) => read,
             Err(error) => {
                 let local_addr = socket.local_addr().map_or_else(
@@ -500,17 +521,21 @@ async fn socket_rx(socket: Arc<UdpSocket>, channels: Channels) {
 }
 
 impl MessageReceiver {
-    fn new(socket: Arc<UdpSocket>) -> Self {
+    fn new(cancellation_token: CancellationToken, socket: Arc<UdpSocket>) -> Self {
         let listeners: Receivers = Receivers::new(RwLock::const_new(vec![]));
 
         let channels = Arc::clone(&listeners);
 
-        spawn_with_name(
+        let handle = spawn_with_name(
             format!("socket rx ({})", socket.local_addr().unwrap()).as_str(),
-            socket_rx(socket, channels),
+            socket_rx_forever(cancellation_token.clone(), channels, socket),
         );
 
-        Self { listeners }
+        Self {
+            cancellation_token,
+            handle,
+            listeners,
+        }
     }
 
     async fn get_rx(&mut self) -> Receiver<(SocketAddr, Arc<[u8]>)> {
@@ -519,6 +544,12 @@ impl MessageReceiver {
         self.listeners.write().await.push(tx);
 
         rx
+    }
+
+    async fn teardown(self) {
+        self.cancellation_token.cancel();
+
+        let _r = self.handle.await;
     }
 }
 

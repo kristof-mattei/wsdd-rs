@@ -191,24 +191,24 @@ impl WSDDiscoveredDevice {
                 }
             }
 
+            // TODO the depth is wrong if the `RelationShip` isn't what we expect
             // read until the closing to ensure we only stop when we hit
             // our closing element at our level (to avoid nested elements closing)
-            let mut depth: usize = 1;
+            // let mut depth: usize = 1;
 
             loop {
                 match reader.next()? {
                     XmlEvent::StartElement { name, .. } if name.borrow() == scope.borrow() => {
-                        depth += 1;
+                        // depth += 1;
                     },
                     XmlEvent::EndElement { name } if name.borrow() == scope.borrow() => {
-                        depth -= 1;
+                        // depth -= 1;
 
-                        if depth == 0 {
-                            break;
-                        }
+                        // if depth == 0 {
+                        break;
+                        // }
                     },
                     XmlEvent::StartDocument { .. }
-                    | XmlEvent::EndDocument
                     | XmlEvent::ProcessingInstruction { .. }
                     | XmlEvent::StartElement { .. }
                     | XmlEvent::EndElement { .. }
@@ -217,6 +217,10 @@ impl WSDDiscoveredDevice {
                     | XmlEvent::Characters(_)
                     | XmlEvent::Whitespace(_)
                     | XmlEvent::Doctype { .. } => {},
+                    XmlEvent::EndDocument => {
+                        // TODO fix unroll bug
+                        break;
+                    },
                 }
             }
         }
