@@ -9,7 +9,7 @@
 # see http://specs.xmlsoap.org/ws/2005/04/discovery/ws-discovery.pdf and
 # related documents for details (look at README for more references)
 #
-# (c) Steffen Christgau, 2017-2024
+# (c) Steffen Christgau, 2017-2025
 
 import sys
 import signal
@@ -161,7 +161,7 @@ class UdpAddress(NetworkAddress):
 
 class INetworkPacketHandler:
 
-    def handle_packet(self, msg: str, src: UdpAddress) -> None:
+    def handle_packet(self, msg: str, udp_src_address: UdpAddress) -> None:
         pass
 
 
@@ -868,6 +868,8 @@ class WSDClient(WSDUDPMessageHandler):
                 self.handle_metadata(stream.read(), endpoint, xaddr)
         except urllib.error.URLError as e:
             logger.warning('could not fetch metadata from: {} {}'.format(url, e))
+        except TimeoutError:
+            logger.warning('metadata exchange with {} timed out'.format(url))
 
     def build_getmetadata_message(self, endpoint) -> str:
         tree, _ = self.build_message_tree(endpoint, WSD_GET, None, None)
@@ -1122,10 +1124,12 @@ class WSDHttpRequestHandler(http.server.BaseHTTPRequestHandler):
 class ApiServer:
 
     address_monitor: 'NetworkAddressMonitor'
+    clients: List[asyncio.StreamWriter]
 
-    def __init__(self, aio_loop: asyncio.AbstractEventLoop, listen_address: bytes,
+    def __init__(self, aio_loop: asyncio.AbstractEventLoop, listen_address: Any,
                  address_monitor: 'NetworkAddressMonitor') -> None:
         self.server = None
+        self.clients = []
         self.address_monitor = address_monitor
 
         # defer server creation
@@ -1136,7 +1140,12 @@ class ApiServer:
         # It appears mypy is not able to check the argument to create_task and the return value of start_server
         # correctly. The docs say start_server returns a coroutine and the create_task takes a coro. And: It works.
         # Thus, we ignore type errors here.
-        if isinstance(listen_address, int) or listen_address.isnumeric():
+        if isinstance(listen_address, socket.SocketType):
+            # create socket from systemd file descriptor/socket
+            self.server = await aio_loop.create_task(
+                asyncio.start_unix_server(  # type: ignore
+                    self.on_connect, sock=listen_address))
+        elif isinstance(listen_address, int) or listen_address.isnumeric():
             self.server = await aio_loop.create_task(
                 asyncio.start_server(  # type: ignore
                     self.on_connect,
@@ -1150,6 +1159,7 @@ class ApiServer:
                     self.on_connect, path=listen_address))
 
     async def on_connect(self, read_stream: asyncio.StreamReader, write_stream: asyncio.StreamWriter) -> None:
+        self.clients.append(write_stream)
         while True:
             try:
                 line = await read_stream.readline()
@@ -1158,12 +1168,14 @@ class ApiServer:
                     if not write_stream.is_closing():
                         await write_stream.drain()
                 else:
+                    self.clients.remove(write_stream)
                     write_stream.close()
                     return
             except UnicodeDecodeError as e:
                 logger.debug('invalid input utf8', e)
             except Exception as e:
                 logger.warning('exception in API client', e)
+                self.clients.remove(write_stream)
                 write_stream.close()
                 return
 
@@ -1220,6 +1232,8 @@ class ApiServer:
         await self.create_task
         if self.server:
             self.server.close()
+            for client in self.clients:
+                client.close()
             await self.server.wait_closed()
 
 
@@ -1947,7 +1961,7 @@ def create_address_monitor(system: str, aio_loop: asyncio.AbstractEventLoop) -> 
 
 
 def main() -> int:
-    global logger, args
+    global logger, args  # noqa: F824
 
     parse_args()
 
