@@ -191,7 +191,7 @@ impl WSDDiscoveredDevice {
                 }
             }
 
-            // TODO the depth is wrong if the `RelationShip` isn't what we expect
+            // TODO the depth is wrong if the `Relationship` isn't what we expect
             // read until the closing to ensure we only stop when we hit
             // our closing element at our level (to avoid nested elements closing)
             // let mut depth: usize = 1;

@@ -472,15 +472,18 @@ async fn socket_rx_forever(
 ) {
     loop {
         let mut buffer = vec![MaybeUninit::<u8>::uninit(); WSD_MAX_LEN];
-        let mut slice = buffer.as_mut_slice();
 
-        let result = tokio::select! {
-            () = cancellation_token.cancelled() => {
-                break;
+        let result = {
+            let mut buffer_byte_cursor = &mut *buffer;
+
+            tokio::select! {
+                () = cancellation_token.cancelled() => {
+                    break;
+                }
+                result = socket.recv_buf_from(&mut buffer_byte_cursor) => {
+                    result
+                },
             }
-            result = socket.recv_buf_from(&mut slice) => {
-                result
-            },
         };
 
         let (bytes_read, from) = match result {
