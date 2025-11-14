@@ -50,6 +50,21 @@
             "terminal": "integrated"
         },
         {
+            "name": "Debug executable 'wsdd-rs' with --discovery --listen 5555",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": ["run", "--bin=wsdd-rs"]
+            },
+            "args": ["--discovery", "--listen", "5555"],
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
+            },
+            "internalConsoleOptions": "neverOpen",
+            "terminal": "integrated"
+        },
+        {
             "name": "Debug executable 'wsdd-rs' with --interface enp4s0 -4",
             "type": "lldb",
             "request": "launch",
@@ -89,6 +104,28 @@
             "args": [
                 "--interface",
                 "enp4s0",
+                "-4",
+                "--discovery",
+                "--listen",
+                "5555"
+            ],
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
+            },
+            "internalConsoleOptions": "neverOpen",
+            "terminal": "integrated"
+        },
+        {
+            "name": "Debug executable 'wsdd-rs' with --interface enp4s0.20 -4 --discovery --listen 5555",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": ["run", "--bin=wsdd-rs"]
+            },
+            "args": [
+                "--interface",
+                "enp4s0.20",
                 "-4",
                 "--discovery",
                 "--listen",

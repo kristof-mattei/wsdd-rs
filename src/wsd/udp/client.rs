@@ -34,6 +34,7 @@ pub(crate) struct WSDClient {
     config: Arc<Config>,
     bound_to: NetworkAddress,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+    handle: tokio::task::JoinHandle<()>,
     mc_local_port_tx: Sender<Box<[u8]>>,
     probes: Arc<RwLock<HashMap<Urn, Duration>>>,
 }
@@ -55,7 +56,7 @@ impl WSDClient {
     ) -> Self {
         let probes = Arc::new(RwLock::new(HashMap::<Urn, Duration>::new()));
 
-        {
+        let handle = {
             let cancellation_token = cancellation_token.clone();
             let config = Arc::clone(&config);
             let bound_to = bound_to.clone();
@@ -65,20 +66,17 @@ impl WSDClient {
 
             spawn_with_name(
                 format!("wsd client ({})", bound_to.address).as_str(),
-                async move {
-                    listen_forever(
-                        bound_to,
-                        cancellation_token,
-                        config,
-                        devices,
-                        mc_wsd_port_rx,
-                        mc_local_port_rx,
-                        mc_local_port_tx,
-                        probes,
-                    )
-                    .await;
-                },
-            );
+                listen_forever(
+                    bound_to,
+                    cancellation_token,
+                    config,
+                    devices,
+                    mc_wsd_port_rx,
+                    mc_local_port_rx,
+                    mc_local_port_tx,
+                    probes,
+                ),
+            )
         };
 
         let client = Self {
@@ -86,6 +84,7 @@ impl WSDClient {
             config,
             bound_to,
             devices,
+            handle,
             mc_local_port_tx,
             probes,
         };
@@ -99,6 +98,8 @@ impl WSDClient {
         self.cancellation_token.cancel();
 
         self.remove_outdated_probes().await;
+
+        let _r = self.handle.await;
     }
 
     // WS-Discovery, Section 4.3, Probe message
