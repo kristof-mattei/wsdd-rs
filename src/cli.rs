@@ -11,6 +11,7 @@ use tracing::{Level, event};
 use uuid::Uuid;
 
 use crate::config::{Config, PortOrSocket};
+use crate::ffi::listen_fds;
 use crate::security::parse_userspec;
 use crate::wsd::device::DeviceUri;
 
@@ -231,7 +232,14 @@ where
 
     let uuid_as_device_uri = DeviceUri::new(uuid.urn().to_string().into_boxed_str());
 
-    let listen = matches.get_one::<PortOrSocket>("listen").cloned();
+    let listen = matches
+        .get_one::<PortOrSocket>("listen")
+        .cloned()
+        .or_else(|| {
+            let result = listen_fds(true).unwrap();
+
+            result.first().map(|&fd| PortOrSocket::Socket(fd))
+        });
 
     let preserve_case = matches.get_one("preserve-case").copied().unwrap_or(false);
 
@@ -400,6 +408,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use pretty_assertions::assert_eq;
     use tracing::Level;
 
@@ -446,17 +456,16 @@ mod tests {
     fn to_listen_port() {
         let port = to_listen("1234");
 
-        assert_eq!(port, Ok(PortOrSocket::Port(1234)));
+        assert!(matches!(port, Ok(PortOrSocket::Port(1234))));
     }
 
     #[test]
     fn to_listen_socket() {
-        let port = to_listen("/var/wsdd-rs/socket");
+        let path = "/var/wsdd-rs/socket";
 
-        assert_eq!(
-            port,
-            Ok(PortOrSocket::SocketPath("/var/wsdd-rs/socket".into()))
-        );
+        let port = to_listen(path);
+
+        assert!(matches!(port, Ok(PortOrSocket::SocketPath(p)) if (p == Path::new(path))));
     }
 
     #[test]

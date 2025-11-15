@@ -262,7 +262,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
         });
     }
 
-    if let Some(listen_on) = config.listen.as_ref() {
+    if let Some(listen_on) = config.listen.clone() {
         let cancellation_token = cancellation_token.clone();
         let listen_on = listen_on.clone();
         let command_tx = command_tx.clone();

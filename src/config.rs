@@ -1,3 +1,4 @@
+use std::os::fd::RawFd;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -40,9 +41,10 @@ pub struct Config {
     pub wsd_instance_id: Box<str>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum PortOrSocket {
     Port(u16),
+    Socket(RawFd),
     SocketPath(PathBuf),
 }
 
