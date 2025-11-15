@@ -1,6 +1,7 @@
 mod generic;
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::os::fd::FromRawFd as _;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -38,6 +39,15 @@ impl ApiServer {
                 socket.set_reuseaddr(true)?;
                 socket.set_reuseport(true)?;
                 socket.bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)))?;
+
+                socket.listen(MAX_CONNECTION_BACKLOG)?.into()
+            },
+            PortOrSocket::Socket(fd) => {
+                // SAFETY: passed in by systemd, so it's a valid descriptor
+                let socket = unsafe { socket2::Socket::from_raw_fd(fd) };
+                socket.set_nonblocking(true)?;
+                let socket =
+                    tokio::net::TcpSocket::from_std_stream(std::net::TcpStream::from(socket));
 
                 socket.listen(MAX_CONNECTION_BACKLOG)?.into()
             },
