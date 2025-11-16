@@ -160,6 +160,7 @@ type RawMessageResult<'r> = Result<(Header, bool, Wrapper<'r>), MessageHandlerEr
 pub fn deconstruct_raw(raw: &[u8]) -> RawMessageResult<'_> {
     let mut reader = Wrapper::new(
         ParserConfig::new()
+            .trim_whitespace(true)
             .ignore_comments(true)
             .create_reader(BufReader::new(raw)),
     );
