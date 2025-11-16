@@ -1,6 +1,7 @@
 use std::io::BufReader;
 
 use thiserror::Error;
+use tracing::{Level, event};
 use xml::EventReader;
 use xml::attribute::OwnedAttribute;
 use xml::name::{Name, OwnedName};
@@ -131,7 +132,6 @@ pub enum GenericParsingError {
     InvalidDepth(usize),
 }
 
-/// TODO expand to make sure what we search for is at the right depth
 pub fn find_child(
     reader: &mut Wrapper<'_>,
     namespace: Option<&str>,
@@ -147,19 +147,38 @@ pub fn find_child(
                 depth += 1;
 
                 if name.namespace_ref() == namespace && name.local_name == path {
+                    if depth != 1 {
+                        event!(
+                            Level::TRACE,
+                            depth,
+                            ?name,
+                            "Element found, but at wrong depth (expected depth to be 1)"
+                        );
+
+                        continue;
+                    }
+
                     return Ok((name, attributes));
                 }
             },
-            XmlEvent::EndElement { .. } => {
+            XmlEvent::EndElement { name } => {
                 if depth == 0 {
+                    let missing_element = format!(
+                        "{}{}{}",
+                        namespace.unwrap_or_default(),
+                        namespace.map(|_| ":").unwrap_or_default(),
+                        path,
+                    );
+
+                    event!(
+                        Level::ERROR,
+                        now_in = %name,
+                        missing_element = missing_element,
+                        "Could not find element"
+                    );
+
                     return Err(GenericParsingError::MissingElement(
-                        format!(
-                            "{}{}{}",
-                            namespace.unwrap_or_default(),
-                            namespace.map(|_| ":").unwrap_or_default(),
-                            path
-                        )
-                        .into_boxed_str(),
+                        missing_element.into_boxed_str(),
                     ));
                 }
 
@@ -247,3 +266,68 @@ fn parse_generic_body_paths_recursive(
         format!("{}:{}", namespace, path).into_boxed_str(),
     ))
 }
+
+// pub fn find_first_element(
+//     reader: &mut Wrapper,
+//     namespace: Option<&str>,
+//     path: &str,
+// ) -> Result<(OwnedName, Vec<OwnedAttribute>, usize), GenericParsingError> {
+//     let mut depth = 0_usize;
+
+//     loop {
+//         match reader.next()? {
+//             XmlEvent::StartElement {
+//                 name, attributes, ..
+//             } => {
+//                 depth += 1;
+
+//                 if name.namespace_ref() == namespace && name.local_name == path {
+//                     return Ok((name, attributes, depth));
+//                 }
+//             },
+//             XmlEvent::EndElement { name } => {
+//                 if depth == 0 {
+//                     let missing_element = format!(
+//                         "{}{}{}",
+//                         namespace.unwrap_or_default(),
+//                         namespace.map(|_| ":").unwrap_or_default(),
+//                         path,
+//                     );
+
+//                     event!(
+//                         Level::TRACE,
+//                         now_in = %name,
+//                         missing_element = missing_element,
+//                         "Could not find element"
+//                     );
+
+//                     return Err(GenericParsingError::MissingElement(
+//                         missing_element.into_boxed_str(),
+//                     ));
+//                 }
+
+//                 depth -= 1;
+//             },
+//             XmlEvent::EndDocument => {
+//                 break;
+//             },
+//             XmlEvent::StartDocument { .. }
+//             | XmlEvent::ProcessingInstruction { .. }
+//             | XmlEvent::CData(_)
+//             | XmlEvent::Comment(_)
+//             | XmlEvent::Characters(_)
+//             | XmlEvent::Whitespace(_)
+//             | XmlEvent::Doctype { .. } => {},
+//         }
+//     }
+
+//     Err(GenericParsingError::MissingElement(
+//         format!(
+//             "{}{}{}",
+//             namespace.unwrap_or_default(),
+//             namespace.map(|_| ":").unwrap_or_default(),
+//             path
+//         )
+//         .into_boxed_str(),
+//     ))
+// }
