@@ -1,12 +1,9 @@
-use std::io::BufReader;
-
 use thiserror::Error;
 use tracing::{Level, event};
-use xml::EventReader;
 use xml::reader::XmlEvent;
 
 use crate::constants::{WSDP_TYPE_DEVICE, XML_WSD_NAMESPACE};
-use crate::xml::{TextReadError, read_text};
+use crate::xml::{TextReadError, Wrapper, read_text};
 
 type ParsedProbeResult = Result<(), ProbeParsingError>;
 
@@ -26,7 +23,7 @@ pub enum ProbeParsingError {
     MissingProbeElement,
 }
 
-fn parse_probe(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedProbeResult {
+fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
     let mut types = None;
 
     loop {
@@ -96,7 +93,7 @@ fn parse_probe(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedProbeResult 
 }
 
 /// This takes in a reader that is stopped at the body tag.
-pub fn parse_probe_body(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedProbeResult {
+pub fn parse_probe_body(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {

@@ -1,13 +1,10 @@
-use std::io::BufReader;
-
 use thiserror::Error;
 use tracing::{Level, event};
 use uuid::Uuid;
-use xml::EventReader;
 use xml::reader::XmlEvent;
 
 use crate::constants::{XML_WSA_NAMESPACE, XML_WSD_NAMESPACE};
-use crate::xml::{TextReadError, read_text};
+use crate::xml::{TextReadError, Wrapper, read_text};
 
 type ParsedResolveResult = Result<(), ResolveParsingError>;
 
@@ -25,10 +22,7 @@ pub enum ResolveParsingError {
     AddressDoesntMatch,
 }
 
-fn parse_resolve(
-    reader: &mut EventReader<BufReader<&[u8]>>,
-    target_uuid: Uuid,
-) -> ParsedResolveResult {
+fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveResult {
     let mut addr = None;
 
     let mut resolve_depth = 0;
@@ -121,10 +115,7 @@ fn parse_resolve(
 }
 
 /// This takes in a reader that is stopped at the body tag.
-pub fn parse_resolve_body(
-    reader: &mut EventReader<BufReader<&[u8]>>,
-    target_uuid: Uuid,
-) -> ParsedResolveResult {
+pub fn parse_resolve_body(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveResult {
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {

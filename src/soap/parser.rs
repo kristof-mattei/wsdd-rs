@@ -10,14 +10,14 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{Level, event};
 use uuid::fmt::Urn;
+use xml::ParserConfig;
 use xml::reader::XmlEvent;
-use xml::{EventReader, ParserConfig};
 
 use crate::constants::{WSA_URI, XML_SOAP_NAMESPACE};
 use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
 use crate::wsd::device::DeviceUri;
-use crate::xml::{TextReadError, read_text};
+use crate::xml::{TextReadError, Wrapper, read_text};
 
 pub struct MessageHandler {
     handled_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
@@ -155,13 +155,14 @@ pub enum HeaderError {
     XmlError(#[from] xml::reader::Error),
 }
 
-type RawMessageResult<'r> =
-    Result<(Header, bool, EventReader<BufReader<&'r [u8]>>), MessageHandlerError>;
+type RawMessageResult<'r> = Result<(Header, bool, Wrapper<'r>), MessageHandlerError>;
 
 pub fn deconstruct_raw(raw: &[u8]) -> RawMessageResult<'_> {
-    let mut reader = ParserConfig::new()
-        .ignore_comments(true)
-        .create_reader(BufReader::new(raw));
+    let mut reader = Wrapper::from_reader(
+        ParserConfig::new()
+            .ignore_comments(true)
+            .create_reader(BufReader::new(raw)),
+    );
 
     let mut header = None;
     let mut has_body = false;
@@ -218,7 +219,7 @@ impl MessageHandler {
         &self,
         raw: &'r [u8],
         src: Option<SocketAddr>,
-    ) -> Result<(Header, EventReader<BufReader<&'r [u8]>>), MessageHandlerError> {
+    ) -> Result<(Header, Wrapper<'r>), MessageHandlerError> {
         let (header, has_body, reader) = deconstruct_raw(raw)?;
 
         // check for duplicates
@@ -287,7 +288,7 @@ impl MessageHandler {
     }
 }
 
-fn parse_header(reader: &mut EventReader<BufReader<&[u8]>>) -> ParsedHeaderResult {
+fn parse_header(reader: &mut Wrapper<'_>) -> ParsedHeaderResult {
     // <wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
     let mut to = None;
     // <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches</wsa:Action>

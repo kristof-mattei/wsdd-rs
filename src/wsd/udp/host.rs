@@ -1,4 +1,3 @@
-use std::io::BufReader;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
@@ -8,7 +7,6 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 use uuid::fmt::Urn;
-use xml::EventReader;
 
 use crate::config::Config;
 use crate::constants;
@@ -17,6 +15,7 @@ use crate::soap::builder::{self, Builder, MessageType};
 use crate::soap::parser::{self, MessageHandler};
 use crate::utils::task::spawn_with_name;
 use crate::wsd::HANDLED_MESSAGES;
+use crate::xml::Wrapper;
 
 /// handles WSD requests coming from UDP datagrams.
 pub struct WSDHost {
@@ -154,9 +153,9 @@ fn handle_probe(
     config: &Config,
     messages_built: &AtomicU64,
     relates_to: Urn,
-    mut reader: EventReader<BufReader<&[u8]>>,
+    reader: &mut Wrapper<'_>,
 ) -> Result<Vec<u8>, eyre::Report> {
-    parser::probe::parse_probe_body(&mut reader)?;
+    parser::probe::parse_probe_body(reader)?;
 
     Ok(builder::Builder::build_probe_matches(
         config,
@@ -171,9 +170,9 @@ fn handle_resolve(
     messages_built: &AtomicU64,
     target_uuid: uuid::Uuid,
     relates_to: Urn,
-    mut reader: EventReader<BufReader<&[u8]>>,
+    reader: &mut Wrapper<'_>,
 ) -> Result<Vec<u8>, eyre::Report> {
-    parser::resolve::parse_resolve_body(&mut reader, target_uuid)?;
+    parser::resolve::parse_resolve_body(reader, target_uuid)?;
 
     Ok(builder::Builder::build_resolve_matches(
         config,
@@ -210,7 +209,7 @@ async fn listen_forever(
             break;
         };
 
-        let (header, body_reader) = match message_handler
+        let (header, mut body_reader) = match message_handler
             .deconstruct_message(&buffer, Some(from))
             .await
         {
@@ -224,16 +223,19 @@ async fn listen_forever(
 
         // handle based on action
         let response = match &*header.action {
-            constants::WSD_PROBE => {
-                handle_probe(&config, &messages_built, header.message_id, body_reader)
-            },
+            constants::WSD_PROBE => handle_probe(
+                &config,
+                &messages_built,
+                header.message_id,
+                &mut body_reader,
+            ),
             constants::WSD_RESOLVE => handle_resolve(
                 address,
                 &config,
                 &messages_built,
                 config.uuid,
                 header.message_id,
-                body_reader,
+                &mut body_reader,
             ),
             _ => {
                 event!(
@@ -405,7 +407,7 @@ mod tests {
         );
 
         // host receives client's probe
-        let (header, reader) = host_message_handler
+        let (header, mut reader) = host_message_handler
             .deconstruct_message(
                 resolve.as_bytes(),
                 Some(SocketAddr::V4(SocketAddrV4::new(client_ip, 5000))),
@@ -420,7 +422,7 @@ mod tests {
             &host_messages_built,
             host_config.uuid,
             header.message_id,
-            reader,
+            &mut reader,
         )
         .unwrap();
 
@@ -461,7 +463,7 @@ mod tests {
         );
 
         // host receives client's probe
-        let (header, reader) = host_message_handler
+        let (header, mut reader) = host_message_handler
             .deconstruct_message(
                 probe.as_bytes(),
                 Some(SocketAddr::V4(SocketAddrV4::new(client_ip, 5000))),
@@ -474,7 +476,7 @@ mod tests {
             &host_config,
             &host_messages_built,
             header.message_id,
-            reader,
+            &mut reader,
         )
         .unwrap();
 
