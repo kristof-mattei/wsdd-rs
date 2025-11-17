@@ -17,7 +17,7 @@ use crate::constants::{
 };
 use crate::network_address::NetworkAddress;
 use crate::soap::parser;
-use crate::xml::{GenericParsingError, Wrapper, parse_generic_body, read_text};
+use crate::xml::{GenericParsingError, Wrapper, find_child, read_text};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[repr(transparent)]
@@ -108,21 +108,15 @@ impl WSDDiscoveredDevice {
     ) -> Result<(), eyre::Report> {
         let (_header, _has_body, mut reader) = parser::deconstruct_raw(meta)?;
 
-        let (_, _, depth) = parse_generic_body(&mut reader, Some(XML_WSX_NAMESPACE), "Metadata")?;
-
-        if depth != 1 {
-            return Err(eyre::Report::msg(
-                "`Metadata` not found at depth 1, invalid XML.",
-            ));
-        }
+        let (_, _) = find_child(&mut reader, Some(XML_WSX_NAMESPACE), "Metadata")?;
 
         // we're now in metadata
 
         // loop though the reader for each wsx:MetadataSection at depth 1 from where we are now
         loop {
             let (scope, attributes) =
-                match parse_generic_body(&mut reader, Some(XML_WSX_NAMESPACE), "MetadataSection") {
-                    Ok((element, attributes, _depth)) => {
+                match find_child(&mut reader, Some(XML_WSX_NAMESPACE), "MetadataSection") {
+                    Ok((element, attributes)) => {
                         // we'll need to ensure that the depth is always the same
                         (element, attributes)
                     },
@@ -139,11 +133,8 @@ impl WSDDiscoveredDevice {
                 {
                     if attribute.value == WSDP_THIS_DEVICE_DIALECT {
                         // open ThisDevice
-                        let (this_device_scope, ..) = parse_generic_body(
-                            &mut reader,
-                            Some(XML_WSDP_NAMESPACE),
-                            WSDP_THIS_DEVICE,
-                        )?;
+                        let (this_device_scope, ..) =
+                            find_child(&mut reader, Some(XML_WSDP_NAMESPACE), WSDP_THIS_DEVICE)?;
 
                         let new_props = extract_wsdp_props(
                             &mut reader,
@@ -154,11 +145,8 @@ impl WSDDiscoveredDevice {
                         self.props.extend(new_props);
                     } else if attribute.value == WSDP_THIS_MODEL_DIALECT {
                         // open ThisModel
-                        let (this_model_scope, ..) = parse_generic_body(
-                            &mut reader,
-                            Some(XML_WSDP_NAMESPACE),
-                            WSDP_THIS_MODEL,
-                        )?;
+                        let (this_model_scope, ..) =
+                            find_child(&mut reader, Some(XML_WSDP_NAMESPACE), WSDP_THIS_MODEL)?;
 
                         let new_props = extract_wsdp_props(
                             &mut reader,
@@ -358,8 +346,8 @@ fn extract_host_props(reader: &mut Wrapper<'_>) -> ExtractHostPropsResult {
     // for each relationship, we find the one with Type=Host
     loop {
         let (_element, attributes) =
-            match parse_generic_body(reader, Some(XML_WSDP_NAMESPACE), WSDP_RELATIONSHIP) {
-                Ok((element, attributes, _depth)) => {
+            match find_child(reader, Some(XML_WSDP_NAMESPACE), WSDP_RELATIONSHIP) {
+                Ok((element, attributes)) => {
                     // we'll need to ensure that the depth is always the same
                     (element, attributes)
                 },
@@ -373,8 +361,8 @@ fn extract_host_props(reader: &mut Wrapper<'_>) -> ExtractHostPropsResult {
         for attribute in attributes {
             if attribute.name.namespace_ref().is_none() && attribute.name.local_name == "Type" {
                 if attribute.value == WSDP_RELATIONSHIP_TYPE_HOST {
-                    match parse_generic_body(reader, Some(XML_WSDP_NAMESPACE), "Host") {
-                        Ok((_name, _attributes, _depth)) => {
+                    match find_child(reader, Some(XML_WSDP_NAMESPACE), "Host") {
+                        Ok((_name, _attributes)) => {
                             let (types, display_name_belongs_to) =
                                 read_types_and_pub_computer(reader)?;
 

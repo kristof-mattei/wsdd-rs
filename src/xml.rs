@@ -24,6 +24,10 @@ pub struct Wrapper<'r> {
 }
 
 impl<'r> Wrapper<'r> {
+    pub fn new(reader: EventReader<BufReader<&'r [u8]>>) -> Wrapper<'r> {
+        Self { next: None, reader }
+    }
+
     pub fn next(&mut self) -> std::result::Result<XmlEvent, xml::reader::Error> {
         if let Some(next) = self.next.take() {
             next
@@ -35,10 +39,6 @@ impl<'r> Wrapper<'r> {
     #[expect(unused, reason = "WIP")]
     pub fn peek(&mut self) -> std::result::Result<&XmlEvent, &xml::reader::Error> {
         self.next.get_or_insert_with(|| self.reader.next()).as_ref()
-    }
-
-    pub fn from_reader(reader: EventReader<BufReader<&'r [u8]>>) -> Wrapper<'r> {
-        Self { next: None, reader }
     }
 }
 
@@ -132,11 +132,11 @@ pub enum GenericParsingError {
 }
 
 /// TODO expand to make sure what we search for is at the right depth
-pub fn parse_generic_body(
+pub fn find_child(
     reader: &mut Wrapper<'_>,
     namespace: Option<&str>,
     path: &str,
-) -> Result<(OwnedName, Vec<OwnedAttribute>, usize), GenericParsingError> {
+) -> Result<(OwnedName, Vec<OwnedAttribute>), GenericParsingError> {
     let mut depth = 0_usize;
 
     loop {
@@ -147,7 +147,7 @@ pub fn parse_generic_body(
                 depth += 1;
 
                 if name.namespace_ref() == namespace && name.local_name == path {
-                    return Ok((name, attributes, depth));
+                    return Ok((name, attributes));
                 }
             },
             XmlEvent::EndElement { .. } => {
