@@ -1,15 +1,12 @@
-use std::io::BufReader;
-
 use tracing::{Level, event};
-use xml::EventReader;
 use xml::reader::XmlEvent;
 
 use crate::constants::{XML_WSA_NAMESPACE, XML_WSD_NAMESPACE};
 use crate::wsd::device::DeviceUri;
-use crate::xml::{GenericParsingError, read_text};
+use crate::xml::{GenericParsingError, Wrapper, read_text};
 
 pub fn extract_endpoint_reference_address(
-    reader: &mut EventReader<BufReader<&[u8]>>,
+    reader: &mut Wrapper<'_>,
 ) -> Result<Box<str>, GenericParsingError> {
     let mut address = None;
 
@@ -53,7 +50,7 @@ pub fn extract_endpoint_reference_address(
 }
 
 pub fn extract_endpoint_metadata(
-    reader: &mut EventReader<BufReader<&[u8]>>,
+    reader: &mut Wrapper<'_>,
 ) -> Result<(DeviceUri, Option<Box<str>>), GenericParsingError> {
     let mut endpoint = None;
     let mut xaddrs = None;

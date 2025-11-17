@@ -1,5 +1,4 @@
 use std::borrow::ToOwned;
-use std::io::BufReader;
 use std::ops::Deref;
 
 use bytes::Bytes;
@@ -8,7 +7,6 @@ use hashbrown::{HashMap, HashSet};
 use time::OffsetDateTime;
 use tracing::{Level, event};
 use url::Url;
-use xml::EventReader;
 use xml::name::Name;
 use xml::reader::XmlEvent;
 
@@ -19,7 +17,7 @@ use crate::constants::{
 };
 use crate::network_address::NetworkAddress;
 use crate::soap::parser;
-use crate::xml::{GenericParsingError, parse_generic_body, read_text};
+use crate::xml::{GenericParsingError, Wrapper, parse_generic_body, read_text};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[repr(transparent)]
@@ -288,7 +286,7 @@ impl WSDDiscoveredDevice {
 }
 
 fn extract_wsdp_props(
-    reader: &mut EventReader<BufReader<&[u8]>>,
+    reader: &mut Wrapper<'_>,
     namespace: &str,
     closing: Name<'_>,
 ) -> Result<HashMap<Box<str>, Box<str>>, GenericParsingError> {
@@ -355,7 +353,7 @@ type ExtractHostPropsResult =
 
 //         comp = root.findtext(PUB_COMPUTER, '', namespaces)
 //         self.props['DisplayName'], _, self.props['BelongsTo'] = (comp.partition('/'))
-fn extract_host_props(reader: &mut EventReader<BufReader<&[u8]>>) -> ExtractHostPropsResult {
+fn extract_host_props(reader: &mut Wrapper<'_>) -> ExtractHostPropsResult {
     // we are inside of the relationship metadata section, which contains ... RELATIONSHIPS
     // for each relationship, we find the one with Type=Host
     loop {
@@ -404,9 +402,7 @@ fn extract_host_props(reader: &mut EventReader<BufReader<&[u8]>>) -> ExtractHost
     Ok((HashSet::new(), None))
 }
 
-fn read_types_and_pub_computer(
-    reader: &mut EventReader<BufReader<&[u8]>>,
-) -> ExtractHostPropsResult {
+fn read_types_and_pub_computer(reader: &mut Wrapper<'_>) -> ExtractHostPropsResult {
     let mut types = None;
     let mut computer = None;
     let mut computer_namespace_prefix = None;

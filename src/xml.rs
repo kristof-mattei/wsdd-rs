@@ -18,6 +18,30 @@ pub enum TextReadError {
     MissingEndElement(Box<str>),
 }
 
+pub struct Wrapper<'r> {
+    next: Option<std::result::Result<XmlEvent, xml::reader::Error>>,
+    reader: EventReader<BufReader<&'r [u8]>>,
+}
+
+impl<'r> Wrapper<'r> {
+    pub fn next(&mut self) -> std::result::Result<XmlEvent, xml::reader::Error> {
+        if let Some(next) = self.next.take() {
+            next
+        } else {
+            self.reader.next()
+        }
+    }
+
+    #[expect(unused, reason = "WIP")]
+    pub fn peek(&mut self) -> std::result::Result<&XmlEvent, &xml::reader::Error> {
+        self.next.get_or_insert_with(|| self.reader.next()).as_ref()
+    }
+
+    pub fn from_reader(reader: EventReader<BufReader<&'r [u8]>>) -> Wrapper<'r> {
+        Self { next: None, reader }
+    }
+}
+
 /// Reads all text from current position in `reader` until closing tag of `element_name`
 ///
 /// Expects that reader has just read the opening tag and nothing further.
@@ -26,7 +50,7 @@ pub enum TextReadError {
 /// * When it encounters anything other than text, comments or closing tag of `element_name`
 /// * When the closing tag is not on the same depth as the opening tag
 pub fn read_text(
-    reader: &mut EventReader<BufReader<&[u8]>>,
+    reader: &mut Wrapper<'_>,
     element_name: Name<'_>,
 ) -> Result<Option<String>, TextReadError> {
     let mut text: Option<String> = None;
@@ -109,7 +133,7 @@ pub enum GenericParsingError {
 
 /// TODO expand to make sure what we search for is at the right depth
 pub fn parse_generic_body(
-    reader: &mut EventReader<BufReader<&[u8]>>,
+    reader: &mut Wrapper<'_>,
     namespace: Option<&str>,
     path: &str,
 ) -> Result<(OwnedName, Vec<OwnedAttribute>, usize), GenericParsingError> {
@@ -169,14 +193,14 @@ type ParseGenericBodyPathResult =
     Result<(Option<OwnedName>, Option<Vec<OwnedAttribute>>, usize), GenericParsingError>;
 
 pub fn parse_generic_body_paths(
-    reader: &mut EventReader<BufReader<&[u8]>>,
+    reader: &mut Wrapper<'_>,
     paths: &[(&str, &str)],
 ) -> ParseGenericBodyPathResult {
     parse_generic_body_paths_recursive(reader, paths, None, None, 0)
 }
 
 fn parse_generic_body_paths_recursive(
-    reader: &mut EventReader<BufReader<&[u8]>>,
+    reader: &mut Wrapper<'_>,
     paths: &[(&str, &str)],
     name: Option<OwnedName>,
     attributes: Option<Vec<OwnedAttribute>>,
