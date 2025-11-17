@@ -136,7 +136,7 @@ pub fn find_child(
     reader: &mut Wrapper<'_>,
     namespace: Option<&str>,
     path: &str,
-) -> Result<(OwnedName, Vec<OwnedAttribute>, usize), GenericParsingError> {
+) -> Result<(OwnedName, Vec<OwnedAttribute>), GenericParsingError> {
     let mut depth = 0_usize;
 
     loop {
@@ -147,7 +147,7 @@ pub fn find_child(
                 depth += 1;
 
                 if name.namespace_ref() == namespace && name.local_name == path {
-                    return Ok((name, attributes, depth));
+                    return Ok((name, attributes));
                 }
             },
             XmlEvent::EndElement { .. } => {

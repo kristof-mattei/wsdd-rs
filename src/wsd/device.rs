@@ -108,13 +108,7 @@ impl WSDDiscoveredDevice {
     ) -> Result<(), eyre::Report> {
         let (_header, _has_body, mut reader) = parser::deconstruct_raw(meta)?;
 
-        let (_, _, depth) = find_child(&mut reader, Some(XML_WSX_NAMESPACE), "Metadata")?;
-
-        if depth != 1 {
-            return Err(eyre::Report::msg(
-                "`Metadata` not found at depth 1, invalid XML.",
-            ));
-        }
+        let (_, _) = find_child(&mut reader, Some(XML_WSX_NAMESPACE), "Metadata")?;
 
         // we're now in metadata
 
@@ -122,7 +116,7 @@ impl WSDDiscoveredDevice {
         loop {
             let (scope, attributes) =
                 match find_child(&mut reader, Some(XML_WSX_NAMESPACE), "MetadataSection") {
-                    Ok((element, attributes, _depth)) => {
+                    Ok((element, attributes)) => {
                         // we'll need to ensure that the depth is always the same
                         (element, attributes)
                     },
@@ -353,7 +347,7 @@ fn extract_host_props(reader: &mut Wrapper<'_>) -> ExtractHostPropsResult {
     loop {
         let (_element, attributes) =
             match find_child(reader, Some(XML_WSDP_NAMESPACE), WSDP_RELATIONSHIP) {
-                Ok((element, attributes, _depth)) => {
+                Ok((element, attributes)) => {
                     // we'll need to ensure that the depth is always the same
                     (element, attributes)
                 },
@@ -368,7 +362,7 @@ fn extract_host_props(reader: &mut Wrapper<'_>) -> ExtractHostPropsResult {
             if attribute.name.namespace_ref().is_none() && attribute.name.local_name == "Type" {
                 if attribute.value == WSDP_RELATIONSHIP_TYPE_HOST {
                     match find_child(reader, Some(XML_WSDP_NAMESPACE), "Host") {
-                        Ok((_name, _attributes, _depth)) => {
+                        Ok((_name, _attributes)) => {
                             let (types, display_name_belongs_to) =
                                 read_types_and_pub_computer(reader)?;
 
