@@ -132,7 +132,7 @@ pub enum GenericParsingError {
 }
 
 /// TODO expand to make sure what we search for is at the right depth
-pub fn parse_generic_body(
+pub fn find_child(
     reader: &mut Wrapper<'_>,
     namespace: Option<&str>,
     path: &str,
