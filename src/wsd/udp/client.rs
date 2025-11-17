@@ -24,7 +24,7 @@ use crate::soap::parser::{self, MessageHandler};
 use crate::utils::task::spawn_with_name;
 use crate::wsd::HANDLED_MESSAGES;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
-use crate::xml::{Wrapper, parse_generic_body, parse_generic_body_paths};
+use crate::xml::{Wrapper, find_child, parse_generic_body_paths};
 
 #[expect(unused, reason = "WIP")]
 pub(crate) struct WSDClient {
@@ -236,7 +236,7 @@ async fn handle_hello(
     multicast: &Sender<Box<[u8]>>,
     reader: &mut Wrapper<'_>,
 ) -> Result<(), eyre::Report> {
-    parse_generic_body(reader, Some(XML_WSD_NAMESPACE), "Hello")?;
+    find_child(reader, Some(XML_WSD_NAMESPACE), "Hello")?;
 
     let (endpoint, xaddrs) = parser::generic::extract_endpoint_metadata(reader)?;
 
@@ -266,7 +266,7 @@ async fn handle_bye(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     reader: &mut Wrapper<'_>,
 ) -> Result<(), eyre::Report> {
-    parse_generic_body(reader, Some(XML_WSD_NAMESPACE), "Bye")?;
+    find_child(reader, Some(XML_WSD_NAMESPACE), "Bye")?;
 
     let (endpoint, _) = parser::generic::extract_endpoint_metadata(reader)?;
 
