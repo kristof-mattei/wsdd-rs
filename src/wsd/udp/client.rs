@@ -2,7 +2,6 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
-use bytes::Bytes;
 use color_eyre::eyre;
 use hashbrown::HashMap;
 use tokio::sync::RwLock;
@@ -24,7 +23,7 @@ use crate::soap::parser::{self, MessageHandler};
 use crate::utils::task::spawn_with_name;
 use crate::wsd::HANDLED_MESSAGES;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
-use crate::xml::{Wrapper, parse_generic_body, parse_generic_body_paths};
+use crate::xml::{Wrapper, find_child, parse_generic_body_paths};
 
 #[expect(unused, reason = "WIP")]
 pub(crate) struct WSDClient {
@@ -236,7 +235,7 @@ async fn handle_hello(
     multicast: &Sender<Box<[u8]>>,
     reader: &mut Wrapper<'_>,
 ) -> Result<(), eyre::Report> {
-    parse_generic_body(reader, Some(XML_WSD_NAMESPACE), "Hello")?;
+    find_child(reader, Some(XML_WSD_NAMESPACE), "Hello")?;
 
     let (endpoint, xaddrs) = parser::generic::extract_endpoint_metadata(reader)?;
 
@@ -266,7 +265,7 @@ async fn handle_bye(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     reader: &mut Wrapper<'_>,
 ) -> Result<(), eyre::Report> {
-    parse_generic_body(reader, Some(XML_WSD_NAMESPACE), "Bye")?;
+    find_child(reader, Some(XML_WSD_NAMESPACE), "Bye")?;
 
     let (endpoint, _) = parser::generic::extract_endpoint_metadata(reader)?;
 
@@ -445,7 +444,7 @@ fn build_getmetadata_message(
 
 async fn handle_metadata(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
-    meta: &Bytes,
+    meta: &[u8],
     endpoint: DeviceUri,
     xaddr: Url,
     bound_to: &NetworkAddress,
@@ -586,13 +585,14 @@ mod tests {
     use pretty_assertions::assert_eq;
     use tokio::sync::RwLock;
     use tokio_util::sync::CancellationToken;
+    use url::Url;
     use uuid::Uuid;
 
     use crate::network_interface::NetworkInterface;
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler_with_network_address};
     use crate::wsd::device::DeviceUri;
-    use crate::wsd::udp::client::{WSDClient, handle_bye, handle_hello};
+    use crate::wsd::udp::client::{WSDClient, handle_bye, handle_hello, handle_metadata};
 
     #[tokio::test]
     async fn handles_hello_without_xaddr() {
@@ -697,7 +697,7 @@ mod tests {
             .with_status(200)
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
-                    include_str!("../../test/get-response-template-other-device.xml"),
+                    include_str!("../../test/get-response-synology.xml"),
                     Uuid::new_v4(),
                     Uuid::new_v4(),
                 );
@@ -864,7 +864,7 @@ mod tests {
             .with_status(200)
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
-                    include_str!("../../test/get-response-template-other-device.xml"),
+                    include_str!("../../test/get-response-synology.xml"),
                     Uuid::new_v4(),
                     Uuid::new_v4(),
                 );
@@ -994,5 +994,119 @@ mod tests {
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(response, expected);
+    }
+
+    #[tokio::test]
+    async fn handles_metadata_synology() {
+        let (_message_handler, client_network_address) =
+            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
+
+        // client
+        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+
+        let metadata: String = format!(
+            include_str!("../../test/get-response-synology.xml"),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        );
+
+        let device_uri = DeviceUri::new(Uuid::new_v4().as_urn().to_string().into_boxed_str());
+
+        let result = handle_metadata(
+            Arc::clone(&client_devices),
+            metadata.as_bytes(),
+            device_uri.clone(),
+            Url::parse("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721").unwrap(),
+            &client_network_address,
+        )
+        .await;
+
+        assert!(matches!(result, Ok(())));
+
+        let client_devices = client_devices.read().await;
+
+        let device = client_devices.get(&device_uri);
+
+        assert!(device.is_some());
+
+        let device = device.unwrap();
+
+        let expected_props = HashMap::from_iter([
+            ("BelongsTo", "Workgroup:WORKGROUP"),
+            ("DisplayName", "diskstation"),
+            ("Manufacturer", "Synology Inc"),
+            ("FirmwareVersion", "6"),
+            ("FriendlyName", "Synology DiskStation"),
+            ("ModelUrl", "http://www.synology.com"),
+            ("PresentationUrl", "http://www.synology.com"),
+            ("ModelName", "Synology DiskStation"),
+            ("SerialNumber", "6"),
+            ("ModelNumber", "1"),
+            ("ManufacturerUrl", "http://www.synology.com"),
+        ]);
+
+        let device_props = device
+            .props()
+            .iter()
+            .map(|(key, value)| (&**key, &**value))
+            .collect::<HashMap<_, _>>();
+
+        assert_eq!(expected_props, device_props);
+    }
+
+    #[tokio::test]
+    async fn handles_metadata_samsung_printer() {
+        let (_message_handler, client_network_address) =
+            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
+
+        // client
+        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+
+        let metadata: String = format!(
+            include_str!("../../test/get-response-samsung-printer.xml"),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        );
+
+        let device_uri = DeviceUri::new(Uuid::new_v4().as_urn().to_string().into_boxed_str());
+
+        let result = handle_metadata(
+            Arc::clone(&client_devices),
+            metadata.as_bytes(),
+            device_uri.clone(),
+            Url::parse("http://192.168.100.50:8018/wsd").unwrap(),
+            &client_network_address,
+        )
+        .await;
+
+        assert!(matches!(result, Ok(())));
+
+        let client_devices = client_devices.read().await;
+
+        let device = client_devices.get(&device_uri);
+
+        assert!(device.is_some());
+
+        let device = device.unwrap();
+
+        let expected_props = HashMap::from_iter([
+            ("SerialNumber", "123456789101112"),
+            ("PresentationUrl", "http://192.168.100.50"),
+            ("Manufacturer", "Samsung Electronics Co., Ltd."),
+            ("FriendlyName", "Samsung M2020W"),
+            ("ModelNumber", "M2020 Series"),
+            ("ManufacturerUrl", "http://www.samsungprinter.com"),
+            ("FirmwareVersion", "V3.00.01.23 AUG-16-2018"),
+            ("ModelName", "M2020 Series"),
+            ("ModelUrl", "http://www.samsungprinter.com"),
+        ]);
+
+        let device_props = device
+            .props()
+            .iter()
+            .map(|(key, value)| (&**key, &**value))
+            .collect::<HashMap<_, _>>();
+
+        assert_eq!(expected_props, device_props);
     }
 }

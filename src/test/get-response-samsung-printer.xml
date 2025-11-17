@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope
+    xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+    xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+    xmlns:wsx="http://schemas.xmlsoap.org/ws/2004/09/mex"
+    xmlns:wsdp="http://schemas.xmlsoap.org/ws/2006/02/devprof"
+    xmlns:wprt="http://schemas.microsoft.com/windows/2006/08/wdp/print"
+    xmlns:ss="http://www.samsung.com/wsd"
+    xmlns:pnpx="http://schemas.microsoft.com/windows/pnpx/2005/10"
+    xmlns:df="http://schemas.microsoft.com/windows/2008/09/devicefoundation"
+>
+    <soap:Header>
+        <wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
+        <wsa:Action>http://schemas.xmlsoap.org/ws/2004/09/transfer/GetResponse</wsa:Action>
+        <wsa:MessageID>urn:uuid:{}</wsa:MessageID>
+        <wsa:RelatesTo RelationshipType="wsa:Reply">urn:uuid:{}</wsa:RelatesTo>
+    </soap:Header>
+    <soap:Body>
+        <wsx:Metadata>
+            <wsx:MetadataSection Dialect="http://schemas.xmlsoap.org/ws/2006/02/devprof/ThisDevice">
+                <wsdp:ThisDevice>
+                    <wsdp:FriendlyName xml:lang="en-US">Samsung M2020W</wsdp:FriendlyName>
+                    <wsdp:FirmwareVersion>V3.00.01.23 AUG-16-2018</wsdp:FirmwareVersion>
+                    <wsdp:SerialNumber>123456789101112</wsdp:SerialNumber>
+                </wsdp:ThisDevice>
+            </wsx:MetadataSection>
+            <wsx:MetadataSection Dialect="http://schemas.xmlsoap.org/ws/2006/02/devprof/ThisModel">
+                <wsdp:ThisModel>
+                    <wsdp:Manufacturer xml:lang="en-US">Samsung Electronics Co., Ltd.</wsdp:Manufacturer>
+                    <wsdp:ManufacturerUrl>http://www.samsungprinter.com</wsdp:ManufacturerUrl>
+                    <wsdp:ModelName>M2020 Series</wsdp:ModelName>
+                    <wsdp:ModelNumber>M2020 Series</wsdp:ModelNumber>
+                    <wsdp:ModelUrl>http://www.samsungprinter.com</wsdp:ModelUrl>
+                    <wsdp:PresentationUrl>http://192.168.100.50</wsdp:PresentationUrl>
+                    <pnpx:DeviceCategory>Printers</pnpx:DeviceCategory>
+                    <df:DeviceCategory>PrintFax.Printer.Laser</df:DeviceCategory>
+                </wsdp:ThisModel>
+            </wsx:MetadataSection>
+            <wsx:MetadataSection Dialect="http://schemas.xmlsoap.org/ws/2006/02/devprof/Relationship">
+                <wsdp:Relationship Type="http://schemas.xmlsoap.org/ws/2006/02/devprof/host">
+                    <wsdp:Hosted>
+                        <wsa:EndpointReference>
+                            <wsa:Address>http://192.168.100.50:8018/wsd/print</wsa:Address>
+                        </wsa:EndpointReference>
+                        <wsdp:Types>wprt:PrinterServiceType</wsdp:Types>
+                        <wsdp:ServiceId>uri:Printer1</wsdp:ServiceId>
+                        <pnpx:HardwareId>VEN_04e8&amp;DEV_3321</pnpx:HardwareId>
+                        <pnpx:CompatibleId>http://schemas.microsoft.com/windows/2006/08/wdp/print/PrinterServiceType</pnpx:CompatibleId>
+                    </wsdp:Hosted>
+                </wsdp:Relationship>
+            </wsx:MetadataSection>
+        </wsx:Metadata>
+    </soap:Body>
+</soap:Envelope>
