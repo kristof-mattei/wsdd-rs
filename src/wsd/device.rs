@@ -1,7 +1,6 @@
 use std::borrow::ToOwned;
 use std::ops::Deref;
 
-use bytes::Bytes;
 use color_eyre::eyre;
 use hashbrown::{HashMap, HashSet};
 use time::OffsetDateTime;
@@ -61,7 +60,7 @@ pub struct WSDDiscoveredDevice {
 
 impl WSDDiscoveredDevice {
     pub fn new(
-        meta: &Bytes,
+        meta: &[u8],
         xaddr: &Url,
         network_address: &NetworkAddress,
     ) -> Result<Self, eyre::Report> {
@@ -102,13 +101,13 @@ impl WSDDiscoveredDevice {
     #[expect(clippy::too_many_lines, reason = "WIP")]
     pub fn update(
         &mut self,
-        meta: &Bytes,
+        meta: &[u8],
         xaddr: &Url,
         network_address: &NetworkAddress,
     ) -> Result<(), eyre::Report> {
         let (_header, _has_body, mut reader) = parser::deconstruct_raw(meta)?;
 
-        let (_, _) = find_child(&mut reader, Some(XML_WSX_NAMESPACE), "Metadata")?;
+        let (_name, _attributes) = find_child(&mut reader, Some(XML_WSX_NAMESPACE), "Metadata")?;
 
         // we're now in metadata
 
@@ -116,9 +115,9 @@ impl WSDDiscoveredDevice {
         loop {
             let (scope, attributes) =
                 match find_child(&mut reader, Some(XML_WSX_NAMESPACE), "MetadataSection") {
-                    Ok((element, attributes)) => {
+                    Ok((name, attributes)) => {
                         // we'll need to ensure that the depth is always the same
-                        (element, attributes)
+                        (name, attributes)
                     },
                     Err(GenericParsingError::MissingElement(_)) => {
                         // no more `MetadataSections to be found`
@@ -177,22 +176,22 @@ impl WSDDiscoveredDevice {
                 }
             }
 
-            // TODO the depth is wrong if the `Relationship` isn't what we expect
-            // read until the closing to ensure we only stop when we hit
-            // our closing element at our level (to avoid nested elements closing)
-            // let mut depth: usize = 1;
+            // Close out on the `wsx:MetadataSection`
+            let mut depth: usize = 1;
 
             loop {
-                match reader.next()? {
+                let event = reader.next()?;
+
+                match event {
                     XmlEvent::StartElement { name, .. } if name.borrow() == scope.borrow() => {
-                        // depth += 1;
+                        depth += 1;
                     },
                     XmlEvent::EndElement { name } if name.borrow() == scope.borrow() => {
-                        // depth -= 1;
+                        depth -= 1;
 
-                        // if depth == 0 {
-                        break;
-                        // }
+                        if depth == 0 {
+                            break;
+                        }
                     },
                     XmlEvent::StartDocument { .. }
                     | XmlEvent::ProcessingInstruction { .. }
@@ -204,7 +203,7 @@ impl WSDDiscoveredDevice {
                     | XmlEvent::Whitespace(_)
                     | XmlEvent::Doctype { .. } => {},
                     XmlEvent::EndDocument => {
-                        // TODO fix unroll bug
+                        event!(Level::ERROR, "Unexpected `EndDocument` found");
                         break;
                     },
                 }
@@ -334,26 +333,19 @@ fn extract_wsdp_props(
 type ExtractHostPropsResult =
     Result<(HashSet<Box<str>>, Option<(Box<str>, Box<str>)>), GenericParsingError>;
 
-//     def extract_host_props(self, root: ElementTree.Element) -> None:
-//         self.types = set(root.findtext('wsdp:Types', '', namespaces).split(' '))
-//         if PUB_COMPUTER not in self.types:
-//             return
-
-//         comp = root.findtext(PUB_COMPUTER, '', namespaces)
-//         self.props['DisplayName'], _, self.props['BelongsTo'] = (comp.partition('/'))
 fn extract_host_props(reader: &mut Wrapper<'_>) -> ExtractHostPropsResult {
     // we are inside of the relationship metadata section, which contains ... RELATIONSHIPS
     // for each relationship, we find the one with Type=Host
     loop {
         let (_element, attributes) =
             match find_child(reader, Some(XML_WSDP_NAMESPACE), WSDP_RELATIONSHIP) {
-                Ok((element, attributes)) => {
+                Ok((name, attributes)) => {
                     // we'll need to ensure that the depth is always the same
-                    (element, attributes)
+                    (name, attributes)
                 },
                 Err(GenericParsingError::MissingElement(_)) => {
-                    // no more `MetadataSections to be found`
-                    break;
+                    // no `wsdp:Relationship` to be found`
+                    return Ok((HashSet::new(), None));
                 },
                 Err(error) => return Err(error),
             };
@@ -366,12 +358,31 @@ fn extract_host_props(reader: &mut Wrapper<'_>) -> ExtractHostPropsResult {
                             let (types, display_name_belongs_to) =
                                 read_types_and_pub_computer(reader)?;
 
+                            // we're now back in `<wsdp:Relationship Type=$WSDP_RELATIONSHIP_TYPE_HOST>`
+                            // and we have to go one level up to `<wsx:MetadataSection>`
+                            // so we pop the closing element `</wsdp:Relationship Type=$WSDP_RELATIONSHIP_TYPE_HOST>`
+                            loop {
+                                let event = reader.next()?;
+
+                                let XmlEvent::EndElement { name } = event else {
+                                    continue;
+                                };
+
+                                if name.borrow().local_name == WSDP_RELATIONSHIP
+                                    && name.namespace_ref() == Some(XML_WSDP_NAMESPACE)
+                                {
+                                    break;
+                                }
+                            }
+
                             return Ok((types, display_name_belongs_to));
                         },
 
                         Err(GenericParsingError::MissingElement(_)) => {
-                            // no more `MetadataSections to be found`
-                            break;
+                            // no `Host` to be found, so we have just closed the `WSDP_RELATIONSHIP`
+                            // we are now in `<wsx:MetadataSection>`
+
+                            return Ok((HashSet::new(), None));
                         },
                         Err(error) => return Err(error),
                     }
@@ -381,13 +392,12 @@ fn extract_host_props(reader: &mut Wrapper<'_>) -> ExtractHostPropsResult {
                         r#type = &attribute.value,
                         "unknown relationship type"
                     );
+
                     break;
                 };
             }
         }
     }
-
-    Ok((HashSet::new(), None))
 }
 
 fn read_types_and_pub_computer(reader: &mut Wrapper<'_>) -> ExtractHostPropsResult {
@@ -395,36 +405,48 @@ fn read_types_and_pub_computer(reader: &mut Wrapper<'_>) -> ExtractHostPropsResu
     let mut computer = None;
     let mut computer_namespace_prefix = None;
 
+    let mut depth = 0;
+
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
-                if name.namespace_ref() == Some(WSDP_URI) {
-                    if &*name.local_name == "Types" {
-                        // we're in wsdp:Types
-                        types = read_text(reader, name.borrow())?.map(String::into_boxed_str);
-                    } else {
-                        // Not a match, continue
-                    }
-                } else if name.namespace_ref() == Some(XML_PUB_NAMESPACE) {
-                    if &*name.local_name == "Computer" {
-                        computer = read_text(reader, name.borrow())?.map(String::into_boxed_str);
+                depth += 1;
 
-                        // store the actual prefix, as it is not always `pub`
-                        computer_namespace_prefix.clone_from(&name.prefix);
-                    } else {
-                        // Not a match, continue
+                if depth == 1 {
+                    match (name.namespace_ref(), name.local_name.as_str()) {
+                        (Some(WSDP_URI), "Types") => {
+                            // we're in wsdp:Types
+                            types = read_text(reader, name.borrow())?.map(String::into_boxed_str);
+
+                            // `read_text` stops when it has hit the closing element, so we go back up 1 level
+                            depth -= 1;
+                        },
+                        (Some(XML_PUB_NAMESPACE), "Computer") => {
+                            computer =
+                                read_text(reader, name.borrow())?.map(String::into_boxed_str);
+
+                            // store the actual prefix, as it is not always `pub`
+                            computer_namespace_prefix.clone_from(&name.prefix);
+
+                            // `read_text` stops when it has hit the closing element, so we go back up 1 level
+                            depth -= 1;
+                        },
+                        (Some(_) | None, _) => {
+                            // ...
+                        },
                     }
-                } else {
-                    // ...
                 }
+                // only interested in elements at 1 level deep
             },
             XmlEvent::EndElement { name, .. } => {
+                depth -= 1;
+
                 if name.namespace_ref() == Some(WSDP_URI) && name.local_name == "Host" {
                     break;
                 }
             },
+            XmlEvent::EndDocument => return Err(GenericParsingError::InvalidElementOrder),
             XmlEvent::StartDocument { .. }
-            | XmlEvent::EndDocument
             | XmlEvent::ProcessingInstruction { .. }
             | XmlEvent::CData(_)
             | XmlEvent::Comment(_)
