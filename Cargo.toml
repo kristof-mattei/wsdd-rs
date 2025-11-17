@@ -23,7 +23,7 @@ clap = { version = "4.5.51", features = ["cargo", "string", "derive"] }
 color-eyre = "0.6.5"
 console-subscriber = { version = "0.5.0", optional = true }
 const_format = { version = "0.2.35", features = ["fmt"] }
-delegate = "0.13.4"
+delegate = "0.13.5"
 dotenvy = "0.15.7"
 hashbrown = { version = "0.16.0", default-features = false, features = [
     "default-hasher",
