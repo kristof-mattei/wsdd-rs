@@ -158,7 +158,7 @@ pub enum HeaderError {
 type RawMessageResult<'r> = Result<(Header, bool, Wrapper<'r>), MessageHandlerError>;
 
 pub fn deconstruct_raw(raw: &[u8]) -> RawMessageResult<'_> {
-    let mut reader = Wrapper::from_reader(
+    let mut reader = Wrapper::new(
         ParserConfig::new()
             .ignore_comments(true)
             .create_reader(BufReader::new(raw)),

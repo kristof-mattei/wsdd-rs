@@ -24,6 +24,10 @@ pub struct Wrapper<'r> {
 }
 
 impl<'r> Wrapper<'r> {
+    pub fn new(reader: EventReader<BufReader<&'r [u8]>>) -> Wrapper<'r> {
+        Self { next: None, reader }
+    }
+
     pub fn next(&mut self) -> std::result::Result<XmlEvent, xml::reader::Error> {
         if let Some(next) = self.next.take() {
             next
@@ -35,10 +39,6 @@ impl<'r> Wrapper<'r> {
     #[expect(unused, reason = "WIP")]
     pub fn peek(&mut self) -> std::result::Result<&XmlEvent, &xml::reader::Error> {
         self.next.get_or_insert_with(|| self.reader.next()).as_ref()
-    }
-
-    pub fn from_reader(reader: EventReader<BufReader<&'r [u8]>>) -> Wrapper<'r> {
-        Self { next: None, reader }
     }
 }
 
