@@ -239,6 +239,7 @@ where
             Ok(fds) => fds.first().map(|&fd| PortOrSocket::Socket(fd)),
             Err(error) => {
                 event!(Level::ERROR, ?error, "Error receiving file descriptors");
+
                 None
             },
         });
