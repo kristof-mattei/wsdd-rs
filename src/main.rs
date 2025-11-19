@@ -24,7 +24,9 @@ mod utils;
 mod wsd;
 mod xml;
 
+use std::convert::Infallible;
 use std::env::{self, VarError};
+use std::process::{ExitCode, Termination as _};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -82,24 +84,27 @@ fn init_tracing(filter: EnvFilter) -> Result<(), eyre::Report> {
         .try_init()?)
 }
 
-fn main() -> Result<(), eyre::Report> {
+fn main() -> ExitCode {
     // set up .env, if it fails, user didn't provide any
     let _r = dotenv();
 
     HookBuilder::default()
         .capture_span_trace_by_default(true)
         .display_env_section(false)
-        .install()?;
+        .install()
+        .expect("Failed to install panic handler");
 
     let (env_filter, parsing_error) = build_filter();
 
-    init_tracing(env_filter)?;
+    init_tracing(env_filter).expect("Failed to set up tracing");
 
     // bubble up the parsing error
-    parsing_error.map_or(Ok(()), Err)?;
+    if let Err(error) = parsing_error.map_or(Ok(()), Err) {
+        return Err::<Infallible, _>(error).report();
+    }
 
     // initialize the runtime
-    let result: Result<(), eyre::Report> = tokio::runtime::Builder::new_multi_thread()
+    let result: Result<ExitCode, eyre::Report> = tokio::runtime::Builder::new_multi_thread()
         .enable_io()
         .enable_time()
         .build()
@@ -112,7 +117,7 @@ fn main() -> Result<(), eyre::Report> {
             flatten_handle(handle).await
         });
 
-    result
+    result.report()
 }
 
 fn print_header() {
@@ -132,7 +137,7 @@ fn print_header() {
 }
 
 #[expect(clippy::too_many_lines, reason = "WIP")]
-async fn start_tasks() -> Result<(), eyre::Report> {
+async fn start_tasks() -> Result<ExitCode, eyre::Report> {
     let config = Arc::new(parse_cli().inspect_err(|error| {
         // this prints the error in color and exits
         // can't do anything else until
@@ -156,9 +161,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
                 chroot_path.display()
             );
 
-            // TODO error more gracefully
-            #[expect(clippy::exit, reason = "Daemonize failed, all we can do is die")]
-            std::process::exit(2);
+            return Ok(ExitCode::from(2));
         } else {
             event!(
                 Level::INFO,
@@ -173,9 +176,7 @@ async fn start_tasks() -> Result<(), eyre::Report> {
     {
         event!(Level::ERROR, ?uid, ?gid, reason, "Drop privileges failed");
 
-        // TODO error more gracefully
-        #[expect(clippy::exit, reason = "Daemonize failed, all we can do is die")]
-        std::process::exit(3);
+        return Ok(ExitCode::from(3));
     }
 
     if config.chroot.is_some()
@@ -264,7 +265,6 @@ async fn start_tasks() -> Result<(), eyre::Report> {
 
     if let Some(listen_on) = config.listen.clone() {
         let cancellation_token = cancellation_token.clone();
-        let listen_on = listen_on.clone();
         let command_tx = command_tx.clone();
 
         tasks.spawn(async move {
@@ -337,5 +337,5 @@ async fn start_tasks() -> Result<(), eyre::Report> {
 
     event!(Level::INFO, "Done");
 
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }
