@@ -1,7 +1,9 @@
+use libc::c_int;
+
 pub fn listen_fds(unset_environment: bool) -> Result<Vec<i32>, std::io::Error> {
     #[link(name = "systemd")]
     unsafe extern "C" {
-        fn sd_listen_fds(unset_environment: i32) -> i32;
+        fn sd_listen_fds(unset_environment: c_int) -> c_int;
     }
 
     // SAFETY: normal ffi call
