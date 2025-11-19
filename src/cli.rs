@@ -235,10 +235,12 @@ where
     let listen = matches
         .get_one::<PortOrSocket>("listen")
         .cloned()
-        .or_else(|| {
-            let result = listen_fds(true).unwrap();
-
-            result.first().map(|&fd| PortOrSocket::Socket(fd))
+        .or_else(|| match listen_fds(true) {
+            Ok(fds) => fds.first().map(|&fd| PortOrSocket::Socket(fd)),
+            Err(error) => {
+                event!(Level::ERROR, ?error, "Error receiving file descriptors");
+                None
+            },
         });
 
     let preserve_case = matches.get_one("preserve-case").copied().unwrap_or(false);
