@@ -237,7 +237,11 @@ where
         .cloned()
         .or_else(|| match listen_fds(true) {
             Ok(fds) => fds.first().map(|&fd| PortOrSocket::Socket(fd)),
-            Err(_) => None,
+            Err(error) => {
+                event!(Level::ERROR, ?error, "Error receiving file descriptors");
+
+                None
+            },
         });
 
     let preserve_case = matches.get_one("preserve-case").copied().unwrap_or(false);
