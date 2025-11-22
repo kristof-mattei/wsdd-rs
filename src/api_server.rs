@@ -6,8 +6,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use color_eyre::eyre;
+use socket2::{Domain, Type};
 use time::format_description::well_known::Iso8601;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt};
+use tokio::net::UnixListener;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
@@ -45,11 +47,17 @@ impl ApiServer {
             PortOrSocket::Socket(fd) => {
                 // SAFETY: passed in by systemd, so it's a valid descriptor
                 let socket = unsafe { socket2::Socket::from_raw_fd(fd) };
-                socket.set_nonblocking(true)?;
-                let socket =
-                    tokio::net::TcpSocket::from_std_stream(std::net::TcpStream::from(socket));
 
-                socket.listen(MAX_CONNECTION_BACKLOG)?.into()
+                match (socket.r#type(), socket.domain()) {
+                    (Ok(Type::STREAM), Ok(Domain::UNIX)) => {
+                        socket.set_nonblocking(true)?;
+
+                        let socket = UnixListener::from_std(socket.into())?;
+
+                        socket.into()
+                    },
+                    _ => return Err(std::io::ErrorKind::InvalidInput.into()),
+                }
             },
             PortOrSocket::SocketPath(ref path) => {
                 let socket = tokio::net::UnixSocket::new_stream()?;
