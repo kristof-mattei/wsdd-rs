@@ -14,6 +14,7 @@ build = "src/build.rs"
 
 [features]
 default = []
+systemd = []
 tokio-console = ["dep:console-subscriber"]
 
 [dependencies]

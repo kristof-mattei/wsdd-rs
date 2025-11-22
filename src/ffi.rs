@@ -1,6 +1,9 @@
+#[cfg(feature = "systemd")]
 use libc::c_int;
+#[cfg(feature = "systemd")]
 use tracing::{Level, event};
 
+#[cfg(feature = "systemd")]
 pub fn listen_fds(unset_environment: bool) -> Result<Vec<i32>, std::io::Error> {
     #[link(name = "systemd")]
     unsafe extern "C" {
@@ -19,4 +22,10 @@ pub fn listen_fds(unset_environment: bool) -> Result<Vec<i32>, std::io::Error> {
 
         Ok(v)
     }
+}
+
+#[cfg(not(feature = "systemd"))]
+#[expect(clippy::unnecessary_wraps, reason = "Mirror systemd API")]
+pub fn listen_fds(_unset_environment: bool) -> Result<Vec<i32>, std::io::Error> {
+    Ok(vec![])
 }
