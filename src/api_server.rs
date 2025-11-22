@@ -56,7 +56,19 @@ impl ApiServer {
 
                         socket.into()
                     },
-                    _ => return Err(std::io::ErrorKind::InvalidInput.into()),
+                    (r#type, domain) => {
+                        event!(
+                            Level::ERROR,
+                            ?r#type,
+                            ?domain,
+                            "Received socket of invalid type and/or domain"
+                        );
+
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "Invalid socket is of invalid domain and/or type",
+                        ));
+                    },
                 }
             },
             PortOrSocket::SocketPath(ref path) => {
