@@ -42,7 +42,11 @@ try:
 except ModuleNotFoundError:
     from xml.etree.ElementTree import fromstring as ETfromString
 
-WSDD_VERSION: str = '0.8'
+try:
+    import systemd.daemon  # type: ignore
+except ModuleNotFoundError:
+    # Non-systemd host
+    pass
 
 WSDD_VERSION: str = '0.9'
 
@@ -2030,6 +2034,10 @@ def main() -> int:
     api_server = None
     if args.listen:
         api_server = ApiServer(aio_loop, args.listen, nm)
+    elif 'systemd' in sys.modules:
+        fds = systemd.daemon.listen_fds()
+        if fds:
+            api_server = ApiServer(aio_loop, socket.socket(fileno=fds[0]), nm)
 
     # get uid:gid before potential chroot'ing
     if args.user is not None:

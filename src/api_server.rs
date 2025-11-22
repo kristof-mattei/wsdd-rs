@@ -1,12 +1,15 @@
 mod generic;
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::os::fd::FromRawFd as _;
 use std::sync::Arc;
 use std::time::Duration;
 
 use color_eyre::eyre;
+use socket2::{Domain, Type};
 use time::format_description::well_known::Iso8601;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt};
+use tokio::net::UnixListener;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
@@ -40,6 +43,33 @@ impl ApiServer {
                 socket.bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)))?;
 
                 socket.listen(MAX_CONNECTION_BACKLOG)?.into()
+            },
+            PortOrSocket::Socket(fd) => {
+                // SAFETY: passed in by systemd, so it's a valid descriptor
+                let socket = unsafe { socket2::Socket::from_raw_fd(fd) };
+
+                match (socket.r#type(), socket.domain()) {
+                    (Ok(Type::STREAM), Ok(Domain::UNIX)) => {
+                        socket.set_nonblocking(true)?;
+
+                        let socket = UnixListener::from_std(socket.into())?;
+
+                        socket.into()
+                    },
+                    (r#type, domain) => {
+                        event!(
+                            Level::ERROR,
+                            ?r#type,
+                            ?domain,
+                            "Received socket of invalid type and/or domain"
+                        );
+
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "Invalid socket is of invalid domain and/or type",
+                        ));
+                    },
+                }
             },
             PortOrSocket::SocketPath(ref path) => {
                 let socket = tokio::net::UnixSocket::new_stream()?;
