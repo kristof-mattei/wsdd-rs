@@ -4,6 +4,7 @@ use libc::c_int;
 use tracing::{Level, event};
 
 #[cfg(feature = "systemd")]
+/// Wrapper around <https://www.man7.org/linux/man-pages/man3/sd_listen_fds.3.html>
 pub fn listen_fds(unset_environment: bool) -> Result<Vec<i32>, std::io::Error> {
     #[link(name = "systemd")]
     unsafe extern "C" {
