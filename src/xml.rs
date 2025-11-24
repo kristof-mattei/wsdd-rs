@@ -52,7 +52,7 @@ impl<'r> Wrapper<'r> {
 /// * When the closing tag is not on the same depth as the opening tag
 pub fn read_text(
     reader: &mut Wrapper<'_>,
-    element_name: Name<'_>,
+    search_name: Name<'_>,
 ) -> Result<Option<String>, TextReadError> {
     let mut text: Option<String> = None;
 
@@ -80,7 +80,7 @@ pub fn read_text(
             XmlEvent::EndElement { name } => {
                 depth -= 1;
 
-                if name.borrow() == element_name {
+                if name.borrow() == search_name {
                     if depth != 0 {
                         return Err(TextReadError::InvalidDepth(depth));
                     }
@@ -110,7 +110,7 @@ pub fn read_text(
     }
 
     Err(TextReadError::MissingEndElement(
-        element_name.to_string().into_boxed_str(),
+        search_name.to_string().into_boxed_str(),
     ))
 }
 
@@ -146,7 +146,7 @@ pub fn find_child(
             } => {
                 depth += 1;
 
-                if name.namespace_ref() == namespace && name.local_name == path {
+                if (namespace.unwrap_or_default(), path) == name {
                     if depth != 1 {
                         event!(
                             Level::TRACE,
@@ -213,21 +213,23 @@ type ParseGenericBodyPathResult =
 
 pub fn parse_generic_body_paths(
     reader: &mut Wrapper<'_>,
-    paths: &[(&str, &str)],
+    paths: &[(Option<&str>, &str)],
 ) -> ParseGenericBodyPathResult {
     parse_generic_body_paths_recursive(reader, paths, None, None, 0)
 }
 
 fn parse_generic_body_paths_recursive(
     reader: &mut Wrapper<'_>,
-    paths: &[(&str, &str)],
-    name: Option<OwnedName>,
+    names: &[(Option<&str>, &str)],
+    until_name: Option<OwnedName>,
     attributes: Option<Vec<OwnedAttribute>>,
     mut depth: usize,
 ) -> ParseGenericBodyPathResult {
-    let [(namespace, path), ref rest @ ..] = *paths else {
-        return Ok((name, attributes, depth));
+    let [(namespace, local_name), ref rest @ ..] = *names else {
+        return Ok((until_name, attributes, depth));
     };
+
+    let element_name: Name<'_> = (namespace.unwrap_or_default(), local_name).into();
 
     loop {
         match reader.next()? {
@@ -236,7 +238,7 @@ fn parse_generic_body_paths_recursive(
             } => {
                 depth += 1;
 
-                if name.namespace_ref() == Some(namespace) && name.local_name == path {
+                if name.borrow() == element_name {
                     return parse_generic_body_paths_recursive(
                         reader,
                         rest,
@@ -263,7 +265,7 @@ fn parse_generic_body_paths_recursive(
     }
 
     Err(GenericParsingError::MissingElement(
-        format!("{}:{}", namespace, path).into_boxed_str(),
+        element_name.to_string().into_boxed_str(),
     ))
 }
 
