@@ -66,7 +66,7 @@ tracing-subscriber = { version = "0.3.22", features = [
     "tracing-log",
 ] }
 url = "2.5.7"
-uuid = { version = "1.18.1", features = ["v1", "v4", "v5", "v7"] }
+uuid = { version = "1.19.0", features = ["v1", "v4", "v5", "v7"] }
 xml = "1.2.0"
 
 [dev-dependencies]
