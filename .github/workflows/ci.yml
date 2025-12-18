@@ -145,8 +145,6 @@ jobs:
 
           cargo --version
 
-          sudo apt install libsystemd-dev
-
       - &get_binstall
         name: Get binstall
         shell: bash
@@ -225,6 +223,13 @@ jobs:
 
       - *set_up_toolchain
 
+      - &set_up_libsystemd_dev
+        name: Set up libsystemd-dev
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install libsystemd-dev
+
       - name: Build
         shell: bash
         run: |
@@ -278,6 +283,8 @@ jobs:
       - *set_up_mold
 
       - *set_up_toolchain
+
+      - *set_up_libsystemd_dev
 
       - name: Install llvm-tools
         shell: bash
