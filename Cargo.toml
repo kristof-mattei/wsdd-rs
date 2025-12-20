@@ -18,7 +18,7 @@ systemd = []
 tokio-console = ["dep:console-subscriber"]
 
 [dependencies]
-axum = { version = "0.8.7", features = ["macros"] }
+axum = { version = "0.8.8", features = ["macros"] }
 bytes = "1.11.0"
 clap = { version = "4.5.53", features = ["cargo", "string", "derive"] }
 color-eyre = "0.6.5"
