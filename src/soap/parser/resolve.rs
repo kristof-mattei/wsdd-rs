@@ -1,6 +1,7 @@
 use thiserror::Error;
 use tracing::{Level, event};
 use uuid::Uuid;
+use uuid::fmt::Urn;
 use xml::reader::XmlEvent;
 
 use crate::constants::{XML_WSA_NAMESPACE, XML_WSD_NAMESPACE};
@@ -20,6 +21,8 @@ pub enum ResolveParsingError {
     MissingEndpoint,
     #[error("invalid resolve request: address does not match own one")]
     AddressDoesntMatch,
+    #[error("invalid resolve request: address is not a valid urn")]
+    EndpointNotAValidUrn,
 }
 
 fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveResult {
@@ -100,13 +103,21 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
         return Err(ResolveParsingError::MissingEndpoint);
     };
 
-    let target_urn = target_uuid.urn().to_string();
-
-    if addr.trim() != target_urn {
+    let Ok(addr_urn) = addr.parse::<Urn>() else {
         event!(
             Level::DEBUG,
             addr = &*addr,
-            expected = target_urn,
+            "invalid resolve request: address is not a valid urn"
+        );
+
+        return Err(ResolveParsingError::EndpointNotAValidUrn);
+    };
+
+    if addr_urn != target_uuid.urn() {
+        event!(
+            Level::DEBUG,
+            addr = &*addr,
+            expected = %target_uuid.urn(),
             "invalid resolve request: address does not match own one"
         );
 
