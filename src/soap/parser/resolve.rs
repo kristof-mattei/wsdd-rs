@@ -100,11 +100,13 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
         return Err(ResolveParsingError::MissingEndpoint);
     };
 
-    if addr.trim() != target_uuid.urn().to_string() {
+    let target_urn = target_uuid.urn().to_string();
+
+    if addr.trim() != target_urn {
         event!(
             Level::DEBUG,
             addr = &*addr,
-            expected = target_uuid.urn().to_string(),
+            expected = target_urn,
             "invalid resolve request: address does not match own one"
         );
 
