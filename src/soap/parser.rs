@@ -71,6 +71,14 @@ impl MessageHandlerError {
                     "XML Message text read error",
                 );
             },
+            &MessageHandlerError::HeaderError(HeaderError::InvalidAction(ref malformed_action)) => {
+                event!(
+                    Level::TRACE,
+                    malformed_action,
+                    message = &*String::from_utf8_lossy(buffer),
+                    "XML Message Action was malformed",
+                );
+            },
             &MessageHandlerError::HeaderError(
                 HeaderError::InvalidMessageId(ref uuid_error)
                 | HeaderError::InvalidRelatesTo(ref uuid_error),
@@ -145,6 +153,8 @@ pub enum HeaderError {
     MissingMessageId,
     #[error("Missing Action")]
     MissingAction,
+    #[error("Invalid Action")]
+    InvalidAction(Box<str>),
     #[error("Invalid Message Id")]
     InvalidMessageId(uuid::Error),
     #[error("Invalid Relates To")]
@@ -235,7 +245,11 @@ impl MessageHandler {
             return Err(MessageHandlerError::DuplicateMessage);
         }
 
-        let action_method = header.action.rsplit_once('/').unwrap().1;
+        let Some((_, action_method)) = header.action.rsplit_once('/') else {
+            return Err(MessageHandlerError::HeaderError(
+                HeaderError::InvalidAction(header.action),
+            ));
+        };
 
         if let Some(src) = src {
             event!(
