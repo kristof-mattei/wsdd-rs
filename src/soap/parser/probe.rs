@@ -72,11 +72,11 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
     // As it is the host responsible for defining the response
     if !types
         .split_whitespace()
-        .any(|r#type| r#type == WSDP_TYPE_DEVICE)
+        .any(|requested_type| requested_type == WSDP_TYPE_DEVICE)
     {
         event!(
             Level::DEBUG,
-            r#type = &*types,
+            types = &*types,
             "client requests types we don't offer"
         );
 
