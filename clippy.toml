@@ -38,3 +38,4 @@ standard-macro-braces = [
     { name = "quote", brace = "{" },
     { name = "quote::quote", brace = "{" },
 ]
+warn-on-all-wildcard-imports = true

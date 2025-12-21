@@ -1540,6 +1540,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ringmap"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "928d9d8ed2a6a54d363b1778b0b770ea3af783511518f89f1c129c92cbc6a531"
+dependencies = [
+ "equivalent",
+ "hashbrown",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2479,6 +2489,7 @@ dependencies = [
  "pretty_assertions",
  "rand",
  "reqwest",
+ "ringmap",
  "socket2",
  "thiserror",
  "time",

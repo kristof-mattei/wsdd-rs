@@ -284,21 +284,28 @@ impl MessageHandler {
     }
 
     /// Implements SOAP-over-UDP Appendix II Item 2
+    /// Deduplicates best-effort: read lock filters most repeats cheaply, then a write
+    /// lock inserts the ID if it is still absent. The unlocked gap means a rapid burst
+    /// can insert and evict the same `Urn` before our write guard runs, so some
+    /// in-flight duplicates may be reprocessed, but we avoid taking a write lock for
+    /// every message.
     async fn is_duplicated_msg(&self, message_id: Urn) -> bool {
-        // reverse iter, as it is more likely that we see a message that we just saw vs one we've seen little earlier
-        if self
-            .handled_messages
-            .read()
-            .await
-            .iter()
-            .rev()
-            .any(|&m| m == message_id)
         {
-            true
-        } else {
-            self.handled_messages.write().await.push_back(message_id);
+            let read_lock = self.handled_messages.read().await;
 
+            if read_lock.contains(&message_id) {
+                return true;
+            }
+        }
+
+        let mut write_lock = self.handled_messages.write().await;
+
+        if write_lock.push_back(message_id) {
+            // the queue did NOT have the message_id, so it's a new message
             false
+        } else {
+            // the queue did have the message id, duplicated message
+            true
         }
     }
 }
@@ -382,4 +389,56 @@ fn parse_header(reader: &mut Wrapper<'_>) -> ParsedHeaderResult {
         message_id,
         relates_to,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::Ipv4Addr;
+    use std::sync::Arc;
+
+    use libc::RT_SCOPE_SITE;
+    use tokio::sync::RwLock;
+    use tokio::time::{Duration, timeout};
+    use uuid::Uuid;
+    use uuid::fmt::Urn;
+
+    use crate::max_size_deque::MaxSizeDeque;
+    use crate::network_address::NetworkAddress;
+    use crate::network_interface::NetworkInterface;
+    use crate::soap::parser::MessageHandler;
+
+    fn handler_for_tests(history: usize) -> MessageHandler {
+        MessageHandler::new(
+            Arc::new(RwLock::new(MaxSizeDeque::new(history))),
+            NetworkAddress::new(
+                Ipv4Addr::new(127, 1, 2, 3).into(),
+                Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+            ),
+        )
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn is_duplicated_msg_drops_read_lock_before_waiting_for_write_lock() {
+        let handler = handler_for_tests(8);
+        let message_id = Urn::from_uuid(Uuid::new_v4());
+
+        let first_hit = timeout(
+            Duration::from_millis(100),
+            handler.is_duplicated_msg(message_id),
+        )
+        .await
+        .expect("read guard must be released before awaiting a write guard");
+
+        assert!(
+            !first_hit,
+            "first observation of a message id should be reported as new"
+        );
+
+        let second_hit = handler.is_duplicated_msg(message_id).await;
+
+        assert!(
+            second_hit,
+            "the message id must be seen as duplicate after it is stored"
+        );
+    }
 }
