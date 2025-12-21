@@ -15,8 +15,8 @@ pub enum ProbeParsingError {
     TextReadError(#[from] TextReadError),
     #[error("Missing types")]
     MissingTypes,
-    #[error("Unknown discovery type for probe: {0}")]
-    UnknownTypes(Box<str>),
+    #[error("Client probed for type(s) we don't offer: {0}")]
+    TypesMismatch(Box<str>),
     #[error("Missing ./Probe in body")]
     MissingProbeElement,
 }
@@ -70,14 +70,17 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
 
     // TODO do we want to return the probes and make the host handle the different types
     // As it is the host responsible for defining the response
-    if types.trim() != WSDP_TYPE_DEVICE {
+    if !types
+        .split_whitespace()
+        .any(|r#type| r#type == WSDP_TYPE_DEVICE)
+    {
         event!(
             Level::DEBUG,
             r#type = &*types,
-            "unknown discovery type for probe"
+            "client requests types we don't offer"
         );
 
-        return Err(ProbeParsingError::UnknownTypes(types.into_boxed_str()));
+        return Err(ProbeParsingError::TypesMismatch(types.into_boxed_str()));
     }
 
     Ok(())
