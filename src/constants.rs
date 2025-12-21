@@ -109,3 +109,6 @@ pub const UDP_UPPER_DELAY: u64 = 500;
 pub const PROBE_TIMEOUT_MILLISECONDS: u64 = 4000;
 // MAX_STARTUP_PROBE_DELAY: int = 3
 pub const APP_MAX_DELAY: u64 = 500;
+
+// A sane default for the size of text inside an XML element
+pub const STRING_DEFAULT_CAPACITY: usize = 128;

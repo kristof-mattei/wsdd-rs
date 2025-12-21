@@ -28,7 +28,7 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
                 if name.namespace_ref() == Some(XML_WSD_NAMESPACE) && name.local_name == "Scopes" {
-                    let text = read_text(reader, name.borrow())?;
+                    let text = read_text(reader)?;
 
                     let raw_scopes = text.unwrap_or_default();
 
@@ -40,7 +40,7 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
                 } else if name.namespace_ref() == Some(XML_WSD_NAMESPACE)
                     && name.local_name == "Types"
                 {
-                    types = read_text(reader, name.borrow())?;
+                    types = read_text(reader)?;
                 } else {
                     // Ignore
                 }
