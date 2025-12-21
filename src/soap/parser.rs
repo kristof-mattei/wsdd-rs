@@ -285,20 +285,22 @@ impl MessageHandler {
 
     /// Implements SOAP-over-UDP Appendix II Item 2
     async fn is_duplicated_msg(&self, message_id: Urn) -> bool {
-        // reverse iter, as it is more likely that we see a message that we just saw vs one we've seen little earlier
-        if self
-            .handled_messages
-            .read()
-            .await
-            .iter()
-            .rev()
-            .any(|&m| m == message_id)
         {
-            true
-        } else {
-            self.handled_messages.write().await.push_back(message_id);
+            let read_lock = self.handled_messages.read().await;
 
+            if read_lock.contains(&message_id) {
+                return true;
+            }
+        }
+
+        let mut write_lock = self.handled_messages.write().await;
+
+        if write_lock.push_back(message_id) {
+            // the queue did NOT have the message_id, so it's a new message
             false
+        } else {
+            // the queue did have the message id, duplicated message
+            true
         }
     }
 }
