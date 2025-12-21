@@ -1,10 +1,10 @@
-use std::io::BufReader;
+use std::io::{BufReader, Read};
 
 use thiserror::Error;
 use tracing::{Level, event};
 use xml::EventReader;
 use xml::attribute::OwnedAttribute;
-use xml::name::{Name, OwnedName};
+use xml::name::OwnedName;
 use xml::reader::XmlEvent;
 
 #[derive(Debug, Error)]
@@ -13,8 +13,6 @@ pub enum TextReadError {
     NonTextContents(XmlEvent),
     #[error("Error parsing XML")]
     XmlError(#[from] xml::reader::Error),
-    #[error("Missing end `{0}` element")]
-    MissingEndElement(Box<str>),
 }
 
 pub struct Wrapper<'r> {
@@ -41,26 +39,42 @@ impl<'r> Wrapper<'r> {
     }
 }
 
-/// Reads all text from current position in `reader` until closing tag of `element_name`
+pub trait Next {
+    fn next(&mut self) -> std::result::Result<XmlEvent, xml::reader::Error>;
+}
+
+impl<R: Read> Next for xml::reader::EventReader<R> {
+    fn next(&mut self) -> std::result::Result<XmlEvent, xml::reader::Error> {
+        self.next()
+    }
+}
+
+impl Next for Wrapper<'_> {
+    fn next(&mut self) -> std::result::Result<XmlEvent, xml::reader::Error> {
+        self.next()
+    }
+}
+
+/// Reads all text from current position in `reader` until closing tag of the current element
 ///
 /// Expects that reader has just read the opening tag and nothing further.
 ///
 /// Errors:
-/// * When it encounters anything other than text, comments or closing tag of `element_name`
+/// * When it encounters anything other than text, comments, cdata or closing tag of the opening tag
 /// * When the closing tag is not on the same depth as the opening tag
-pub fn read_text(
-    reader: &mut Wrapper<'_>,
-    element_name: Name<'_>,
-) -> Result<Option<String>, TextReadError> {
-    let mut text: String = String::new();
+pub fn read_text(reader: &mut Wrapper<'_>) -> Result<Option<String>, TextReadError> {
+    let mut text: String = String::with_capacity(128);
 
     loop {
         match reader.next()? {
-            XmlEvent::Comment(_) => {},
-            XmlEvent::Whitespace(s) | XmlEvent::Characters(s) | XmlEvent::CData(s) => {
+            XmlEvent::CData(s) | XmlEvent::Characters(s) | XmlEvent::Whitespace(s) => {
                 text.push_str(&s);
             },
-            XmlEvent::EndElement { name } if name.borrow() == element_name => {
+            XmlEvent::EndElement { .. } => {
+                // since we don't descend into other elements we don't need to worry here
+                // if this element is on 'our' level
+                // we don't even need to check if the EndElement is 'ours' as any other EndElement
+                // other than ours either precedes a StartElement (caught by us), or is invalid (caught by the parser)
                 let trimmed = text.trim();
 
                 if trimmed.is_empty() {
@@ -73,17 +87,17 @@ pub fn read_text(
                     return Ok(Some(trimmed.to_owned()));
                 }
             },
-            event @ (XmlEvent::StartElement { .. }
-            | XmlEvent::StartDocument { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::Doctype { .. }
-            | XmlEvent::EndElement { .. }) => {
-                return Err(TextReadError::NonTextContents(event));
+            element @ XmlEvent::StartElement { .. } => {
+                // no start elements allowed in our text nodes
+                return Err(TextReadError::NonTextContents(element));
             },
-            XmlEvent::EndDocument => {
-                return Err(TextReadError::MissingEndElement(
-                    element_name.to_string().into_boxed_str(),
-                ));
+            XmlEvent::Comment(_)
+            | XmlEvent::Doctype { .. }
+            | XmlEvent::EndDocument
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::StartDocument { .. } => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
             },
         }
     }
@@ -162,13 +176,16 @@ pub fn find_child(
             XmlEvent::EndDocument => {
                 break;
             },
-            XmlEvent::StartDocument { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Comment(_)
+            XmlEvent::CData(_)
             | XmlEvent::Characters(_)
-            | XmlEvent::Whitespace(_)
-            | XmlEvent::Doctype { .. } => {},
+            | XmlEvent::Comment(_)
+            | XmlEvent::Doctype { .. }
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::StartDocument { .. }
+            | XmlEvent::Whitespace(_) => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
+            },
         }
     }
 
@@ -186,20 +203,26 @@ pub fn find_child(
 type ParseGenericBodyPathResult =
     Result<(Option<OwnedName>, Option<Vec<OwnedAttribute>>, usize), GenericParsingError>;
 
-pub fn parse_generic_body_paths(
-    reader: &mut Wrapper<'_>,
-    paths: &[(&str, &str)],
-) -> ParseGenericBodyPathResult {
+pub fn parse_generic_body_paths<N>(
+    reader: &mut N,
+    paths: &[(Option<&str>, &str)],
+) -> ParseGenericBodyPathResult
+where
+    N: Next,
+{
     parse_generic_body_paths_recursive(reader, paths, None, None, 0)
 }
 
-fn parse_generic_body_paths_recursive(
-    reader: &mut Wrapper<'_>,
-    paths: &[(&str, &str)],
+fn parse_generic_body_paths_recursive<N>(
+    reader: &mut N,
+    paths: &[(Option<&str>, &str)],
     name: Option<OwnedName>,
     attributes: Option<Vec<OwnedAttribute>>,
     mut depth: usize,
-) -> ParseGenericBodyPathResult {
+) -> ParseGenericBodyPathResult
+where
+    N: Next,
+{
     let [(namespace, path), ref rest @ ..] = *paths else {
         return Ok((name, attributes, depth));
     };
@@ -211,7 +234,7 @@ fn parse_generic_body_paths_recursive(
             } => {
                 depth += 1;
 
-                if name.namespace_ref() == Some(namespace) && name.local_name == path {
+                if name.namespace_ref() == namespace && name.local_name == path {
                     return parse_generic_body_paths_recursive(
                         reader,
                         rest,
@@ -222,23 +245,53 @@ fn parse_generic_body_paths_recursive(
                 }
             },
             XmlEvent::EndElement { .. } => {
+                if depth == 0 {
+                    let missing_element = format!(
+                        "{}{}{}",
+                        namespace.unwrap_or_default(),
+                        namespace.map(|_| ":").unwrap_or_default(),
+                        path,
+                    );
+
+                    event!(
+                        Level::ERROR,
+                        now_in = ?name,
+                        missing_element = missing_element,
+                        "Could not find element"
+                    );
+
+                    return Err(GenericParsingError::MissingElement(
+                        missing_element.into_boxed_str(),
+                    ));
+                }
+
                 depth -= 1;
             },
             XmlEvent::EndDocument => {
                 break;
             },
-            XmlEvent::StartDocument { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Comment(_)
+            XmlEvent::CData(_)
             | XmlEvent::Characters(_)
-            | XmlEvent::Whitespace(_)
-            | XmlEvent::Doctype { .. } => (),
+            | XmlEvent::Comment(_)
+            | XmlEvent::Doctype { .. }
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::StartDocument { .. }
+            | XmlEvent::Whitespace(_) => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
+            },
         }
     }
 
+    let missing_element = format!(
+        "{}{}{}",
+        namespace.unwrap_or_default(),
+        namespace.map(|_| ":").unwrap_or_default(),
+        path,
+    );
+
     Err(GenericParsingError::MissingElement(
-        format!("{}:{}", namespace, path).into_boxed_str(),
+        missing_element.into_boxed_str(),
     ))
 }
 
@@ -306,3 +359,39 @@ fn parse_generic_body_paths_recursive(
 //         .into_boxed_str(),
 //     ))
 // }
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+
+    use crate::xml::{BufReader, EventReader, GenericParsingError, parse_generic_body_paths};
+
+    #[test]
+    fn parse_generic_body_paths_reports_missing_third_level_element() {
+        let xml = include_bytes!("./test/three-levels.xml");
+
+        let mut reader = EventReader::new(BufReader::new(xml.as_ref()));
+
+        let err = parse_generic_body_paths(
+            &mut reader,
+            &[
+                (Some("urn:level1"), "Envelope"),
+                (None, "Body"),
+                (Some("urn:level3"), "Resolve"),
+            ],
+        )
+        .expect_err("expected missing third-level element");
+
+        match err {
+            GenericParsingError::MissingElement(name) => {
+                assert_eq!(&*name, "urn:level3:Resolve");
+            },
+            GenericParsingError::XmlError(_)
+            | GenericParsingError::TextReadError(_)
+            | GenericParsingError::MissingEndElement(_)
+            | GenericParsingError::InvalidElementOrder
+            | GenericParsingError::InvalidUuid(_)
+            | GenericParsingError::InvalidDepth(_) => panic!(),
+        }
+    }
+}

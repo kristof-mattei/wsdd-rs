@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<level1:Envelope xmlns:level1="urn:level1" xmlns:level3="urn:level3">
+    <Body>
+        <level3:Not />
+    </Body>
+</level1:Envelope>
