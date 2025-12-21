@@ -13,8 +13,6 @@ pub enum TextReadError {
     NonTextContents(XmlEvent),
     #[error("Error parsing XML")]
     XmlError(#[from] xml::reader::Error),
-    #[error("Invalid open/close element order")]
-    InvalidDepth(isize),
     #[error("Missing end `{0}` element")]
     MissingEndElement(Box<str>),
 }
@@ -54,64 +52,41 @@ pub fn read_text(
     reader: &mut Wrapper<'_>,
     element_name: Name<'_>,
 ) -> Result<Option<String>, TextReadError> {
-    let mut text: Option<String> = None;
-
-    // We're in an opening element
-    let mut depth: isize = 1;
+    let mut text: String = String::new();
 
     loop {
         match reader.next()? {
             XmlEvent::Comment(_) => {},
-            XmlEvent::Whitespace(s) | XmlEvent::Characters(s) => {
-                if let Some(text) = text.as_mut() {
-                    text.push_str(&s);
+            XmlEvent::Whitespace(s) | XmlEvent::Characters(s) | XmlEvent::CData(s) => {
+                text.push_str(&s);
+            },
+            XmlEvent::EndElement { name } if name.borrow() == element_name => {
+                let trimmed = text.trim();
+
+                if trimmed.is_empty() {
+                    return Ok(None);
+                }
+
+                if trimmed.len() == text.len() {
+                    return Ok(Some(text));
                 } else {
-                    text = Some(s);
+                    return Ok(Some(trimmed.to_owned()));
                 }
             },
-
-            XmlEvent::StartElement {
-                name: _name,
-                attributes: _attributes,
-                namespace: _namespace,
-            } => {
-                depth += 1;
-            },
-            XmlEvent::EndElement { name } => {
-                depth -= 1;
-
-                if name.borrow() == element_name {
-                    if depth != 0 {
-                        return Err(TextReadError::InvalidDepth(depth));
-                    }
-
-                    return Ok(text.map(|original| {
-                        let trimmed = original.trim();
-
-                        if trimmed.len() == original.len() {
-                            original
-                        } else {
-                            trimmed.to_owned()
-                        }
-                    }));
-                }
-            },
-
-            XmlEvent::EndDocument => {
-                break;
-            },
-            event @ (XmlEvent::StartDocument { .. }
+            event @ (XmlEvent::StartElement { .. }
+            | XmlEvent::StartDocument { .. }
             | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Doctype { .. }) => {
+            | XmlEvent::Doctype { .. }
+            | XmlEvent::EndElement { .. }) => {
                 return Err(TextReadError::NonTextContents(event));
+            },
+            XmlEvent::EndDocument => {
+                return Err(TextReadError::MissingEndElement(
+                    element_name.to_string().into_boxed_str(),
+                ));
             },
         }
     }
-
-    Err(TextReadError::MissingEndElement(
-        element_name.to_string().into_boxed_str(),
-    ))
 }
 
 #[derive(Error, Debug)]

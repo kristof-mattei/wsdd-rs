@@ -122,16 +122,6 @@ impl MessageHandlerError {
                 );
             },
             &MessageHandlerError::HeaderError(HeaderError::TextReadError(
-                TextReadError::InvalidDepth(depth),
-            )) => {
-                event!(
-                    Level::ERROR,
-                    ?depth,
-                    message = &*String::from_utf8_lossy(buffer),
-                    "Invalid opening/closing element depth",
-                );
-            },
-            &MessageHandlerError::HeaderError(HeaderError::TextReadError(
                 TextReadError::XmlError(ref error),
             ))
             | &MessageHandlerError::HeaderError(HeaderError::XmlError(ref error))
