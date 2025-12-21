@@ -9,8 +9,6 @@ type ParsedProbeResult = Result<(), ProbeParsingError>;
 
 #[derive(Error, Debug)]
 pub enum ProbeParsingError {
-    #[error("Scopes are currently not supported: {0}")]
-    ScopesUnsupported(Box<str>),
     #[error("Error parsing XML")]
     XmlError(#[from] xml::reader::Error),
     #[error("Error reading text")]
@@ -34,18 +32,11 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
 
                     let raw_scopes = text.unwrap_or_default();
 
-                    // TODO: THINK: send fault message (see p. 21 in WSD)
-                    // I don't think this is correct?
-                    // scopes MAYBE be ommitted...
                     event!(
                         Level::DEBUG,
                         scopes = &raw_scopes,
-                        "scopes unsupported, but probed"
+                        "ignoring unsupported scopes in probe request"
                     );
-
-                    return Err(ProbeParsingError::ScopesUnsupported(
-                        raw_scopes.into_boxed_str(),
-                    ));
                 } else if name.namespace_ref() == Some(XML_WSD_NAMESPACE)
                     && name.local_name == "Types"
                 {
