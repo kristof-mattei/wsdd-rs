@@ -247,6 +247,21 @@ fn parse_generic_body_paths_recursive(
                 }
             },
             XmlEvent::EndElement { .. } => {
+                if depth == 0 {
+                    let missing_element = format!("{}:{}", namespace, path,);
+
+                    event!(
+                        Level::ERROR,
+                        now_in = ?name,
+                        missing_element = missing_element,
+                        "Could not find element"
+                    );
+
+                    return Err(GenericParsingError::MissingElement(
+                        missing_element.into_boxed_str(),
+                    ));
+                }
+
                 depth -= 1;
             },
             XmlEvent::EndDocument => {
