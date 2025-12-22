@@ -7,16 +7,14 @@ use xml::attribute::OwnedAttribute;
 use xml::name::{Name, OwnedName};
 use xml::reader::XmlEvent;
 
+use crate::constants::STRING_DEFAULT_CAPACITY;
+
 #[derive(Debug, Error)]
 pub enum TextReadError {
     #[error("Found non-text-contents: `{0:?}`")]
     NonTextContents(XmlEvent),
     #[error("Error parsing XML")]
     XmlError(#[from] xml::reader::Error),
-    #[error("Invalid open/close element order")]
-    InvalidDepth(isize),
-    #[error("Missing end `{0}` element")]
-    MissingEndElement(Box<str>),
 }
 
 pub struct Wrapper<'r> {
@@ -43,75 +41,54 @@ impl<'r> Wrapper<'r> {
     }
 }
 
-/// Reads all text from current position in `reader` until closing tag of `element_name`
+/// Reads all text from current position in `reader` until closing tag of the current element
 ///
-/// Expects that reader has just read the opening tag and nothing further.
+/// Expects that reader has just read an opening tag and nothing further.
 ///
 /// Errors:
-/// * When it encounters anything other than text, comments or closing tag of `element_name`
-/// * When the closing tag is not on the same depth as the opening tag
-pub fn read_text(
-    reader: &mut Wrapper<'_>,
-    element_name: Name<'_>,
-) -> Result<Option<String>, TextReadError> {
-    let mut text: Option<String> = None;
-
-    // We're in an opening element
-    let mut depth: isize = 1;
+/// * When it encounters anything other than character data (including normalized whitespace and CDATA)
+pub fn read_text(reader: &mut Wrapper<'_>) -> Result<Option<String>, TextReadError> {
+    let mut text: String = String::with_capacity(STRING_DEFAULT_CAPACITY);
 
     loop {
         match reader.next()? {
-            XmlEvent::Comment(_) => {},
-            XmlEvent::Whitespace(s) | XmlEvent::Characters(s) => {
-                if let Some(text) = text.as_mut() {
+            XmlEvent::CData(s) | XmlEvent::Characters(s) | XmlEvent::Whitespace(s) => {
+                if !text.is_empty() || !s.trim().is_empty() {
+                    // leading whitespace is ignored, might as well never store it
                     text.push_str(&s);
+                }
+            },
+            XmlEvent::EndElement { .. } => {
+                // since we don't descend into other elements we don't need to worry here
+                // if this element is on 'our' level
+                // we don't even need to check if the EndElement is 'ours' as any other EndElement
+                // other than ours either precedes a StartElement (caught by us), or is invalid (caught by the parser)
+                let trimmed = text.trim();
+
+                if trimmed.is_empty() {
+                    return Ok(None);
+                }
+
+                if trimmed.len() == text.len() {
+                    return Ok(Some(text));
                 } else {
-                    text = Some(s);
+                    return Ok(Some(trimmed.to_owned()));
                 }
             },
-
-            XmlEvent::StartElement {
-                name: _name,
-                attributes: _attributes,
-                namespace: _namespace,
-            } => {
-                depth += 1;
+            element @ XmlEvent::StartElement { .. } => {
+                // no start elements allowed in our text nodes
+                return Err(TextReadError::NonTextContents(element));
             },
-            XmlEvent::EndElement { name } => {
-                depth -= 1;
-
-                if name.borrow() == element_name {
-                    if depth != 0 {
-                        return Err(TextReadError::InvalidDepth(depth));
-                    }
-
-                    return Ok(text.map(|original| {
-                        let trimmed = original.trim();
-
-                        if trimmed.len() == original.len() {
-                            original
-                        } else {
-                            trimmed.to_owned()
-                        }
-                    }));
-                }
-            },
-
-            XmlEvent::EndDocument => {
-                break;
-            },
-            event @ (XmlEvent::StartDocument { .. }
+            XmlEvent::Comment(_)
+            | XmlEvent::Doctype { .. }
+            | XmlEvent::EndDocument
             | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Doctype { .. }) => {
-                return Err(TextReadError::NonTextContents(event));
+            | XmlEvent::StartDocument { .. } => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
             },
         }
     }
-
-    Err(TextReadError::MissingEndElement(
-        element_name.to_string().into_boxed_str(),
-    ))
 }
 
 #[derive(Error, Debug)]
@@ -250,7 +227,26 @@ fn parse_generic_body_paths_recursive(
                     );
                 }
             },
-            XmlEvent::EndElement { .. } => {
+            XmlEvent::EndElement { name } => {
+                if depth == 0 {
+                    let missing_element = Name {
+                        local_name: path,
+                        namespace,
+                        prefix: None,
+                    };
+
+                    event!(
+                        Level::ERROR,
+                        now_in = ?name,
+                        missing_element = %missing_element,
+                        "Could not find element"
+                    );
+
+                    return Err(GenericParsingError::MissingElement(
+                        missing_element.to_string().into_boxed_str(),
+                    ));
+                }
+
                 depth -= 1;
             },
             XmlEvent::EndDocument => {
@@ -344,3 +340,93 @@ fn parse_generic_body_paths_recursive(
 //         .into_boxed_str(),
 //     ))
 // }
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+    use xml::ParserConfig;
+
+    use crate::xml::{BufReader, GenericParsingError, Wrapper, parse_generic_body_paths};
+
+    #[test]
+    fn parse_generic_body_missing_element() {
+        let xml = include_bytes!("./test/three-levels.xml");
+
+        let mut reader = {
+            let reader = ParserConfig::new()
+                .cdata_to_characters(true)
+                .ignore_comments(true)
+                .trim_whitespace(true)
+                .whitespace_to_characters(true)
+                .create_reader(BufReader::new(xml.as_ref()));
+
+            Wrapper::new(reader)
+        };
+
+        let error = parse_generic_body_paths(
+            &mut reader,
+            &[
+                (None, "Level1"),
+                (None, "Level2"),
+                (Some("urn:level3_ns"), "Level3"),
+            ],
+        )
+        .unwrap_err();
+
+        match error {
+            GenericParsingError::MissingElement(name) => {
+                assert_eq!(&*name, "{urn:level3_ns}Level3");
+            },
+            GenericParsingError::XmlError(_)
+            | GenericParsingError::TextReadError(_)
+            | GenericParsingError::MissingEndElement(_)
+            | GenericParsingError::InvalidElementOrder
+            | GenericParsingError::InvalidUuid(_)
+            | GenericParsingError::InvalidDepth(_) => panic!(),
+        }
+    }
+
+    #[test]
+    fn parse_generic_body_invalid_depth() {
+        let xml = include_bytes!("./test/four-levels.xml");
+
+        let mut reader = {
+            let reader = ParserConfig::new()
+                .cdata_to_characters(true)
+                .ignore_comments(true)
+                .trim_whitespace(true)
+                .whitespace_to_characters(true)
+                .create_reader(BufReader::new(xml.as_ref()));
+
+            Wrapper::new(reader)
+        };
+
+        {
+            let _unused: Result<xml::reader::XmlEvent, xml::reader::Error> = reader.next();
+            let _unused: Result<xml::reader::XmlEvent, xml::reader::Error> = reader.next();
+            let _unused: Result<xml::reader::XmlEvent, xml::reader::Error> = reader.next();
+        }
+
+        let error = parse_generic_body_paths(
+            &mut reader,
+            &[
+                (Some("urn:level3_ns"), "Level3"),
+                (None, "Level4"),
+                (Some("urn:level5_ns"), "Level5"),
+            ],
+        )
+        .unwrap_err();
+
+        match error {
+            GenericParsingError::MissingElement(name) => {
+                assert_eq!(&*name, "{urn:level5_ns}Level5");
+            },
+            GenericParsingError::XmlError(_)
+            | GenericParsingError::TextReadError(_)
+            | GenericParsingError::MissingEndElement(_)
+            | GenericParsingError::InvalidElementOrder
+            | GenericParsingError::InvalidUuid(_)
+            | GenericParsingError::InvalidDepth(_) => panic!(),
+        }
+    }
+}

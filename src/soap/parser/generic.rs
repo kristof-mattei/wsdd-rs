@@ -14,7 +14,7 @@ pub fn extract_endpoint_reference_address(
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
                 if name.namespace_ref() == Some(XML_WSA_NAMESPACE) && name.local_name == "Address" {
-                    address = read_text(reader, name.borrow())?;
+                    address = read_text(reader)?;
                 }
             },
             XmlEvent::EndElement { name, .. } => {
@@ -74,7 +74,7 @@ pub fn extract_endpoint_metadata(
                     if endpoint.is_none() || xaddrs.is_some() {
                         return Err(GenericParsingError::InvalidElementOrder);
                     }
-                    xaddrs = read_text(reader, name.borrow())?;
+                    xaddrs = read_text(reader)?;
 
                     // stop for another function to continue reading
                     break;

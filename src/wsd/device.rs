@@ -288,7 +288,7 @@ fn extract_wsdp_props(
                 depth += 1;
 
                 if name.namespace_ref() == Some(namespace) {
-                    let text = read_text(reader, name.borrow())?;
+                    let text = read_text(reader)?;
                     let text = text.unwrap_or_default();
 
                     // add to bag
@@ -419,14 +419,13 @@ fn read_types_and_pub_computer(reader: &mut Wrapper<'_>) -> ExtractHostPropsResu
                     match (name.namespace_ref(), name.local_name.as_str()) {
                         (Some(WSDP_URI), "Types") => {
                             // we're in wsdp:Types
-                            types = read_text(reader, name.borrow())?.map(String::into_boxed_str);
+                            types = read_text(reader)?.map(String::into_boxed_str);
 
                             // `read_text` stops when it has hit the closing element, so we go back up 1 level
                             depth -= 1;
                         },
                         (Some(XML_PUB_NAMESPACE), "Computer") => {
-                            computer =
-                                read_text(reader, name.borrow())?.map(String::into_boxed_str);
+                            computer = read_text(reader)?.map(String::into_boxed_str);
 
                             // store the actual prefix, as it is not always `pub`
                             computer_namespace_prefix.clone_from(&name.prefix);
