@@ -6,7 +6,7 @@ use color_eyre::eyre;
 use libc::{setegid, seteuid, setgid, setuid};
 use tracing::{Level, event};
 
-#[cfg(test)]
+#[cfg(any(test, miri))]
 const I_DO_NOT_EXIST: &str = "I_DO_NOT_EXIST";
 
 pub fn parse_userspec(user_spec: &str) -> Result<(u32, u32), String> {

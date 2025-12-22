@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<env:Envelope xmlns:env="urn:first">
+    <env:BodyWrapper>
+        <env:Body />
+    </env:BodyWrapper>
+</env:Envelope>
