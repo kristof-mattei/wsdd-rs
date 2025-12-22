@@ -345,6 +345,7 @@ fn parse_generic_body_paths_recursive(
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_matches;
     use xml::ParserConfig;
     use xml::attribute::OwnedAttribute;
     use xml::name::OwnedName;
@@ -375,9 +376,7 @@ mod tests {
             ],
         );
 
-        assert!(matches!(
-            result,
-            Err(GenericParsingError::MissingElement(name)) if &*name== "{urn:level3_ns}Level3"));
+        assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name== "{urn:level3_ns}Level3");
     }
 
     #[test]
@@ -410,8 +409,7 @@ mod tests {
             ],
         );
 
-        assert!(matches!(result,
-            Err(GenericParsingError::MissingElement(name)) if &*name== "{urn:level5_ns}Level5"));
+        assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name== "{urn:level5_ns}Level5");
     }
 
     #[test]
@@ -432,8 +430,6 @@ mod tests {
         let result = parse_generic_body_paths(&mut reader, &[(None, "Envelope"), (None, "Body")]);
 
         let attribute = OwnedAttribute::new(OwnedName::local("attribute"), "this-one");
-        assert!(
-            matches!(result, Ok((Some((_, attributes)), _)) if attributes.contains(&attribute))
-        );
+        assert_matches!(result, Ok((Some((_, attributes)), _)) if attributes.contains(&attribute));
     }
 }

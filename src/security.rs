@@ -160,39 +160,35 @@ pub fn chroot(root: &Path) -> Result<(), eyre::Report> {
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_matches;
+
     use crate::security::{I_DO_NOT_EXIST, parse_userspec};
 
     #[test]
     fn parse_userspec_root_root() {
         let result = parse_userspec("root:root");
 
-        assert!(matches!(result, Ok((0, 0))));
+        assert_matches!(result, Ok((0, 0)));
     }
 
     #[test]
     fn parse_userspec_invalid_format() {
         let result = parse_userspec("abcabc");
 
-        assert!(
-            matches!(result, Err(error) if error == "Wrong format (expected `username:groupname`)")
-        );
+        assert_matches!(result, Err(error) if error == "Wrong format (expected `username:groupname`)");
     }
 
     #[test]
     fn parse_userspec_non_existing_user() {
         let result = parse_userspec(&format!("{}:root", I_DO_NOT_EXIST));
 
-        assert!(
-            matches!(result, Err(error) if error == "User `I_DO_NOT_EXIST` not found in /etc/passwd")
-        );
+        assert_matches!(result, Err(error) if error == "User `I_DO_NOT_EXIST` not found in /etc/passwd");
     }
 
     #[test]
     fn parse_userspec_non_existing_group() {
         let result = parse_userspec(&format!("root:{}", I_DO_NOT_EXIST));
 
-        assert!(
-            matches!(result, Err(error) if error == "Group `I_DO_NOT_EXIST` not found in /etc/group")
-        );
+        assert_matches!(result, Err(error) if error == "Group `I_DO_NOT_EXIST` not found in /etc/group");
     }
 }

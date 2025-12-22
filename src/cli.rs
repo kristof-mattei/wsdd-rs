@@ -413,7 +413,7 @@ where
 mod tests {
     use std::path::Path;
 
-    use pretty_assertions::assert_eq;
+    use pretty_assertions::{assert_eq, assert_matches};
     use tracing::Level;
 
     use crate::cli::{parse_cli_from, to_listen};
@@ -459,7 +459,7 @@ mod tests {
     fn to_listen_port() {
         let port = to_listen("1234");
 
-        assert!(matches!(port, Ok(PortOrSocket::Port(1234))));
+        assert_matches!(port, Ok(PortOrSocket::Port(1234)));
     }
 
     #[test]
@@ -468,16 +468,16 @@ mod tests {
 
         let port = to_listen(path);
 
-        assert!(matches!(port, Ok(PortOrSocket::SocketPath(p)) if (p == Path::new(path))));
+        assert_matches!(port, Ok(PortOrSocket::SocketPath(p)) if p == Path::new(path));
     }
 
     #[test]
     fn to_listen_port_too_large() {
         let port = to_listen("123456");
 
-        assert!(matches!(
+        assert_matches!(
             port.err().as_deref(),
             Some("number too large to fit in u16")
-        ));
+        );
     }
 }
