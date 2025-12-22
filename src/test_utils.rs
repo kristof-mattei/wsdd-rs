@@ -31,8 +31,10 @@ pub mod xml {
         W: std::io::Write,
     {
         let reader = ParserConfig::new()
+            .cdata_to_characters(true)
+            .ignore_comments(true)
             .trim_whitespace(true)
-            .ignore_comments(false)
+            .whitespace_to_characters(true)
             .create_reader(buf);
 
         let mut writer = EmitterConfig::new()

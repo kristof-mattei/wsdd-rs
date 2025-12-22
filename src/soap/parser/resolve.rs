@@ -1,6 +1,7 @@
 use thiserror::Error;
 use tracing::{Level, event};
 use uuid::Uuid;
+use uuid::fmt::Urn;
 use xml::reader::XmlEvent;
 
 use crate::constants::{XML_WSA_NAMESPACE, XML_WSD_NAMESPACE};
@@ -20,6 +21,8 @@ pub enum ResolveParsingError {
     MissingEndpoint,
     #[error("invalid resolve request: address does not match own one")]
     AddressDoesntMatch,
+    #[error("invalid resolve request: address is not a valid urn")]
+    EndpointNotAValidUrn,
 }
 
 fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveResult {
@@ -46,7 +49,7 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
                                     && name.namespace_ref() == Some(XML_WSA_NAMESPACE)
                                     && name.local_name == "Address"
                                 {
-                                    addr = read_text(reader, name.borrow())?;
+                                    addr = read_text(reader)?;
 
                                     break;
                                 }
@@ -56,16 +59,20 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
                                     // we've exited the EndpointReference Block
                                     break;
                                 }
+
                                 endpoint_reference_depth -= 1;
                             },
-                            XmlEvent::StartDocument { .. }
+                            XmlEvent::CData(_)
+                            | XmlEvent::Characters(_)
+                            | XmlEvent::Comment(_)
+                            | XmlEvent::Doctype { .. }
                             | XmlEvent::EndDocument
                             | XmlEvent::ProcessingInstruction { .. }
-                            | XmlEvent::CData(_)
-                            | XmlEvent::Comment(_)
-                            | XmlEvent::Characters(_)
-                            | XmlEvent::Whitespace(_)
-                            | XmlEvent::Doctype { .. } => (),
+                            | XmlEvent::StartDocument { .. }
+                            | XmlEvent::Whitespace(_) => {
+                                // these events are squelched by the parser config, or they're valid, but we ignore them
+                                // or they just won't occur
+                            },
                         }
                     }
                 }
@@ -80,13 +87,16 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
             XmlEvent::EndDocument => {
                 break;
             },
-            XmlEvent::StartDocument { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Comment(_)
+            XmlEvent::CData(_)
             | XmlEvent::Characters(_)
-            | XmlEvent::Whitespace(_)
-            | XmlEvent::Doctype { .. } => (),
+            | XmlEvent::Comment(_)
+            | XmlEvent::Doctype { .. }
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::StartDocument { .. }
+            | XmlEvent::Whitespace(_) => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
+            },
         }
     }
 
@@ -100,13 +110,21 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
         return Err(ResolveParsingError::MissingEndpoint);
     };
 
-    let target_urn = target_uuid.urn().to_string();
-
-    if addr.trim() != target_urn {
+    let Ok(addr_urn) = addr.parse::<Urn>() else {
         event!(
             Level::DEBUG,
             addr = &*addr,
-            expected = target_urn,
+            "invalid resolve request: address is not a valid urn"
+        );
+
+        return Err(ResolveParsingError::EndpointNotAValidUrn);
+    };
+
+    if addr_urn != target_uuid.urn() {
+        event!(
+            Level::DEBUG,
+            addr = &*addr,
+            expected = %target_uuid.urn(),
             "invalid resolve request: address does not match own one"
         );
 
@@ -128,14 +146,17 @@ pub fn parse_resolve_body(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> Parsed
             XmlEvent::EndDocument => {
                 break;
             },
-            XmlEvent::StartDocument { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::EndElement { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Comment(_)
+            XmlEvent::CData(_)
             | XmlEvent::Characters(_)
-            | XmlEvent::Whitespace(_)
-            | XmlEvent::Doctype { .. } => (),
+            | XmlEvent::Comment(_)
+            | XmlEvent::Doctype { .. }
+            | XmlEvent::EndElement { .. }
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::StartDocument { .. }
+            | XmlEvent::Whitespace(_) => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
+            },
         }
     }
 

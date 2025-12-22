@@ -193,15 +193,15 @@ impl WSDDiscoveredDevice {
                             break;
                         }
                     },
-                    XmlEvent::StartDocument { .. }
-                    | XmlEvent::ProcessingInstruction { .. }
-                    | XmlEvent::StartElement { .. }
-                    | XmlEvent::EndElement { .. }
-                    | XmlEvent::CData(_)
-                    | XmlEvent::Comment(_)
+                    XmlEvent::CData(_)
                     | XmlEvent::Characters(_)
-                    | XmlEvent::Whitespace(_)
-                    | XmlEvent::Doctype { .. } => {},
+                    | XmlEvent::Comment(_)
+                    | XmlEvent::Doctype { .. }
+                    | XmlEvent::EndElement { .. }
+                    | XmlEvent::ProcessingInstruction { .. }
+                    | XmlEvent::StartDocument { .. }
+                    | XmlEvent::StartElement { .. }
+                    | XmlEvent::Whitespace(_) => {},
                     XmlEvent::EndDocument => {
                         event!(Level::ERROR, "Unexpected `EndDocument` found");
                         break;
@@ -288,7 +288,7 @@ fn extract_wsdp_props(
                 depth += 1;
 
                 if name.namespace_ref() == Some(namespace) {
-                    let text = read_text(reader, name.borrow())?;
+                    let text = read_text(reader)?;
                     let text = text.unwrap_or_default();
 
                     // add to bag
@@ -315,13 +315,16 @@ fn extract_wsdp_props(
             XmlEvent::EndDocument => {
                 break;
             },
-            XmlEvent::StartDocument { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Comment(_)
+            XmlEvent::CData(_)
             | XmlEvent::Characters(_)
-            | XmlEvent::Whitespace(_)
-            | XmlEvent::Doctype { .. } => {},
+            | XmlEvent::Comment(_)
+            | XmlEvent::Doctype { .. }
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::StartDocument { .. }
+            | XmlEvent::Whitespace(_) => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
+            },
         }
     }
 
@@ -416,14 +419,13 @@ fn read_types_and_pub_computer(reader: &mut Wrapper<'_>) -> ExtractHostPropsResu
                     match (name.namespace_ref(), name.local_name.as_str()) {
                         (Some(WSDP_URI), "Types") => {
                             // we're in wsdp:Types
-                            types = read_text(reader, name.borrow())?.map(String::into_boxed_str);
+                            types = read_text(reader)?.map(String::into_boxed_str);
 
                             // `read_text` stops when it has hit the closing element, so we go back up 1 level
                             depth -= 1;
                         },
                         (Some(XML_PUB_NAMESPACE), "Computer") => {
-                            computer =
-                                read_text(reader, name.borrow())?.map(String::into_boxed_str);
+                            computer = read_text(reader)?.map(String::into_boxed_str);
 
                             // store the actual prefix, as it is not always `pub`
                             computer_namespace_prefix.clone_from(&name.prefix);
@@ -445,14 +447,17 @@ fn read_types_and_pub_computer(reader: &mut Wrapper<'_>) -> ExtractHostPropsResu
                     break;
                 }
             },
-            XmlEvent::EndDocument => return Err(GenericParsingError::InvalidElementOrder),
-            XmlEvent::StartDocument { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Comment(_)
+            XmlEvent::CData(_)
             | XmlEvent::Characters(_)
-            | XmlEvent::Whitespace(_)
-            | XmlEvent::Doctype { .. } => (),
+            | XmlEvent::Comment(_)
+            | XmlEvent::Doctype { .. }
+            | XmlEvent::EndDocument
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::StartDocument { .. }
+            | XmlEvent::Whitespace(_) => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
+            },
         }
     }
 
