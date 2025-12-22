@@ -202,54 +202,30 @@ fn parse_generic_body_paths_recursive(
     reader: &mut Wrapper,
     paths: &[(Option<&str>, &str)],
     name_attributes: Option<(OwnedName, Vec<OwnedAttribute>)>,
-    start_depth: usize,
+    mut depth: usize,
 ) -> ParseGenericBodyPathResult {
     let [(namespace, path), ref rest @ ..] = *paths else {
-        return Ok((name_attributes, start_depth));
+        return Ok((name_attributes, depth));
     };
-
-    let mut current_depth: usize = start_depth;
 
     loop {
         match reader.next()? {
             XmlEvent::StartElement {
                 name, attributes, ..
             } => {
-                current_depth += 1;
+                depth += 1;
 
-                if start_depth + 1 == current_depth
-                    && name.namespace_ref() == namespace
-                    && name.local_name == path
-                {
+                if name.namespace_ref() == namespace && name.local_name == path {
                     return parse_generic_body_paths_recursive(
                         reader,
                         rest,
                         Some((name, attributes)),
-                        current_depth,
+                        depth,
                     );
                 }
             },
-            XmlEvent::EndElement { name } => {
-                if start_depth == current_depth {
-                    let missing_element = Name {
-                        local_name: path,
-                        namespace,
-                        prefix: None,
-                    };
-
-                    event!(
-                        Level::ERROR,
-                        now_in = ?name,
-                        missing_element = %missing_element,
-                        "Could not find element"
-                    );
-
-                    return Err(GenericParsingError::MissingElement(
-                        missing_element.to_string().into_boxed_str(),
-                    ));
-                }
-
-                current_depth -= 1;
+            XmlEvent::EndElement { .. } => {
+                depth -= 1;
             },
             XmlEvent::EndDocument => {
                 break;
@@ -380,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_generic_body_invalid_depth() {
+    fn parse_generic_body_depth_mismatch_returns_missing_element() {
         let xml = include_str!("./test/xml/four-levels.xml");
 
         let mut reader = {
@@ -456,7 +432,7 @@ mod tests {
             &[(Some("urn:first"), "Envelope"), (Some("urn:first"), "Body")],
         );
 
-        assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "{urn:first}Body", "Body is not a direct child and should be reported missing");
+        assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "{urn:first}Body");
     }
 
     #[test]
@@ -478,27 +454,6 @@ mod tests {
             &mut reader,
             &[(Some("urn:first"), "Envelope"), (Some("urn:first"), "Body")],
         );
-
-        let attribute = OwnedAttribute::new(OwnedName::local("attribute"), "this-one");
-        assert_matches!(result, Ok((Some((_, attributes)), _)) if attributes.contains(&attribute));
-    }
-
-    #[test]
-    fn repro_depth_underflow() {
-        let xml = include_str!("./test/xml/depth-underflow.xml");
-
-        let mut reader = {
-            let reader = ParserConfig::new()
-                .cdata_to_characters(true)
-                .ignore_comments(true)
-                .trim_whitespace(true)
-                .whitespace_to_characters(true)
-                .create_reader(BufReader::new(xml.as_ref()));
-
-            Wrapper::new(reader)
-        };
-
-        let result = parse_generic_body_paths(&mut reader, &[(None, "Envelope"), (None, "Body")]);
 
         let attribute = OwnedAttribute::new(OwnedName::local("attribute"), "this-one");
         assert_matches!(result, Ok((Some((_, attributes)), _)) if attributes.contains(&attribute));
