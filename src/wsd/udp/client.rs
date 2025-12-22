@@ -582,7 +582,7 @@ mod tests {
     use hashbrown::HashMap;
     use libc::RT_SCOPE_SITE;
     use mockito::ServerOpts;
-    use pretty_assertions::assert_eq;
+    use pretty_assertions::{assert_eq, assert_matches};
     use tokio::sync::RwLock;
     use tokio_util::sync::CancellationToken;
     use url::Url;
@@ -1021,7 +1021,7 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(result, Ok(())));
+        assert_matches!(result, Ok(()));
 
         let client_devices = client_devices.read().await;
 
@@ -1079,7 +1079,7 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(result, Ok(())));
+        assert_matches!(result, Ok(()));
 
         let client_devices = client_devices.read().await;
 

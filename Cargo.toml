@@ -75,8 +75,8 @@ uuid = { version = "1.19.0", features = ["v1", "v4", "v5", "v7"] }
 xml = "1.2.0"
 
 [dev-dependencies]
-mockito = "=1.7.1"
-pretty_assertions = "=1.4.1"
+mockito = "1.7.1"
+pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 
 [lints.clippy]
 # don't stop from compiling / running
