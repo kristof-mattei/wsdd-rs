@@ -187,13 +187,16 @@ pub fn find_child(
             XmlEvent::EndDocument => {
                 break;
             },
-            XmlEvent::StartDocument { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Comment(_)
+            XmlEvent::CData(_)
             | XmlEvent::Characters(_)
-            | XmlEvent::Whitespace(_)
-            | XmlEvent::Doctype { .. } => {},
+            | XmlEvent::Comment(_)
+            | XmlEvent::Doctype { .. }
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::StartDocument { .. }
+            | XmlEvent::Whitespace(_) => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
+            },
         }
     }
 
@@ -237,6 +240,7 @@ fn parse_generic_body_paths_recursive(
                 depth += 1;
 
                 if name.namespace_ref() == namespace && name.local_name == path {
+                    // TODO check we're at depth 1 here
                     return parse_generic_body_paths_recursive(
                         reader,
                         rest,
@@ -271,13 +275,16 @@ fn parse_generic_body_paths_recursive(
             XmlEvent::EndDocument => {
                 break;
             },
-            XmlEvent::StartDocument { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Comment(_)
+            XmlEvent::CData(_)
             | XmlEvent::Characters(_)
-            | XmlEvent::Whitespace(_)
-            | XmlEvent::Doctype { .. } => (),
+            | XmlEvent::Comment(_)
+            | XmlEvent::Doctype { .. }
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::StartDocument { .. }
+            | XmlEvent::Whitespace(_) => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
+            },
         }
     }
 

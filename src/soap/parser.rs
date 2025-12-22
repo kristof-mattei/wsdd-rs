@@ -180,6 +180,8 @@ pub fn deconstruct_raw(raw: &[u8]) -> RawMessageResult<'_> {
 
     // as per https://www.w3.org/TR/soap12/#soapenvelope, the Header, Body order is fixed. We don't need to code for Body, Header
     loop {
+        // this is the only loop that should hit `XmlEvent::StartDocument` and `XmlEvent::Doctype`
+        // in all other parsing functions we could theoretically mark them as `unreachable`()`
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
                 if name.namespace_ref() == Some(XML_SOAP_NAMESPACE) {
@@ -196,14 +198,17 @@ pub fn deconstruct_raw(raw: &[u8]) -> RawMessageResult<'_> {
             XmlEvent::EndDocument => {
                 break;
             },
-            XmlEvent::StartDocument { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::EndElement { .. }
-            | XmlEvent::CData(_)
+            XmlEvent::CData(_)
             | XmlEvent::Comment(_)
             | XmlEvent::Characters(_)
-            | XmlEvent::Whitespace(_)
-            | XmlEvent::Doctype { .. } => (),
+            | XmlEvent::Doctype { .. }
+            | XmlEvent::EndElement { .. }
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::StartDocument { .. }
+            | XmlEvent::Whitespace(_) => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
+            },
         }
     }
 
@@ -364,14 +369,17 @@ fn parse_header(reader: &mut Wrapper<'_>) -> ParsedHeaderResult {
                     break;
                 }
             },
-            XmlEvent::StartDocument { .. }
+            XmlEvent::CData(_)
+            | XmlEvent::Characters(_)
+            | XmlEvent::Comment(_)
+            | XmlEvent::Doctype { .. }
             | XmlEvent::EndDocument
             | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Comment(_)
-            | XmlEvent::Characters(_)
-            | XmlEvent::Whitespace(_)
-            | XmlEvent::Doctype { .. } => (),
+            | XmlEvent::StartDocument { .. }
+            | XmlEvent::Whitespace(_) => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
+            },
         }
     }
 

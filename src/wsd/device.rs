@@ -193,15 +193,15 @@ impl WSDDiscoveredDevice {
                             break;
                         }
                     },
-                    XmlEvent::StartDocument { .. }
-                    | XmlEvent::ProcessingInstruction { .. }
-                    | XmlEvent::StartElement { .. }
-                    | XmlEvent::EndElement { .. }
-                    | XmlEvent::CData(_)
-                    | XmlEvent::Comment(_)
+                    XmlEvent::CData(_)
                     | XmlEvent::Characters(_)
-                    | XmlEvent::Whitespace(_)
-                    | XmlEvent::Doctype { .. } => {},
+                    | XmlEvent::Comment(_)
+                    | XmlEvent::Doctype { .. }
+                    | XmlEvent::EndElement { .. }
+                    | XmlEvent::ProcessingInstruction { .. }
+                    | XmlEvent::StartDocument { .. }
+                    | XmlEvent::StartElement { .. }
+                    | XmlEvent::Whitespace(_) => {},
                     XmlEvent::EndDocument => {
                         event!(Level::ERROR, "Unexpected `EndDocument` found");
                         break;
@@ -315,13 +315,16 @@ fn extract_wsdp_props(
             XmlEvent::EndDocument => {
                 break;
             },
-            XmlEvent::StartDocument { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Comment(_)
+            XmlEvent::CData(_)
             | XmlEvent::Characters(_)
-            | XmlEvent::Whitespace(_)
-            | XmlEvent::Doctype { .. } => {},
+            | XmlEvent::Comment(_)
+            | XmlEvent::Doctype { .. }
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::StartDocument { .. }
+            | XmlEvent::Whitespace(_) => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
+            },
         }
     }
 
@@ -445,14 +448,17 @@ fn read_types_and_pub_computer(reader: &mut Wrapper<'_>) -> ExtractHostPropsResu
                     break;
                 }
             },
-            XmlEvent::EndDocument => return Err(GenericParsingError::InvalidElementOrder),
-            XmlEvent::StartDocument { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Comment(_)
+            XmlEvent::CData(_)
             | XmlEvent::Characters(_)
-            | XmlEvent::Whitespace(_)
-            | XmlEvent::Doctype { .. } => (),
+            | XmlEvent::Comment(_)
+            | XmlEvent::Doctype { .. }
+            | XmlEvent::EndDocument
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::StartDocument { .. }
+            | XmlEvent::Whitespace(_) => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
+            },
         }
     }
 
