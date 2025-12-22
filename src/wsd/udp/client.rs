@@ -301,8 +301,8 @@ async fn handle_probe_match(
     parse_generic_body_paths(
         reader,
         &[
-            (XML_WSD_NAMESPACE, "ProbeMatches"),
-            (XML_WSD_NAMESPACE, "ProbeMatch"),
+            (Some(XML_WSD_NAMESPACE), "ProbeMatches"),
+            (Some(XML_WSD_NAMESPACE), "ProbeMatch"),
         ],
     )?;
 
@@ -355,8 +355,8 @@ async fn handle_resolve_match(
     parse_generic_body_paths(
         reader,
         &[
-            (XML_WSD_NAMESPACE, "ResolveMatches"),
-            (XML_WSD_NAMESPACE, "ResolveMatch"),
+            (Some(XML_WSD_NAMESPACE), "ResolveMatches"),
+            (Some(XML_WSD_NAMESPACE), "ResolveMatch"),
         ],
     )?;
 

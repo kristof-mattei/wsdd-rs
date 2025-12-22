@@ -212,15 +212,15 @@ type ParseGenericBodyPathResult =
     Result<(Option<OwnedName>, Option<Vec<OwnedAttribute>>, usize), GenericParsingError>;
 
 pub fn parse_generic_body_paths(
-    reader: &mut Wrapper<'_>,
-    paths: &[(&str, &str)],
+    reader: &mut Wrapper,
+    paths: &[(Option<&str>, &str)],
 ) -> ParseGenericBodyPathResult {
     parse_generic_body_paths_recursive(reader, paths, None, None, 0)
 }
 
 fn parse_generic_body_paths_recursive(
-    reader: &mut Wrapper<'_>,
-    paths: &[(&str, &str)],
+    reader: &mut Wrapper,
+    paths: &[(Option<&str>, &str)],
     name: Option<OwnedName>,
     attributes: Option<Vec<OwnedAttribute>>,
     mut depth: usize,
@@ -236,7 +236,8 @@ fn parse_generic_body_paths_recursive(
             } => {
                 depth += 1;
 
-                if name.namespace_ref() == Some(namespace) && name.local_name == path {
+                if name.namespace_ref() == namespace && name.local_name == path {
+                    // TODO check we're at depth 1 here
                     return parse_generic_body_paths_recursive(
                         reader,
                         rest,
@@ -262,8 +263,14 @@ fn parse_generic_body_paths_recursive(
         }
     }
 
+    let name = Name {
+        local_name: path,
+        namespace,
+        prefix: None,
+    };
+
     Err(GenericParsingError::MissingElement(
-        format!("{}:{}", namespace, path).into_boxed_str(),
+        name.to_string().into_boxed_str(),
     ))
 }
 
