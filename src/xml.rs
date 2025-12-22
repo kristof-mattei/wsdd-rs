@@ -212,15 +212,15 @@ type ParseGenericBodyPathResult =
     Result<(Option<OwnedName>, Option<Vec<OwnedAttribute>>, usize), GenericParsingError>;
 
 pub fn parse_generic_body_paths(
-    reader: &mut Wrapper<'_>,
-    paths: &[(&str, &str)],
+    reader: &mut Wrapper,
+    paths: &[(Option<&str>, &str)],
 ) -> ParseGenericBodyPathResult {
     parse_generic_body_paths_recursive(reader, paths, None, None, 0)
 }
 
 fn parse_generic_body_paths_recursive(
-    reader: &mut Wrapper<'_>,
-    paths: &[(&str, &str)],
+    reader: &mut Wrapper,
+    paths: &[(Option<&str>, &str)],
     name: Option<OwnedName>,
     attributes: Option<Vec<OwnedAttribute>>,
     mut depth: usize,
@@ -236,7 +236,7 @@ fn parse_generic_body_paths_recursive(
             } => {
                 depth += 1;
 
-                if name.namespace_ref() == Some(namespace) && name.local_name == path {
+                if name.namespace_ref() == namespace && name.local_name == path {
                     return parse_generic_body_paths_recursive(
                         reader,
                         rest,
@@ -246,7 +246,26 @@ fn parse_generic_body_paths_recursive(
                     );
                 }
             },
-            XmlEvent::EndElement { .. } => {
+            XmlEvent::EndElement { name } => {
+                if depth == 0 {
+                    let missing_element = Name {
+                        local_name: path,
+                        namespace,
+                        prefix: None,
+                    };
+
+                    event!(
+                        Level::ERROR,
+                        now_in = ?name,
+                        missing_element = %missing_element,
+                        "Could not find element"
+                    );
+
+                    return Err(GenericParsingError::MissingElement(
+                        missing_element.to_string().into_boxed_str(),
+                    ));
+                }
+
                 depth -= 1;
             },
             XmlEvent::EndDocument => {
@@ -262,8 +281,14 @@ fn parse_generic_body_paths_recursive(
         }
     }
 
+    let name = Name {
+        local_name: path,
+        namespace,
+        prefix: None,
+    };
+
     Err(GenericParsingError::MissingElement(
-        format!("{}:{}", namespace, path).into_boxed_str(),
+        name.to_string().into_boxed_str(),
     ))
 }
 
@@ -331,3 +356,93 @@ fn parse_generic_body_paths_recursive(
 //         .into_boxed_str(),
 //     ))
 // }
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+    use xml::ParserConfig;
+
+    use crate::xml::{BufReader, GenericParsingError, Wrapper, parse_generic_body_paths};
+
+    #[test]
+    fn parse_generic_body_missing_element() {
+        let xml = include_bytes!("./test/three-levels.xml");
+
+        let mut reader = {
+            let reader = ParserConfig::new()
+                .cdata_to_characters(true)
+                .ignore_comments(true)
+                .trim_whitespace(true)
+                .whitespace_to_characters(true)
+                .create_reader(BufReader::new(xml.as_ref()));
+
+            Wrapper::new(reader)
+        };
+
+        let error = parse_generic_body_paths(
+            &mut reader,
+            &[
+                (None, "Level1"),
+                (None, "Level2"),
+                (Some("urn:level3_ns"), "Level3"),
+            ],
+        )
+        .unwrap_err();
+
+        match error {
+            GenericParsingError::MissingElement(name) => {
+                assert_eq!(&*name, "{urn:level3_ns}Level3");
+            },
+            GenericParsingError::XmlError(_)
+            | GenericParsingError::TextReadError(_)
+            | GenericParsingError::MissingEndElement(_)
+            | GenericParsingError::InvalidElementOrder
+            | GenericParsingError::InvalidUuid(_)
+            | GenericParsingError::InvalidDepth(_) => panic!(),
+        }
+    }
+
+    #[test]
+    fn parse_generic_body_invalid_depth() {
+        let xml = include_bytes!("./test/four-levels.xml");
+
+        let mut reader = {
+            let reader = ParserConfig::new()
+                .cdata_to_characters(true)
+                .ignore_comments(true)
+                .trim_whitespace(true)
+                .whitespace_to_characters(true)
+                .create_reader(BufReader::new(xml.as_ref()));
+
+            Wrapper::new(reader)
+        };
+
+        {
+            let _unused: Result<xml::reader::XmlEvent, xml::reader::Error> = reader.next();
+            let _unused: Result<xml::reader::XmlEvent, xml::reader::Error> = reader.next();
+            let _unused: Result<xml::reader::XmlEvent, xml::reader::Error> = reader.next();
+        }
+
+        let error = parse_generic_body_paths(
+            &mut reader,
+            &[
+                (Some("urn:level3_ns"), "Level3"),
+                (None, "Level4"),
+                (Some("urn:level5_ns"), "Level5"),
+            ],
+        )
+        .unwrap_err();
+
+        match error {
+            GenericParsingError::MissingElement(name) => {
+                assert_eq!(&*name, "{urn:level5_ns}Level5");
+            },
+            GenericParsingError::XmlError(_)
+            | GenericParsingError::TextReadError(_)
+            | GenericParsingError::MissingEndElement(_)
+            | GenericParsingError::InvalidElementOrder
+            | GenericParsingError::InvalidUuid(_)
+            | GenericParsingError::InvalidDepth(_) => panic!(),
+        }
+    }
+}
