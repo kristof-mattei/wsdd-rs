@@ -345,7 +345,6 @@ fn parse_generic_body_paths_recursive(
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_eq;
     use xml::ParserConfig;
     use xml::attribute::OwnedAttribute;
     use xml::name::OwnedName;
@@ -367,27 +366,18 @@ mod tests {
             Wrapper::new(reader)
         };
 
-        let error = parse_generic_body_paths(
+        let result = parse_generic_body_paths(
             &mut reader,
             &[
                 (None, "Level1"),
                 (None, "Level2"),
                 (Some("urn:level3_ns"), "Level3"),
             ],
-        )
-        .unwrap_err();
+        );
 
-        match error {
-            GenericParsingError::MissingElement(name) => {
-                assert_eq!(&*name, "{urn:level3_ns}Level3");
-            },
-            GenericParsingError::XmlError(_)
-            | GenericParsingError::TextReadError(_)
-            | GenericParsingError::MissingEndElement(_)
-            | GenericParsingError::InvalidElementOrder
-            | GenericParsingError::InvalidUuid(_)
-            | GenericParsingError::InvalidDepth(_) => panic!(),
-        }
+        assert!(matches!(
+            result,
+            Err(GenericParsingError::MissingElement(name)) if &*name== "{urn:level3_ns}Level3"));
     }
 
     #[test]
@@ -411,27 +401,17 @@ mod tests {
             let _unused: Result<xml::reader::XmlEvent, xml::reader::Error> = reader.next();
         }
 
-        let error = parse_generic_body_paths(
+        let result = parse_generic_body_paths(
             &mut reader,
             &[
                 (Some("urn:level3_ns"), "Level3"),
                 (None, "Level4"),
                 (Some("urn:level5_ns"), "Level5"),
             ],
-        )
-        .unwrap_err();
+        );
 
-        match error {
-            GenericParsingError::MissingElement(name) => {
-                assert_eq!(&*name, "{urn:level5_ns}Level5");
-            },
-            GenericParsingError::XmlError(_)
-            | GenericParsingError::TextReadError(_)
-            | GenericParsingError::MissingEndElement(_)
-            | GenericParsingError::InvalidElementOrder
-            | GenericParsingError::InvalidUuid(_)
-            | GenericParsingError::InvalidDepth(_) => panic!(),
-        }
+        assert!(matches!(result,
+            Err(GenericParsingError::MissingElement(name)) if &*name== "{urn:level5_ns}Level5"));
     }
 
     #[test]
