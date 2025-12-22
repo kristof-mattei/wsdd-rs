@@ -24,14 +24,17 @@ pub fn extract_endpoint_reference_address(
                     break;
                 }
             },
-            XmlEvent::StartDocument { .. }
+            XmlEvent::CData(_)
+            | XmlEvent::Characters(_)
+            | XmlEvent::Comment(_)
+            | XmlEvent::Doctype { .. }
             | XmlEvent::EndDocument
             | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Comment(_)
-            | XmlEvent::Characters(_)
-            | XmlEvent::Whitespace(_)
-            | XmlEvent::Doctype { .. } => (),
+            | XmlEvent::StartDocument { .. }
+            | XmlEvent::Whitespace(_) => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
+            },
         }
     }
 
@@ -82,14 +85,17 @@ pub fn extract_endpoint_metadata(
             XmlEvent::EndDocument => {
                 break;
             },
-            XmlEvent::StartDocument { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::EndElement { .. }
-            | XmlEvent::CData(_)
-            | XmlEvent::Comment(_)
+            XmlEvent::CData(_)
             | XmlEvent::Characters(_)
-            | XmlEvent::Whitespace(_)
-            | XmlEvent::Doctype { .. } => (),
+            | XmlEvent::Comment(_)
+            | XmlEvent::Doctype { .. }
+            | XmlEvent::EndElement { .. }
+            | XmlEvent::ProcessingInstruction { .. }
+            | XmlEvent::StartDocument { .. }
+            | XmlEvent::Whitespace(_) => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
+            },
         }
     }
 
