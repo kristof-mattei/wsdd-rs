@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Level1 xmlns:level3_ns="urn:level3_ns">
+    <Level2>
+        <level3_ns:Level3>
+            <Level4>
+            </Level4>
+        </level3_ns:Level3>
+    </Level2>
+</Level1>
