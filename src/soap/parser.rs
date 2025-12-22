@@ -112,26 +112,6 @@ impl MessageHandlerError {
                 );
             },
             &MessageHandlerError::HeaderError(HeaderError::TextReadError(
-                TextReadError::MissingEndElement(ref end_element),
-            )) => {
-                event!(
-                    Level::ERROR,
-                    ?end_element,
-                    message = &*String::from_utf8_lossy(buffer),
-                    "Missing end element",
-                );
-            },
-            &MessageHandlerError::HeaderError(HeaderError::TextReadError(
-                TextReadError::InvalidDepth(depth),
-            )) => {
-                event!(
-                    Level::ERROR,
-                    ?depth,
-                    message = &*String::from_utf8_lossy(buffer),
-                    "Invalid opening/closing element depth",
-                );
-            },
-            &MessageHandlerError::HeaderError(HeaderError::TextReadError(
                 TextReadError::XmlError(ref error),
             ))
             | &MessageHandlerError::HeaderError(HeaderError::XmlError(ref error))
@@ -170,8 +150,10 @@ type RawMessageResult<'r> = Result<(Header, bool, Wrapper<'r>), MessageHandlerEr
 pub fn deconstruct_raw(raw: &[u8]) -> RawMessageResult<'_> {
     let mut reader = Wrapper::new(
         ParserConfig::new()
-            .trim_whitespace(true)
+            .cdata_to_characters(true)
             .ignore_comments(true)
+            .trim_whitespace(true)
+            .whitespace_to_characters(true)
             .create_reader(BufReader::new(raw)),
     );
 
@@ -181,7 +163,7 @@ pub fn deconstruct_raw(raw: &[u8]) -> RawMessageResult<'_> {
     // as per https://www.w3.org/TR/soap12/#soapenvelope, the Header, Body order is fixed. We don't need to code for Body, Header
     loop {
         // this is the only loop that should hit `XmlEvent::StartDocument` and `XmlEvent::Doctype`
-        // in all other parsing functions we could theoretically mark them as `unreachable`()`
+        // in all other parsing functions we could theoretically mark them as `unreachable!()`
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
                 if name.namespace_ref() == Some(XML_SOAP_NAMESPACE) {
@@ -334,14 +316,13 @@ fn parse_header(reader: &mut Wrapper<'_>) -> ParsedHeaderResult {
                     // header items can be in any order, as per SOAP 1.1 and 1.2
                     match &*name.local_name {
                         "To" => {
-                            to = read_text(reader, name.borrow())?
-                                .map(|to| DeviceUri::new(to.into_boxed_str()));
+                            to = read_text(reader)?.map(|to| DeviceUri::new(to.into_boxed_str()));
                         },
                         "Action" => {
-                            action = read_text(reader, name.borrow())?.map(String::into_boxed_str);
+                            action = read_text(reader)?.map(String::into_boxed_str);
                         },
                         "MessageID" => {
-                            let m_id = read_text(reader, name.borrow())?
+                            let m_id = read_text(reader)?
                                 .map(|m_id| {
                                     m_id.parse::<Urn>().map_err(HeaderError::InvalidMessageId)
                                 })
@@ -350,7 +331,7 @@ fn parse_header(reader: &mut Wrapper<'_>) -> ParsedHeaderResult {
                             message_id = m_id;
                         },
                         "RelatesTo" => {
-                            let r_to = read_text(reader, name.borrow())?
+                            let r_to = read_text(reader)?
                                 .map(|r_to| {
                                     r_to.parse::<Urn>().map_err(HeaderError::InvalidRelatesTo)
                                 })

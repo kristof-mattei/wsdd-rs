@@ -49,7 +49,7 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
                                     && name.namespace_ref() == Some(XML_WSA_NAMESPACE)
                                     && name.local_name == "Address"
                                 {
-                                    addr = read_text(reader, name.borrow())?;
+                                    addr = read_text(reader)?;
 
                                     break;
                                 }
