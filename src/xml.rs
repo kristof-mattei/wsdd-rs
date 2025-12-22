@@ -202,30 +202,54 @@ fn parse_generic_body_paths_recursive(
     reader: &mut Wrapper,
     paths: &[(Option<&str>, &str)],
     name_attributes: Option<(OwnedName, Vec<OwnedAttribute>)>,
-    mut depth: usize,
+    start_depth: usize,
 ) -> ParseGenericBodyPathResult {
     let [(namespace, path), ref rest @ ..] = *paths else {
-        return Ok((name_attributes, depth));
+        return Ok((name_attributes, start_depth));
     };
+
+    let mut current_depth: usize = start_depth;
 
     loop {
         match reader.next()? {
             XmlEvent::StartElement {
                 name, attributes, ..
             } => {
-                depth += 1;
+                current_depth += 1;
 
-                if name.namespace_ref() == namespace && name.local_name == path {
+                if start_depth + 1 == current_depth
+                    && name.namespace_ref() == namespace
+                    && name.local_name == path
+                {
                     return parse_generic_body_paths_recursive(
                         reader,
                         rest,
                         Some((name, attributes)),
-                        depth,
+                        current_depth,
                     );
                 }
             },
-            XmlEvent::EndElement { .. } => {
-                depth -= 1;
+            XmlEvent::EndElement { name } => {
+                if start_depth == current_depth {
+                    let missing_element = Name {
+                        local_name: path,
+                        namespace,
+                        prefix: None,
+                    };
+
+                    event!(
+                        Level::ERROR,
+                        now_in = ?name,
+                        missing_element = %missing_element,
+                        "Could not find element"
+                    );
+
+                    return Err(GenericParsingError::MissingElement(
+                        missing_element.to_string().into_boxed_str(),
+                    ));
+                }
+
+                current_depth -= 1;
             },
             XmlEvent::EndDocument => {
                 break;
@@ -457,5 +481,34 @@ mod tests {
 
         let attribute = OwnedAttribute::new(OwnedName::local("attribute"), "this-one");
         assert_matches!(result, Ok((Some((_, attributes)), _)) if attributes.contains(&attribute));
+    }
+
+    #[test]
+    fn repro_depth_underflow() {
+        let xml = include_str!("./test/xml/depth-underflow.xml");
+
+        let mut reader = {
+            let reader = ParserConfig::new()
+                .cdata_to_characters(true)
+                .ignore_comments(true)
+                .trim_whitespace(true)
+                .whitespace_to_characters(true)
+                .create_reader(BufReader::new(xml.as_ref()));
+
+            Wrapper::new(reader)
+        };
+
+        // descent into the reader
+        // before this bugfix, when starting at a certain depth
+        // when an element wasn't found it would go beyond that depth
+        // and since depth is usize, it would underflow
+        {
+            let _unused = reader.next();
+            let _unused = reader.next();
+        }
+
+        let result = parse_generic_body_paths(&mut reader, &[(None, "NotFound")]);
+
+        assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "NotFound");
     }
 }
