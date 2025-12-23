@@ -208,16 +208,16 @@ fn parse_generic_body_paths_recursive(
         return Ok((name_attributes, start_depth));
     };
 
-    let mut current_depth: usize = start_depth;
+    let mut depth: usize = start_depth;
 
     loop {
         match reader.next()? {
             XmlEvent::StartElement {
                 name, attributes, ..
             } => {
-                current_depth += 1;
+                depth += 1;
 
-                if start_depth + 1 == current_depth
+                if start_depth + 1 == depth
                     && name.namespace_ref() == namespace
                     && name.local_name == path
                 {
@@ -225,12 +225,12 @@ fn parse_generic_body_paths_recursive(
                         reader,
                         rest,
                         Some((name, attributes)),
-                        current_depth,
+                        depth,
                     );
                 }
             },
             XmlEvent::EndElement { name } => {
-                if start_depth == current_depth {
+                if start_depth == depth {
                     let missing_element = Name {
                         local_name: path,
                         namespace,
@@ -249,7 +249,7 @@ fn parse_generic_body_paths_recursive(
                     ));
                 }
 
-                current_depth -= 1;
+                depth -= 1;
             },
             XmlEvent::EndDocument => {
                 break;
@@ -277,71 +277,6 @@ fn parse_generic_body_paths_recursive(
         name.to_string().into_boxed_str(),
     ))
 }
-
-// pub fn find_first_element(
-//     reader: &mut Wrapper,
-//     namespace: Option<&str>,
-//     path: &str,
-// ) -> Result<(OwnedName, Vec<OwnedAttribute>, usize), GenericParsingError> {
-//     let mut depth = 0_usize;
-
-//     loop {
-//         match reader.next()? {
-//             XmlEvent::StartElement {
-//                 name, attributes, ..
-//             } => {
-//                 depth += 1;
-
-//                 if name.namespace_ref() == namespace && name.local_name == path {
-//                     return Ok((name, attributes, depth));
-//                 }
-//             },
-//             XmlEvent::EndElement { name } => {
-//                 if depth == 0 {
-//                     let missing_element = format!(
-//                         "{}{}{}",
-//                         namespace.unwrap_or_default(),
-//                         namespace.map(|_| ":").unwrap_or_default(),
-//                         path,
-//                     );
-
-//                     event!(
-//                         Level::TRACE,
-//                         now_in = %name,
-//                         missing_element = missing_element,
-//                         "Could not find element"
-//                     );
-
-//                     return Err(GenericParsingError::MissingElement(
-//                         missing_element.into_boxed_str(),
-//                     ));
-//                 }
-
-//                 depth -= 1;
-//             },
-//             XmlEvent::EndDocument => {
-//                 break;
-//             },
-//             XmlEvent::StartDocument { .. }
-//             | XmlEvent::ProcessingInstruction { .. }
-//             | XmlEvent::CData(_)
-//             | XmlEvent::Comment(_)
-//             | XmlEvent::Characters(_)
-//             | XmlEvent::Whitespace(_)
-//             | XmlEvent::Doctype { .. } => {},
-//         }
-//     }
-
-//     Err(GenericParsingError::MissingElement(
-//         format!(
-//             "{}{}{}",
-//             namespace.unwrap_or_default(),
-//             namespace.map(|_| ":").unwrap_or_default(),
-//             path
-//         )
-//         .into_boxed_str(),
-//     ))
-// }
 
 #[cfg(test)]
 mod tests {

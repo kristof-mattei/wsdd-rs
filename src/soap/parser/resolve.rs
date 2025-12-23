@@ -25,10 +25,14 @@ pub enum ResolveParsingError {
     EndpointNotAValidUrn,
 }
 
+/// Expects a reader inside of the `Resolve` tag
+/// This function makes NO claims about the position of the reader
+/// should the structure XML be invalid (e.g. missing `Address`)
 fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveResult {
     let mut addr = None;
 
-    let mut resolve_depth = 0;
+    let mut resolve_depth = 0_usize;
+
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
@@ -38,7 +42,7 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
                     && name.namespace_ref() == Some(XML_WSA_NAMESPACE)
                     && name.local_name == "EndpointReference"
                 {
-                    let mut endpoint_reference_depth = 0;
+                    let mut endpoint_reference_depth = 0_usize;
 
                     loop {
                         match reader.next()? {
@@ -79,9 +83,10 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
             },
             XmlEvent::EndElement { .. } => {
                 if resolve_depth == 0 {
-                    // we've exited the EndpointReference Block
+                    // we've exited the Resolve
                     break;
                 }
+
                 resolve_depth -= 1;
             },
             XmlEvent::EndDocument => {
@@ -136,12 +141,25 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
 
 /// This takes in a reader that is stopped at the body tag.
 pub fn parse_resolve_body(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveResult {
+    let mut depth = 0_usize;
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
-                if name.namespace_ref() == Some(XML_WSD_NAMESPACE) && name.local_name == "Resolve" {
+                depth += 1;
+
+                if depth == 1
+                    && name.namespace_ref() == Some(XML_WSD_NAMESPACE)
+                    && name.local_name == "Resolve"
+                {
                     return parse_resolve(reader, target_uuid);
                 }
+            },
+            XmlEvent::EndElement { .. } => {
+                if depth == 0 {
+                    return Err(ResolveParsingError::MissingResolveElement);
+                }
+
+                depth -= 1;
             },
             XmlEvent::EndDocument => {
                 break;
@@ -150,7 +168,6 @@ pub fn parse_resolve_body(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> Parsed
             | XmlEvent::Characters(_)
             | XmlEvent::Comment(_)
             | XmlEvent::Doctype { .. }
-            | XmlEvent::EndElement { .. }
             | XmlEvent::ProcessingInstruction { .. }
             | XmlEvent::StartDocument { .. }
             | XmlEvent::Whitespace(_) => {
