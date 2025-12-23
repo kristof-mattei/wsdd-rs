@@ -77,7 +77,7 @@ xml = "1.2.0"
 [dev-dependencies]
 mockito = "=1.7.1"
 pretty_assertions = { version = "=1.4.1", features = ["unstable"] }
-tracing-test = "0.2.5"
+tracing-test = "=0.2.5"
 
 [lints.clippy]
 # don't stop from compiling / running
