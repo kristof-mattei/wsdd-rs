@@ -318,7 +318,7 @@ mod tests {
         let hello = mc_local_port_rx.recv().await.unwrap();
 
         let expected = format!(
-            include_str!("../../test/hello-template.xml"),
+            include_str!("../../test/hello-with-xaddrs-template.xml"),
             Uuid::nil(),
             host_instance_id,
             Uuid::nil(),
@@ -481,7 +481,7 @@ mod tests {
         .unwrap();
 
         let expected = format!(
-            include_str!("../../test/probe-matches-template.xml"),
+            include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
             client_message_id,
             host_instance_id,
             host_messages_built.load(Ordering::Relaxed) - 1,

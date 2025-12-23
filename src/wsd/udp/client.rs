@@ -713,7 +713,7 @@ mod tests {
             .await;
 
         let hello = format!(
-            include_str!("../../test/hello-template.xml"),
+            include_str!("../../test/hello-with-xaddrs-template.xml"),
             host_message_id,
             host_instance_id,
             Uuid::new_v4(),
@@ -880,7 +880,7 @@ mod tests {
             .await;
 
         let hello = format!(
-            include_str!("../../test/hello-template.xml"),
+            include_str!("../../test/hello-with-xaddrs-template.xml"),
             Uuid::new_v4(),
             host_instance_id,
             Uuid::new_v4(),
