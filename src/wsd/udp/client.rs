@@ -18,8 +18,8 @@ use crate::constants::{
 };
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::{Builder, MessageType};
+use crate::soap::parser::MessageHandler;
 use crate::soap::parser::generic::extract_endpoint_metadata;
-use crate::soap::parser::{self, MessageHandler};
 use crate::utils::task::spawn_with_name;
 use crate::wsd::HANDLED_MESSAGES;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
@@ -237,7 +237,7 @@ async fn handle_hello(
 ) -> Result<(), eyre::Report> {
     find_child(reader, Some(XML_WSD_NAMESPACE), "Hello")?;
 
-    let (endpoint, xaddrs) = parser::generic::extract_endpoint_metadata(reader)?;
+    let (endpoint, xaddrs) = extract_endpoint_metadata(reader)?;
 
     let Some(xaddrs) = xaddrs else {
         event!(Level::INFO, "Hello without XAddrs, sending resolve");
@@ -267,7 +267,7 @@ async fn handle_bye(
 ) -> Result<(), eyre::Report> {
     find_child(reader, Some(XML_WSD_NAMESPACE), "Bye")?;
 
-    let (endpoint, _) = parser::generic::extract_endpoint_metadata(reader)?;
+    let (endpoint, _) = extract_endpoint_metadata(reader)?;
 
     let mut guard = devices.write().await;
 
