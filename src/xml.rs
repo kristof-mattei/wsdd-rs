@@ -140,22 +140,21 @@ pub fn find_child(
             },
             XmlEvent::EndElement { name } => {
                 if depth == 0 {
-                    let missing_element = format!(
-                        "{}{}{}",
-                        namespace.unwrap_or_default(),
-                        namespace.map(|_| ":").unwrap_or_default(),
-                        path,
-                    );
+                    let missing_element = Name {
+                        local_name: path,
+                        namespace,
+                        prefix: None,
+                    };
 
                     event!(
                         Level::ERROR,
                         now_in = %name,
-                        missing_element = missing_element,
+                        missing_element = %missing_element,
                         "Could not find element"
                     );
 
                     return Err(GenericParsingError::MissingElement(
-                        missing_element.into_boxed_str(),
+                        missing_element.to_string().into_boxed_str(),
                     ));
                 }
 
@@ -178,12 +177,12 @@ pub fn find_child(
     }
 
     Err(GenericParsingError::MissingElement(
-        format!(
-            "{}{}{}",
-            namespace.unwrap_or_default(),
-            namespace.map(|_| ":").unwrap_or_default(),
-            path
-        )
+        Name {
+            local_name: path,
+            namespace,
+            prefix: None,
+        }
+        .to_string()
         .into_boxed_str(),
     ))
 }
