@@ -47,6 +47,7 @@ mod tests {
     use std::sync::Arc;
 
     use libc::RT_SCOPE_SITE;
+    use pretty_assertions::{assert_eq, assert_ne};
 
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
@@ -95,5 +96,116 @@ mod tests {
         );
 
         assert!(!network_address.is_multicastable());
+    }
+
+    #[test]
+    fn ipv4_display() {
+        let network_address = NetworkAddress::new(
+            Ipv4Addr::new(192, 168, 100, 5).into(),
+            Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+        );
+
+        assert_eq!("192.168.100.5%eth0", network_address.to_string());
+    }
+
+    #[test]
+    fn ipv6_display() {
+        let network_address = NetworkAddress::new(
+            Ipv6Addr::new(
+                0x2001, 0x0db8, 0x5c41, 0xf105, 0x2cf9, 0xcd58, 0x0b74, 0x0684,
+            )
+            .into(),
+            Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+        );
+
+        assert_eq!(
+            "2001:db8:5c41:f105:2cf9:cd58:b74:684%eth0",
+            network_address.to_string()
+        );
+    }
+
+    #[test]
+    fn equal_same_interface() {
+        let interface = Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5));
+
+        let network_address1 = NetworkAddress::new(
+            Ipv4Addr::new(192, 168, 100, 5).into(),
+            Arc::clone(&interface),
+        );
+
+        let network_address2 = NetworkAddress::new(
+            Ipv4Addr::new(192, 168, 100, 5).into(),
+            Arc::clone(&interface),
+        );
+
+        assert_eq!(network_address1, network_address2);
+    }
+
+    #[test]
+    fn equal_identical_interface() {
+        let network_address1 = NetworkAddress::new(
+            Ipv4Addr::new(192, 168, 100, 5).into(),
+            Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+        );
+
+        let network_address2 = NetworkAddress::new(
+            Ipv4Addr::new(192, 168, 100, 5).into(),
+            Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+        );
+
+        assert_eq!(network_address1, network_address2);
+    }
+
+    #[test]
+    fn not_equal_different_ip() {
+        let interface = Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5));
+
+        let network_address1 = NetworkAddress::new(
+            Ipv4Addr::new(192, 168, 100, 5).into(),
+            Arc::clone(&interface),
+        );
+
+        let network_address2 = NetworkAddress::new(
+            Ipv6Addr::new(
+                0x2001, 0x0db8, 0x5c41, 0xf105, 0x2cf9, 0xcd58, 0x0b74, 0x0684,
+            )
+            .into(),
+            Arc::clone(&interface),
+        );
+
+        assert_ne!(network_address1, network_address2);
+    }
+
+    #[test]
+    fn not_equal_same_ip_different_interface() {
+        let network_address1 = NetworkAddress::new(
+            Ipv4Addr::new(192, 168, 100, 5).into(),
+            Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+        );
+
+        let network_address2 = NetworkAddress::new(
+            Ipv4Addr::new(192, 168, 100, 5).into(),
+            Arc::new(NetworkInterface::new_with_index("eth1", RT_SCOPE_SITE, 5)),
+        );
+
+        assert_ne!(network_address1, network_address2);
+    }
+
+    #[test]
+    fn not_equal_different_ip_different_interface() {
+        let network_address1 = NetworkAddress::new(
+            Ipv4Addr::new(192, 168, 100, 5).into(),
+            Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+        );
+
+        let network_address2 = NetworkAddress::new(
+            Ipv6Addr::new(
+                0x2001, 0x0db8, 0x5c41, 0xf105, 0x2cf9, 0xcd58, 0x0b74, 0x0684,
+            )
+            .into(),
+            Arc::new(NetworkInterface::new_with_index("eth1", RT_SCOPE_SITE, 5)),
+        );
+
+        assert_ne!(network_address1, network_address2);
     }
 }
