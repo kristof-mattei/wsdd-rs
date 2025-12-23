@@ -578,12 +578,14 @@ async fn listen_forever(
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
+    use std::time::Duration;
 
     use hashbrown::HashMap;
     use libc::RT_SCOPE_SITE;
     use mockito::ServerOpts;
     use pretty_assertions::{assert_eq, assert_matches};
     use tokio::sync::RwLock;
+    use tokio::sync::mpsc::error::TryRecvError;
     use tokio_util::sync::CancellationToken;
     use url::Url;
     use uuid::Uuid;
@@ -592,7 +594,10 @@ mod tests {
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler_with_network_address};
     use crate::wsd::device::DeviceUri;
-    use crate::wsd::udp::client::{WSDClient, handle_bye, handle_hello, handle_metadata};
+    use crate::wsd::udp::client::{
+        WSDClient, handle_bye, handle_hello, handle_metadata, handle_probe_match,
+        handle_resolve_match,
+    };
 
     #[tokio::test]
     async fn handles_hello_without_xaddr() {
@@ -683,13 +688,13 @@ mod tests {
         let host_port = server.socket_address().port();
         let host_message_id = Uuid::new_v4();
         let host_instance_id = "host-instance-id";
-
-        let host_endpoint_uuid =
-            DeviceUri::new(Uuid::new_v4().as_urn().to_string().into_boxed_str());
+        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_device_uri =
+            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
 
         let expected_get = format!(
             include_str!("../../test/get-template.xml"),
-            host_endpoint_uuid, client_endpoint_device_uri
+            host_endpoint_device_uri, client_endpoint_device_uri
         );
 
         let mock = server
@@ -717,7 +722,7 @@ mod tests {
             host_message_id,
             host_instance_id,
             Uuid::new_v4(),
-            host_endpoint_uuid,
+            host_endpoint_device_uri,
             host_ip,
             host_port,
             host_endpoint_uuid
@@ -754,7 +759,7 @@ mod tests {
 
         let client_devices = client_devices.read().await;
 
-        let device = client_devices.get(&host_endpoint_uuid);
+        let device = client_devices.get(&host_endpoint_device_uri);
 
         assert!(device.is_some());
 
@@ -1108,5 +1113,276 @@ mod tests {
             .collect::<HashMap<_, _>>();
 
         assert_eq!(expected_props, device_props);
+    }
+
+    #[tokio::test]
+    async fn handles_probe_matches_without_xaddrs() {
+        let (message_handler, client_network_address) =
+            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
+
+        // client
+        let client_endpoint_uuid = Uuid::new_v4();
+        let client_instance_id = "client-instance-id";
+        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+        let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
+
+        // host
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_device_uri =
+            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
+        let host_instance_id = "host-instance-id";
+        let host_message_id = Uuid::new_v4();
+
+        let probe_matches = format!(
+            include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
+            host_message_id, host_instance_id, 0, host_endpoint_device_uri
+        );
+
+        let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
+
+        let (header, mut reader) = message_handler
+            .deconstruct_message(
+                probe_matches.as_bytes(),
+                Some(SocketAddr::V4(SocketAddrV4::new(host_ip, 5000))),
+            )
+            .await
+            .unwrap();
+
+        let probes = {
+            let mut hash_map = HashMap::new();
+
+            hash_map.insert(host_message_id.urn(), Duration::from_secs(100));
+
+            Arc::new(RwLock::new(hash_map))
+        };
+
+        handle_probe_match(
+            &reqwest::ClientBuilder::new().build().unwrap(),
+            &client_config,
+            Arc::clone(&client_devices),
+            &client_network_address,
+            header.relates_to,
+            probes,
+            &multicast_tx,
+            &mut reader,
+        )
+        .await
+        .unwrap();
+
+        let expected = format!(
+            include_str!("../../test/resolve-template.xml"),
+            Uuid::nil(),
+            &host_endpoint_device_uri,
+        );
+
+        let response = {
+            let response = multicast_rx.try_recv().unwrap();
+
+            to_string_pretty(&response).unwrap()
+        };
+
+        let expected = to_string_pretty(expected.as_bytes()).unwrap();
+
+        assert_eq!(response, expected);
+    }
+
+    #[tokio::test]
+    async fn handles_probe_matches_with_xaddrs() {
+        let (message_handler, client_network_address) =
+            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
+
+        // client
+        let client_endpoint_uuid = Uuid::new_v4();
+        let client_instance_id = "client-instance-id";
+        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+        let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
+
+        // host
+        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
+            // a host in IPv4 form ensures we bind to an IPv4 address
+            host: "127.0.0.1",
+            // random port
+            port: 0,
+            assert_on_drop: true,
+        })
+        .await;
+
+        let IpAddr::V4(host_ip) = server.socket_address().ip() else {
+            panic!("Invalid test setup");
+        };
+        let host_port = server.socket_address().port();
+        let host_message_id = Uuid::new_v4();
+        let host_instance_id = "host-instance-id";
+        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_device_uri =
+            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
+
+        let expected_get = format!(
+            include_str!("../../test/get-template.xml"),
+            host_endpoint_device_uri, client_config.uuid_as_device_uri
+        );
+
+        let mock = server
+            .mock("POST", &*format!("/{}", host_endpoint_uuid))
+            .with_status(200)
+            .with_body_from_request(move |request| {
+                let metadata: String = format!(
+                    include_str!("../../test/get-response-synology.xml"),
+                    Uuid::new_v4(),
+                    Uuid::new_v4(),
+                );
+
+                assert_eq!(
+                    to_string_pretty(expected_get.as_bytes()).unwrap(),
+                    to_string_pretty(request.body().unwrap()).unwrap()
+                );
+
+                metadata.into()
+            })
+            .create_async()
+            .await;
+
+        let probe_matches = format!(
+            include_str!("../../test/probe-matches-with-xaddrs-template.xml"),
+            host_message_id,
+            host_instance_id,
+            0,
+            host_endpoint_device_uri,
+            host_ip,
+            host_port,
+            host_endpoint_uuid
+        );
+
+        let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
+
+        let (header, mut reader) = message_handler
+            .deconstruct_message(
+                probe_matches.as_bytes(),
+                Some(SocketAddr::V4(SocketAddrV4::new(host_ip, 5000))),
+            )
+            .await
+            .unwrap();
+
+        let probes = {
+            let mut hash_map = HashMap::new();
+
+            hash_map.insert(host_message_id.urn(), Duration::from_secs(100));
+
+            Arc::new(RwLock::new(hash_map))
+        };
+
+        handle_probe_match(
+            &reqwest::ClientBuilder::new().build().unwrap(),
+            &client_config,
+            Arc::clone(&client_devices),
+            &client_network_address,
+            header.relates_to,
+            probes,
+            &multicast_tx,
+            &mut reader,
+        )
+        .await
+        .unwrap();
+
+        // ensure the mock is hit
+        mock.assert_async().await;
+
+        assert_matches!(multicast_rx.try_recv(), Err(TryRecvError::Empty));
+
+        let client_devices = client_devices.read().await;
+
+        assert_matches!(client_devices.get(&host_endpoint_device_uri), Some(_));
+    }
+
+    #[tokio::test]
+    async fn handles_resolve_matches() {
+        let (message_handler, client_network_address) =
+            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
+
+        // client
+        let client_endpoint_uuid = Uuid::new_v4();
+        let client_instance_id = "client-instance-id";
+        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+        let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
+
+        // host
+        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
+            // a host in IPv4 form ensures we bind to an IPv4 address
+            host: "127.0.0.1",
+            port: 5357,
+            assert_on_drop: true,
+        })
+        .await;
+
+        let IpAddr::V4(host_ip) = server.socket_address().ip() else {
+            panic!("Invalid test setup");
+        };
+        // let host_port = server.socket_address().port();
+        let host_message_id = Uuid::new_v4();
+        let host_instance_id = "host-instance-id";
+        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_device_uri =
+            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
+
+        let expected_get = format!(
+            include_str!("../../test/get-template.xml"),
+            host_endpoint_device_uri, client_config.uuid_as_device_uri
+        );
+
+        let mock = server
+            .mock("POST", &*format!("/{}", host_endpoint_uuid))
+            .with_status(200)
+            .with_body_from_request(move |request| {
+                let metadata: String = format!(
+                    include_str!("../../test/get-response-synology.xml"),
+                    Uuid::new_v4(),
+                    Uuid::new_v4(),
+                );
+
+                assert_eq!(
+                    to_string_pretty(expected_get.as_bytes()).unwrap(),
+                    to_string_pretty(request.body().unwrap()).unwrap()
+                );
+
+                metadata.into()
+            })
+            .create_async()
+            .await;
+
+        let resolve_matches = format!(
+            include_str!("../../test/resolve-matches-template.xml"),
+            host_message_id,
+            host_instance_id,
+            0,
+            host_endpoint_device_uri,
+            host_ip,
+            host_endpoint_uuid
+        );
+
+        let (_, mut reader) = message_handler
+            .deconstruct_message(
+                resolve_matches.as_bytes(),
+                Some(SocketAddr::V4(SocketAddrV4::new(host_ip, 5000))),
+            )
+            .await
+            .unwrap();
+
+        handle_resolve_match(
+            &reqwest::ClientBuilder::new().build().unwrap(),
+            &client_config,
+            Arc::clone(&client_devices),
+            &client_network_address,
+            &mut reader,
+        )
+        .await
+        .unwrap();
+
+        // ensure the mock is hit
+        mock.assert_async().await;
+
+        let client_devices = client_devices.read().await;
+
+        assert_matches!(client_devices.get(&host_endpoint_device_uri), Some(_));
     }
 }
