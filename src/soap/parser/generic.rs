@@ -10,19 +10,29 @@ pub fn extract_endpoint_reference_address(
 ) -> Result<Box<str>, GenericParsingError> {
     let mut address = None;
 
+    let mut depth = 0_usize;
+
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
-                if name.namespace_ref() == Some(XML_WSA_NAMESPACE) && name.local_name == "Address" {
+                depth += 1;
+
+                if depth == 1
+                    && name.namespace_ref() == Some(XML_WSA_NAMESPACE)
+                    && name.local_name == "Address"
+                {
                     address = read_text(reader)?;
+
+                    // read_text closes the element
+                    depth -= 1;
                 }
             },
-            XmlEvent::EndElement { name, .. } => {
-                if name.namespace_ref() == Some(XML_WSA_NAMESPACE)
-                    && name.local_name == "EndpointReference"
-                {
+            XmlEvent::EndElement { .. } => {
+                if depth == 0 {
                     break;
                 }
+
+                depth -= 1;
             },
             XmlEvent::CData(_)
             | XmlEvent::Characters(_)
@@ -58,29 +68,47 @@ pub fn extract_endpoint_metadata(
     let mut endpoint = None;
     let mut xaddrs = None;
 
+    let mut depth = 0_usize;
+
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
-                if name.namespace_ref() == Some(XML_WSA_NAMESPACE)
-                    && name.local_name == "EndpointReference"
-                {
-                    if endpoint.is_some() || xaddrs.is_some() {
-                        return Err(GenericParsingError::InvalidElementOrder);
-                    }
-                    endpoint = Some(extract_endpoint_reference_address(reader)?);
-                } else if name.namespace_ref() == Some(XML_WSD_NAMESPACE)
-                    && name.local_name == "XAddrs"
-                {
-                    if endpoint.is_none() || xaddrs.is_some() {
-                        return Err(GenericParsingError::InvalidElementOrder);
-                    }
-                    xaddrs = read_text(reader)?;
+                depth += 1;
 
-                    // stop for another function to continue reading
-                    break;
-                } else {
-                    // Ignore
+                if depth == 1 {
+                    match (name.namespace_ref(), &*name.local_name) {
+                        (Some(XML_WSA_NAMESPACE), "EndpointReference") => {
+                            if endpoint.is_some() || xaddrs.is_some() {
+                                return Err(GenericParsingError::InvalidElementOrder);
+                            }
+                            endpoint = Some(extract_endpoint_reference_address(reader)?);
+
+                            // `extract_endpoint_reference_address` stops when it has consumed the closing tag
+                            depth -= 1;
+                        },
+                        (Some(XML_WSD_NAMESPACE), "XAddrs") => {
+                            if endpoint.is_none() || xaddrs.is_some() {
+                                return Err(GenericParsingError::InvalidElementOrder);
+                            }
+
+                            xaddrs = read_text(reader)?;
+
+                            // stop for another function to continue reading
+                            break;
+                        },
+                        _ => {
+                            // Ignore
+                        },
+                    }
                 }
+            },
+            XmlEvent::EndElement { .. } => {
+                if depth == 0 {
+                    // we've exited the element that we entered on
+                    break;
+                }
+
+                depth -= 1;
             },
             XmlEvent::EndDocument => {
                 break;
@@ -89,7 +117,6 @@ pub fn extract_endpoint_metadata(
             | XmlEvent::Characters(_)
             | XmlEvent::Comment(_)
             | XmlEvent::Doctype { .. }
-            | XmlEvent::EndElement { .. }
             | XmlEvent::ProcessingInstruction { .. }
             | XmlEvent::StartDocument { .. }
             | XmlEvent::Whitespace(_) => {

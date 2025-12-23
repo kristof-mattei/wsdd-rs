@@ -21,29 +21,50 @@ pub enum ProbeParsingError {
     MissingProbeElement,
 }
 
+/// Expects a reader inside of the `Probe` tag
+/// This function makes NO claims about the position of the reader
+/// should the structure XML be invalid (e.g. missing `Address`)
 fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
     let mut types = None;
 
+    let mut depth = 0_usize;
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
-                if name.namespace_ref() == Some(XML_WSD_NAMESPACE) && name.local_name == "Scopes" {
-                    let text = read_text(reader)?;
+                depth += 1;
 
-                    let raw_scopes = text.unwrap_or_default();
+                if depth == 1 && name.namespace_ref() == Some(XML_WSD_NAMESPACE) {
+                    match &*name.local_name {
+                        "Scopes" => {
+                            let text = read_text(reader)?;
 
-                    event!(
-                        Level::DEBUG,
-                        scopes = &raw_scopes,
-                        "ignoring unsupported scopes in probe request"
-                    );
-                } else if name.namespace_ref() == Some(XML_WSD_NAMESPACE)
-                    && name.local_name == "Types"
-                {
-                    types = read_text(reader)?;
-                } else {
-                    // Ignore
+                            let raw_scopes = text.unwrap_or_default();
+
+                            event!(
+                                Level::DEBUG,
+                                scopes = &raw_scopes,
+                                "ignoring unsupported scopes in probe request"
+                            );
+
+                            // read_text consumed the closing `Scopes`
+                            depth -= 1;
+                        },
+                        "Types" => {
+                            types = read_text(reader)?;
+
+                            break;
+                        },
+                        _ => {},
+                    }
                 }
+            },
+            XmlEvent::EndElement { .. } => {
+                if depth == 0 {
+                    // we've exited the Probe
+                    break;
+                }
+
+                depth -= 1;
             },
             XmlEvent::EndDocument => {
                 break;
@@ -52,7 +73,6 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
             | XmlEvent::Characters(_)
             | XmlEvent::Comment(_)
             | XmlEvent::Doctype { .. }
-            | XmlEvent::EndElement { .. }
             | XmlEvent::ProcessingInstruction { .. }
             | XmlEvent::StartDocument { .. }
             | XmlEvent::Whitespace(_) => {
@@ -91,12 +111,25 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
 
 /// This takes in a reader that is stopped at the body tag.
 pub fn parse_probe_body(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
+    let mut depth = 0_usize;
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
-                if name.namespace_ref() == Some(XML_WSD_NAMESPACE) && name.local_name == "Probe" {
+                depth += 1;
+
+                if depth == 1
+                    && name.namespace_ref() == Some(XML_WSD_NAMESPACE)
+                    && name.local_name == "Probe"
+                {
                     return parse_probe(reader);
                 }
+            },
+            XmlEvent::EndElement { .. } => {
+                if depth == 0 {
+                    return Err(ProbeParsingError::MissingProbeElement);
+                }
+
+                depth -= 1;
             },
             XmlEvent::EndDocument => {
                 break;
@@ -105,7 +138,6 @@ pub fn parse_probe_body(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
             | XmlEvent::Characters(_)
             | XmlEvent::Comment(_)
             | XmlEvent::Doctype { .. }
-            | XmlEvent::EndElement { .. }
             | XmlEvent::ProcessingInstruction { .. }
             | XmlEvent::StartDocument { .. }
             | XmlEvent::Whitespace(_) => {
