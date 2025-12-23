@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<env:Envelope xmlns:env="urn:first">
+    <env:Body attribute="this-one">
+        <env:Envelope xmlns:env="urn:first">
+            <env:Body />
+        </env:Envelope>
+        <env:Body />
+    </env:Body>
+</env:Envelope>

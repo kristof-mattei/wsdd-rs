@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn parse_generic_body_missing_element() {
-        let xml = include_bytes!("./test/three-levels.xml");
+        let xml = include_str!("./test/xml/three-levels.xml");
 
         let mut reader = {
             let reader = ParserConfig::new()
@@ -380,8 +380,8 @@ mod tests {
     }
 
     #[test]
-    fn parse_generic_body_invalid_depth() {
-        let xml = include_bytes!("./test/four-levels.xml");
+    fn parse_generic_body_depth_mismatch_returns_missing_element() {
+        let xml = include_str!("./test/xml/four-levels.xml");
 
         let mut reader = {
             let reader = ParserConfig::new()
@@ -413,8 +413,8 @@ mod tests {
     }
 
     #[test]
-    fn repro_depth_underflow() {
-        let xml = include_str!("./test/depth-underflow.xml");
+    fn parse_generic_body_paths_nested_non_matching_elements() {
+        let xml = include_str!("./test/xml/nested-non-matching-elements.xml");
 
         let mut reader = {
             let reader = ParserConfig::new()
@@ -427,9 +427,88 @@ mod tests {
             Wrapper::new(reader)
         };
 
-        let result = parse_generic_body_paths(&mut reader, &[(None, "Envelope"), (None, "Body")]);
+        let result = parse_generic_body_paths(
+            &mut reader,
+            &[(Some("urn:first"), "Envelope"), (Some("urn:first"), "Body")],
+        );
+
+        let attribute = OwnedAttribute::new(OwnedName::local("attribute"), "this-one");
+        assert_matches!(result, Ok((Some((_, attributes)), depth)) if attributes.contains(&attribute) && depth == 2);
+    }
+
+    #[test]
+    fn parse_generic_body_paths_requires_direct_child_match() {
+        let xml = include_str!("./test/xml/requires-direct-child-match.xml");
+
+        let mut reader = {
+            let reader = ParserConfig::new()
+                .cdata_to_characters(true)
+                .ignore_comments(true)
+                .trim_whitespace(true)
+                .whitespace_to_characters(true)
+                .create_reader(BufReader::new(xml.as_ref()));
+
+            Wrapper::new(reader)
+        };
+
+        let result = parse_generic_body_paths(
+            &mut reader,
+            &[(Some("urn:first"), "Envelope"), (Some("urn:first"), "Body")],
+        );
+
+        assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "{urn:first}Body");
+    }
+
+    #[test]
+    fn parse_generic_body_paths_siblings() {
+        let xml = include_str!("./test/xml/siblings.xml");
+
+        let mut reader = {
+            let reader = ParserConfig::new()
+                .cdata_to_characters(true)
+                .ignore_comments(true)
+                .trim_whitespace(true)
+                .whitespace_to_characters(true)
+                .create_reader(BufReader::new(xml.as_ref()));
+
+            Wrapper::new(reader)
+        };
+
+        let result = parse_generic_body_paths(
+            &mut reader,
+            &[(Some("urn:first"), "Envelope"), (Some("urn:first"), "Body")],
+        );
 
         let attribute = OwnedAttribute::new(OwnedName::local("attribute"), "this-one");
         assert_matches!(result, Ok((Some((_, attributes)), _)) if attributes.contains(&attribute));
+    }
+
+    #[test]
+    fn repro_depth_underflow() {
+        let xml = include_str!("./test/xml/depth-underflow.xml");
+
+        let mut reader = {
+            let reader = ParserConfig::new()
+                .cdata_to_characters(true)
+                .ignore_comments(true)
+                .trim_whitespace(true)
+                .whitespace_to_characters(true)
+                .create_reader(BufReader::new(xml.as_ref()));
+
+            Wrapper::new(reader)
+        };
+
+        // descent into the reader
+        // before this bugfix, when starting at a certain depth
+        // when an element wasn't found it would go beyond that depth
+        // and since depth is usize, it would underflow
+        {
+            let _unused = reader.next();
+            let _unused = reader.next();
+        }
+
+        let result = parse_generic_body_paths(&mut reader, &[(None, "NotFound")]);
+
+        assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "NotFound");
     }
 }
