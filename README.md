@@ -1,3 +1,7 @@
+# wsdd-rs
+
+[![codecov](https://codecov.io/gh/kristof-mattei/wsdd-rs/graph/badge.svg?token=HR0QkiDgtt)](https://codecov.io/gh/kristof-mattei/wsdd-rs)
+
 # TODO
 
 - TODOs in the code
