@@ -463,7 +463,7 @@ fn read_types_and_pub_computer(reader: &mut Wrapper<'_>) -> ExtractHostPropsResu
 
     let types = types
         .unwrap_or_default()
-        .split(' ')
+        .split_whitespace()
         .map(ToOwned::to_owned)
         .map(String::into_boxed_str)
         .collect::<HashSet<_>>();
