@@ -1,11 +1,12 @@
 use std::mem::MaybeUninit;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use color_eyre::{Section as _, eyre};
 use hashbrown::HashMap;
+use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use rand::Rng as _;
 use socket2::{Domain, InterfaceIndexOrAddress, Socket, Type};
 use tokio::net::UdpSocket;
@@ -71,8 +72,8 @@ impl MulticastHandler {
         devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     ) -> Result<Self, eyre::Report> {
         let domain = match address.address {
-            IpAddr::V4(_) => Domain::IPV4,
-            IpAddr::V6(_) => Domain::IPV6,
+            IpNet::V4(_) => Domain::IPV4,
+            IpNet::V6(_) => Domain::IPV6,
         };
 
         // TODO error
@@ -90,16 +91,16 @@ impl MulticastHandler {
         uc_wsd_port_socket.set_reuse_address(true)?;
 
         let (multicast_address, http_listen_address) = match address.address {
-            IpAddr::V4(ipv4_address) => MulticastHandler::init_v4(
-                ipv4_address,
+            IpNet::V4(ipv4_net) => MulticastHandler::init_v4(
+                ipv4_net,
                 Arc::clone(&address.interface),
                 &mc_wsd_port_socket,
                 &mc_local_port_socket,
                 &uc_wsd_port_socket,
                 config,
             )?,
-            IpAddr::V6(ipv6_address) => MulticastHandler::init_v6(
-                ipv6_address,
+            IpNet::V6(ipv6_net) => MulticastHandler::init_v6(
+                ipv6_net,
                 Arc::clone(&address.interface),
                 &mc_wsd_port_socket,
                 &mc_local_port_socket,
@@ -118,7 +119,7 @@ impl MulticastHandler {
             Level::DEBUG,
             "transport address on {} is {}",
             address.interface.name(),
-            UrlIpAddr::from(address.address)
+            UrlIpAddr::from(address.address.addr())
         );
         event!(
             Level::DEBUG,
@@ -208,7 +209,7 @@ impl MulticastHandler {
     }
 
     fn init_v6(
-        ipv6_address: Ipv6Addr,
+        ipv6_net: Ipv6Net,
         interface: Arc<NetworkInterface>,
         mc_wsd_port_socket: &Socket,
         mc_local_port_socket: &Socket,
@@ -225,6 +226,7 @@ impl MulticastHandler {
                 idx,
             )
             .into(),
+            ipv6_net.into(),
             interface,
         );
 
@@ -276,19 +278,19 @@ impl MulticastHandler {
 
         // TODO error
         mc_local_port_socket
-            .bind(&(SocketAddrV6::new(ipv6_address, config.source_port, 0, idx)).into())?;
+            .bind(&(SocketAddrV6::new(ipv6_net.addr(), config.source_port, 0, idx)).into())?;
 
         // bind unicast socket to interface address and WSD's udp port
         uc_wsd_port_socket
-            .bind(&SocketAddrV6::new(ipv6_address, WSD_UDP_PORT.into(), 0, idx).into())?;
+            .bind(&SocketAddrV6::new(ipv6_net.addr(), WSD_UDP_PORT.into(), 0, idx).into())?;
 
-        let listen_address = SocketAddrV6::new(ipv6_address, WSD_HTTP_PORT.into(), 0, idx);
+        let listen_address = SocketAddrV6::new(ipv6_net.addr(), WSD_HTTP_PORT.into(), 0, idx);
 
         Ok((multicast_address, listen_address.into()))
     }
 
     fn init_v4(
-        ipv4_address: Ipv4Addr,
+        ipv4_net: Ipv4Net,
         interface: Arc<NetworkInterface>,
         mc_wsd_port_socket: &Socket,
         mc_local_port_socket: &Socket,
@@ -299,6 +301,7 @@ impl MulticastHandler {
 
         let multicast_address = UdpAddress::new(
             SocketAddrV4::new(WSD_MCAST_GRP_V4, WSD_UDP_PORT.into()).into(),
+            ipv4_net.into(),
             interface,
         );
 
@@ -338,7 +341,7 @@ impl MulticastHandler {
             }
         }
 
-        if let Err(error) = mc_local_port_socket.set_multicast_if_v4(&ipv4_address) {
+        if let Err(error) = mc_local_port_socket.set_multicast_if_v4(&ipv4_net.addr()) {
             event!(
                 Level::ERROR,
                 ?error,
@@ -375,12 +378,13 @@ impl MulticastHandler {
         }
 
         // TODO error
-        mc_local_port_socket.bind(&(SocketAddrV4::new(ipv4_address, config.source_port)).into())?;
+        mc_local_port_socket
+            .bind(&(SocketAddrV4::new(ipv4_net.addr(), config.source_port)).into())?;
 
         // bind unicast socket to interface address and WSD's udp port
-        uc_wsd_port_socket.bind(&SocketAddrV4::new(ipv4_address, WSD_UDP_PORT.into()).into())?;
+        uc_wsd_port_socket.bind(&SocketAddrV4::new(ipv4_net.addr(), WSD_UDP_PORT.into()).into())?;
 
-        let listen_address = SocketAddrV4::new(ipv4_address, WSD_HTTP_PORT.into());
+        let listen_address = SocketAddrV4::new(ipv4_net.addr(), WSD_HTTP_PORT.into());
 
         Ok((multicast_address, listen_address.into()))
     }

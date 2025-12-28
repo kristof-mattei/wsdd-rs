@@ -385,6 +385,7 @@ mod tests {
     use std::net::Ipv4Addr;
     use std::sync::Arc;
 
+    use ipnet::IpNet;
     use libc::RT_SCOPE_SITE;
     use tokio::sync::RwLock;
     use tokio::time::{Duration, timeout};
@@ -400,7 +401,7 @@ mod tests {
         MessageHandler::new(
             Arc::new(RwLock::new(MaxSizeDeque::new(history))),
             NetworkAddress::new(
-                Ipv4Addr::new(127, 1, 2, 3).into(),
+                IpNet::new(Ipv4Addr::new(127, 1, 2, 3).into(), 16).unwrap(),
                 Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
             ),
         )

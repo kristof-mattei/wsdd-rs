@@ -4,6 +4,7 @@ use std::ffi::CStr;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
+use ipnet::{IpNet, Ipv4Net};
 use libc::{RT_SCOPE_SITE, freeifaddrs, getifaddrs, ifaddrs};
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -80,7 +81,9 @@ pub fn build_message_handler() -> MessageHandler {
     MessageHandler::new(
         Arc::new(RwLock::new(MaxSizeDeque::new(20))),
         NetworkAddress::new(
-            IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)),
+            Ipv4Net::new(Ipv4Addr::new(192, 168, 100, 1), 24)
+                .unwrap()
+                .into(),
             Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
         ),
     )
@@ -133,9 +136,9 @@ fn find_first_non_lo_network_interface() -> Result<(Box<str>, u32), std::io::Err
 }
 
 pub fn build_message_handler_with_network_address(
-    ip_address: IpAddr,
+    ip_net: IpNet,
 ) -> (MessageHandler, NetworkAddress) {
-    let (name, index) = if ip_address == IpAddr::V4(Ipv4Addr::LOCALHOST) {
+    let (name, index) = if ip_net.addr() == IpAddr::V4(Ipv4Addr::LOCALHOST) {
         let name: Box<str> = Box::from("lo");
         let index = if_nametoindex(&name).expect("Test needs lo's interface id");
 
@@ -145,7 +148,7 @@ pub fn build_message_handler_with_network_address(
     };
 
     let network_address = NetworkAddress::new(
-        ip_address,
+        ip_net,
         Arc::new(NetworkInterface::new_with_index(
             name.into_string(),
             RT_SCOPE_SITE,
