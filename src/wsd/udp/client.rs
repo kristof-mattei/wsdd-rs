@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use color_eyre::eyre;
 use hashbrown::HashMap;
+use ipnet::IpNet;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::CancellationToken;
@@ -200,7 +201,9 @@ fn now() -> Duration {
 //         self.mch.remove_handler(self.mch.mc_send_socket, self)
 //         self.mch.remove_handler(self.mch.recv_socket, self)
 
-fn __extract_xaddr(bound_to: IpAddr, xaddrs: &str) -> Option<url::Url> {
+fn __extract_xaddr(ip_net: IpNet, xaddrs: &str) -> Option<url::Url> {
+    let bound_to = ip_net.addr();
+
     for addr in xaddrs.trim().split(' ') {
         let Ok(addr) = Url::parse(addr) else {
             continue;
