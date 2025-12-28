@@ -1,7 +1,9 @@
-use std::net::{IpAddr, SocketAddr};
+use std::cmp::Reverse;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use bytes::Bytes;
 use color_eyre::eyre;
 use hashbrown::HashMap;
 use ipnet::IpNet;
@@ -21,17 +23,18 @@ use crate::network_address::NetworkAddress;
 use crate::soap::builder::{Builder, MessageType};
 use crate::soap::parser::MessageHandler;
 use crate::soap::parser::generic::extract_endpoint_metadata;
+use crate::soap::parser::xaddrs::XAddr;
+use crate::utils::SliceDisplay;
 use crate::utils::task::spawn_with_name;
 use crate::wsd::HANDLED_MESSAGES;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 use crate::xml::{Wrapper, find_child, parse_generic_body_paths};
 
-#[expect(unused, reason = "WIP")]
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    bound_to: NetworkAddress,
-    devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+    _bound_to: NetworkAddress,
+    _devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     handle: tokio::task::JoinHandle<()>,
     mc_local_port_tx: Sender<Box<[u8]>>,
     probes: Arc<RwLock<HashMap<Urn, Duration>>>,
@@ -80,8 +83,8 @@ impl WSDClient {
         let client = Self {
             cancellation_token,
             config,
-            bound_to,
-            devices,
+            _bound_to: bound_to,
+            _devices: devices,
             handle,
             mc_local_port_tx,
             probes,
@@ -201,33 +204,53 @@ fn now() -> Duration {
 //         self.mch.remove_handler(self.mch.mc_send_socket, self)
 //         self.mch.remove_handler(self.mch.recv_socket, self)
 
-fn __extract_xaddr(ip_net: IpNet, xaddrs: &str) -> Option<url::Url> {
-    let bound_to = ip_net.addr();
-
-    for addr in xaddrs.trim().split(' ') {
-        let Ok(addr) = Url::parse(addr) else {
-            continue;
-        };
-
-        match bound_to {
-            IpAddr::V6(_) => {
-                //      if (self.mch.address.family == socket.AF_INET6) and ('//[fe80::' in addr):
-                //          # use first link-local address for IPv6
-                match addr.host() {
-                    Some(Host::Ipv6(ipv6)) if ipv6.is_unicast_link_local() => {
-                        return Some(addr);
-                    },
-                    _ => continue,
-                }
-            },
-            IpAddr::V4(_) => {
-                //  use first (and very likely the only) IPv4 address
-                return Some(addr);
-            },
-        }
+fn parse_xaddrs(bound_to: IpNet, raw_xaddrs: &str) -> Vec<XAddr> {
+    #[derive(Ord, PartialOrd, PartialEq, Eq)]
+    enum XAddrPriority {
+        Medium,
+        High,
     }
 
-    None
+    // discard invalid URLs
+    let mut xaddrs = raw_xaddrs
+        .split_whitespace()
+        .filter_map(|raw_xaddr| match XAddr::try_from(raw_xaddr) {
+            Ok(xaddr) => Some(xaddr),
+            Err(err) => {
+                event!(
+                    Level::INFO,
+                    ?err,
+                    ?raw_xaddr,
+                    "Message sent with invalid/non-http/https xaddr or no host, ignoring"
+                );
+
+                None
+            },
+        })
+        .collect::<Vec<_>>();
+
+    xaddrs.sort_unstable_by_key(|parsed_url| {
+        match bound_to {
+            IpNet::V6(_) => {
+                // prefer link-local address for IPv6
+                if let Some(Host::Ipv6(ipv6)) = parsed_url.get_url().host()
+                    && ipv6.is_unicast_link_local()
+                {
+                    Reverse(XAddrPriority::High)
+                } else {
+                    Reverse(XAddrPriority::Medium)
+                }
+            },
+            IpNet::V4(_) => {
+                // use first (and very likely the only) IPv4 address
+                Reverse(XAddrPriority::High)
+            },
+        }
+    });
+
+    event!(Level::TRACE, xaddrs = %SliceDisplay(&xaddrs));
+
+    xaddrs
 }
 
 async fn handle_hello(
@@ -240,9 +263,9 @@ async fn handle_hello(
 ) -> Result<(), eyre::Report> {
     find_child(reader, Some(XML_WSD_NAMESPACE), "Hello")?;
 
-    let (endpoint, xaddrs) = extract_endpoint_metadata(reader)?;
+    let (endpoint, raw_xaddrs) = extract_endpoint_metadata(reader)?;
 
-    let Some(xaddrs) = xaddrs else {
+    let Some(raw_xaddrs) = raw_xaddrs else {
         event!(Level::INFO, "Hello without XAddrs, sending resolve");
 
         let (message, _) = Builder::build_resolve(config, &endpoint)?;
@@ -252,14 +275,25 @@ async fn handle_hello(
         return Ok(());
     };
 
-    let Some(xaddr) = __extract_xaddr(bound_to.address, &xaddrs) else {
+    let xaddrs = parse_xaddrs(bound_to.address, &raw_xaddrs);
+
+    if xaddrs.is_empty() {
+        event!(Level::ERROR, "No valid URL in xaddrs");
+
         return Ok(());
-    };
+    }
 
-    // TODO serve variables and static text
-    event!(Level::INFO, "Hello from {} on {}", endpoint, xaddr);
+    event!(Level::INFO, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "Hello");
 
-    perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddr).await?;
+    perform_metadata_exchange(
+        client,
+        config,
+        devices,
+        bound_to,
+        endpoint,
+        xaddrs.into_iter().map(Into::into).collect(),
+    )
+    .await?;
 
     Ok(())
 }
@@ -315,12 +349,12 @@ async fn handle_probe_match(
         return Ok(());
     }
 
-    let (endpoint, xaddrs) = extract_endpoint_metadata(reader)?;
+    let (endpoint, raw_xaddrs) = extract_endpoint_metadata(reader)?;
 
     //  If no XAddrs are included in the ProbeMatches message, then the client may send a
     //  Resolve message by UDP multicast to port 3702.
-    let Some(xaddrs) = xaddrs else {
-        event!(Level::INFO, "probe match without XAddrs, sending resolve");
+    let Some(raw_xaddrs) = raw_xaddrs else {
+        event!(Level::INFO, "ProbeMatch without XAddrs, sending resolve");
 
         let (message, _) = Builder::build_resolve(config, &endpoint)?;
 
@@ -329,19 +363,23 @@ async fn handle_probe_match(
         return Ok(());
     };
 
-    let Some(xaddr) = __extract_xaddr(bound_to.address, &xaddrs) else {
-        return Ok(());
-    };
+    let xaddrs = parse_xaddrs(bound_to.address, &raw_xaddrs);
 
-    event!(Level::DEBUG, %endpoint, %xaddr, "Probe match");
+    if xaddrs.is_empty() {
+        event!(Level::ERROR, "No valid URL in xaddrs");
+
+        return Ok(());
+    }
+
+    event!(Level::INFO, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ProbeMatch");
 
     perform_metadata_exchange(
         client,
         config,
-        Arc::clone(&devices),
+        devices,
         bound_to,
         endpoint,
-        xaddr,
+        xaddrs.into_iter().map(Into::into).collect(),
     )
     .await?;
 
@@ -363,26 +401,33 @@ async fn handle_resolve_match(
         ],
     )?;
 
-    let (endpoint, xaddrs) = extract_endpoint_metadata(reader)?;
+    let (endpoint, raw_xaddrs) = extract_endpoint_metadata(reader)?;
 
-    let Some(xaddrs) = xaddrs else {
-        event!(Level::DEBUG, "Resolve match without xaddr");
-
-        return Ok(());
-    };
-
-    let Some(xaddr) = __extract_xaddr(bound_to.address, &xaddrs) else {
-        event!(
-            Level::ERROR,
-            "No valid URL in xaddr, but this is a bug in xaddr, where we're too strict"
-        );
+    let Some(raw_xaddrs) = raw_xaddrs else {
+        event!(Level::DEBUG, "ResolveMatch without xaddr, nothing to do");
 
         return Ok(());
     };
 
-    event!(Level::DEBUG, %endpoint, ?xaddr, "Resolve match");
+    let xaddrs = parse_xaddrs(bound_to.address, &raw_xaddrs);
 
-    perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddr).await?;
+    if xaddrs.is_empty() {
+        event!(Level::ERROR, "No valid URL in xaddrs");
+
+        return Ok(());
+    }
+
+    event!(Level::INFO, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ResolveMatch");
+
+    perform_metadata_exchange(
+        client,
+        config,
+        devices,
+        bound_to,
+        endpoint,
+        xaddrs.into_iter().map(Into::into).collect(),
+    )
+    .await?;
 
     Ok(())
 }
@@ -393,44 +438,42 @@ async fn perform_metadata_exchange(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
     endpoint: DeviceUri,
-    xaddr: Url,
+    xaddrs: Vec<Url>,
 ) -> Result<(), eyre::Report> {
-    let scheme = xaddr.scheme();
+    let body = Bytes::from_owner(build_getmetadata_message(config, &endpoint)?);
 
-    if !matches!(scheme, "http" | "https") {
-        event!(Level::DEBUG, %xaddr, "invalid XAddr");
-        return Ok(());
-    }
+    for xaddr in xaddrs {
+        let builder = client
+            .post(xaddr.clone())
+            .header("Content-Type", MIME_TYPE_SOAP_XML)
+            .header("User-Agent", "wsdd-rs");
 
-    let body = build_getmetadata_message(config, &endpoint)?;
+        let response = builder
+            .body(body.clone())
+            .timeout(config.metadata_timeout)
+            .send()
+            .await;
 
-    let builder = client
-        .post(xaddr.clone())
-        .header("Content-Type", MIME_TYPE_SOAP_XML)
-        .header("User-Agent", "wsdd-rs");
+        let response = match response {
+            Ok(response) => response.bytes().await,
+            Err(error) => Err(error),
+        };
 
-    let response = builder
-        .body(body)
-        .timeout(config.metadata_timeout)
-        .send()
-        .await;
+        match response {
+            Ok(response) => {
+                return handle_metadata(devices, &response, endpoint, xaddr, bound_to).await;
+            },
+            Err(error) => {
+                let url = error.url().map(ToString::to_string);
+                let url = url.as_deref().unwrap_or("Failed to get URL from error");
 
-    match response {
-        Ok(response) => {
-            let response = response.bytes().await?;
-
-            handle_metadata(devices, &response, endpoint, xaddr, bound_to).await?;
-        },
-        Err(error) => {
-            let url = error.url().map(ToString::to_string);
-            let url = url.as_deref().unwrap_or("Failed to get URL from error");
-
-            if error.is_timeout() {
-                event!(Level::WARN, url, "metadata exchange timed out");
-            } else {
-                event!(Level::WARN, ?error, url, "could not fetch metadata");
-            }
-        },
+                if error.is_timeout() {
+                    event!(Level::WARN, url, "metadata exchange timed out");
+                } else {
+                    event!(Level::WARN, ?error, url, "could not fetch metadata");
+                }
+            },
+        }
     }
 
     Ok(())
@@ -579,12 +622,12 @@ async fn listen_forever(
 
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
     use std::time::Duration;
 
     use hashbrown::HashMap;
-    use ipnet::{IpNet, Ipv4Net};
+    use ipnet::{IpNet, Ipv4Net, Ipv6Net};
     use libc::RT_SCOPE_SITE;
     use mockito::ServerOpts;
     use pretty_assertions::{assert_eq, assert_matches};
@@ -600,7 +643,7 @@ mod tests {
     use crate::wsd::device::DeviceUri;
     use crate::wsd::udp::client::{
         WSDClient, handle_bye, handle_hello, handle_metadata, handle_probe_match,
-        handle_resolve_match,
+        handle_resolve_match, parse_xaddrs,
     };
 
     #[tokio::test]
@@ -1461,5 +1504,61 @@ mod tests {
         let client_devices = client_devices.read().await;
 
         assert_matches!(client_devices.get(&host_endpoint_device_uri), Some(_));
+    }
+
+    #[test]
+    fn filters_invalid_and_non_http_https() {
+        let bound = IpNet::V4(Ipv4Net::new(Ipv4Addr::new(192, 168, 1, 10), 24).unwrap());
+
+        let result = parse_xaddrs(
+            bound,
+            "http://valid.example.com https://also.valid ftp://ignored https:///#nohost",
+        );
+
+        let raws = result
+            .iter()
+            .map(|xaddr| xaddr.get_url().as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            ["http://valid.example.com/", "https://also.valid/"][..],
+            raws
+        );
+    }
+
+    #[test]
+    fn rejects_missing_host() {
+        let bound = IpNet::V4(Ipv4Net::new(Ipv4Addr::new(10, 0, 0, 1), 24).unwrap());
+
+        let result = parse_xaddrs(
+            bound,
+            "http:////?missinghost=missing https://example.com/path",
+        );
+
+        let raws = result
+            .iter()
+            .map(|xaddr| xaddr.get_url().as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(["https://example.com/path"][..], raws);
+    }
+
+    #[test]
+    fn prefers_link_local_ipv6_first() {
+        let bound =
+            IpNet::V6(Ipv6Net::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1), 64).unwrap());
+
+        let result = parse_xaddrs(
+            bound,
+            "https://[2001:db8::1]/global https://[fe80::abcd]/local",
+        );
+
+        let raws = result
+            .iter()
+            .map(|xaddr| xaddr.get_url().as_str())
+            .collect::<Vec<_>>();
+
+        // link-local must be sorted first
+        assert_eq!(Some("https://[fe80::abcd]/local"), raws.first().copied());
     }
 }
