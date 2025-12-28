@@ -24,8 +24,8 @@ use crate::xml::{GenericParsingError, Wrapper, find_child, read_text};
 pub struct DeviceUri(Box<str>);
 
 impl DeviceUri {
-    pub fn new(device_uri: Box<str>) -> Self {
-        Self(device_uri)
+    pub fn new<I: Into<Box<str>>>(device_uri: I) -> Self {
+        Self(device_uri.into())
     }
 }
 
