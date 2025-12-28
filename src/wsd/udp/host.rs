@@ -171,15 +171,17 @@ fn handle_resolve(
     target_uuid: uuid::Uuid,
     relates_to: Urn,
     reader: &mut Wrapper<'_>,
-) -> Result<Vec<u8>, eyre::Report> {
-    parser::resolve::parse_resolve_body(reader, target_uuid)?;
-
-    Ok(builder::Builder::build_resolve_matches(
-        config,
-        address,
-        messages_built,
-        relates_to,
-    )?)
+) -> Result<Option<Vec<u8>>, eyre::Report> {
+    if parser::resolve::parse_resolve_body(reader, target_uuid)? {
+        Ok(Some(builder::Builder::build_resolve_matches(
+            config,
+            address,
+            messages_built,
+            relates_to,
+        )?))
+    } else {
+        Ok(None)
+    }
 }
 
 async fn listen_forever(
@@ -228,7 +230,8 @@ async fn listen_forever(
                 &messages_built,
                 header.message_id,
                 &mut body_reader,
-            ),
+            )
+            .map(Some),
             constants::WSD_RESOLVE => handle_resolve(
                 address,
                 &config,
@@ -249,7 +252,8 @@ async fn listen_forever(
         };
 
         let response = match response {
-            Ok(response) => response,
+            Ok(Some(response)) => response,
+            Ok(None) => continue,
             Err(error) => {
                 event!(
                     Level::ERROR,
@@ -425,6 +429,7 @@ mod tests {
             header.message_id,
             &mut reader,
         )
+        .unwrap()
         .unwrap();
 
         let expected = format!(
