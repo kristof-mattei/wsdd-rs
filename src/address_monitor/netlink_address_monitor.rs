@@ -1,8 +1,8 @@
 use std::mem::MaybeUninit;
-use std::net::IpAddr;
 use std::sync::Arc;
 
 use color_eyre::eyre;
+use ipnet::IpNet;
 use libc::{NETLINK_ROUTE, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK};
 use netlink_packet_core::{
     Emitable as _, NLM_F_DUMP, NLM_F_REQUEST, NetlinkHeader, NetlinkMessage, NetlinkPayload,
@@ -334,7 +334,7 @@ async fn parse_netlink_response(
     }
 }
 
-fn parse_address_message(address_message: &AddressMessage) -> Option<(IpAddr, AddressScope, u32)> {
+fn parse_address_message(address_message: &AddressMessage) -> Option<(IpNet, AddressScope, u32)> {
     let header = &address_message.header;
 
     if header.flags.contains(AddressHeaderFlags::Dadfailed)
@@ -422,7 +422,8 @@ fn parse_address_message(address_message: &AddressMessage) -> Option<(IpAddr, Ad
     };
 
     Some((
-        addr,
+        IpNet::new(addr, address_message.header.prefix_len)
+            .expect("prefix_len must be valid for this address"),
         address_message.header.scope,
         address_message.header.index,
     ))

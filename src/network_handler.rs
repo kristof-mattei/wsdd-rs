@@ -5,13 +5,13 @@
 //             obj.enumerate()
 //         return obj
 
-use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use color_eyre::eyre;
 use hashbrown::HashMap;
 use hashbrown::hash_map::Entry;
+use ipnet::IpNet;
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::Sender;
@@ -28,12 +28,12 @@ use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 #[derive(Debug)]
 pub enum Command {
     NewAddress {
-        address: IpAddr,
+        address: IpNet,
         scope: u8,
         index: u32,
     },
     DeleteAddress {
-        address: IpAddr,
+        address: IpNet,
         scope: u8,
         index: u32,
     },
@@ -291,11 +291,11 @@ impl NetworkHandler {
         }
 
         // filter out address families we are not interested in
-        if self.config.ipv4only && !address.address.is_ipv4() {
+        if self.config.ipv4only && !address.address.addr().is_ipv4() {
             return Err(Reason::IPv4Only);
         }
 
-        if self.config.ipv6only && !address.address.is_ipv6() {
+        if self.config.ipv6only && !address.address.addr().is_ipv6() {
             return Err(Reason::IPv6Only);
         }
 

@@ -1,6 +1,8 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use ipnet::IpNet;
+
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
 
@@ -14,8 +16,12 @@ pub struct UdpAddress {
 }
 
 impl UdpAddress {
-    pub fn new(transport_address: SocketAddr, interface: Arc<NetworkInterface>) -> Self {
-        let network_address = NetworkAddress::new(transport_address.ip(), interface);
+    pub fn new(
+        transport_address: SocketAddr,
+        ip_net: IpNet,
+        interface: Arc<NetworkInterface>,
+    ) -> Self {
+        let network_address = NetworkAddress::new(ip_net, interface);
 
         Self {
             network_address,

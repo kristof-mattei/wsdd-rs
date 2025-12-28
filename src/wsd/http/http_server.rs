@@ -178,6 +178,7 @@ mod tests {
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
 
+    use ipnet::IpNet;
     use libc::RT_SCOPE_SITE;
     use pretty_assertions::assert_eq;
     use tokio_util::sync::CancellationToken;
@@ -207,7 +208,7 @@ mod tests {
 
         let _http_server = WSDHttpServer::init(
             NetworkAddress::new(
-                host_ip.into(),
+                IpNet::new(host_ip.into(), 8).unwrap(),
                 Arc::new(NetworkInterface::new_with_index("lo", RT_SCOPE_SITE, 5)),
             ),
             cancellation_token.child_token(),

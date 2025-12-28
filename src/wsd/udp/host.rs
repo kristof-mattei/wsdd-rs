@@ -60,7 +60,7 @@ impl WSDHost {
         };
 
         let host = Self {
-            address,
+            address: address.addr(),
             cancellation_token,
             config,
             messages_built,
@@ -190,7 +190,7 @@ async fn listen_forever(
     mut mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
     uc_wsd_port_tx: Sender<(SocketAddr, Box<[u8]>)>,
 ) {
-    let address = bound_to.address;
+    let address = bound_to.address.addr();
 
     let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to);
 
@@ -274,6 +274,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
 
+    use ipnet::IpNet;
     use libc::RT_SCOPE_SITE;
     use pretty_assertions::assert_eq;
     use tokio_util::sync::CancellationToken;
@@ -307,7 +308,7 @@ mod tests {
             Arc::clone(&host_config),
             Arc::clone(&host_messages_built),
             NetworkAddress::new(
-                host_ip.into(),
+                IpNet::new(host_ip.into(), 24).unwrap(),
                 Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
             ),
             mc_wsd_port_rx,
@@ -355,7 +356,7 @@ mod tests {
             Arc::clone(&host_config),
             Arc::clone(&host_messages_built),
             NetworkAddress::new(
-                host_ip.into(),
+                IpNet::new(host_ip.into(), 24).unwrap(),
                 Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
             ),
             mc_wsd_port_rx,
