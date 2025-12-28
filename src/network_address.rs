@@ -119,7 +119,7 @@ mod tests {
             Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
         );
 
-        assert_eq!("192.168.100.5%eth0", network_address.to_string());
+        assert_eq!("192.168.100.5/24%eth0", network_address.to_string());
     }
 
     #[test]
@@ -137,7 +137,7 @@ mod tests {
         );
 
         assert_eq!(
-            "2001:db8:5c41:f105:2cf9:cd58:b74:684%eth0",
+            "2001:db8:5c41:f105:2cf9:cd58:b74:684/64%eth0",
             network_address.to_string()
         );
     }
