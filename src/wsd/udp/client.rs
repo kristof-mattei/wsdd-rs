@@ -1135,7 +1135,7 @@ mod tests {
             Arc::clone(&client_devices),
             metadata.as_bytes(),
             device_uri.clone(),
-            Url::parse("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721").unwrap(),
+            Url::parse("http://192.168.100.71:5357/18de7c97-6277-43fe-9552-cac98a7610f5/").unwrap(),
             &client_network_address,
         )
         .await;
