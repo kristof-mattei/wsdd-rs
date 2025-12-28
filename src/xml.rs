@@ -147,7 +147,7 @@ pub fn find_child(
                     };
 
                     event!(
-                        Level::ERROR,
+                        Level::TRACE,
                         now_in = %name,
                         missing_element = %missing_element,
                         "Could not find element"
@@ -237,8 +237,8 @@ fn parse_generic_body_paths_recursive(
                     };
 
                     event!(
-                        Level::ERROR,
-                        now_in = ?name,
+                        Level::TRACE,
+                        now_in = %name,
                         missing_element = %missing_element,
                         "Could not find element"
                     );
