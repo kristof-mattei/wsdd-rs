@@ -7,7 +7,8 @@ use xml::reader::XmlEvent;
 use crate::constants::{XML_WSA_NAMESPACE, XML_WSD_NAMESPACE};
 use crate::xml::{TextReadError, Wrapper, read_text};
 
-type ParsedResolveResult = Result<(), ResolveParsingError>;
+/// The `Ok` branch signifies whether the message is for us (`true`, urn matches), or not
+type ParsedResolveResult = Result<bool, ResolveParsingError>;
 
 #[derive(Error, Debug)]
 pub enum ResolveParsingError {
@@ -19,8 +20,6 @@ pub enum ResolveParsingError {
     MissingResolveElement,
     #[error("invalid resolve request: missing endpoint address")]
     MissingEndpoint,
-    #[error("invalid resolve request: address does not match own one")]
-    AddressDoesntMatch,
     #[error("invalid resolve request: address is not a valid urn")]
     EndpointNotAValidUrn,
 }
@@ -133,10 +132,10 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
             "invalid resolve request: address does not match own one"
         );
 
-        return Err(ResolveParsingError::AddressDoesntMatch);
+        return Ok(false);
     }
 
-    Ok(())
+    Ok(true)
 }
 
 /// This takes in a reader that is stopped at the body tag.
