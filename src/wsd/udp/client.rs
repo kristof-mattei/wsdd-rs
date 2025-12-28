@@ -1,4 +1,5 @@
 use std::net::{IpAddr, SocketAddr};
+use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -17,6 +18,7 @@ use crate::constants::{
     APP_MAX_DELAY, MIME_TYPE_SOAP_XML, PROBE_TIMEOUT_MILLISECONDS, WSD_BYE, WSD_HELLO,
     WSD_PROBE_MATCH, WSD_RESOLVE_MATCH, XML_WSD_NAMESPACE,
 };
+use crate::dns::GaiResolver;
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::{Builder, MessageType};
 use crate::soap::parser::MessageHandler;
@@ -201,28 +203,155 @@ fn now() -> Duration {
 //         self.mch.remove_handler(self.mch.mc_send_socket, self)
 //         self.mch.remove_handler(self.mch.recv_socket, self)
 
-fn __extract_xaddr(ip_net: IpNet, xaddrs: &str) -> Option<url::Url> {
-    let bound_to = ip_net.addr();
+struct HttpHttpsUrlWithHost<'s> {
+    url: Url,
+    raw: &'s str,
+}
 
-    for addr in xaddrs.trim().split(' ') {
-        let Ok(addr) = Url::parse(addr) else {
-            continue;
-        };
+fn protocols_match(parsed_urls: &[HttpHttpsUrlWithHost<'_>], endpoint: &DeviceUri) -> bool {
+    // If any HTTPS XAddrs are present, all XAddrs must be HTTPS. XAddr sections which include both HTTP and HTTPS addresses are completely ignored.
+    let protocols_validation = parsed_urls.iter().try_fold(None, |acc, curr| match acc {
+        None => ControlFlow::Continue(Some(curr.url.scheme())),
+        Some(seen) => {
+            if seen == curr.url.scheme() {
+                ControlFlow::Continue(Some(seen))
+            } else {
+                ControlFlow::Break(())
+            }
+        },
+    });
 
-        match bound_to {
-            IpAddr::V6(_) => {
-                //      if (self.mch.address.family == socket.AF_INET6) and ('//[fe80::' in addr):
-                //          # use first link-local address for IPv6
-                match addr.host() {
-                    Some(Host::Ipv6(ipv6)) if ipv6.is_unicast_link_local() => {
-                        return Some(addr);
-                    },
-                    _ => continue,
+    match protocols_validation {
+        ControlFlow::Continue(Some("http")) => {
+            // All are http, continue
+        },
+        ControlFlow::Continue(Some("https")) => {
+            // Additionally, the device's endpoint address must match the HTTPS XAddrs exactly.
+            if !parsed_urls
+                .iter()
+                .any(|&HttpHttpsUrlWithHost { raw, .. }| raw == &**endpoint)
+            {
+                return false;
+            }
+        },
+        ControlFlow::Continue(_) | ControlFlow::Break(()) => {
+            return false;
+        },
+    }
+
+    true
+}
+
+async fn validate_subnets(
+    parsed_urls: &[HttpHttpsUrlWithHost<'_>],
+    bound_to_ip_net: &IpNet,
+) -> bool {
+    // At least one IP address included in the XAddrs (or IP address resolved from a hostname included in the XAddrs) must be on the same subnet as the adapter over which the ProbeMatches or ResolveMatches message was received.
+    let mut any_subnet_match = false;
+
+    let resolver = GaiResolver::new();
+
+    for &HttpHttpsUrlWithHost { ref url, ref raw } in parsed_urls {
+        match url.host() {
+            Some(Host::Domain(domain)) => {
+                let Ok(name) = (domain).parse() else {
+                    continue;
+                };
+
+                let Ok(addresses) = resolver.resolve(name).await else {
+                    continue;
+                };
+
+                for address in addresses {
+                    if bound_to_ip_net.contains(&address.ip()) {
+                        any_subnet_match = true;
+                        break;
+                    }
                 }
             },
-            IpAddr::V4(_) => {
-                //  use first (and very likely the only) IPv4 address
-                return Some(addr);
+            Some(Host::Ipv4(ipv4)) => {
+                if bound_to_ip_net.contains(&IpAddr::from(ipv4)) {
+                    any_subnet_match = true;
+                    break;
+                }
+            },
+            Some(Host::Ipv6(ipv6)) => {
+                if bound_to_ip_net.contains(&IpAddr::from(ipv6)) {
+                    any_subnet_match = true;
+                    break;
+                }
+            },
+            None => {
+                event!(Level::ERROR, %url, %raw, "Missing host on URL");
+            },
+        }
+    }
+
+    any_subnet_match
+}
+
+async fn extract_xaddr(
+    bound_to: IpNet,
+    endpoint: &DeviceUri,
+    raw_xaddrs: &str,
+) -> Option<url::Url> {
+    // discard invalid URLs
+    let parsed_urls = raw_xaddrs
+        .split_whitespace()
+        .filter_map(|raw_xaddr| match Url::parse(raw_xaddr) {
+            Ok(url) => {
+                // XAddrs must be HTTP or HTTPS addresses. XAddrs of other schemes are ignored.
+                if let "http" | "https" = url.scheme()
+                    && url.has_host()
+                {
+                    Some(HttpHttpsUrlWithHost {
+                        url,
+                        raw: raw_xaddr,
+                    })
+                } else {
+                    event!(
+                        Level::INFO,
+                        ?raw_xaddr,
+                        "Hello sent with non-http/https xaddr or no host, ignoring"
+                    );
+
+                    None
+                }
+            },
+            Err(err) => {
+                event!(
+                    Level::INFO,
+                    ?err,
+                    ?raw_xaddr,
+                    "Hello sent with invalid xaddr, ignoring"
+                );
+
+                None
+            },
+        })
+        .collect::<Vec<_>>();
+
+    if !protocols_match(&parsed_urls, endpoint) {
+        return None;
+    }
+
+    if !validate_subnets(&parsed_urls, &bound_to).await {
+        return None;
+    }
+
+    for parsed_url in parsed_urls {
+        match bound_to {
+            IpNet::V6(_) => {
+                // use first link-local address for IPv6
+                if let Some(Host::Ipv6(ipv6)) = parsed_url.url.host()
+                    && ipv6.is_unicast_link_local()
+                {
+                    return Some(parsed_url.url);
+                }
+            },
+            IpNet::V4(_) => {
+                // use first (and very likely the only) IPv4 address
+                return Some(parsed_url.url);
             },
         }
     }
@@ -252,7 +381,7 @@ async fn handle_hello(
         return Ok(());
     };
 
-    let Some(xaddr) = __extract_xaddr(bound_to.address, &xaddrs) else {
+    let Some(xaddr) = extract_xaddr(bound_to.address, &endpoint, &xaddrs).await else {
         return Ok(());
     };
 
@@ -329,7 +458,7 @@ async fn handle_probe_match(
         return Ok(());
     };
 
-    let Some(xaddr) = __extract_xaddr(bound_to.address, &xaddrs) else {
+    let Some(xaddr) = extract_xaddr(bound_to.address, &endpoint, &xaddrs).await else {
         return Ok(());
     };
 
@@ -371,7 +500,7 @@ async fn handle_resolve_match(
         return Ok(());
     };
 
-    let Some(xaddr) = __extract_xaddr(bound_to.address, &xaddrs) else {
+    let Some(xaddr) = extract_xaddr(bound_to.address, &endpoint, &xaddrs).await else {
         event!(
             Level::ERROR,
             "No valid URL in xaddr, but this is a bug in xaddr, where we're too strict"
@@ -1262,7 +1391,7 @@ mod tests {
     #[tokio::test]
     async fn handles_probe_matches_with_xaddrs() {
         let (message_handler, client_network_address) = build_message_handler_with_network_address(
-            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+            IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
         );
 
         // client
@@ -1371,7 +1500,7 @@ mod tests {
     #[tokio::test]
     async fn handles_resolve_matches() {
         let (message_handler, client_network_address) = build_message_handler_with_network_address(
-            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+            IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
         );
 
         // client
