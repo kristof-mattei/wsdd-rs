@@ -584,6 +584,7 @@ mod tests {
     use std::time::Duration;
 
     use hashbrown::HashMap;
+    use ipnet::{IpNet, Ipv4Net};
     use libc::RT_SCOPE_SITE;
     use mockito::ServerOpts;
     use pretty_assertions::{assert_eq, assert_matches};
@@ -604,8 +605,9 @@ mod tests {
 
     #[tokio::test]
     async fn handles_hello_without_xaddr() {
-        let (message_handler, client_network_address) =
-            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
+        let (message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+        );
 
         // client
         let client_endpoint_uuid = Uuid::new_v4();
@@ -665,8 +667,9 @@ mod tests {
     #[cfg_attr(not(miri), tokio::test)]
     #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn handles_hello_with_xaddr() {
-        let (message_handler, bound_to) =
-            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        let (message_handler, bound_to) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::LOCALHOST).into(), 8).unwrap(),
+        );
 
         // client
         let client_endpoint_uuid = Uuid::new_v4();
@@ -793,8 +796,9 @@ mod tests {
 
     #[tokio::test]
     async fn handles_bye() {
-        let (message_handler, _client_network_address) =
-            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
+        let (message_handler, _client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+        );
 
         // client
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
@@ -834,8 +838,9 @@ mod tests {
         reason = "End to end test of `handles_hello` & `handles_bye`"
     )]
     async fn handles_hello_bye() {
-        let (message_handler, network_address) =
-            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        let (message_handler, network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::LOCALHOST).into(), 8).unwrap(),
+        );
 
         // client
         let client_endpoint_uuid = Uuid::new_v4();
@@ -980,7 +985,9 @@ mod tests {
         let (uc_wsd_port_tx, mut uc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
 
         let bound_to = crate::network_address::NetworkAddress::new(
-            IpAddr::V4(Ipv4Addr::new(192, 168, 100, 5)),
+            Ipv4Net::new(Ipv4Addr::new(192, 168, 100, 5), 24)
+                .unwrap()
+                .into(),
             Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
         );
 
@@ -1006,8 +1013,9 @@ mod tests {
 
     #[tokio::test]
     async fn handles_metadata_synology() {
-        let (_message_handler, client_network_address) =
-            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
+        let (_message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+        );
 
         // client
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
@@ -1064,8 +1072,9 @@ mod tests {
 
     #[tokio::test]
     async fn handles_metadata_samsung_printer() {
-        let (_message_handler, client_network_address) =
-            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
+        let (_message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+        );
 
         // client
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
@@ -1120,8 +1129,9 @@ mod tests {
 
     #[tokio::test]
     async fn handles_metadata_windows() {
-        let (_message_handler, client_network_address) =
-            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
+        let (_message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+        );
 
         // client
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
@@ -1178,8 +1188,9 @@ mod tests {
 
     #[tokio::test]
     async fn handles_probe_matches_without_xaddrs() {
-        let (message_handler, client_network_address) =
-            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
+        let (message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+        );
 
         // client
         let client_endpoint_uuid = Uuid::new_v4();
@@ -1250,8 +1261,9 @@ mod tests {
 
     #[tokio::test]
     async fn handles_probe_matches_with_xaddrs() {
-        let (message_handler, client_network_address) =
-            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
+        let (message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+        );
 
         // client
         let client_endpoint_uuid = Uuid::new_v4();
@@ -1358,8 +1370,9 @@ mod tests {
 
     #[tokio::test]
     async fn handles_resolve_matches() {
-        let (message_handler, client_network_address) =
-            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
+        let (message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+        );
 
         // client
         let client_endpoint_uuid = Uuid::new_v4();
