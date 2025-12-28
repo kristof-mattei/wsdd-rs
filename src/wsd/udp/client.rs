@@ -1116,6 +1116,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn handles_metadata_windows() {
+        let (_message_handler, client_network_address) =
+            build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
+
+        // client
+        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+
+        let metadata: String = format!(
+            include_str!("../../test/get-response-windows.xml"),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        );
+
+        let device_uri = DeviceUri::new(Uuid::new_v4().as_urn().to_string().into_boxed_str());
+
+        let result = handle_metadata(
+            Arc::clone(&client_devices),
+            metadata.as_bytes(),
+            device_uri.clone(),
+            Url::parse("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721").unwrap(),
+            &client_network_address,
+        )
+        .await;
+
+        assert_matches!(result, Ok(()));
+
+        let client_devices = client_devices.read().await;
+
+        let device = client_devices.get(&device_uri);
+
+        assert!(device.is_some());
+
+        let device = device.unwrap();
+
+        let expected_props = HashMap::from_iter([
+            ("BelongsTo", "Workgroup:WORKGROUP"),
+            ("DisplayName", "LAPTOP-TEST"),
+            ("FirmwareVersion", "1.0"),
+            ("FriendlyName", "Microsoft Publication Service Device Host"),
+            ("Manufacturer", "Microsoft Corporation"),
+            ("ManufacturerUrl", "http://www.microsoft.com"),
+            ("ModelName", "Microsoft Publication Service"),
+            ("ModelNumber", "1"),
+            ("ModelUrl", "http://www.microsoft.com"),
+            ("PresentationUrl", "http://www.microsoft.com"),
+            ("SerialNumber", "20050718"),
+        ]);
+
+        let device_props = device
+            .props()
+            .iter()
+            .map(|(key, value)| (&**key, &**value))
+            .collect::<HashMap<_, _>>();
+
+        assert_eq!(expected_props, device_props);
+    }
+
+    #[tokio::test]
     async fn handles_probe_matches_without_xaddrs() {
         let (message_handler, client_network_address) =
             build_message_handler_with_network_address(IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1)));
