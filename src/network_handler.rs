@@ -342,6 +342,8 @@ impl NetworkHandler {
 
         event!(Level::DEBUG, address = %address.address, interface = %address.interface.name(), "handling traffic");
 
+        // TODO think of a way to avoid the clone here if we want to print
+        // the address in the error path
         let mut multicast_handler = match MulticastHandler::new(
             address.clone(),
             self.cancellation_token.child_token(),
