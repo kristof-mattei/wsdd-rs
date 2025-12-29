@@ -4,7 +4,7 @@ use ipnet::IpNet;
 
 use crate::network_interface::NetworkInterface;
 
-#[derive(Eq, Clone, Debug)]
+#[derive(Eq, PartialEq, Clone, Debug)]
 pub struct NetworkAddress {
     pub address: IpNet,
     pub interface: Arc<NetworkInterface>,
@@ -33,12 +33,6 @@ impl NetworkAddress {
 impl std::fmt::Display for NetworkAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}%{}", self.address, self.interface.name())
-    }
-}
-
-impl std::cmp::PartialEq for NetworkAddress {
-    fn eq(&self, other: &Self) -> bool {
-        self.address == other.address && self.interface == other.interface
     }
 }
 

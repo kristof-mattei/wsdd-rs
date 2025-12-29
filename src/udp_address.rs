@@ -6,7 +6,6 @@ use ipnet::IpNet;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
 
-#[derive(Eq)]
 pub struct UdpAddress {
     #[expect(unused, reason = "WIP")]
     pub network_address: NetworkAddress,
