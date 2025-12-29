@@ -340,16 +340,23 @@ impl NetworkHandler {
             }
         }
 
-        event!(Level::DEBUG, "handling traffic for {}", address);
+        event!(Level::DEBUG, address = %address.address, interface = %address.interface.name(), "handling traffic");
 
-        // TODO: Proper error handling here
-        let mut multicast_handler = MulticastHandler::new(
-            address,
+        // TODO think of a way to avoid the clone here if we want to print
+        // the address in the error path
+        let mut multicast_handler = match MulticastHandler::new(
+            address.clone(),
             self.cancellation_token.child_token(),
             &self.config,
             Arc::clone(&self.devices),
-        )
-        .expect("FAIL");
+        ) {
+            Ok(handler) => handler,
+            Err(err) => {
+                event!(Level::ERROR, ?err, %address, "Failed to launch multicast handler");
+
+                return;
+            },
+        };
 
         if !self.config.no_host {
             // it's important that the HTTP server is ready before we enable the WSD Host
