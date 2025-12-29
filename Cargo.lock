@@ -2501,7 +2501,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tower-http",
- "tower-service",
  "tracing",
  "tracing-error",
  "tracing-subscriber",
