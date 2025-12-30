@@ -23,6 +23,9 @@ axum = { version = "0.8.8", default-features = false, features = [
     "http1",
     "tokio",
 ] }
+axum-server = { version = "0.8.0", default-features = false, features = [
+    "tls-rustls",
+] }
 bytes = "1.11.0"
 clap = { version = "4.5.53", features = ["cargo", "string", "derive"] }
 color-eyre = "0.6.5"

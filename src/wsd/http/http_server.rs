@@ -1,15 +1,18 @@
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
 use axum::extract::State;
 use axum::handler::HandlerWithoutStateExt as _;
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use axum_server::Handle;
+use axum_server::tls_rustls::{RustlsAcceptor, RustlsConfig};
 use bytes::Bytes;
 use color_eyre::eyre;
-use http::StatusCode;
 use http::header::CONTENT_TYPE;
 use tokio_util::sync::CancellationToken;
 use tower_http::trace::{DefaultOnRequest, DefaultOnResponse, TraceLayer};
@@ -164,13 +167,38 @@ pub async fn launch_http_server(
     listener: tokio::net::TcpListener,
     router: Router,
 ) -> Result<(), eyre::Report> {
-    axum::serve(
-        listener,
-        router.into_make_service_with_connect_info::<SocketAddr>(),
+    let config = RustlsConfig::from_pem_file(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("self_signed_certs")
+            .join("cert.pem"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("self_signed_certs")
+            .join("key.pem"),
     )
-    .with_graceful_shutdown(cancellation_token.cancelled_owned())
     .await
-    .map_err(Into::into)
+    .unwrap();
+
+    let handle = Handle::new();
+
+    tokio::spawn(graceful_shutdown(cancellation_token, handle.clone()));
+
+    let acceptor = RustlsAcceptor::new(config);
+
+    let server = axum_server::from_tcp(listener.into_std().unwrap())
+        .unwrap()
+        .acceptor(acceptor);
+
+    server
+        .handle(handle)
+        .serve(router.into_make_service())
+        .await
+        .map_err(Into::into)
+}
+
+async fn graceful_shutdown(cancellation_token: CancellationToken, handle: Handle<SocketAddr>) {
+    cancellation_token.cancelled().await;
+
+    handle.graceful_shutdown(Some(Duration::from_secs(30)));
 }
 
 #[cfg(test)]
