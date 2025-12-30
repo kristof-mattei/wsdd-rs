@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope
+    xmlns:pub="http://schemas.microsoft.com/windows/pub/2005/07"
     xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
     xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
     xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+    xmlns:wsdp="http://schemas.xmlsoap.org/ws/2006/02/devprof"
 >
     <soap:Header>
         <wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To>
@@ -16,6 +18,7 @@
                 <wsa:Address>{}</wsa:Address>
             </wsa:EndpointReference>
             <wsd:XAddrs>http://{}:{}/{}</wsd:XAddrs>
+            <wsd:Types>wsdp:Device pub:Computer</wsd:Types>
             <wsd:MetadataVersion>1</wsd:MetadataVersion>
         </wsd:Hello>
     </soap:Body>
