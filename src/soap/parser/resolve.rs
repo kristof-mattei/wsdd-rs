@@ -117,7 +117,7 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
     let Ok(addr_urn) = addr.parse::<Urn>() else {
         event!(
             Level::DEBUG,
-            addr = &*addr,
+            addr = %addr,
             "invalid resolve request: address is not a valid urn"
         );
 
@@ -127,7 +127,7 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
     if addr_urn != target_uuid.urn() {
         event!(
             Level::DEBUG,
-            addr = &*addr,
+            addr = %addr,
             expected = %target_uuid.urn(),
             "invalid resolve request: address does not match own one"
         );

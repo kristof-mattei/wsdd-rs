@@ -2,10 +2,10 @@ use thiserror::Error;
 use tracing::{Level, event};
 use xml::reader::XmlEvent;
 
-use crate::constants::{WSDP_TYPE_DEVICE, XML_WSD_NAMESPACE};
+use crate::constants::{PUB_COMPUTER, WSDP_TYPE_DEVICE, XML_WSD_NAMESPACE};
 use crate::xml::{TextReadError, Wrapper, read_text};
 
-type ParsedProbeResult = Result<(), ProbeParsingError>;
+type ParsedProbeResult = Result<bool, ProbeParsingError>;
 
 #[derive(Error, Debug)]
 pub enum ProbeParsingError {
@@ -15,8 +15,6 @@ pub enum ProbeParsingError {
     TextReadError(#[from] TextReadError),
     #[error("Missing types")]
     MissingTypes,
-    #[error("Client probed for type(s) we don't offer: {0}")]
-    TypesMismatch(Box<str>),
     #[error("Missing ./Probe in body")]
     MissingProbeElement,
 }
@@ -91,11 +89,10 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
         return Err(ProbeParsingError::MissingTypes);
     };
 
-    // TODO do we want to return the probes and make the host handle the different types
-    // As it is the host responsible for defining the response
+    // TODO make the types we support a HashSet stored once
     if !types
         .split_whitespace()
-        .any(|requested_type| requested_type == WSDP_TYPE_DEVICE)
+        .any(|requested_type| requested_type == WSDP_TYPE_DEVICE || requested_type == PUB_COMPUTER)
     {
         event!(
             Level::DEBUG,
@@ -103,10 +100,10 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
             "client requests types we don't offer"
         );
 
-        return Err(ProbeParsingError::TypesMismatch(types.into_boxed_str()));
+        return Ok(false);
     }
 
-    Ok(())
+    Ok(true)
 }
 
 /// This takes in a reader that is stopped at the body tag.
