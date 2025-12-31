@@ -196,7 +196,7 @@ mod tests {
     #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn http_server_listens() {
         // host
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
@@ -221,7 +221,7 @@ mod tests {
         let body = format!(
             include_str!("../../test/get-template.xml"),
             host_endpoint_device_uri,
-            Uuid::new_v4()
+            Uuid::now_v7()
         );
 
         let builder = reqwest::ClientBuilder::new()

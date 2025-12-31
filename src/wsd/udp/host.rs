@@ -295,7 +295,7 @@ mod tests {
     #[tokio::test]
     async fn sends_hello() {
         // host
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
@@ -343,7 +343,7 @@ mod tests {
     #[tokio::test]
     async fn sends_bye() {
         // host
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
@@ -397,7 +397,7 @@ mod tests {
         let host_message_handler = build_message_handler();
 
         // host
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
@@ -406,7 +406,7 @@ mod tests {
 
         // client
         let client_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let client_message_id = Uuid::new_v4();
+        let client_message_id = Uuid::now_v7();
         let resolve = format!(
             include_str!("../../test/resolve-template.xml"),
             client_message_id, host_endpoint_device_uri,
@@ -454,7 +454,7 @@ mod tests {
         let host_message_handler = build_message_handler();
 
         // host
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
@@ -463,7 +463,7 @@ mod tests {
 
         // client
         let client_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let client_message_id = Uuid::new_v4();
+        let client_message_id = Uuid::now_v7();
         let probe = format!(
             include_str!("../../test/probe-template-wsdp-device.xml"),
             client_message_id
@@ -509,7 +509,7 @@ mod tests {
         let host_message_handler = build_message_handler();
 
         // host
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
@@ -518,7 +518,7 @@ mod tests {
 
         // client
         let client_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let client_message_id = Uuid::new_v4();
+        let client_message_id = Uuid::now_v7();
         let probe = format!(
             include_str!("../../test/probe-template-pub-computer.xml"),
             client_message_id
