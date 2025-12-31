@@ -21,7 +21,6 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CARGO_FEATURES: --all-features
-  BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
   # github.repository as <account>/<repo>
   IMAGE_NAME: ${{ github.repository }}
   IMAGE_VARIANTS: |-
@@ -337,18 +336,9 @@ jobs:
             --ignore-not-existing \
             --keep-only "src/**" \
             --llvm \
-            --output-type coveralls+,lcov \
-            --output-path ./reports/ \
-            --source-dir . \
-            --token ${{ secrets.COVERALLS_REPO_TOKEN }} \
-            --vcs-branch ${BRANCH_NAME}
-
-      - name: Upload coverage results (to Coveralls)
-        uses: coverallsapp/github-action@648a8eb78e6d50909eff900e4ec85cab4524a45b # v2.3.6
-        with:
-          format: coveralls
-          git-branch: ${{ env.BRANCH_NAME }}
-          files: ./reports/coveralls+
+            --output-path ./reports/lcov.info \
+            --output-type lcov \
+            --source-dir .
 
       - name: Upload coverage results (to Codecov.io)
         uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
@@ -356,7 +346,7 @@ jobs:
           disable_search: true
           disable_telem: true
           fail_ci_if_error: true
-          files: reports/lcov
+          files: reports/lcov.info
           plugins: ""
           report_type: "coverage"
           use_oidc: true
