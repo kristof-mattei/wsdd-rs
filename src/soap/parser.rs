@@ -1,6 +1,7 @@
 pub mod generic;
 pub mod probe;
 pub mod resolve;
+pub mod xaddrs;
 
 use std::io::BufReader;
 use std::net::SocketAddr;
