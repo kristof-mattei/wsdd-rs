@@ -116,7 +116,7 @@ impl WSDDiscoveredDevice {
             let (scope, attributes) =
                 match find_child(&mut reader, Some(XML_WSX_NAMESPACE), "MetadataSection") {
                     Ok((name, attributes)) => {
-                        // we'll need to ensure that the depth is always the same
+                        // TODO we'll need to ensure that the depth is always the same
                         (name, attributes)
                     },
                     Err(GenericParsingError::MissingElement(_)) => {
@@ -177,7 +177,7 @@ impl WSDDiscoveredDevice {
             }
 
             // Close out on the `wsx:MetadataSection`
-            let mut depth: usize = 1;
+            let mut depth: usize = 0;
 
             loop {
                 let event = reader.next()?;
@@ -187,11 +187,11 @@ impl WSDDiscoveredDevice {
                         depth += 1;
                     },
                     XmlEvent::EndElement { name } if name.borrow() == scope.borrow() => {
-                        depth -= 1;
-
                         if depth == 0 {
                             break;
                         }
+
+                        depth -= 1;
                     },
                     XmlEvent::CData(_)
                     | XmlEvent::Characters(_)
@@ -408,7 +408,7 @@ fn read_types_and_pub_computer(reader: &mut Wrapper<'_>) -> ExtractHostPropsResu
     let mut computer = None;
     let mut computer_namespace_prefix = None;
 
-    let mut depth = 0;
+    let mut depth = 0_usize;
 
     loop {
         match reader.next()? {
@@ -440,12 +440,12 @@ fn read_types_and_pub_computer(reader: &mut Wrapper<'_>) -> ExtractHostPropsResu
                 }
                 // only interested in elements at 1 level deep
             },
-            XmlEvent::EndElement { name, .. } => {
-                depth -= 1;
-
-                if name.namespace_ref() == Some(WSDP_URI) && name.local_name == "Host" {
+            XmlEvent::EndElement { .. } => {
+                if depth == 0 {
                     break;
                 }
+
+                depth -= 1;
             },
             XmlEvent::CData(_)
             | XmlEvent::Characters(_)

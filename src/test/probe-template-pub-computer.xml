@@ -3,7 +3,7 @@
     xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
     xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
     xmlns:wsd="http://schemas.xmlsoap.org/ws/2005/04/discovery"
-    xmlns:pub="http://schemas.microsoft.com/windows/pub/2005/07"
+    xmlns:pubpubpub="http://schemas.microsoft.com/windows/pub/2005/07"
 >
     <soap:Header>
         <wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To>
@@ -12,7 +12,7 @@
     </soap:Header>
     <soap:Body>
         <wsd:Probe>
-            <wsd:Types>pub:Computer</wsd:Types>
+            <wsd:Types>pubpubpub:Computer</wsd:Types>
         </wsd:Probe>
     </soap:Body>
 </soap:Envelope>
