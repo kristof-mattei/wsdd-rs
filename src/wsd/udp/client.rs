@@ -1003,7 +1003,10 @@ mod tests {
 
         let probe = uc_wsd_port_rx.recv().await.unwrap();
 
-        let expected = format!(include_str!("../../test/probe-template.xml"), Uuid::nil());
+        let expected = format!(
+            include_str!("../../test/probe-template-wsdp-device.xml"),
+            Uuid::nil()
+        );
 
         let response = to_string_pretty(&probe).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
