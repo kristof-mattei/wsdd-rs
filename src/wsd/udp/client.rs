@@ -610,7 +610,7 @@ mod tests {
         );
 
         // client
-        let client_endpoint_uuid = Uuid::new_v4();
+        let client_endpoint_uuid = Uuid::now_v7();
         let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
         let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
@@ -619,10 +619,10 @@ mod tests {
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
 
         let host_endpoint_uuid =
-            DeviceUri::new(Uuid::new_v4().as_urn().to_string().into_boxed_str());
+            DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
         let hello_without_xaddrs = format!(
             include_str!("../../test/hello-without-xaddrs-template.xml"),
-            Uuid::new_v4(),
+            Uuid::now_v7(),
             host_endpoint_uuid
         );
 
@@ -672,7 +672,7 @@ mod tests {
         );
 
         // client
-        let client_endpoint_uuid = Uuid::new_v4();
+        let client_endpoint_uuid = Uuid::now_v7();
         let client_endpoint_device_uri =
             DeviceUri::new(client_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let client_instance_id = "client-instance-id";
@@ -692,9 +692,9 @@ mod tests {
             panic!("Invalid test setup");
         };
         let host_port = server.socket_address().port();
-        let host_message_id = Uuid::new_v4();
+        let host_message_id = Uuid::now_v7();
         let host_instance_id = "host-instance-id";
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
 
@@ -709,8 +709,8 @@ mod tests {
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
                     include_str!("../../test/get-response-synology.xml"),
-                    Uuid::new_v4(),
-                    Uuid::new_v4(),
+                    Uuid::now_v7(),
+                    Uuid::now_v7(),
                 );
 
                 assert_eq!(
@@ -727,7 +727,7 @@ mod tests {
             include_str!("../../test/hello-with-xaddrs-template.xml"),
             host_message_id,
             host_instance_id,
-            Uuid::new_v4(),
+            Uuid::now_v7(),
             host_endpoint_device_uri,
             host_ip,
             host_port,
@@ -807,13 +807,13 @@ mod tests {
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
 
         let host_endpoint_uuid =
-            DeviceUri::new(Uuid::new_v4().as_urn().to_string().into_boxed_str());
+            DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
         let bye = format!(
             include_str!("../../test/bye-template.xml"),
-            Uuid::new_v4(),
+            Uuid::now_v7(),
             host_instance_id,
-            Uuid::new_v4(),
+            Uuid::now_v7(),
             0,
             host_endpoint_uuid
         );
@@ -843,7 +843,7 @@ mod tests {
         );
 
         // client
-        let client_endpoint_uuid = Uuid::new_v4();
+        let client_endpoint_uuid = Uuid::now_v7();
         let client_endpoint_device_uri =
             DeviceUri::new(client_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let client_instance_id = "client-instance-id";
@@ -865,7 +865,7 @@ mod tests {
         let host_port = server.socket_address().port();
         let host_instance_id = "host-instance-id";
         let host_endpoint_uuid =
-            DeviceUri::new(Uuid::new_v4().as_urn().to_string().into_boxed_str());
+            DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
         let expected_get = format!(
             include_str!("../../test/get-template.xml"),
@@ -878,8 +878,8 @@ mod tests {
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
                     include_str!("../../test/get-response-synology.xml"),
-                    Uuid::new_v4(),
-                    Uuid::new_v4(),
+                    Uuid::now_v7(),
+                    Uuid::now_v7(),
                 );
 
                 assert_eq!(
@@ -894,9 +894,9 @@ mod tests {
 
         let hello = format!(
             include_str!("../../test/hello-with-xaddrs-template.xml"),
-            Uuid::new_v4(),
+            Uuid::now_v7(),
             host_instance_id,
-            Uuid::new_v4(),
+            Uuid::now_v7(),
             host_endpoint_uuid,
             host_ip,
             host_port,
@@ -942,9 +942,9 @@ mod tests {
         // and now the bye
         let bye = format!(
             include_str!("../../test/bye-template.xml"),
-            Uuid::new_v4(),
+            Uuid::now_v7(),
             host_instance_id,
-            Uuid::new_v4(),
+            Uuid::now_v7(),
             0,
             host_endpoint_uuid
         );
@@ -975,7 +975,7 @@ mod tests {
         let cancellation_token = CancellationToken::new();
 
         // client
-        let client_endpoint_uuid = Uuid::new_v4();
+        let client_endpoint_uuid = Uuid::now_v7();
         let client_instance_id = "client-instance-id";
         let config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
@@ -1025,11 +1025,11 @@ mod tests {
 
         let metadata: String = format!(
             include_str!("../../test/get-response-synology.xml"),
-            Uuid::new_v4(),
-            Uuid::new_v4(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
         );
 
-        let device_uri = DeviceUri::new(Uuid::new_v4().as_urn().to_string().into_boxed_str());
+        let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
         let result = handle_metadata(
             Arc::clone(&client_devices),
@@ -1084,11 +1084,11 @@ mod tests {
 
         let metadata: String = format!(
             include_str!("../../test/get-response-samsung-printer.xml"),
-            Uuid::new_v4(),
-            Uuid::new_v4(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
         );
 
-        let device_uri = DeviceUri::new(Uuid::new_v4().as_urn().to_string().into_boxed_str());
+        let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
         let result = handle_metadata(
             Arc::clone(&client_devices),
@@ -1141,11 +1141,11 @@ mod tests {
 
         let metadata: String = format!(
             include_str!("../../test/get-response-windows.xml"),
-            Uuid::new_v4(),
-            Uuid::new_v4(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
         );
 
-        let device_uri = DeviceUri::new(Uuid::new_v4().as_urn().to_string().into_boxed_str());
+        let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
         let result = handle_metadata(
             Arc::clone(&client_devices),
@@ -1196,18 +1196,18 @@ mod tests {
         );
 
         // client
-        let client_endpoint_uuid = Uuid::new_v4();
+        let client_endpoint_uuid = Uuid::now_v7();
         let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
         let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
 
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
-        let host_message_id = Uuid::new_v4();
+        let host_message_id = Uuid::now_v7();
 
         let probe_matches = format!(
             include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
@@ -1269,7 +1269,7 @@ mod tests {
         );
 
         // client
-        let client_endpoint_uuid = Uuid::new_v4();
+        let client_endpoint_uuid = Uuid::now_v7();
         let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
         let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
@@ -1288,9 +1288,9 @@ mod tests {
             panic!("Invalid test setup");
         };
         let host_port = server.socket_address().port();
-        let host_message_id = Uuid::new_v4();
+        let host_message_id = Uuid::now_v7();
         let host_instance_id = "host-instance-id";
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
 
@@ -1305,8 +1305,8 @@ mod tests {
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
                     include_str!("../../test/get-response-synology.xml"),
-                    Uuid::new_v4(),
-                    Uuid::new_v4(),
+                    Uuid::now_v7(),
+                    Uuid::now_v7(),
                 );
 
                 assert_eq!(
@@ -1378,7 +1378,7 @@ mod tests {
         );
 
         // client
-        let client_endpoint_uuid = Uuid::new_v4();
+        let client_endpoint_uuid = Uuid::now_v7();
         let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
         let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
@@ -1396,9 +1396,9 @@ mod tests {
             panic!("Invalid test setup");
         };
         // let host_port = server.socket_address().port();
-        let host_message_id = Uuid::new_v4();
+        let host_message_id = Uuid::now_v7();
         let host_instance_id = "host-instance-id";
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
 
@@ -1413,8 +1413,8 @@ mod tests {
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
                     include_str!("../../test/get-response-synology.xml"),
-                    Uuid::new_v4(),
-                    Uuid::new_v4(),
+                    Uuid::now_v7(),
+                    Uuid::now_v7(),
                 );
 
                 assert_eq!(
