@@ -650,24 +650,22 @@ mod tests {
     #[tokio::test]
     async fn handles_hello_without_xaddr() {
         let (message_handler, client_network_address) = build_message_handler_with_network_address(
-            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
         );
 
         // client
-        let client_endpoint_uuid = Uuid::now_v7();
-        let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
-        let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
+        let client_config = Arc::new(build_config(Uuid::now_v7(), "client-instance-id"));
 
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
 
-        let host_endpoint_uuid =
+        let host_endpoint_device_uri =
             DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
         let hello_without_xaddrs = format!(
             include_str!("../../test/hello-without-xaddrs-template.xml"),
             Uuid::now_v7(),
-            host_endpoint_uuid
+            host_endpoint_device_uri
         );
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
@@ -694,7 +692,7 @@ mod tests {
         let expected = format!(
             include_str!("../../test/resolve-template.xml"),
             Uuid::nil(),
-            host_endpoint_uuid,
+            &host_endpoint_device_uri,
         );
 
         let response = {
@@ -716,11 +714,8 @@ mod tests {
         );
 
         // client
-        let client_endpoint_uuid = Uuid::now_v7();
-        let client_endpoint_device_uri =
-            DeviceUri::new(client_endpoint_uuid.as_urn().to_string().into_boxed_str());
-        let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
+        let client_config = Arc::new(build_config(Uuid::now_v7(), "client-instance-id"));
 
         // host
         let mut server = mockito::Server::new_with_opts_async(ServerOpts {
@@ -744,7 +739,7 @@ mod tests {
 
         let expected_get = format!(
             include_str!("../../test/get-template.xml"),
-            host_endpoint_device_uri, client_endpoint_device_uri
+            host_endpoint_device_uri, client_config.uuid_as_device_uri
         );
 
         let mock = server
@@ -780,8 +775,6 @@ mod tests {
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
-
         let (_, mut reader) = message_handler
             .deconstruct_message(
                 hello.as_bytes(),
@@ -792,7 +785,7 @@ mod tests {
 
         handle_hello(
             &reqwest::ClientBuilder::new().build().unwrap(),
-            &config,
+            &client_config,
             Arc::clone(&client_devices),
             &bound_to,
             &multicast_tx,
@@ -841,7 +834,7 @@ mod tests {
     #[tokio::test]
     async fn handles_bye() {
         let (message_handler, _client_network_address) = build_message_handler_with_network_address(
-            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
         );
 
         // client
@@ -887,11 +880,8 @@ mod tests {
         );
 
         // client
-        let client_endpoint_uuid = Uuid::now_v7();
-        let client_endpoint_device_uri =
-            DeviceUri::new(client_endpoint_uuid.as_urn().to_string().into_boxed_str());
-        let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
+        let client_config = Arc::new(build_config(Uuid::now_v7(), "client-instance-id"));
 
         // host
         let mut server = mockito::Server::new_with_opts_async(ServerOpts {
@@ -907,13 +897,15 @@ mod tests {
             panic!("Invalid test setup");
         };
         let host_port = server.socket_address().port();
+        let _host_message_id = Uuid::now_v7();
         let host_instance_id = "host-instance-id";
-        let host_endpoint_uuid =
-            DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
+        let host_endpoint_uuid = Uuid::now_v7();
+        let host_endpoint_device_uri =
+            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
 
         let expected_get = format!(
             include_str!("../../test/get-template.xml"),
-            host_endpoint_uuid, client_endpoint_device_uri
+            host_endpoint_device_uri, client_config.uuid_as_device_uri
         );
 
         let mock = server
@@ -941,15 +933,13 @@ mod tests {
             Uuid::now_v7(),
             host_instance_id,
             Uuid::now_v7(),
-            host_endpoint_uuid,
+            host_endpoint_device_uri,
             host_ip,
             host_port,
             host_endpoint_uuid
         );
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
-
-        let config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
 
         let (_, mut reader) = message_handler
             .deconstruct_message(
@@ -961,7 +951,7 @@ mod tests {
 
         handle_hello(
             &reqwest::ClientBuilder::new().build().unwrap(),
-            &config,
+            &client_config,
             Arc::clone(&client_devices),
             &network_address,
             &multicast_tx,
@@ -980,7 +970,7 @@ mod tests {
             client_devices
                 .read()
                 .await
-                .contains_key(&host_endpoint_uuid)
+                .contains_key(&host_endpoint_device_uri)
         );
 
         // and now the bye
@@ -990,7 +980,7 @@ mod tests {
             host_instance_id,
             Uuid::now_v7(),
             0,
-            host_endpoint_uuid
+            host_endpoint_device_uri
         );
 
         let (_, mut reader) = message_handler
@@ -1010,7 +1000,7 @@ mod tests {
             !client_devices
                 .read()
                 .await
-                .contains_key(&host_endpoint_uuid)
+                .contains_key(&host_endpoint_device_uri)
         );
     }
 
@@ -1019,10 +1009,8 @@ mod tests {
         let cancellation_token = CancellationToken::new();
 
         // client
-        let client_endpoint_uuid = Uuid::now_v7();
-        let client_instance_id = "client-instance-id";
-        let config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
+        let client_config = Arc::new(build_config(Uuid::now_v7(), "client-instance-id"));
 
         let (_mc_wsd_port_tx, mc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
         let (_mc_local_port_tx, mc_local_port_rx) = tokio::sync::mpsc::channel(10);
@@ -1037,7 +1025,7 @@ mod tests {
 
         let _client = WSDClient::init(
             cancellation_token.child_token(),
-            config,
+            client_config,
             client_devices,
             bound_to,
             mc_wsd_port_rx,
@@ -1061,7 +1049,7 @@ mod tests {
     #[tokio::test]
     async fn handles_metadata_synology() {
         let (_message_handler, client_network_address) = build_message_handler_with_network_address(
-            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
         );
 
         // client
@@ -1120,7 +1108,7 @@ mod tests {
     #[tokio::test]
     async fn handles_metadata_samsung_printer() {
         let (_message_handler, client_network_address) = build_message_handler_with_network_address(
-            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
         );
 
         // client
@@ -1177,7 +1165,7 @@ mod tests {
     #[tokio::test]
     async fn handles_metadata_windows() {
         let (_message_handler, client_network_address) = build_message_handler_with_network_address(
-            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
         );
 
         // client
@@ -1236,14 +1224,12 @@ mod tests {
     #[tokio::test]
     async fn handles_probe_matches_without_xaddrs() {
         let (message_handler, client_network_address) = build_message_handler_with_network_address(
-            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
         );
 
         // client
-        let client_endpoint_uuid = Uuid::now_v7();
-        let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
-        let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
+        let client_config = Arc::new(build_config(Uuid::now_v7(), "client-instance-id"));
 
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
@@ -1309,14 +1295,12 @@ mod tests {
     #[tokio::test]
     async fn handles_probe_matches_with_xaddrs() {
         let (message_handler, client_network_address) = build_message_handler_with_network_address(
-            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
         );
 
         // client
-        let client_endpoint_uuid = Uuid::now_v7();
-        let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
-        let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
+        let client_config = Arc::new(build_config(Uuid::now_v7(), "client-instance-id"));
 
         // host
         let mut server = mockito::Server::new_with_opts_async(ServerOpts {
@@ -1418,14 +1402,12 @@ mod tests {
     #[tokio::test]
     async fn handles_resolve_matches() {
         let (message_handler, client_network_address) = build_message_handler_with_network_address(
-            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
         );
 
         // client
-        let client_endpoint_uuid = Uuid::now_v7();
-        let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
-        let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
+        let client_config = Arc::new(build_config(Uuid::now_v7(), "client-instance-id"));
 
         // host
         let mut server = mockito::Server::new_with_opts_async(ServerOpts {
@@ -1439,7 +1421,7 @@ mod tests {
         let IpAddr::V4(host_ip) = server.socket_address().ip() else {
             panic!("Invalid test setup");
         };
-        // let host_port = server.socket_address().port();
+        let _host_port = server.socket_address().port();
         let host_message_id = Uuid::now_v7();
         let host_instance_id = "host-instance-id";
         let host_endpoint_uuid = Uuid::now_v7();
