@@ -189,19 +189,14 @@ mod tests {
     use crate::network_interface::NetworkInterface;
     use crate::test_utils::build_config;
     use crate::test_utils::xml::to_string_pretty;
-    use crate::wsd::device::DeviceUri;
     use crate::wsd::http::http_server::WSDHttpServer;
 
     #[cfg_attr(not(miri), tokio::test)]
     #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn http_server_listens() {
         // host
-        let host_endpoint_uuid = Uuid::now_v7();
-        let host_endpoint_device_uri =
-            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
-        let host_instance_id = "host-instance-id";
-        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
         let host_ip = Ipv4Addr::LOCALHOST;
+        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
         let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 6000));
 
         let cancellation_token = CancellationToken::new();
@@ -220,7 +215,7 @@ mod tests {
 
         let body = format!(
             include_str!("../../test/get-template.xml"),
-            host_endpoint_device_uri,
+            host_config.uuid_as_device_uri,
             Uuid::now_v7()
         );
 
@@ -229,7 +224,7 @@ mod tests {
             .unwrap()
             .post(format!(
                 "http://{}/{}",
-                host_http_listening_address, host_endpoint_uuid
+                host_http_listening_address, host_config.uuid
             ))
             .header("Content-Type", MIME_TYPE_SOAP_XML)
             .header("User-Agent", "wsdd-rs");
@@ -246,8 +241,8 @@ mod tests {
             Uuid::nil(),
             Uuid::nil(),
             host_config.hostname,
-            host_endpoint_device_uri,
-            host_endpoint_device_uri,
+            host_config.uuid_as_device_uri,
+            host_config.uuid_as_device_uri,
             host_config.full_hostname
         );
 

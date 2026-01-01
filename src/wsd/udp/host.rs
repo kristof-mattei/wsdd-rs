@@ -294,9 +294,8 @@ mod tests {
     #[tokio::test]
     async fn sends_hello() {
         // host
-        let host_endpoint_uuid = Uuid::now_v7();
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(host_endpoint_uuid, "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
         let host_messages_built = Arc::new(AtomicU64::new(0));
 
         let cancellation_token = CancellationToken::new();
@@ -327,7 +326,7 @@ mod tests {
             host_config.uuid_as_device_uri,
             host_ip,
             5357,
-            host_endpoint_uuid
+            host_config.uuid,
         );
 
         let response = to_string_pretty(&hello).unwrap();
@@ -339,9 +338,8 @@ mod tests {
     #[tokio::test]
     async fn sends_bye() {
         // host
-        let host_endpoint_uuid = Uuid::now_v7();
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(host_endpoint_uuid, "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
         let host_messages_built = Arc::new(AtomicU64::new(0));
 
         let cancellation_token = CancellationToken::new();
@@ -390,9 +388,8 @@ mod tests {
         let host_message_handler = build_message_handler();
 
         // host
-        let host_endpoint_uuid = Uuid::now_v7();
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(host_endpoint_uuid, "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
         let host_messages_built = Arc::new(AtomicU64::new(0));
 
         // client
@@ -430,7 +427,7 @@ mod tests {
             host_messages_built.load(Ordering::Relaxed) - 1,
             host_config.uuid_as_device_uri,
             host_ip,
-            host_endpoint_uuid
+            host_config.uuid
         );
 
         let response = to_string_pretty(&response).unwrap();
@@ -444,9 +441,8 @@ mod tests {
         let host_message_handler = build_message_handler();
 
         // host
-        let host_endpoint_uuid = Uuid::now_v7();
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(host_endpoint_uuid, "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
         let host_messages_built = Arc::new(AtomicU64::new(0));
 
         // client
@@ -496,9 +492,8 @@ mod tests {
         let host_message_handler = build_message_handler();
 
         // host
-        let host_endpoint_uuid = Uuid::now_v7();
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(host_endpoint_uuid, "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
         let host_messages_built = Arc::new(AtomicU64::new(0));
 
         // client
