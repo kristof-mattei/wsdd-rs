@@ -289,19 +289,15 @@ mod tests {
     use crate::network_interface::NetworkInterface;
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler};
-    use crate::wsd::device::DeviceUri;
     use crate::wsd::udp::host::{WSDHost, handle_probe, handle_resolve};
 
     #[tokio::test]
     async fn sends_hello() {
         // host
         let host_endpoint_uuid = Uuid::now_v7();
-        let host_endpoint_device_uri =
-            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
-        let host_instance_id = "host-instance-id";
-        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let host_config = Arc::new(build_config(host_endpoint_uuid, "host-instance-id"));
         let host_messages_built = Arc::new(AtomicU64::new(0));
-        let host_ip = Ipv4Addr::new(192, 168, 100, 1);
 
         let cancellation_token = CancellationToken::new();
         let (_mc_wsd_port_tx, mc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
@@ -326,9 +322,9 @@ mod tests {
         let expected = format!(
             include_str!("../../test/hello-with-xaddrs-template.xml"),
             Uuid::nil(),
-            host_instance_id,
+            host_config.wsd_instance_id,
             Uuid::nil(),
-            host_endpoint_device_uri,
+            host_config.uuid_as_device_uri,
             host_ip,
             5357,
             host_endpoint_uuid
@@ -344,12 +340,9 @@ mod tests {
     async fn sends_bye() {
         // host
         let host_endpoint_uuid = Uuid::now_v7();
-        let host_endpoint_device_uri =
-            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
-        let host_instance_id = "host-instance-id";
-        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let host_config = Arc::new(build_config(host_endpoint_uuid, "host-instance-id"));
         let host_messages_built = Arc::new(AtomicU64::new(0));
-        let host_ip = Ipv4Addr::new(192, 168, 100, 1);
 
         let cancellation_token = CancellationToken::new();
         let (_mc_wsd_port_tx, mc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
@@ -380,10 +373,10 @@ mod tests {
         let expected = format!(
             include_str!("../../test/bye-template.xml"),
             Uuid::nil(),
-            host_instance_id,
+            host_config.wsd_instance_id,
             Uuid::nil(),
             expected_message_number,
-            host_endpoint_device_uri,
+            host_config.uuid_as_device_uri,
         );
 
         let response = to_string_pretty(&bye).unwrap();
@@ -398,18 +391,15 @@ mod tests {
 
         // host
         let host_endpoint_uuid = Uuid::now_v7();
-        let host_endpoint_device_uri =
-            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
-        let host_instance_id = "host-instance-id";
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
-        let host_messages_built = AtomicU64::new(0);
+        let host_config = Arc::new(build_config(host_endpoint_uuid, "host-instance-id"));
+        let host_messages_built = Arc::new(AtomicU64::new(0));
 
         // client
         let client_message_id = Uuid::now_v7();
         let resolve = format!(
             include_str!("../../test/resolve-template.xml"),
-            client_message_id, host_endpoint_device_uri,
+            client_message_id, host_config.uuid_as_device_uri,
         );
 
         // host receives client's probe
@@ -436,9 +426,9 @@ mod tests {
         let expected = format!(
             include_str!("../../test/resolve-matches-template.xml"),
             client_message_id,
-            host_instance_id,
+            host_config.wsd_instance_id,
             host_messages_built.load(Ordering::Relaxed) - 1,
-            host_endpoint_device_uri,
+            host_config.uuid_as_device_uri,
             host_ip,
             host_endpoint_uuid
         );
@@ -455,12 +445,9 @@ mod tests {
 
         // host
         let host_endpoint_uuid = Uuid::now_v7();
-        let host_endpoint_device_uri =
-            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
-        let host_instance_id = "host-instance-id";
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
-        let host_messages_built = AtomicU64::new(0);
+        let host_config = Arc::new(build_config(host_endpoint_uuid, "host-instance-id"));
+        let host_messages_built = Arc::new(AtomicU64::new(0));
 
         // client
         let client_message_id = Uuid::now_v7();
@@ -491,9 +478,9 @@ mod tests {
         let expected = format!(
             include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
             client_message_id,
-            host_instance_id,
+            host_config.wsd_instance_id,
             host_messages_built.load(Ordering::Relaxed) - 1,
-            host_endpoint_device_uri
+            host_config.uuid_as_device_uri,
         );
 
         let response = to_string_pretty(&response).unwrap();
@@ -510,12 +497,9 @@ mod tests {
 
         // host
         let host_endpoint_uuid = Uuid::now_v7();
-        let host_endpoint_device_uri =
-            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
-        let host_instance_id = "host-instance-id";
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
-        let host_messages_built = AtomicU64::new(0);
+        let host_config = Arc::new(build_config(host_endpoint_uuid, "host-instance-id"));
+        let host_messages_built = Arc::new(AtomicU64::new(0));
 
         // client
         let client_message_id = Uuid::now_v7();
@@ -546,9 +530,9 @@ mod tests {
         let expected = format!(
             include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
             client_message_id,
-            host_instance_id,
+            host_config.wsd_instance_id,
             host_messages_built.load(Ordering::Relaxed) - 1,
-            host_endpoint_device_uri
+            host_config.uuid_as_device_uri,
         );
 
         let response = to_string_pretty(&response).unwrap();
