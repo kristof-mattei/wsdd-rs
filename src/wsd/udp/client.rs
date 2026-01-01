@@ -28,7 +28,7 @@ use crate::utils::SliceDisplay;
 use crate::utils::task::spawn_with_name;
 use crate::wsd::HANDLED_MESSAGES;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
-use crate::xml::{Wrapper, find_child, parse_generic_body_paths};
+use crate::xml::{Wrapper, find_descendant, find_descendants};
 
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
@@ -261,7 +261,7 @@ async fn handle_hello(
     multicast: &Sender<Box<[u8]>>,
     reader: &mut Wrapper<'_>,
 ) -> Result<(), eyre::Report> {
-    find_child(reader, Some(XML_WSD_NAMESPACE), "Hello")?;
+    find_descendant(reader, Some(XML_WSD_NAMESPACE), "Hello")?;
 
     let (endpoint, raw_xaddrs) = extract_endpoint_metadata(reader)?;
 
@@ -302,7 +302,7 @@ async fn handle_bye(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     reader: &mut Wrapper<'_>,
 ) -> Result<(), eyre::Report> {
-    find_child(reader, Some(XML_WSD_NAMESPACE), "Bye")?;
+    find_descendant(reader, Some(XML_WSD_NAMESPACE), "Bye")?;
 
     let (endpoint, _) = extract_endpoint_metadata(reader)?;
 
@@ -335,7 +335,7 @@ async fn handle_probe_match(
         return Ok(());
     };
 
-    parse_generic_body_paths(
+    find_descendants(
         reader,
         &[
             (Some(XML_WSD_NAMESPACE), "ProbeMatches"),
@@ -393,7 +393,7 @@ async fn handle_resolve_match(
     bound_to: &NetworkAddress,
     reader: &mut Wrapper<'_>,
 ) -> Result<(), eyre::Report> {
-    parse_generic_body_paths(
+    find_descendants(
         reader,
         &[
             (Some(XML_WSD_NAMESPACE), "ResolveMatches"),
