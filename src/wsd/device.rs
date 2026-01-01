@@ -16,7 +16,7 @@ use crate::constants::{
 };
 use crate::network_address::NetworkAddress;
 use crate::soap::parser;
-use crate::xml::{GenericParsingError, Wrapper, find_child, read_text};
+use crate::xml::{GenericParsingError, Wrapper, find_descendant, read_text};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[repr(transparent)]
@@ -107,18 +107,16 @@ impl WSDDiscoveredDevice {
     ) -> Result<(), eyre::Report> {
         let (_header, _has_body, mut reader) = parser::deconstruct_raw(meta)?;
 
-        let (_name, _attributes) = find_child(&mut reader, Some(XML_WSX_NAMESPACE), "Metadata")?;
+        let (_name, _attributes) =
+            find_descendant(&mut reader, Some(XML_WSX_NAMESPACE), "Metadata")?;
 
         // we're now in metadata
 
         // loop though the reader for each wsx:MetadataSection at depth 1 from where we are now
         loop {
             let (scope, attributes) =
-                match find_child(&mut reader, Some(XML_WSX_NAMESPACE), "MetadataSection") {
-                    Ok((name, attributes)) => {
-                        // TODO we'll need to ensure that the depth is always the same
-                        (name, attributes)
-                    },
+                match find_descendant(&mut reader, Some(XML_WSX_NAMESPACE), "MetadataSection") {
+                    Ok((name, attributes)) => (name, attributes),
                     Err(GenericParsingError::MissingElement(_)) => {
                         // no more `MetadataSections to be found`
                         break;
@@ -132,8 +130,11 @@ impl WSDDiscoveredDevice {
                 {
                     if attribute.value == WSDP_THIS_DEVICE_DIALECT {
                         // open ThisDevice
-                        let (this_device_scope, ..) =
-                            find_child(&mut reader, Some(XML_WSDP_NAMESPACE), WSDP_THIS_DEVICE)?;
+                        let (this_device_scope, ..) = find_descendant(
+                            &mut reader,
+                            Some(XML_WSDP_NAMESPACE),
+                            WSDP_THIS_DEVICE,
+                        )?;
 
                         let new_props = extract_wsdp_props(
                             &mut reader,
@@ -144,8 +145,11 @@ impl WSDDiscoveredDevice {
                         self.props.extend(new_props);
                     } else if attribute.value == WSDP_THIS_MODEL_DIALECT {
                         // open ThisModel
-                        let (this_model_scope, ..) =
-                            find_child(&mut reader, Some(XML_WSDP_NAMESPACE), WSDP_THIS_MODEL)?;
+                        let (this_model_scope, ..) = find_descendant(
+                            &mut reader,
+                            Some(XML_WSDP_NAMESPACE),
+                            WSDP_THIS_MODEL,
+                        )?;
 
                         let new_props = extract_wsdp_props(
                             &mut reader,
@@ -341,7 +345,7 @@ fn extract_host_props(reader: &mut Wrapper<'_>) -> ExtractHostPropsResult {
     // for each relationship, we find the one with Type=Host
     loop {
         let (_element, attributes) =
-            match find_child(reader, Some(XML_WSDP_NAMESPACE), WSDP_RELATIONSHIP) {
+            match find_descendant(reader, Some(XML_WSDP_NAMESPACE), WSDP_RELATIONSHIP) {
                 Ok((name, attributes)) => {
                     // we'll need to ensure that the depth is always the same
                     (name, attributes)
@@ -356,7 +360,7 @@ fn extract_host_props(reader: &mut Wrapper<'_>) -> ExtractHostPropsResult {
         for attribute in attributes {
             if attribute.name.namespace_ref().is_none() && attribute.name.local_name == "Type" {
                 if attribute.value == WSDP_RELATIONSHIP_TYPE_HOST {
-                    match find_child(reader, Some(XML_WSDP_NAMESPACE), "Host") {
+                    match find_descendant(reader, Some(XML_WSDP_NAMESPACE), "Host") {
                         Ok((_name, _attributes)) => {
                             let (types, display_name_belongs_to) =
                                 read_types_and_pub_computer(reader)?;
