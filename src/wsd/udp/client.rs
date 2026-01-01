@@ -207,8 +207,8 @@ fn now() -> Duration {
 fn parse_xaddrs(bound_to: IpNet, raw_xaddrs: &str) -> Vec<XAddr> {
     #[derive(Ord, PartialOrd, PartialEq, Eq)]
     enum XAddrPriority {
-        Medium,
-        High,
+        Medium = 0,
+        High = 1,
     }
 
     // discard invalid URLs
@@ -220,7 +220,7 @@ fn parse_xaddrs(bound_to: IpNet, raw_xaddrs: &str) -> Vec<XAddr> {
                 event!(
                     Level::INFO,
                     ?err,
-                    ?raw_xaddr,
+                    %raw_xaddr,
                     "Message sent with invalid/non-http/https xaddr or no host, ignoring"
                 );
 
@@ -634,6 +634,7 @@ mod tests {
     use tokio::sync::RwLock;
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio_util::sync::CancellationToken;
+    use tracing_test::traced_test;
     use url::Url;
     use uuid::Uuid;
 
@@ -1507,6 +1508,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn filters_invalid_and_non_http_https() {
         let bound = IpNet::V4(Ipv4Net::new(Ipv4Addr::new(192, 168, 1, 10), 24).unwrap());
 
@@ -1527,6 +1529,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn rejects_missing_host() {
         let bound = IpNet::V4(Ipv4Net::new(Ipv4Addr::new(10, 0, 0, 1), 24).unwrap());
 
@@ -1544,6 +1547,7 @@ mod tests {
     }
 
     #[test]
+    #[traced_test]
     fn prefers_link_local_ipv6_first() {
         let bound =
             IpNet::V6(Ipv6Net::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1), 64).unwrap());

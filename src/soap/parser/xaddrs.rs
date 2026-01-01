@@ -18,15 +18,15 @@ impl std::fmt::Display for XAddr {
 }
 
 #[derive(Error, Debug)]
-pub enum XAddrError {
-    #[error("Error parsing raw xaddr as URL")]
+pub enum XAddrError<'s> {
+    #[error("Failed to parse XAddr as URL")]
     UrlParseError(#[from] url::ParseError),
-    #[error("Error parsing URL as XAddr")]
-    InvalidXAddrError,
+    #[error("XAddr must be an HTTP/HTTPS URL with a host")]
+    InvalidXAddrError(&'s str),
 }
 
 impl<'s> TryFrom<&'s str> for XAddr {
-    type Error = XAddrError;
+    type Error = XAddrError<'s>;
 
     fn try_from(value: &'s str) -> Result<Self, Self::Error> {
         let url = Url::parse(value)?;
@@ -37,7 +37,7 @@ impl<'s> TryFrom<&'s str> for XAddr {
         {
             Ok(XAddr { url })
         } else {
-            Err(XAddrError::InvalidXAddrError)
+            Err(XAddrError::InvalidXAddrError(value))
         }
     }
 }
