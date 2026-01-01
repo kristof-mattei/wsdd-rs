@@ -39,6 +39,8 @@ pub struct Config {
     pub metadata_timeout: Duration,
     pub source_port: u16,
     pub wsd_instance_id: Box<str>,
+    #[expect(clippy::struct_field_names, reason = "Sub-config")]
+    pub ssl_config: SSLConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +48,22 @@ pub enum PortOrSocket {
     Port(u16),
     Socket(RawFd),
     SocketPath(PathBuf),
+}
+
+#[derive(Debug)]
+pub enum SSLConfig {
+    None,
+    Half,
+    Full,
+}
+
+impl SSLConfig {
+    pub fn web_server_protocol(&self) -> &'static str {
+        match *self {
+            SSLConfig::None => "http",
+            SSLConfig::Half | SSLConfig::Full => "https",
+        }
+    }
 }
 
 impl Config {

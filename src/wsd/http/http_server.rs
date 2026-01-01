@@ -1,22 +1,30 @@
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
 use axum::extract::State;
 use axum::handler::HandlerWithoutStateExt as _;
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use axum_server::accept::Accept;
+use axum_server::service::{MakeService, SendService};
+use axum_server::tls_rustls::{RustlsAcceptor, RustlsConfig};
+use axum_server::{Address, Handle, Server};
 use bytes::Bytes;
 use color_eyre::eyre;
-use http::StatusCode;
+use http::Request;
 use http::header::CONTENT_TYPE;
+use hyper::body::Incoming;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::sync::CancellationToken;
 use tower_http::trace::{DefaultOnRequest, DefaultOnResponse, TraceLayer};
 use tracing::{Level, event};
 use uuid::fmt::Urn;
 
-use crate::config::Config;
+use crate::config::{Config, SSLConfig};
 use crate::constants;
 use crate::network_address::NetworkAddress;
 use crate::soap::builder;
@@ -51,6 +59,7 @@ impl WSDHttpServer {
         // see `axum::serve`
         let handle = tokio::task::spawn(launch_http_server(
             cancellation_token.clone(),
+            Arc::clone(&config),
             listener,
             build_router(Arc::clone(&config), message_handler),
         ));
@@ -155,22 +164,75 @@ async fn build_response(
     Ok(response)
 }
 
+async fn serve<A, Acc, M>(
+    server: Server<A, Acc>,
+    handle: Handle<A>,
+    router: M,
+) -> Result<(), eyre::Report>
+where
+    M: MakeService<A, Request<Incoming>>,
+    A: Address,
+    A: Send + 'static,
+    A::Stream: Send,
+    Acc: Accept<A::Stream, M::Service> + Clone + Send + Sync + 'static,
+    Acc::Stream: AsyncRead + AsyncWrite + Unpin + Send,
+    Acc::Service: SendService<Request<Incoming>> + Send,
+    Acc::Future: Send,
+{
+    server
+        .handle(handle)
+        .serve(router)
+        .await
+        .map_err(Into::into)
+}
+
 /// Set up server on a bound listener, with a router, and a cancellation token for graceful shutdown
 ///
 /// # Errors
 /// * Server failure
 pub async fn launch_http_server(
     cancellation_token: CancellationToken,
+    config: Arc<Config>,
     listener: tokio::net::TcpListener,
     router: Router,
 ) -> Result<(), eyre::Report> {
-    axum::serve(
-        listener,
-        router.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .with_graceful_shutdown(cancellation_token.cancelled_owned())
-    .await
-    .map_err(Into::into)
+    let ssl_config = match config.ssl_config {
+        SSLConfig::None | SSLConfig::Half => None,
+        SSLConfig::Full => Some(
+            RustlsConfig::from_pem_file(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("self_signed_certs")
+                    .join("cert.pem"),
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("self_signed_certs")
+                    .join("key.pem"),
+            )
+            .await
+            .unwrap(),
+        ),
+    };
+
+    let handle = Handle::new();
+
+    tokio::spawn(graceful_shutdown(cancellation_token, handle.clone()));
+
+    let acceptor = ssl_config.map(RustlsAcceptor::new);
+
+    let server = axum_server::from_tcp(listener.into_std().unwrap()).unwrap();
+
+    let router = router.into_make_service_with_connect_info::<SocketAddr>();
+
+    if let Some(acceptor) = acceptor {
+        Ok(serve(server.acceptor(acceptor), handle, router).await?)
+    } else {
+        Ok(serve(server, handle, router).await?)
+    }
+}
+
+async fn graceful_shutdown(cancellation_token: CancellationToken, handle: Handle<SocketAddr>) {
+    cancellation_token.cancelled().await;
+
+    handle.graceful_shutdown(Some(Duration::from_secs(30)));
 }
 
 #[cfg(test)]
@@ -184,6 +246,7 @@ mod tests {
     use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
 
+    use crate::config::SSLConfig;
     use crate::constants::MIME_TYPE_SOAP_XML;
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
@@ -200,7 +263,11 @@ mod tests {
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
-        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
+        let host_config = Arc::new(build_config(
+            host_endpoint_uuid,
+            host_instance_id,
+            SSLConfig::None,
+        ));
         let host_ip = Ipv4Addr::LOCALHOST;
         let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 6000));
 
