@@ -639,6 +639,7 @@ mod tests {
     use url::Url;
     use uuid::Uuid;
 
+    use crate::config::SSLConfig;
     use crate::network_interface::NetworkInterface;
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler_with_network_address};
@@ -658,7 +659,11 @@ mod tests {
         let client_endpoint_uuid = Uuid::now_v7();
         let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
-        let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
+        let client_config = Arc::new(build_config(
+            client_endpoint_uuid,
+            client_instance_id,
+            SSLConfig::None,
+        ));
 
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
@@ -783,7 +788,11 @@ mod tests {
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
+        let config = Arc::new(build_config(
+            client_endpoint_uuid,
+            client_instance_id,
+            SSLConfig::None,
+        ));
 
         let (_, mut reader) = message_handler
             .deconstruct_message(
@@ -954,7 +963,11 @@ mod tests {
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
+        let config = Arc::new(build_config(
+            client_endpoint_uuid,
+            client_instance_id,
+            SSLConfig::None,
+        ));
 
         let (_, mut reader) = message_handler
             .deconstruct_message(
@@ -1026,7 +1039,11 @@ mod tests {
         // client
         let client_endpoint_uuid = Uuid::now_v7();
         let client_instance_id = "client-instance-id";
-        let config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
+        let config = Arc::new(build_config(
+            client_endpoint_uuid,
+            client_instance_id,
+            SSLConfig::None,
+        ));
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
 
         let (_mc_wsd_port_tx, mc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
@@ -1248,7 +1265,11 @@ mod tests {
         let client_endpoint_uuid = Uuid::now_v7();
         let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
-        let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
+        let client_config = Arc::new(build_config(
+            client_endpoint_uuid,
+            client_instance_id,
+            SSLConfig::None,
+        ));
 
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
@@ -1321,7 +1342,11 @@ mod tests {
         let client_endpoint_uuid = Uuid::now_v7();
         let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
-        let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
+        let client_config = Arc::new(build_config(
+            client_endpoint_uuid,
+            client_instance_id,
+            SSLConfig::None,
+        ));
 
         // host
         let mut server = mockito::Server::new_with_opts_async(ServerOpts {
@@ -1430,7 +1455,11 @@ mod tests {
         let client_endpoint_uuid = Uuid::now_v7();
         let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
-        let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
+        let client_config = Arc::new(build_config(
+            client_endpoint_uuid,
+            client_instance_id,
+            SSLConfig::None,
+        ));
 
         // host
         let mut server = mockito::Server::new_with_opts_async(ServerOpts {

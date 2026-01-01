@@ -65,7 +65,8 @@ fn add_xaddr<W: Write>(
     ip_addr: IpAddr,
 ) -> Result<(), xml::writer::Error> {
     let address = format!(
-        "https://{}:{}/{}",
+        "{}://{}:{}/{}",
+        config.ssl_config.web_server_protocol(),
         UrlIpAddr::from(ip_addr),
         WSD_HTTP_PORT,
         config.uuid

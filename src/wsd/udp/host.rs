@@ -286,6 +286,7 @@ mod tests {
     use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
 
+    use crate::config::SSLConfig;
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
     use crate::test_utils::xml::to_string_pretty;
@@ -300,10 +301,13 @@ mod tests {
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
-        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
+        let host_config = Arc::new(build_config(
+            host_endpoint_uuid,
+            host_instance_id,
+            SSLConfig::None,
+        ));
         let host_messages_built = Arc::new(AtomicU64::new(0));
         let host_ip = Ipv4Addr::new(192, 168, 100, 1);
-        let host_scheme = Scheme::HTTPS;
 
         let cancellation_token = CancellationToken::new();
         let (_mc_wsd_port_tx, mc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
@@ -331,7 +335,7 @@ mod tests {
             host_instance_id,
             Uuid::nil(),
             host_endpoint_device_uri,
-            host_scheme,
+            host_config.ssl_config.web_server_protocol(),
             host_ip,
             5357,
             host_endpoint_uuid
@@ -350,7 +354,11 @@ mod tests {
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
-        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
+        let host_config = Arc::new(build_config(
+            host_endpoint_uuid,
+            host_instance_id,
+            SSLConfig::None,
+        ));
         let host_messages_built = Arc::new(AtomicU64::new(0));
         let host_ip = Ipv4Addr::new(192, 168, 100, 1);
 
@@ -405,9 +413,12 @@ mod tests {
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
+        let host_config = Arc::new(build_config(
+            host_endpoint_uuid,
+            host_instance_id,
+            SSLConfig::None,
+        ));
         let host_messages_built = AtomicU64::new(0);
-        let host_scheme = Scheme::HTTPS;
 
         // client
         let client_message_id = Uuid::now_v7();
@@ -443,7 +454,7 @@ mod tests {
             host_instance_id,
             host_messages_built.load(Ordering::Relaxed) - 1,
             host_endpoint_device_uri,
-            host_scheme,
+            host_config.ssl_config.web_server_protocol(),
             host_ip,
             host_endpoint_uuid
         );
@@ -464,7 +475,11 @@ mod tests {
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
+        let host_config = Arc::new(build_config(
+            host_endpoint_uuid,
+            host_instance_id,
+            SSLConfig::None,
+        ));
         let host_messages_built = AtomicU64::new(0);
 
         // client
@@ -519,7 +534,11 @@ mod tests {
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
+        let host_config = Arc::new(build_config(
+            host_endpoint_uuid,
+            host_instance_id,
+            SSLConfig::None,
+        ));
         let host_messages_built = AtomicU64::new(0);
 
         // client

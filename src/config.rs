@@ -57,6 +57,15 @@ pub enum SSLConfig {
     Full,
 }
 
+impl SSLConfig {
+    pub fn web_server_protocol(&self) -> &'static str {
+        match *self {
+            SSLConfig::None => "http",
+            SSLConfig::Half | SSLConfig::Full => "https",
+        }
+    }
+}
+
 impl Config {
     pub fn log(&self) {
         event!(Level::INFO, ?self);

@@ -246,6 +246,7 @@ mod tests {
     use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
 
+    use crate::config::SSLConfig;
     use crate::constants::MIME_TYPE_SOAP_XML;
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
@@ -262,7 +263,11 @@ mod tests {
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
-        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
+        let host_config = Arc::new(build_config(
+            host_endpoint_uuid,
+            host_instance_id,
+            SSLConfig::None,
+        ));
         let host_ip = Ipv4Addr::LOCALHOST;
         let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 6000));
 

@@ -10,7 +10,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::cli;
-use crate::config::Config;
+use crate::config::{Config, SSLConfig};
 use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::{NetworkInterface, if_nametoindex};
@@ -61,7 +61,7 @@ pub mod xml {
     }
 }
 
-pub fn build_config(endpoint_uuid: Uuid, instance_id: &str) -> Config {
+pub fn build_config(endpoint_uuid: Uuid, instance_id: &str, ssl_config: SSLConfig) -> Config {
     let mut config = cli::parse_cli_from([
         "-4",
         "--uuid",
@@ -73,6 +73,9 @@ pub fn build_config(endpoint_uuid: Uuid, instance_id: &str) -> Config {
 
     // instance ID is not settable with commandline
     config.wsd_instance_id = Box::from(instance_id);
+
+    // TODO create proper CLI setters
+    config.ssl_config = ssl_config;
 
     config
 }
