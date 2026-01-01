@@ -769,6 +769,7 @@ mod tests {
             host_config.wsd_instance_id,
             Uuid::now_v7(),
             host_config.uuid_as_device_uri,
+            host_config.ssl_config.web_server_protocol(),
             server.socket_address().ip(),
             server.socket_address().port(),
             host_config.uuid
@@ -920,6 +921,7 @@ mod tests {
             host_config.wsd_instance_id,
             Uuid::now_v7(),
             host_config.uuid_as_device_uri,
+            host_config.ssl_config.web_server_protocol(),
             server.socket_address().ip(),
             server.socket_address().port(),
             host_config.uuid
@@ -1424,6 +1426,7 @@ mod tests {
             host_config.wsd_instance_id,
             0,
             host_config.uuid_as_device_uri,
+            host_config.ssl_config.web_server_protocol(),
             server.socket_address().ip(),
             host_config.uuid
         );
