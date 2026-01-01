@@ -627,6 +627,7 @@ mod tests {
     use std::time::Duration;
 
     use hashbrown::HashMap;
+    use http::uri::Scheme;
     use ipnet::{IpNet, Ipv4Net, Ipv6Net};
     use libc::RT_SCOPE_SITE;
     use mockito::ServerOpts;
@@ -741,6 +742,7 @@ mod tests {
         let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
+        let host_scheme = Scheme::HTTP;
 
         let expected_get = format!(
             include_str!("../../test/get-template.xml"),
@@ -773,6 +775,7 @@ mod tests {
             host_instance_id,
             Uuid::now_v7(),
             host_endpoint_device_uri,
+            host_scheme,
             host_ip,
             host_port,
             host_endpoint_uuid
@@ -910,6 +913,7 @@ mod tests {
         let host_instance_id = "host-instance-id";
         let host_endpoint_uuid =
             DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
+        let host_scheme = Scheme::HTTP;
 
         let expected_get = format!(
             include_str!("../../test/get-template.xml"),
@@ -942,6 +946,7 @@ mod tests {
             host_instance_id,
             Uuid::now_v7(),
             host_endpoint_uuid,
+            host_scheme,
             host_ip,
             host_port,
             host_endpoint_uuid
@@ -1445,6 +1450,7 @@ mod tests {
         let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
+        let host_scheme = Scheme::HTTP;
 
         let expected_get = format!(
             include_str!("../../test/get-template.xml"),
@@ -1477,6 +1483,7 @@ mod tests {
             host_instance_id,
             0,
             host_endpoint_device_uri,
+            host_scheme,
             host_ip,
             host_endpoint_uuid
         );

@@ -39,6 +39,7 @@ hashbrown = { version = "0.16.1", default-features = false, features = [
     "equivalent",
 ] }
 http = "1.4.0"
+hyper = { version = "1.8.1", default-features = false }
 hyper-util = "0.1.19"
 ipnet = "2.11.0"
 libc = "0.2.178"

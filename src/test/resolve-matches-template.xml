@@ -20,7 +20,7 @@
                     <wsa:Address>{}</wsa:Address>
                 </wsa:EndpointReference>
                 <wsd:Types>wsdp:Device pub:Computer</wsd:Types>
-                <wsd:XAddrs>http://{}:5357/{}</wsd:XAddrs>
+                <wsd:XAddrs>{}://{}:5357/{}</wsd:XAddrs>
                 <wsd:MetadataVersion>1</wsd:MetadataVersion>
             </wsd:ResolveMatch>
         </wsd:ResolveMatches>
