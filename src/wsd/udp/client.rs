@@ -711,7 +711,7 @@ mod tests {
 
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
-        assert_eq!(response, expected);
+        assert_eq!(expected, response);
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1077,7 +1077,7 @@ mod tests {
         let response = to_string_pretty(&probe).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
-        assert_eq!(response, expected);
+        assert_eq!(expected, response);
     }
 
     #[tokio::test]
@@ -1329,7 +1329,7 @@ mod tests {
 
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
-        assert_eq!(response, expected);
+        assert_eq!(expected, response);
     }
 
     #[tokio::test]
