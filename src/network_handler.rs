@@ -107,16 +107,23 @@ impl NetworkHandler {
         loop {
             let command = tokio::select! {
                 () = self.cancellation_token.cancelled() => {
+                    event!(
+                        Level::INFO,
+                        "Received cancellation, stopping command processor"
+                    );
+
                     break;
                 },
                 command = self.command_rx.recv() => {
                     command
                 }
             };
-
             let Some(command) = command else {
-                // GONE?
-                // TODO
+                event!(
+                    Level::INFO,
+                    "Command channel gone, stopping command processor"
+                );
+
                 break;
             };
 

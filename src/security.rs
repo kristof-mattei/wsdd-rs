@@ -132,10 +132,6 @@ pub fn drop_privileges(uid: u32, gid: u32) -> Result<(), String> {
 
 /// Chroot into a separate directory to isolate ourself for increased security.
 pub fn chroot(root: &Path) -> Result<(), eyre::Report> {
-    // TODO What's this?
-    // # preload for socket.gethostbyaddr()
-    // import encodings.idna
-
     let path = root
         .to_str()
         .map(|root| CString::new(root).expect("Couldn't convert path to string"))
