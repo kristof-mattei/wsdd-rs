@@ -1335,7 +1335,7 @@ mod tests {
     #[tokio::test]
     async fn handles_probe_matches_with_xaddrs() {
         let (message_handler, client_network_address) = build_message_handler_with_network_address(
-            IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
         );
 
         // client
@@ -1448,7 +1448,7 @@ mod tests {
     #[tokio::test]
     async fn handles_resolve_matches() {
         let (message_handler, client_network_address) = build_message_handler_with_network_address(
-            IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 1)).into(), 24).unwrap(),
         );
 
         // client
