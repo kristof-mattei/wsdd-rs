@@ -10,7 +10,7 @@ use color_eyre::eyre;
 use tracing::{Level, event};
 use uuid::Uuid;
 
-use crate::config::{Config, PortOrSocket};
+use crate::config::{Config, PortOrSocket, SSLConfig};
 use crate::ffi::listen_fds;
 use crate::security::parse_userspec;
 use crate::wsd::device::DeviceUri;
@@ -297,6 +297,7 @@ where
             .copied()
             .expect("source-port has a default"),
         wsd_instance_id: now().as_secs().to_string().into_boxed_str(),
+        ssl_config: SSLConfig::None,
     };
 
     Ok(config)
