@@ -66,7 +66,7 @@ fn generate_message_id() -> Urn {
 
     #[cfg(not(test))]
     {
-        Uuid::new_v4().urn()
+        Uuid::now_v7().urn()
     }
 }
 
@@ -85,7 +85,7 @@ fn sequence_id() -> Urn {
 
     #[cfg(not(test))]
     {
-        Uuid::new_v4().urn()
+        Uuid::now_v7().urn()
     }
 }
 

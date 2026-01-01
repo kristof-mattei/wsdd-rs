@@ -1,3 +1,4 @@
+#![expect(unused, reason = "WIP")]
 use std::net::SocketAddr;
 use std::pin::Pin;
 

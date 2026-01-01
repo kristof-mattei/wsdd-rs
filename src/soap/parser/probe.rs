@@ -2,10 +2,10 @@ use thiserror::Error;
 use tracing::{Level, event};
 use xml::reader::XmlEvent;
 
-use crate::constants::{WSDP_TYPE_DEVICE, XML_WSD_NAMESPACE};
+use crate::constants::{XML_PUB_NAMESPACE, XML_WSD_NAMESPACE, XML_WSDP_NAMESPACE};
 use crate::xml::{TextReadError, Wrapper, read_text};
 
-type ParsedProbeResult = Result<(), ProbeParsingError>;
+type ParsedProbeResult = Result<bool, ProbeParsingError>;
 
 #[derive(Error, Debug)]
 pub enum ProbeParsingError {
@@ -15,8 +15,6 @@ pub enum ProbeParsingError {
     TextReadError(#[from] TextReadError),
     #[error("Missing types")]
     MissingTypes,
-    #[error("Client probed for type(s) we don't offer: {0}")]
-    TypesMismatch(Box<str>),
     #[error("Missing ./Probe in body")]
     MissingProbeElement,
 }
@@ -25,12 +23,14 @@ pub enum ProbeParsingError {
 /// This function makes NO claims about the position of the reader
 /// should the structure XML be invalid (e.g. missing `Address`)
 fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
-    let mut types = None;
+    let mut types_and_namespace = None;
 
     let mut depth = 0_usize;
     loop {
         match reader.next()? {
-            XmlEvent::StartElement { name, .. } => {
+            XmlEvent::StartElement {
+                name, namespace, ..
+            } => {
                 depth += 1;
 
                 if depth == 1 && name.namespace_ref() == Some(XML_WSD_NAMESPACE) {
@@ -50,7 +50,7 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
                             depth -= 1;
                         },
                         "Types" => {
-                            types = read_text(reader)?;
+                            types_and_namespace = read_text(reader)?.map(|text| (text, namespace));
 
                             break;
                         },
@@ -82,7 +82,7 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
         }
     }
 
-    let Some(types) = types else {
+    let Some((types, namespace)) = types_and_namespace else {
         event!(
             Level::DEBUG,
             "Probe message lacks wsd:Types element. Ignored."
@@ -91,22 +91,49 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
         return Err(ProbeParsingError::MissingTypes);
     };
 
-    // TODO do we want to return the probes and make the host handle the different types
-    // As it is the host responsible for defining the response
-    if !types
-        .split_whitespace()
-        .any(|requested_type| requested_type == WSDP_TYPE_DEVICE)
-    {
+    let requested_type_match = {
+        let mut requested_type_match = false;
+
+        for r#type in types.split_whitespace() {
+            // split
+            let Some((prefix, name)) = r#type.split_once(':') else {
+                continue;
+            };
+
+            match name {
+                "Device" => {
+                    if namespace.get(prefix) == Some(XML_WSDP_NAMESPACE) {
+                        requested_type_match = true;
+                        break;
+                    }
+                },
+
+                "Computer" => {
+                    if namespace.get(prefix) == Some(XML_PUB_NAMESPACE) {
+                        requested_type_match = true;
+                        break;
+                    }
+                },
+                _ => {
+                    continue;
+                },
+            }
+        }
+
+        requested_type_match
+    };
+
+    if !requested_type_match {
         event!(
             Level::DEBUG,
             types = &*types,
             "client requests types we don't offer"
         );
 
-        return Err(ProbeParsingError::TypesMismatch(types.into_boxed_str()));
+        return Ok(false);
     }
 
-    Ok(())
+    Ok(true)
 }
 
 /// This takes in a reader that is stopped at the body tag.

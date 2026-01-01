@@ -29,6 +29,7 @@ pub fn extract_endpoint_reference_address(
             },
             XmlEvent::EndElement { .. } => {
                 if depth == 0 {
+                    // we've exited the element that we entered on
                     break;
                 }
 

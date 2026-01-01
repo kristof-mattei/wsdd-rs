@@ -1,6 +1,7 @@
 pub mod generic;
 pub mod probe;
 pub mod resolve;
+pub mod xaddrs;
 
 use std::io::BufReader;
 use std::net::SocketAddr;
@@ -410,7 +411,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn is_duplicated_msg_drops_read_lock_before_waiting_for_write_lock() {
         let handler = handler_for_tests(8);
-        let message_id = Urn::from_uuid(Uuid::new_v4());
+        let message_id = Urn::from_uuid(Uuid::now_v7());
 
         let first_hit = timeout(
             Duration::from_millis(100),

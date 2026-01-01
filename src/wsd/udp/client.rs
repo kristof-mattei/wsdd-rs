@@ -1,8 +1,9 @@
-use std::net::{IpAddr, SocketAddr};
-use std::ops::ControlFlow;
+use std::cmp::Reverse;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use bytes::Bytes;
 use color_eyre::eyre;
 use hashbrown::HashMap;
 use ipnet::IpNet;
@@ -18,22 +19,22 @@ use crate::constants::{
     APP_MAX_DELAY, MIME_TYPE_SOAP_XML, PROBE_TIMEOUT_MILLISECONDS, WSD_BYE, WSD_HELLO,
     WSD_PROBE_MATCH, WSD_RESOLVE_MATCH, XML_WSD_NAMESPACE,
 };
-use crate::dns::GaiResolver;
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::{Builder, MessageType};
 use crate::soap::parser::MessageHandler;
 use crate::soap::parser::generic::extract_endpoint_metadata;
+use crate::soap::parser::xaddrs::XAddr;
+use crate::utils::SliceDisplay;
 use crate::utils::task::spawn_with_name;
 use crate::wsd::HANDLED_MESSAGES;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 use crate::xml::{Wrapper, find_child, parse_generic_body_paths};
 
-#[expect(unused, reason = "WIP")]
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    bound_to: NetworkAddress,
-    devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+    _bound_to: NetworkAddress,
+    _devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     handle: tokio::task::JoinHandle<()>,
     mc_local_port_tx: Sender<Box<[u8]>>,
     probes: Arc<RwLock<HashMap<Urn, Duration>>>,
@@ -82,8 +83,8 @@ impl WSDClient {
         let client = Self {
             cancellation_token,
             config,
-            bound_to,
-            devices,
+            _bound_to: bound_to,
+            _devices: devices,
             handle,
             mc_local_port_tx,
             probes,
@@ -203,127 +204,24 @@ fn now() -> Duration {
 //         self.mch.remove_handler(self.mch.mc_send_socket, self)
 //         self.mch.remove_handler(self.mch.recv_socket, self)
 
-struct HttpHttpsUrlWithHost<'s> {
-    url: Url,
-    raw: &'s str,
-}
-
-fn protocols_match(parsed_urls: &[HttpHttpsUrlWithHost<'_>], endpoint: &DeviceUri) -> bool {
-    // If any HTTPS XAddrs are present, all XAddrs must be HTTPS. XAddr sections which include both HTTP and HTTPS addresses are completely ignored.
-    let protocols_validation = parsed_urls.iter().try_fold(None, |acc, curr| match acc {
-        None => ControlFlow::Continue(Some(curr.url.scheme())),
-        Some(seen) => {
-            if seen == curr.url.scheme() {
-                ControlFlow::Continue(Some(seen))
-            } else {
-                ControlFlow::Break(())
-            }
-        },
-    });
-
-    match protocols_validation {
-        ControlFlow::Continue(Some("http")) => {
-            // All are http, continue
-        },
-        ControlFlow::Continue(Some("https")) => {
-            // Additionally, the device's endpoint address must match the HTTPS XAddrs exactly.
-            if !parsed_urls
-                .iter()
-                .any(|&HttpHttpsUrlWithHost { raw, .. }| raw == &**endpoint)
-            {
-                return false;
-            }
-        },
-        ControlFlow::Continue(_) | ControlFlow::Break(()) => {
-            return false;
-        },
+fn parse_xaddrs(bound_to: IpNet, raw_xaddrs: &str) -> Vec<XAddr> {
+    #[derive(Ord, PartialOrd, PartialEq, Eq)]
+    enum XAddrPriority {
+        Medium = 0,
+        High = 1,
     }
 
-    true
-}
-
-async fn validate_subnets(
-    parsed_urls: &[HttpHttpsUrlWithHost<'_>],
-    bound_to_ip_net: &IpNet,
-) -> bool {
-    // At least one IP address included in the XAddrs (or IP address resolved from a hostname included in the XAddrs) must be on the same subnet as the adapter over which the ProbeMatches or ResolveMatches message was received.
-    let mut any_subnet_match = false;
-
-    let resolver = GaiResolver::new();
-
-    for &HttpHttpsUrlWithHost { ref url, ref raw } in parsed_urls {
-        match url.host() {
-            Some(Host::Domain(domain)) => {
-                let Ok(name) = (domain).parse() else {
-                    continue;
-                };
-
-                let Ok(addresses) = resolver.resolve(name).await else {
-                    continue;
-                };
-
-                for address in addresses {
-                    if bound_to_ip_net.contains(&address.ip()) {
-                        any_subnet_match = true;
-                        break;
-                    }
-                }
-            },
-            Some(Host::Ipv4(ipv4)) => {
-                if bound_to_ip_net.contains(&IpAddr::from(ipv4)) {
-                    any_subnet_match = true;
-                    break;
-                }
-            },
-            Some(Host::Ipv6(ipv6)) => {
-                if bound_to_ip_net.contains(&IpAddr::from(ipv6)) {
-                    any_subnet_match = true;
-                    break;
-                }
-            },
-            None => {
-                event!(Level::ERROR, %url, %raw, "Missing host on URL");
-            },
-        }
-    }
-
-    any_subnet_match
-}
-
-async fn extract_xaddr(
-    bound_to: IpNet,
-    endpoint: &DeviceUri,
-    raw_xaddrs: &str,
-) -> Option<url::Url> {
     // discard invalid URLs
-    let parsed_urls = raw_xaddrs
+    let mut xaddrs = raw_xaddrs
         .split_whitespace()
-        .filter_map(|raw_xaddr| match Url::parse(raw_xaddr) {
-            Ok(url) => {
-                // XAddrs must be HTTP or HTTPS addresses. XAddrs of other schemes are ignored.
-                if let "http" | "https" = url.scheme()
-                    && url.has_host()
-                {
-                    Some(HttpHttpsUrlWithHost {
-                        url,
-                        raw: raw_xaddr,
-                    })
-                } else {
-                    event!(
-                        Level::INFO,
-                        ?raw_xaddr,
-                        "Hello sent with non-http/https xaddr or no host, ignoring"
-                    );
-
-                    None
-                }
-            },
+        .filter_map(|raw_xaddr| match XAddr::try_from(raw_xaddr) {
+            Ok(xaddr) => Some(xaddr),
             Err(err) => {
                 event!(
                     Level::INFO,
                     ?err,
-                    ?raw_xaddr,
-                    "Hello sent with invalid xaddr, ignoring"
+                    %raw_xaddr,
+                    "Message sent with invalid/non-http/https xaddr or no host, ignoring"
                 );
 
                 None
@@ -331,32 +229,28 @@ async fn extract_xaddr(
         })
         .collect::<Vec<_>>();
 
-    if !protocols_match(&parsed_urls, endpoint) {
-        return None;
-    }
-
-    if !validate_subnets(&parsed_urls, &bound_to).await {
-        return None;
-    }
-
-    for parsed_url in parsed_urls {
+    xaddrs.sort_unstable_by_key(|parsed_url| {
         match bound_to {
             IpNet::V6(_) => {
-                // use first link-local address for IPv6
-                if let Some(Host::Ipv6(ipv6)) = parsed_url.url.host()
+                // prefer link-local address for IPv6
+                if let Some(Host::Ipv6(ipv6)) = parsed_url.get_url().host()
                     && ipv6.is_unicast_link_local()
                 {
-                    return Some(parsed_url.url);
+                    Reverse(XAddrPriority::High)
+                } else {
+                    Reverse(XAddrPriority::Medium)
                 }
             },
             IpNet::V4(_) => {
                 // use first (and very likely the only) IPv4 address
-                return Some(parsed_url.url);
+                Reverse(XAddrPriority::High)
             },
         }
-    }
+    });
 
-    None
+    event!(Level::TRACE, xaddrs = %SliceDisplay(&xaddrs));
+
+    xaddrs
 }
 
 async fn handle_hello(
@@ -369,9 +263,9 @@ async fn handle_hello(
 ) -> Result<(), eyre::Report> {
     find_child(reader, Some(XML_WSD_NAMESPACE), "Hello")?;
 
-    let (endpoint, xaddrs) = extract_endpoint_metadata(reader)?;
+    let (endpoint, raw_xaddrs) = extract_endpoint_metadata(reader)?;
 
-    let Some(xaddrs) = xaddrs else {
+    let Some(raw_xaddrs) = raw_xaddrs else {
         event!(Level::INFO, "Hello without XAddrs, sending resolve");
 
         let (message, _) = Builder::build_resolve(config, &endpoint)?;
@@ -381,14 +275,25 @@ async fn handle_hello(
         return Ok(());
     };
 
-    let Some(xaddr) = extract_xaddr(bound_to.address, &endpoint, &xaddrs).await else {
+    let xaddrs = parse_xaddrs(bound_to.address, &raw_xaddrs);
+
+    if xaddrs.is_empty() {
+        event!(Level::ERROR, "No valid URL in xaddrs");
+
         return Ok(());
-    };
+    }
 
-    // TODO serve variables and static text
-    event!(Level::INFO, "Hello from {} on {}", endpoint, xaddr);
+    event!(Level::INFO, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "Hello");
 
-    perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddr).await?;
+    perform_metadata_exchange(
+        client,
+        config,
+        devices,
+        bound_to,
+        endpoint,
+        xaddrs.into_iter().map(Into::into).collect(),
+    )
+    .await?;
 
     Ok(())
 }
@@ -444,12 +349,12 @@ async fn handle_probe_match(
         return Ok(());
     }
 
-    let (endpoint, xaddrs) = extract_endpoint_metadata(reader)?;
+    let (endpoint, raw_xaddrs) = extract_endpoint_metadata(reader)?;
 
     //  If no XAddrs are included in the ProbeMatches message, then the client may send a
     //  Resolve message by UDP multicast to port 3702.
-    let Some(xaddrs) = xaddrs else {
-        event!(Level::INFO, "probe match without XAddrs, sending resolve");
+    let Some(raw_xaddrs) = raw_xaddrs else {
+        event!(Level::INFO, "ProbeMatch without XAddrs, sending resolve");
 
         let (message, _) = Builder::build_resolve(config, &endpoint)?;
 
@@ -458,19 +363,23 @@ async fn handle_probe_match(
         return Ok(());
     };
 
-    let Some(xaddr) = extract_xaddr(bound_to.address, &endpoint, &xaddrs).await else {
-        return Ok(());
-    };
+    let xaddrs = parse_xaddrs(bound_to.address, &raw_xaddrs);
 
-    event!(Level::DEBUG, %endpoint, %xaddr, "Probe match");
+    if xaddrs.is_empty() {
+        event!(Level::ERROR, "No valid URL in xaddrs");
+
+        return Ok(());
+    }
+
+    event!(Level::INFO, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ProbeMatch");
 
     perform_metadata_exchange(
         client,
         config,
-        Arc::clone(&devices),
+        devices,
         bound_to,
         endpoint,
-        xaddr,
+        xaddrs.into_iter().map(Into::into).collect(),
     )
     .await?;
 
@@ -492,26 +401,33 @@ async fn handle_resolve_match(
         ],
     )?;
 
-    let (endpoint, xaddrs) = extract_endpoint_metadata(reader)?;
+    let (endpoint, raw_xaddrs) = extract_endpoint_metadata(reader)?;
 
-    let Some(xaddrs) = xaddrs else {
-        event!(Level::DEBUG, "Resolve match without xaddr");
-
-        return Ok(());
-    };
-
-    let Some(xaddr) = extract_xaddr(bound_to.address, &endpoint, &xaddrs).await else {
-        event!(
-            Level::ERROR,
-            "No valid URL in xaddr, but this is a bug in xaddr, where we're too strict"
-        );
+    let Some(raw_xaddrs) = raw_xaddrs else {
+        event!(Level::DEBUG, "ResolveMatch without xaddr, nothing to do");
 
         return Ok(());
     };
 
-    event!(Level::DEBUG, %endpoint, ?xaddr, "Resolve match");
+    let xaddrs = parse_xaddrs(bound_to.address, &raw_xaddrs);
 
-    perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddr).await?;
+    if xaddrs.is_empty() {
+        event!(Level::ERROR, "No valid URL in xaddrs");
+
+        return Ok(());
+    }
+
+    event!(Level::INFO, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ResolveMatch");
+
+    perform_metadata_exchange(
+        client,
+        config,
+        devices,
+        bound_to,
+        endpoint,
+        xaddrs.into_iter().map(Into::into).collect(),
+    )
+    .await?;
 
     Ok(())
 }
@@ -522,44 +438,42 @@ async fn perform_metadata_exchange(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
     endpoint: DeviceUri,
-    xaddr: Url,
+    xaddrs: Vec<Url>,
 ) -> Result<(), eyre::Report> {
-    let scheme = xaddr.scheme();
+    let body = Bytes::from_owner(build_getmetadata_message(config, &endpoint)?);
 
-    if !matches!(scheme, "http" | "https") {
-        event!(Level::DEBUG, %xaddr, "invalid XAddr");
-        return Ok(());
-    }
+    for xaddr in xaddrs {
+        let builder = client
+            .post(xaddr.clone())
+            .header("Content-Type", MIME_TYPE_SOAP_XML)
+            .header("User-Agent", "wsdd-rs");
 
-    let body = build_getmetadata_message(config, &endpoint)?;
+        let response = builder
+            .body(body.clone())
+            .timeout(config.metadata_timeout)
+            .send()
+            .await;
 
-    let builder = client
-        .post(xaddr.clone())
-        .header("Content-Type", MIME_TYPE_SOAP_XML)
-        .header("User-Agent", "wsdd-rs");
+        let response = match response {
+            Ok(response) => response.bytes().await,
+            Err(error) => Err(error),
+        };
 
-    let response = builder
-        .body(body)
-        .timeout(config.metadata_timeout)
-        .send()
-        .await;
+        match response {
+            Ok(response) => {
+                return handle_metadata(devices, &response, endpoint, xaddr, bound_to).await;
+            },
+            Err(error) => {
+                let url = error.url().map(ToString::to_string);
+                let url = url.as_deref().unwrap_or("Failed to get URL from error");
 
-    match response {
-        Ok(response) => {
-            let response = response.bytes().await?;
-
-            handle_metadata(devices, &response, endpoint, xaddr, bound_to).await?;
-        },
-        Err(error) => {
-            let url = error.url().map(ToString::to_string);
-            let url = url.as_deref().unwrap_or("Failed to get URL from error");
-
-            if error.is_timeout() {
-                event!(Level::WARN, url, "metadata exchange timed out");
-            } else {
-                event!(Level::WARN, ?error, url, "could not fetch metadata");
-            }
-        },
+                if error.is_timeout() {
+                    event!(Level::WARN, url, "metadata exchange timed out");
+                } else {
+                    event!(Level::WARN, ?error, url, "could not fetch metadata");
+                }
+            },
+        }
     }
 
     Ok(())
@@ -708,18 +622,19 @@ async fn listen_forever(
 
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
     use std::time::Duration;
 
     use hashbrown::HashMap;
-    use ipnet::{IpNet, Ipv4Net};
+    use ipnet::{IpNet, Ipv4Net, Ipv6Net};
     use libc::RT_SCOPE_SITE;
     use mockito::ServerOpts;
     use pretty_assertions::{assert_eq, assert_matches};
     use tokio::sync::RwLock;
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio_util::sync::CancellationToken;
+    use tracing_test::traced_test;
     use url::Url;
     use uuid::Uuid;
 
@@ -729,7 +644,7 @@ mod tests {
     use crate::wsd::device::DeviceUri;
     use crate::wsd::udp::client::{
         WSDClient, handle_bye, handle_hello, handle_metadata, handle_probe_match,
-        handle_resolve_match,
+        handle_resolve_match, parse_xaddrs,
     };
 
     #[tokio::test]
@@ -739,7 +654,7 @@ mod tests {
         );
 
         // client
-        let client_endpoint_uuid = Uuid::new_v4();
+        let client_endpoint_uuid = Uuid::now_v7();
         let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
         let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
@@ -748,10 +663,10 @@ mod tests {
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
 
         let host_endpoint_uuid =
-            DeviceUri::new(Uuid::new_v4().as_urn().to_string().into_boxed_str());
+            DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
         let hello_without_xaddrs = format!(
             include_str!("../../test/hello-without-xaddrs-template.xml"),
-            Uuid::new_v4(),
+            Uuid::now_v7(),
             host_endpoint_uuid
         );
 
@@ -801,7 +716,7 @@ mod tests {
         );
 
         // client
-        let client_endpoint_uuid = Uuid::new_v4();
+        let client_endpoint_uuid = Uuid::now_v7();
         let client_endpoint_device_uri =
             DeviceUri::new(client_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let client_instance_id = "client-instance-id";
@@ -821,9 +736,9 @@ mod tests {
             panic!("Invalid test setup");
         };
         let host_port = server.socket_address().port();
-        let host_message_id = Uuid::new_v4();
+        let host_message_id = Uuid::now_v7();
         let host_instance_id = "host-instance-id";
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
 
@@ -838,8 +753,8 @@ mod tests {
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
                     include_str!("../../test/get-response-synology.xml"),
-                    Uuid::new_v4(),
-                    Uuid::new_v4(),
+                    Uuid::now_v7(),
+                    Uuid::now_v7(),
                 );
 
                 assert_eq!(
@@ -856,7 +771,7 @@ mod tests {
             include_str!("../../test/hello-with-xaddrs-template.xml"),
             host_message_id,
             host_instance_id,
-            Uuid::new_v4(),
+            Uuid::now_v7(),
             host_endpoint_device_uri,
             host_ip,
             host_port,
@@ -936,13 +851,13 @@ mod tests {
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
 
         let host_endpoint_uuid =
-            DeviceUri::new(Uuid::new_v4().as_urn().to_string().into_boxed_str());
+            DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
         let bye = format!(
             include_str!("../../test/bye-template.xml"),
-            Uuid::new_v4(),
+            Uuid::now_v7(),
             host_instance_id,
-            Uuid::new_v4(),
+            Uuid::now_v7(),
             0,
             host_endpoint_uuid
         );
@@ -972,7 +887,7 @@ mod tests {
         );
 
         // client
-        let client_endpoint_uuid = Uuid::new_v4();
+        let client_endpoint_uuid = Uuid::now_v7();
         let client_endpoint_device_uri =
             DeviceUri::new(client_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let client_instance_id = "client-instance-id";
@@ -994,7 +909,7 @@ mod tests {
         let host_port = server.socket_address().port();
         let host_instance_id = "host-instance-id";
         let host_endpoint_uuid =
-            DeviceUri::new(Uuid::new_v4().as_urn().to_string().into_boxed_str());
+            DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
         let expected_get = format!(
             include_str!("../../test/get-template.xml"),
@@ -1007,8 +922,8 @@ mod tests {
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
                     include_str!("../../test/get-response-synology.xml"),
-                    Uuid::new_v4(),
-                    Uuid::new_v4(),
+                    Uuid::now_v7(),
+                    Uuid::now_v7(),
                 );
 
                 assert_eq!(
@@ -1023,9 +938,9 @@ mod tests {
 
         let hello = format!(
             include_str!("../../test/hello-with-xaddrs-template.xml"),
-            Uuid::new_v4(),
+            Uuid::now_v7(),
             host_instance_id,
-            Uuid::new_v4(),
+            Uuid::now_v7(),
             host_endpoint_uuid,
             host_ip,
             host_port,
@@ -1071,9 +986,9 @@ mod tests {
         // and now the bye
         let bye = format!(
             include_str!("../../test/bye-template.xml"),
-            Uuid::new_v4(),
+            Uuid::now_v7(),
             host_instance_id,
-            Uuid::new_v4(),
+            Uuid::now_v7(),
             0,
             host_endpoint_uuid
         );
@@ -1104,7 +1019,7 @@ mod tests {
         let cancellation_token = CancellationToken::new();
 
         // client
-        let client_endpoint_uuid = Uuid::new_v4();
+        let client_endpoint_uuid = Uuid::now_v7();
         let client_instance_id = "client-instance-id";
         let config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
@@ -1132,7 +1047,10 @@ mod tests {
 
         let probe = uc_wsd_port_rx.recv().await.unwrap();
 
-        let expected = format!(include_str!("../../test/probe-template.xml"), Uuid::nil());
+        let expected = format!(
+            include_str!("../../test/probe-template-wsdp-device.xml"),
+            Uuid::nil()
+        );
 
         let response = to_string_pretty(&probe).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
@@ -1151,11 +1069,11 @@ mod tests {
 
         let metadata: String = format!(
             include_str!("../../test/get-response-synology.xml"),
-            Uuid::new_v4(),
-            Uuid::new_v4(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
         );
 
-        let device_uri = DeviceUri::new(Uuid::new_v4().as_urn().to_string().into_boxed_str());
+        let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
         let result = handle_metadata(
             Arc::clone(&client_devices),
@@ -1210,11 +1128,11 @@ mod tests {
 
         let metadata: String = format!(
             include_str!("../../test/get-response-samsung-printer.xml"),
-            Uuid::new_v4(),
-            Uuid::new_v4(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
         );
 
-        let device_uri = DeviceUri::new(Uuid::new_v4().as_urn().to_string().into_boxed_str());
+        let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
         let result = handle_metadata(
             Arc::clone(&client_devices),
@@ -1267,11 +1185,11 @@ mod tests {
 
         let metadata: String = format!(
             include_str!("../../test/get-response-windows.xml"),
-            Uuid::new_v4(),
-            Uuid::new_v4(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
         );
 
-        let device_uri = DeviceUri::new(Uuid::new_v4().as_urn().to_string().into_boxed_str());
+        let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
         let result = handle_metadata(
             Arc::clone(&client_devices),
@@ -1322,18 +1240,18 @@ mod tests {
         );
 
         // client
-        let client_endpoint_uuid = Uuid::new_v4();
+        let client_endpoint_uuid = Uuid::now_v7();
         let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
         let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
 
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
-        let host_message_id = Uuid::new_v4();
+        let host_message_id = Uuid::now_v7();
 
         let probe_matches = format!(
             include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
@@ -1395,7 +1313,7 @@ mod tests {
         );
 
         // client
-        let client_endpoint_uuid = Uuid::new_v4();
+        let client_endpoint_uuid = Uuid::now_v7();
         let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
         let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
@@ -1414,9 +1332,9 @@ mod tests {
             panic!("Invalid test setup");
         };
         let host_port = server.socket_address().port();
-        let host_message_id = Uuid::new_v4();
+        let host_message_id = Uuid::now_v7();
         let host_instance_id = "host-instance-id";
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
 
@@ -1431,8 +1349,8 @@ mod tests {
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
                     include_str!("../../test/get-response-synology.xml"),
-                    Uuid::new_v4(),
-                    Uuid::new_v4(),
+                    Uuid::now_v7(),
+                    Uuid::now_v7(),
                 );
 
                 assert_eq!(
@@ -1504,7 +1422,7 @@ mod tests {
         );
 
         // client
-        let client_endpoint_uuid = Uuid::new_v4();
+        let client_endpoint_uuid = Uuid::now_v7();
         let client_instance_id = "client-instance-id";
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
         let client_config = Arc::new(build_config(client_endpoint_uuid, client_instance_id));
@@ -1522,9 +1440,9 @@ mod tests {
             panic!("Invalid test setup");
         };
         // let host_port = server.socket_address().port();
-        let host_message_id = Uuid::new_v4();
+        let host_message_id = Uuid::now_v7();
         let host_instance_id = "host-instance-id";
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
 
@@ -1539,8 +1457,8 @@ mod tests {
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
                     include_str!("../../test/get-response-synology.xml"),
-                    Uuid::new_v4(),
-                    Uuid::new_v4(),
+                    Uuid::now_v7(),
+                    Uuid::now_v7(),
                 );
 
                 assert_eq!(
@@ -1587,5 +1505,64 @@ mod tests {
         let client_devices = client_devices.read().await;
 
         assert_matches!(client_devices.get(&host_endpoint_device_uri), Some(_));
+    }
+
+    #[test]
+    #[traced_test]
+    fn filters_invalid_and_non_http_https() {
+        let bound = IpNet::V4(Ipv4Net::new(Ipv4Addr::new(192, 168, 1, 10), 24).unwrap());
+
+        let result = parse_xaddrs(
+            bound,
+            "http://valid.example.com https://also.valid ftp://ignored https:///#nohost",
+        );
+
+        let raws = result
+            .iter()
+            .map(|xaddr| xaddr.get_url().as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            ["http://valid.example.com/", "https://also.valid/"][..],
+            raws
+        );
+    }
+
+    #[test]
+    #[traced_test]
+    fn rejects_missing_host() {
+        let bound = IpNet::V4(Ipv4Net::new(Ipv4Addr::new(10, 0, 0, 1), 24).unwrap());
+
+        let result = parse_xaddrs(
+            bound,
+            "http:////?missinghost=missing https://example.com/path",
+        );
+
+        let raws = result
+            .iter()
+            .map(|xaddr| xaddr.get_url().as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(["https://example.com/path"][..], raws);
+    }
+
+    #[test]
+    #[traced_test]
+    fn prefers_link_local_ipv6_first() {
+        let bound =
+            IpNet::V6(Ipv6Net::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1), 64).unwrap());
+
+        let result = parse_xaddrs(
+            bound,
+            "https://[2001:db8::1]/global https://[fe80::abcd]/local",
+        );
+
+        let raws = result
+            .iter()
+            .map(|xaddr| xaddr.get_url().as_str())
+            .collect::<Vec<_>>();
+
+        // link-local must be sorted first
+        assert_eq!(Some("https://[fe80::abcd]/local"), raws.first().copied());
     }
 }

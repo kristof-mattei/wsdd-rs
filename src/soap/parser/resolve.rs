@@ -30,14 +30,14 @@ pub enum ResolveParsingError {
 fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveResult {
     let mut addr = None;
 
-    let mut resolve_depth = 0_usize;
+    let mut depth = 0_usize;
 
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
-                resolve_depth += 1;
+                depth += 1;
 
-                if resolve_depth == 1
+                if depth == 1
                     && name.namespace_ref() == Some(XML_WSA_NAMESPACE)
                     && name.local_name == "EndpointReference"
                 {
@@ -81,12 +81,12 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
                 }
             },
             XmlEvent::EndElement { .. } => {
-                if resolve_depth == 0 {
+                if depth == 0 {
                     // we've exited the Resolve
                     break;
                 }
 
-                resolve_depth -= 1;
+                depth -= 1;
             },
             XmlEvent::EndDocument => {
                 break;
@@ -117,7 +117,7 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
     let Ok(addr_urn) = addr.parse::<Urn>() else {
         event!(
             Level::DEBUG,
-            addr = &*addr,
+            addr = %addr,
             "invalid resolve request: address is not a valid urn"
         );
 
@@ -127,7 +127,7 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
     if addr_urn != target_uuid.urn() {
         event!(
             Level::DEBUG,
-            addr = &*addr,
+            addr = %addr,
             expected = %target_uuid.urn(),
             "invalid resolve request: address does not match own one"
         );

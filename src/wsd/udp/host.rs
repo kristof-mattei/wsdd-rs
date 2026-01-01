@@ -154,14 +154,16 @@ fn handle_probe(
     messages_built: &AtomicU64,
     relates_to: Urn,
     reader: &mut Wrapper<'_>,
-) -> Result<Vec<u8>, eyre::Report> {
-    parser::probe::parse_probe_body(reader)?;
-
-    Ok(builder::Builder::build_probe_matches(
-        config,
-        messages_built,
-        relates_to,
-    )?)
+) -> Result<Option<Vec<u8>>, eyre::Report> {
+    if parser::probe::parse_probe_body(reader)? {
+        Ok(Some(builder::Builder::build_probe_matches(
+            config,
+            messages_built,
+            relates_to,
+        )?))
+    } else {
+        Ok(None)
+    }
 }
 
 fn handle_resolve(
@@ -230,8 +232,7 @@ async fn listen_forever(
                 &messages_built,
                 header.message_id,
                 &mut body_reader,
-            )
-            .map(Some),
+            ),
             constants::WSD_RESOLVE => handle_resolve(
                 address,
                 &config,
@@ -294,7 +295,7 @@ mod tests {
     #[tokio::test]
     async fn sends_hello() {
         // host
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
@@ -342,7 +343,7 @@ mod tests {
     #[tokio::test]
     async fn sends_bye() {
         // host
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
@@ -396,7 +397,7 @@ mod tests {
         let host_message_handler = build_message_handler();
 
         // host
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
@@ -405,7 +406,7 @@ mod tests {
 
         // client
         let client_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let client_message_id = Uuid::new_v4();
+        let client_message_id = Uuid::now_v7();
         let resolve = format!(
             include_str!("../../test/resolve-template.xml"),
             client_message_id, host_endpoint_device_uri,
@@ -449,11 +450,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handles_probe() {
+    async fn handles_probe_wsdp_device() {
         let host_message_handler = build_message_handler();
 
         // host
-        let host_endpoint_uuid = Uuid::new_v4();
+        let host_endpoint_uuid = Uuid::now_v7();
         let host_endpoint_device_uri =
             DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
         let host_instance_id = "host-instance-id";
@@ -462,9 +463,9 @@ mod tests {
 
         // client
         let client_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let client_message_id = Uuid::new_v4();
+        let client_message_id = Uuid::now_v7();
         let probe = format!(
-            include_str!("../../test/probe-template.xml"),
+            include_str!("../../test/probe-template-wsdp-device.xml"),
             client_message_id
         );
 
@@ -484,6 +485,62 @@ mod tests {
             header.message_id,
             &mut reader,
         )
+        .unwrap()
+        .unwrap();
+
+        let expected = format!(
+            include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
+            client_message_id,
+            host_instance_id,
+            host_messages_built.load(Ordering::Relaxed) - 1,
+            host_endpoint_device_uri
+        );
+
+        let response = to_string_pretty(&response).unwrap();
+        let expected = to_string_pretty(expected.as_bytes()).unwrap();
+
+        assert_eq!(response, expected);
+    }
+
+    #[tokio::test]
+    // Identical to `handles_probe_wsdp_device` except for different file
+    // Need to figure out a way to parameterize this
+    async fn handles_probe_pub_computer() {
+        let host_message_handler = build_message_handler();
+
+        // host
+        let host_endpoint_uuid = Uuid::now_v7();
+        let host_endpoint_device_uri =
+            DeviceUri::new(host_endpoint_uuid.as_urn().to_string().into_boxed_str());
+        let host_instance_id = "host-instance-id";
+        let host_config = Arc::new(build_config(host_endpoint_uuid, host_instance_id));
+        let host_messages_built = AtomicU64::new(0);
+
+        // client
+        let client_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let client_message_id = Uuid::now_v7();
+        let probe = format!(
+            include_str!("../../test/probe-template-pub-computer.xml"),
+            client_message_id
+        );
+
+        // host receives client's probe
+        let (header, mut reader) = host_message_handler
+            .deconstruct_message(
+                probe.as_bytes(),
+                Some(SocketAddr::V4(SocketAddrV4::new(client_ip, 5000))),
+            )
+            .await
+            .unwrap();
+
+        // host produces answer
+        let response = handle_probe(
+            &host_config,
+            &host_messages_built,
+            header.message_id,
+            &mut reader,
+        )
+        .unwrap()
         .unwrap();
 
         let expected = format!(
