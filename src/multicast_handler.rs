@@ -19,10 +19,7 @@ use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
 
 use crate::config::Config;
-use crate::constants::{
-    self, MULTICAST_UDP_REPEAT, UDP_MAX_DELAY, UDP_MIN_DELAY, UDP_UPPER_DELAY, UNICAST_UDP_REPEAT,
-    WSD_HTTP_PORT, WSD_MAX_LEN, WSD_MCAST_GRP_V4, WSD_UDP_PORT,
-};
+use crate::constants;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
 use crate::udp_address::UdpAddress;
@@ -281,7 +278,7 @@ impl MulticastHandler {
 
         mc_wsd_port_socket
             .join_multicast_v6(&constants::WSD_MCAST_GRP_V6, index)
-            .wrap_err("Failed to join multicast group")?;
+            .wrap_err("Failed to join IPv6 multicast group")?;
 
         mc_wsd_port_socket
             .set_only_v6(true)
@@ -295,8 +292,12 @@ impl MulticastHandler {
 
         // bind to network interface, i.e. scope and handle OS differences,
         // see Stevens: Unix Network Programming, Section 21.6, last paragraph
-        let socket_addr =
-            SocketAddrV6::new(constants::WSD_MCAST_GRP_V6, WSD_UDP_PORT.into(), 0, index);
+        let socket_addr = SocketAddrV6::new(
+            constants::WSD_MCAST_GRP_V6,
+            constants::WSD_UDP_PORT.into(),
+            0,
+            index,
+        );
 
         if let Err(error) = mc_wsd_port_socket.bind(&socket_addr.into()) {
             event!(Level::WARN, ?error, %socket_addr, "Failed to bind to socket");
@@ -326,10 +327,14 @@ impl MulticastHandler {
 
         // bind unicast socket to interface address and WSD's udp port
         uc_wsd_port_socket
-            .bind(&SocketAddrV6::new(ipv6_net.addr(), WSD_UDP_PORT.into(), 0, index).into())
+            .bind(
+                &SocketAddrV6::new(ipv6_net.addr(), constants::WSD_UDP_PORT.into(), 0, index)
+                    .into(),
+            )
             .wrap_err("Failed to bind to the socket")?;
 
-        let listen_address = SocketAddrV6::new(ipv6_net.addr(), WSD_HTTP_PORT.into(), 0, index);
+        let listen_address =
+            SocketAddrV6::new(ipv6_net.addr(), constants::WSD_HTTP_PORT.into(), 0, index);
 
         Ok((multicast_address, listen_address.into()))
     }
@@ -347,25 +352,29 @@ impl MulticastHandler {
         let index = interface.index();
 
         let multicast_address = UdpAddress::new(
-            SocketAddrV4::new(WSD_MCAST_GRP_V4, WSD_UDP_PORT.into()).into(),
+            SocketAddrV4::new(constants::WSD_MCAST_GRP_V4, constants::WSD_UDP_PORT.into()).into(),
             ipv4_net.into(),
             interface,
         );
 
         mc_wsd_port_socket
-            .join_multicast_v4_n(&WSD_MCAST_GRP_V4, &InterfaceIndexOrAddress::Index(index))
-            .wrap_err("Failed to join multicast group")?;
+            .join_multicast_v4_n(
+                &constants::WSD_MCAST_GRP_V4,
+                &InterfaceIndexOrAddress::Index(index),
+            )
+            .wrap_err("Failed to join IPv4 multicast group")?;
 
         mc_wsd_port_socket
             .set_multicast_all_v4(false)
             .wrap_err("Failed to disable IP_MULTICAST_ALL")?;
 
-        let socket_addr = SocketAddrV4::new(WSD_MCAST_GRP_V4, WSD_UDP_PORT.into());
+        let socket_addr =
+            SocketAddrV4::new(constants::WSD_MCAST_GRP_V4, constants::WSD_UDP_PORT.into());
 
         if let Err(error) = mc_wsd_port_socket.bind(&socket_addr.into()) {
             event!(Level::WARN, ?error, %socket_addr, "Failed to bind to socket");
 
-            let fallback = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, WSD_UDP_PORT.into());
+            let fallback = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, constants::WSD_UDP_PORT.into());
 
             mc_wsd_port_socket
                 .bind(&fallback.into())
@@ -393,10 +402,10 @@ impl MulticastHandler {
 
         // bind unicast socket to interface address and WSD's udp port
         uc_wsd_port_socket
-            .bind(&SocketAddrV4::new(ipv4_net.addr(), WSD_UDP_PORT.into()).into())
+            .bind(&SocketAddrV4::new(ipv4_net.addr(), constants::WSD_UDP_PORT.into()).into())
             .wrap_err("Failed to bind to the socket")?;
 
-        let listen_address = SocketAddrV4::new(ipv4_net.addr(), WSD_HTTP_PORT.into());
+        let listen_address = SocketAddrV4::new(ipv4_net.addr(), constants::WSD_HTTP_PORT.into());
 
         Ok((multicast_address, listen_address.into()))
     }
@@ -487,7 +496,7 @@ async fn socket_rx_forever(
     socket: Arc<UdpSocket>,
 ) {
     loop {
-        let mut buffer = vec![MaybeUninit::<u8>::uninit(); WSD_MAX_LEN];
+        let mut buffer = vec![MaybeUninit::<u8>::uninit(); constants::WSD_MAX_LEN];
 
         let result = {
             let mut buffer_byte_cursor = &mut *buffer;
@@ -587,7 +596,7 @@ struct MulticastMessageSplitter {
 
 impl MessageSplitter for MulticastMessageSplitter {
     const NAME: &str = "MulticastMessageSplitter";
-    const REPEAT: usize = MULTICAST_UDP_REPEAT;
+    const REPEAT: usize = constants::MULTICAST_UDP_REPEAT;
 
     type Message = Box<[u8]>;
 
@@ -600,7 +609,7 @@ struct UnicastMessageSplitter {}
 
 impl MessageSplitter for UnicastMessageSplitter {
     const NAME: &str = "UnicastMessageSplitter";
-    const REPEAT: usize = UNICAST_UDP_REPEAT;
+    const REPEAT: usize = constants::UNICAST_UDP_REPEAT;
 
     type Message = (SocketAddr, Box<[u8]>);
 
@@ -621,12 +630,12 @@ async fn repeatedly_send_buffer<T: MessageSplitter>(
 ) {
     // Schedule to send the given message to the given address.
     // Implements SOAP over UDP, Appendix I.
-    let mut delta = rand::rng().random_range(UDP_MIN_DELAY..=UDP_MAX_DELAY);
+    let mut delta = rand::rng().random_range(constants::UDP_MIN_DELAY..=constants::UDP_MAX_DELAY);
 
     for i in 0..T::REPEAT {
         if i != 0 {
             sleep(Duration::from_millis(delta)).await;
-            delta = UDP_UPPER_DELAY.min(delta * 2);
+            delta = constants::UDP_UPPER_DELAY.min(delta * 2);
         }
 
         match socket.send_to(buffer.as_ref(), to).await {
