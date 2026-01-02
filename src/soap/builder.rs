@@ -31,18 +31,37 @@ use crate::soap::builder::header::none::NoExtraHeaders;
 use crate::soap::builder::header::reply_to_from::ReplyToFrom;
 use crate::wsd::device::DeviceUri;
 
-pub enum MessageType {
-    Hello,
-    Bye,
-    Probe,
+#[derive(Debug)]
+pub enum Message {
+    Hello(Box<[u8]>),
+    Bye(Box<[u8]>),
+    Probe(Box<[u8]>),
+    ProbeMatches(Box<[u8]>),
+    ResolveMatches(Box<[u8]>),
+    Resolve(Box<[u8]>),
+}
+impl Message {
+    pub fn as_bytes(&self) -> &[u8] {
+        match *self {
+            Message::Hello(ref buffer)
+            | Message::Bye(ref buffer)
+            | Message::Probe(ref buffer)
+            | Message::ProbeMatches(ref buffer)
+            | Message::ResolveMatches(ref buffer)
+            | Message::Resolve(ref buffer) => buffer,
+        }
+    }
 }
 
-impl std::fmt::Display for MessageType {
+impl std::fmt::Display for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
-            MessageType::Hello => write!(f, "Hello"),
-            MessageType::Bye => write!(f, "Bye"),
-            MessageType::Probe => write!(f, "Probe"),
+            Message::Hello(_) => write!(f, "Hello"),
+            Message::Bye(_) => write!(f, "Bye"),
+            Message::Probe(_) => write!(f, "Probe"),
+            Message::Resolve(_) => write!(f, "Resolve"),
+            Message::ProbeMatches(_) => write!(f, "ProbeMatches"),
+            Message::ResolveMatches(_) => write!(f, "ResolveMatches"),
         }
     }
 }
@@ -253,10 +272,10 @@ impl<'config> Builder<'config> {
     }
 
     // WS-Discovery, Section 4.3, Probe message
-    pub fn build_probe(config: &Config) -> Result<(Vec<u8>, Urn), xml::writer::Error> {
+    pub fn build_probe(config: &Config) -> Result<(Message, Urn), xml::writer::Error> {
         let mut builder = Builder::new(config);
 
-        let message = builder.build_message(
+        let message: (Vec<u8>, _) = builder.build_message(
             WSA_DISCOVERY,
             WSD_PROBE,
             None,
@@ -264,7 +283,7 @@ impl<'config> Builder<'config> {
             Probe::new(),
         )?;
 
-        Ok((message.0, message.1))
+        Ok((Message::Probe(message.0.into_boxed_slice()), message.1))
     }
 
     // WS-Discovery, Section 6.1, Resolve message

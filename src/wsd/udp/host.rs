@@ -11,7 +11,7 @@ use uuid::fmt::Urn;
 use crate::config::Config;
 use crate::constants;
 use crate::network_address::NetworkAddress;
-use crate::soap::builder::{self, Builder, MessageType};
+use crate::soap::builder::{self, Builder, Message};
 use crate::soap::parser::{self, MessageHandler};
 use crate::utils::task::spawn_with_name;
 use crate::wsd::HANDLED_MESSAGES;
@@ -23,7 +23,7 @@ pub struct WSDHost {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     messages_built: Arc<AtomicU64>,
-    mc_local_port_tx: Sender<Box<[u8]>>,
+    mc_local_port_tx: Sender<Message>,
 }
 
 impl WSDHost {
@@ -33,8 +33,8 @@ impl WSDHost {
         messages_built: Arc<AtomicU64>,
         bound_to: NetworkAddress,
         mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-        mc_local_port_tx: Sender<Box<[u8]>>,
-        uc_wsd_port_tx: Sender<(SocketAddr, Box<[u8]>)>,
+        mc_local_port_tx: Sender<Message>,
+        uc_wsd_port_tx: Sender<(SocketAddr, Message)>,
     ) -> Self {
         let address = bound_to.address;
 
@@ -117,9 +117,12 @@ impl WSDHost {
 
         // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
         // TODO move event to here and write properly
-        event!(Level::INFO, "scheduling {} message", MessageType::Bye);
+        // event!(Level::INFO, "scheduling {} message", Message::Bye);
 
-        Ok(self.mc_local_port_tx.send(bye.into_boxed_slice()).await?)
+        Ok(self
+            .mc_local_port_tx
+            .send(Message::Bye(bye.into_boxed_slice()))
+            .await?)
     }
 }
 
@@ -128,17 +131,17 @@ async fn send_hello(
     config: &Config,
     address: IpAddr,
     messages_built: &AtomicU64,
-    mc_local_port_tx: &Sender<Box<[u8]>>,
+    mc_local_port_tx: &Sender<Message>,
 ) -> Result<(), eyre::Report> {
     let future = async move {
         let hello = Builder::build_hello(config, messages_built, address)?;
 
         // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
         // TODO move event to here and write properly
-        event!(Level::INFO, "scheduling {} message", MessageType::Hello);
+        // event!(Level::INFO, "scheduling {} message", Message::Hello);
 
         mc_local_port_tx
-            .send(hello.into_boxed_slice())
+            .send(Message::Hello(hello.into_boxed_slice()))
             .await
             .map_err(|_| eyre::Report::msg("Receiver gone, failed to send hello"))
     };
@@ -154,13 +157,12 @@ fn handle_probe(
     messages_built: &AtomicU64,
     relates_to: Urn,
     reader: &mut Wrapper<'_>,
-) -> Result<Option<Vec<u8>>, eyre::Report> {
+) -> Result<Option<Message>, eyre::Report> {
     if parser::probe::parse_probe_body(reader)? {
-        Ok(Some(builder::Builder::build_probe_matches(
-            config,
-            messages_built,
-            relates_to,
-        )?))
+        Ok(Some(Message::ProbeMatches(
+            builder::Builder::build_probe_matches(config, messages_built, relates_to)?
+                .into_boxed_slice(),
+        )))
     } else {
         Ok(None)
     }
@@ -173,14 +175,12 @@ fn handle_resolve(
     target_uuid: uuid::Uuid,
     relates_to: Urn,
     reader: &mut Wrapper<'_>,
-) -> Result<Option<Vec<u8>>, eyre::Report> {
+) -> Result<Option<Message>, eyre::Report> {
     if parser::resolve::parse_resolve_body(reader, target_uuid)? {
-        Ok(Some(builder::Builder::build_resolve_matches(
-            config,
-            address,
-            messages_built,
-            relates_to,
-        )?))
+        Ok(Some(Message::ResolveMatches(
+            builder::Builder::build_resolve_matches(config, address, messages_built, relates_to)?
+                .into_boxed_slice(),
+        )))
     } else {
         Ok(None)
     }
@@ -192,7 +192,7 @@ async fn listen_forever(
     config: Arc<Config>,
     messages_built: Arc<AtomicU64>,
     mut mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-    uc_wsd_port_tx: Sender<(SocketAddr, Box<[u8]>)>,
+    uc_wsd_port_tx: Sender<(SocketAddr, Message)>,
 ) {
     let address = bound_to.address.addr();
 
@@ -267,7 +267,7 @@ async fn listen_forever(
         };
 
         // return to sender
-        if let Err(error) = uc_wsd_port_tx.send((from, response.into())).await {
+        if let Err(error) = uc_wsd_port_tx.send((from, response)).await {
             event!(Level::ERROR, ?error, to = ?from, "Failed to respond to message");
         }
     }
@@ -329,7 +329,7 @@ mod tests {
             host_config.uuid,
         );
 
-        let response = to_string_pretty(&hello).unwrap();
+        let response = to_string_pretty(hello.as_bytes()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(expected, response);
@@ -377,7 +377,7 @@ mod tests {
             host_config.uuid_as_device_uri,
         );
 
-        let response = to_string_pretty(&bye).unwrap();
+        let response = to_string_pretty(bye.as_bytes()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(expected, response);
@@ -430,7 +430,7 @@ mod tests {
             host_config.uuid
         );
 
-        let response = to_string_pretty(&response).unwrap();
+        let response = to_string_pretty(response.as_bytes()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(expected, response);
@@ -479,7 +479,7 @@ mod tests {
             host_config.uuid_as_device_uri,
         );
 
-        let response = to_string_pretty(&response).unwrap();
+        let response = to_string_pretty(response.as_bytes()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(expected, response);
@@ -530,7 +530,7 @@ mod tests {
             host_config.uuid_as_device_uri,
         );
 
-        let response = to_string_pretty(&response).unwrap();
+        let response = to_string_pretty(response.as_bytes()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(expected, response);

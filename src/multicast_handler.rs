@@ -22,6 +22,7 @@ use crate::config::Config;
 use crate::constants;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
+use crate::soap::builder::Message;
 use crate::udp_address::UdpAddress;
 use crate::url_ip_addr::UrlIpAddr;
 use crate::utils::task::spawn_with_name;
@@ -587,7 +588,7 @@ trait MessageSplitter {
 
     type Message: Send;
 
-    fn split_message(&self, message: Self::Message) -> (SocketAddr, Box<[u8]>);
+    fn split_message(&self, message: Self::Message) -> (SocketAddr, Message);
 }
 
 struct MulticastMessageSplitter {
@@ -598,9 +599,9 @@ impl MessageSplitter for MulticastMessageSplitter {
     const NAME: &str = "MulticastMessageSplitter";
     const REPEAT: usize = constants::MULTICAST_UDP_REPEAT;
 
-    type Message = Box<[u8]>;
+    type Message = Message;
 
-    fn split_message(&self, message: Self::Message) -> (SocketAddr, Box<[u8]>) {
+    fn split_message(&self, message: Self::Message) -> (SocketAddr, Message) {
         (self.target, message)
     }
 }
@@ -611,23 +612,21 @@ impl MessageSplitter for UnicastMessageSplitter {
     const NAME: &str = "UnicastMessageSplitter";
     const REPEAT: usize = constants::UNICAST_UDP_REPEAT;
 
-    type Message = (SocketAddr, Box<[u8]>);
+    type Message = (SocketAddr, Message);
 
-    fn split_message(&self, message: Self::Message) -> (SocketAddr, Box<[u8]>) {
-        (message.0, message.1)
+    fn split_message(&self, message: Self::Message) -> (SocketAddr, Message) {
+        message
     }
-}
-
-struct MessageSender<T: MessageSplitter> {
-    handler: JoinHandle<()>,
-    tx: Sender<T::Message>,
 }
 
 async fn repeatedly_send_buffer<T: MessageSplitter>(
     socket: Arc<UdpSocket>,
-    buffer: Box<[u8]>,
+    message: Message,
     to: SocketAddr,
 ) {
+    let buffer = message.as_bytes();
+
+    // TODO log message_type ONCE
     // Schedule to send the given message to the given address.
     // Implements SOAP over UDP, Appendix I.
     let mut delta = rand::rng().random_range(constants::UDP_MIN_DELAY..=constants::UDP_MAX_DELAY);
@@ -645,6 +644,11 @@ async fn repeatedly_send_buffer<T: MessageSplitter>(
             },
         }
     }
+}
+
+struct MessageSender<T: MessageSplitter> {
+    handler: JoinHandle<()>,
+    tx: Sender<T::Message>,
 }
 
 impl<T> MessageSender<T>
@@ -671,14 +675,14 @@ where
                     break;
                 };
 
-                let (to, buffer) = message_splitter.split_message(buffer);
+                let (to, message) = message_splitter.split_message(buffer);
 
                 let socket = Arc::clone(&socket);
 
                 spawn_with_name(
                     "message sender",
                     tracker.track_future(async move {
-                        repeatedly_send_buffer::<T>(socket, buffer, to).await;
+                        repeatedly_send_buffer::<T>(socket, message, to).await;
                     }),
                 );
             }
