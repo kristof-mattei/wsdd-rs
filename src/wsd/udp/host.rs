@@ -324,6 +324,7 @@ mod tests {
             host_config.wsd_instance_id,
             Uuid::nil(),
             host_config.uuid_as_device_uri,
+            host_config.ssl_config.web_server_protocol(),
             host_ip,
             5357,
             host_config.uuid,
@@ -426,6 +427,7 @@ mod tests {
             host_config.wsd_instance_id,
             host_messages_built.load(Ordering::Relaxed) - 1,
             host_config.uuid_as_device_uri,
+            host_config.ssl_config.web_server_protocol(),
             host_ip,
             host_config.uuid
         );
