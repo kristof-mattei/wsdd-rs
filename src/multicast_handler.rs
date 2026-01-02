@@ -45,7 +45,7 @@ pub struct MulticastHandler {
     /// Shared reference for global message counter
     messages_built: Arc<AtomicU64>,
     /// The address and interface we're bound on
-    address: NetworkAddress,
+    network_address: NetworkAddress,
 
     /// The multicast group on which we broadcast our messages
     #[expect(unused, reason = "WIP")]
@@ -64,93 +64,140 @@ pub struct MulticastHandler {
     uc_wsd_port_tx: MessageSender<UnicastMessageSplitter>,
 }
 
+#[expect(clippy::struct_field_names, reason = "Clarity")]
+struct Sockets {
+    mc_wsd_port_socket: Socket,
+    mc_local_port_socket: Socket,
+    uc_wsd_port_socket: Socket,
+}
+
+fn create_sockets(domain: Domain) -> Result<Sockets, std::io::Error> {
+    let mc_wsd_port_socket = Socket::new(domain, Type::DGRAM, None)?;
+    mc_wsd_port_socket.set_nonblocking(true)?;
+    mc_wsd_port_socket.set_reuse_address(true)?;
+
+    // TODO error
+    let mc_local_port_socket = Socket::new(domain, Type::DGRAM, None)?;
+    mc_local_port_socket.set_nonblocking(true)?;
+
+    // TODO error
+    let uc_wsd_port_socket = Socket::new(domain, Type::DGRAM, None)?;
+    uc_wsd_port_socket.set_nonblocking(true)?;
+    uc_wsd_port_socket.set_reuse_address(true)?;
+
+    Ok(Sockets {
+        mc_wsd_port_socket,
+        mc_local_port_socket,
+        uc_wsd_port_socket,
+    })
+}
+
 impl MulticastHandler {
     pub fn new(
-        address: NetworkAddress,
+        network_address: NetworkAddress,
         cancellation_token: CancellationToken,
-        config: &Arc<Config>,
+        config: Arc<Config>,
         devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
-    ) -> Result<Self, eyre::Report> {
-        let domain = match address.address {
+    ) -> Result<Self, (NetworkAddress, eyre::Report)> {
+        let domain = match network_address.address {
             IpNet::V4(_) => Domain::IPV4,
             IpNet::V6(_) => Domain::IPV6,
         };
 
-        // TODO error
-        let mc_wsd_port_socket = Socket::new(domain, Type::DGRAM, None)?;
-        mc_wsd_port_socket.set_nonblocking(true)?;
-        mc_wsd_port_socket.set_reuse_address(true)?;
+        let sockets = match create_sockets(domain) {
+            Ok(ok) => ok,
+            Err(err) => return Err((network_address, err.into())),
+        };
 
-        // TODO error
-        let mc_local_port_socket = Socket::new(domain, Type::DGRAM, None)?;
-        mc_local_port_socket.set_nonblocking(true)?;
-
-        // TODO error
-        let uc_wsd_port_socket = Socket::new(domain, Type::DGRAM, None)?;
-        uc_wsd_port_socket.set_nonblocking(true)?;
-        uc_wsd_port_socket.set_reuse_address(true)?;
-
-        let (multicast_address, http_listen_address) = match address.address {
+        let init = match network_address.address {
             IpNet::V4(ipv4_net) => MulticastHandler::init_v4(
                 ipv4_net,
-                Arc::clone(&address.interface),
-                &mc_wsd_port_socket,
-                &mc_local_port_socket,
-                &uc_wsd_port_socket,
-                config,
-            )?,
+                Arc::clone(&network_address.interface),
+                &sockets,
+                &config,
+            ),
             IpNet::V6(ipv6_net) => MulticastHandler::init_v6(
                 ipv6_net,
-                Arc::clone(&address.interface),
-                &mc_wsd_port_socket,
-                &mc_local_port_socket,
-                &uc_wsd_port_socket,
-                config,
-            )?,
+                Arc::clone(&network_address.interface),
+                &sockets,
+                &config,
+            ),
+        };
+
+        let (multicast_address, http_listen_address) = match init {
+            Ok(ok) => ok,
+            Err(err) => return Err((network_address, err)),
         };
 
         event!(
             Level::INFO,
             "joined multicast group {} on {}",
             UrlIpAddr::from(multicast_address.transport_address.ip()),
-            address
+            network_address
         );
+
         event!(
             Level::DEBUG,
             "transport address on {} is {}",
-            address.interface.name(),
-            UrlIpAddr::from(address.address.addr())
+            network_address.interface.name(),
+            UrlIpAddr::from(network_address.address.addr())
         );
+
         event!(
             Level::DEBUG,
             "will listen for HTTP traffic on address {}",
             http_listen_address
         );
 
-        let mc_wsd_port_socket = Arc::new(UdpSocket::from_std(mc_wsd_port_socket.into())?);
+        let Sockets {
+            mc_wsd_port_socket,
+            mc_local_port_socket,
+            uc_wsd_port_socket,
+        } = sockets;
+
+        let mc_wsd_port_socket = Arc::new({
+            match UdpSocket::from_std(mc_wsd_port_socket.into()) {
+                Ok(t) => t,
+                Err(err) => return Err((network_address, err.into())),
+            }
+        });
+
         let mc_wsd_port_rx =
             MessageReceiver::new(cancellation_token.clone(), Arc::clone(&mc_wsd_port_socket));
 
-        let mc_local_port_socket = Arc::new(UdpSocket::from_std(mc_local_port_socket.into())?);
+        let mc_local_port_socket = Arc::new({
+            match UdpSocket::from_std(mc_local_port_socket.into()) {
+                Ok(t) => t,
+                Err(err) => return Err((network_address, err.into())),
+            }
+        });
+
         let mc_local_port_tx = MessageSender::new(
             Arc::clone(&mc_local_port_socket),
             MulticastMessageSplitter {
                 target: multicast_address.transport_address,
             },
         );
+
         let mc_local_port_rx = MessageReceiver::new(
             cancellation_token.clone(),
             Arc::clone(&mc_local_port_socket),
         );
 
-        let uc_wsd_port_socket = Arc::new(UdpSocket::from_std(uc_wsd_port_socket.into())?);
+        let uc_wsd_port_socket = Arc::new({
+            match UdpSocket::from_std(uc_wsd_port_socket.into()) {
+                Ok(t) => t,
+                Err(err) => return Err((network_address, err.into())),
+            }
+        });
+
         let uc_wsd_port_tx =
             MessageSender::new(Arc::clone(&uc_wsd_port_socket), UnicastMessageSplitter {});
 
         Ok(Self {
-            config: Arc::clone(config),
+            config,
             cancellation_token,
-            address,
+            network_address,
             devices,
             messages_built: Arc::new(AtomicU64::new(0)),
             multicast_address,
@@ -205,16 +252,18 @@ impl MulticastHandler {
     }
 
     pub fn handles_address(&self, address: &NetworkAddress) -> bool {
-        &self.address == address
+        &self.network_address == address
     }
 
     fn init_v6(
         ipv6_net: Ipv6Net,
         interface: Arc<NetworkInterface>,
-        mc_wsd_port_socket: &Socket,
-        mc_local_port_socket: &Socket,
-        uc_wsd_port_socket: &Socket,
-        config: &Arc<Config>,
+        &Sockets {
+            ref mc_wsd_port_socket,
+            ref mc_local_port_socket,
+            ref uc_wsd_port_socket,
+        }: &Sockets,
+        config: &Config,
     ) -> Result<(UdpAddress, SocketAddr), eyre::Report> {
         let idx = interface.index();
 
@@ -292,10 +341,12 @@ impl MulticastHandler {
     fn init_v4(
         ipv4_net: Ipv4Net,
         interface: Arc<NetworkInterface>,
-        mc_wsd_port_socket: &Socket,
-        mc_local_port_socket: &Socket,
-        uc_wsd_port_socket: &Socket,
-        config: &Arc<Config>,
+        &Sockets {
+            ref mc_wsd_port_socket,
+            ref mc_local_port_socket,
+            ref uc_wsd_port_socket,
+        }: &Sockets,
+        config: &Config,
     ) -> Result<(UdpAddress, SocketAddr), eyre::Report> {
         let idx = interface.index();
 
@@ -396,7 +447,7 @@ impl MulticastHandler {
                     self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
                     Arc::clone(&self.messages_built),
-                    self.address.clone(),
+                    self.network_address.clone(),
                     self.mc_wsd_port_rx.get_rx().await,
                     self.mc_local_port_tx.get_tx(),
                     self.uc_wsd_port_tx.get_tx(),
@@ -418,7 +469,7 @@ impl MulticastHandler {
                     self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
                     Arc::clone(&self.devices),
-                    self.address.clone(),
+                    self.network_address.clone(),
                     self.mc_wsd_port_rx.get_rx().await,
                     self.mc_local_port_rx.get_rx().await,
                     self.mc_local_port_tx.get_tx(),
@@ -434,7 +485,7 @@ impl MulticastHandler {
             .http_server
             .get_or_try_init(|| async {
                 let server = WSDHttpServer::init(
-                    self.address.clone(),
+                    self.network_address.clone(),
                     self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
                     self.http_listen_address,
@@ -455,7 +506,7 @@ impl MulticastHandler {
     }
 
     pub fn get_address(&self) -> &NetworkAddress {
-        &self.address
+        &self.network_address
     }
 }
 

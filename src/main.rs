@@ -193,11 +193,6 @@ async fn start_tasks() -> Result<ExitCode, eyre::Report> {
         );
     }
 
-    // TODO
-    // if args.ipv4only and args.ipv6only:
-    //     logger.error('Listening to no IP address family.')
-    //     return 4
-
     // this channel is used to communicate between
     // tasks and this function, in the case that a task fails, they'll send a message on the shutdown channel
     // after which we'll gracefully terminate other services
@@ -326,10 +321,7 @@ async fn start_tasks() -> Result<ExitCode, eyre::Report> {
 
     tasks.close();
 
-    // wait for the task that holds the server to exit gracefully
-    // it listens to shutdown_send
-    // TODO restore back to 10_000
-    if timeout(Duration::from_millis(1_000_000), tasks.wait())
+    if timeout(Duration::from_secs(10), tasks.wait())
         .await
         .is_err()
     {
