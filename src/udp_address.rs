@@ -7,25 +7,28 @@ use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
 
 pub struct UdpAddress {
-    #[expect(unused, reason = "WIP")]
-    pub network_address: NetworkAddress,
+    _network_address: NetworkAddress,
     // _transport_address: Tuple
-    pub transport_address: SocketAddr,
+    transport_address: SocketAddr,
     // _port: int
 }
 
 impl UdpAddress {
     pub fn new(
         transport_address: SocketAddr,
-        ip_net: IpNet,
+        address: IpNet,
         interface: Arc<NetworkInterface>,
     ) -> Self {
-        let network_address = NetworkAddress::new(ip_net, interface);
+        let network_address = NetworkAddress::new(address, interface);
 
         Self {
-            network_address,
+            _network_address: network_address,
             transport_address,
         }
+    }
+
+    pub fn get_transport_address(&self) -> SocketAddr {
+        self.transport_address
     }
 }
 
