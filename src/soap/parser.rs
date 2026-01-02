@@ -252,7 +252,7 @@ impl MessageHandler {
 
     fn validate_action_body(
         &self,
-        raw: &'_ [u8],
+        raw: &[u8],
         src: Option<SocketAddr>,
         header: Header,
         has_body: bool,
