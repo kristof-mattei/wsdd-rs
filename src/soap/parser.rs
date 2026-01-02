@@ -229,9 +229,39 @@ impl MessageHandler {
                 header.message_id
             );
 
-            // TODO improve reason
             return Err(MessageHandlerError::DuplicateMessage);
         }
+
+        let header = self.validate_action_body(raw, src, header, has_body)?;
+
+        Ok((header, reader))
+    }
+
+    /// Handle a WSD message
+    pub fn deconstruct_message_for_http<'r>(
+        &self,
+        raw: &'r [u8],
+        src: Option<SocketAddr>,
+    ) -> Result<(Header, Wrapper<'r>), MessageHandlerError> {
+        let (header, has_body, reader) = deconstruct_raw(raw)?;
+
+        let header = self.validate_action_body(raw, src, header, has_body)?;
+
+        Ok((header, reader))
+    }
+
+    fn validate_action_body(
+        &self,
+        raw: &'_ [u8],
+        src: Option<SocketAddr>,
+        header: Header,
+        has_body: bool,
+    ) -> Result<Header, MessageHandlerError> {
+        event!(
+            Level::DEBUG,
+            "incoming message content is {}",
+            String::from_utf8_lossy(raw)
+        );
 
         let Some((_, action_method)) = header.action.rsplit_once('/') else {
             return Err(MessageHandlerError::HeaderError(
@@ -262,13 +292,7 @@ impl MessageHandler {
             return Err(MessageHandlerError::MissingBody);
         }
 
-        event!(
-            Level::DEBUG,
-            "incoming message content is {}",
-            String::from_utf8_lossy(raw)
-        );
-
-        Ok((header, reader))
+        Ok(header)
     }
 
     /// Implements SOAP-over-UDP Appendix II Item 2
