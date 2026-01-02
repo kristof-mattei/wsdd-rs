@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
-use url::{Host, Url};
+use url::Host;
 use uuid::fmt::Urn;
 
 use crate::config::Config;
@@ -233,7 +233,7 @@ fn parse_xaddrs(bound_to: IpNet, raw_xaddrs: &str) -> Vec<XAddr> {
         match bound_to {
             IpNet::V6(_) => {
                 // prefer link-local address for IPv6
-                if let Some(Host::Ipv6(ipv6)) = parsed_url.get_url().host()
+                if let Some(Host::Ipv6(ipv6)) = parsed_url.url().host()
                     && ipv6.is_unicast_link_local()
                 {
                     Reverse(XAddrPriority::High)
@@ -285,15 +285,7 @@ async fn handle_hello(
 
     event!(Level::INFO, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "Hello");
 
-    perform_metadata_exchange(
-        client,
-        config,
-        devices,
-        bound_to,
-        endpoint,
-        xaddrs.into_iter().map(Into::into).collect(),
-    )
-    .await?;
+    perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddrs).await?;
 
     Ok(())
 }
@@ -373,15 +365,7 @@ async fn handle_probe_match(
 
     event!(Level::INFO, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ProbeMatch");
 
-    perform_metadata_exchange(
-        client,
-        config,
-        devices,
-        bound_to,
-        endpoint,
-        xaddrs.into_iter().map(Into::into).collect(),
-    )
-    .await?;
+    perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddrs).await?;
 
     Ok(())
 }
@@ -419,15 +403,7 @@ async fn handle_resolve_match(
 
     event!(Level::INFO, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ResolveMatch");
 
-    perform_metadata_exchange(
-        client,
-        config,
-        devices,
-        bound_to,
-        endpoint,
-        xaddrs.into_iter().map(Into::into).collect(),
-    )
-    .await?;
+    perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddrs).await?;
 
     Ok(())
 }
@@ -438,13 +414,13 @@ async fn perform_metadata_exchange(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
     endpoint: DeviceUri,
-    xaddrs: Vec<Url>,
+    xaddrs: Vec<XAddr>,
 ) -> Result<(), eyre::Report> {
     let body = Bytes::from_owner(build_getmetadata_message(config, &endpoint)?);
 
     for xaddr in xaddrs {
         let builder = client
-            .post(xaddr.clone())
+            .post(xaddr.url().clone())
             .header("Content-Type", MIME_TYPE_SOAP_XML)
             .header("User-Agent", "wsdd-rs");
 
@@ -492,7 +468,7 @@ async fn handle_metadata(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     meta: &[u8],
     endpoint: DeviceUri,
-    xaddr: Url,
+    xaddr: XAddr,
     bound_to: &NetworkAddress,
 ) -> Result<(), eyre::Report> {
     let device_uuid = endpoint;
@@ -635,10 +611,10 @@ mod tests {
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio_util::sync::CancellationToken;
     use tracing_test::traced_test;
-    use url::Url;
     use uuid::Uuid;
 
     use crate::network_interface::NetworkInterface;
+    use crate::soap::parser::xaddrs::XAddr;
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler_with_network_address};
     use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
@@ -1052,7 +1028,8 @@ mod tests {
             Arc::clone(&client_devices),
             metadata.as_bytes(),
             device_uri.clone(),
-            Url::parse("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721").unwrap(),
+            XAddr::try_from("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721")
+                .unwrap(),
             &client_network_address,
         )
         .await;
@@ -1111,7 +1088,7 @@ mod tests {
             Arc::clone(&client_devices),
             metadata.as_bytes(),
             device_uri.clone(),
-            Url::parse("http://192.168.100.50:8018/wsd").unwrap(),
+            XAddr::try_from("http://192.168.100.50:8018/wsd").unwrap(),
             &client_network_address,
         )
         .await;
@@ -1168,7 +1145,8 @@ mod tests {
             Arc::clone(&client_devices),
             metadata.as_bytes(),
             device_uri.clone(),
-            Url::parse("http://192.168.100.71:5357/18de7c97-6277-43fe-9552-cac98a7610f5/").unwrap(),
+            XAddr::try_from("http://192.168.100.71:5357/18de7c97-6277-43fe-9552-cac98a7610f5/")
+                .unwrap(),
             &client_network_address,
         )
         .await;
@@ -1466,7 +1444,7 @@ mod tests {
 
         let raws = result
             .iter()
-            .map(|xaddr| xaddr.get_url().as_str())
+            .map(|xaddr| xaddr.url().as_str())
             .collect::<Vec<_>>();
 
         assert_eq!(
@@ -1487,7 +1465,7 @@ mod tests {
 
         let raws = result
             .iter()
-            .map(|xaddr| xaddr.get_url().as_str())
+            .map(|xaddr| xaddr.url().as_str())
             .collect::<Vec<_>>();
 
         assert_eq!(["https://example.com/path"][..], raws);
@@ -1506,7 +1484,7 @@ mod tests {
 
         let raws = result
             .iter()
-            .map(|xaddr| xaddr.get_url().as_str())
+            .map(|xaddr| xaddr.url().as_str())
             .collect::<Vec<_>>();
 
         // link-local must be sorted first
