@@ -203,12 +203,12 @@ impl MulticastHandler {
     }
 
     fn init(
-        ip_net: IpNet,
+        address: IpNet,
         interface: Arc<NetworkInterface>,
         sockets: &Sockets,
         config: &Config,
     ) -> Result<(UdpAddress, SocketAddr), eyre::Report> {
-        match ip_net {
+        match address {
             IpNet::V4(ipv4_net) => MulticastHandler::init_v4(ipv4_net, interface, sockets, config),
             IpNet::V6(ipv6_net) => MulticastHandler::init_v6(ipv6_net, interface, sockets, config),
         }
@@ -253,8 +253,8 @@ impl MulticastHandler {
         // sent, or failed to send, but we avoided the 'schedule but shut down too soon' situation.
     }
 
-    pub fn handles_address(&self, address: &NetworkAddress) -> bool {
-        &self.network_address == address
+    pub fn handles_address(&self, network_address: &NetworkAddress) -> bool {
+        &self.network_address == network_address
     }
 
     fn init_v6(
@@ -507,7 +507,7 @@ impl MulticastHandler {
         }
     }
 
-    pub fn get_address(&self) -> &NetworkAddress {
+    pub fn get_network_address(&self) -> &NetworkAddress {
         &self.network_address
     }
 }
