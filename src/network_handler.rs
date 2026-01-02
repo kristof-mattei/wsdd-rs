@@ -245,7 +245,9 @@ impl NetworkHandler {
             };
 
             let should_send_probe = match interface_filter {
-                Some(interface) => multicast_handler.get_address().interface.name() == &**interface,
+                Some(interface) => {
+                    multicast_handler.get_network_address().interface.name() == &**interface
+                },
                 None => true,
             };
 
@@ -329,11 +331,11 @@ impl NetworkHandler {
         Ok(())
     }
 
-    pub async fn handle_new_address(&mut self, address: NetworkAddress) {
-        event!(Level::DEBUG, address = %address.address, interface = %address.interface.name(), "new address");
+    pub async fn handle_new_address(&mut self, network_address: NetworkAddress) {
+        event!(Level::DEBUG, %network_address, "new address");
 
-        if let Err(why) = self.is_address_handled(&address) {
-            event!(Level::DEBUG, ?why, address = %address.address, interface = %address.interface.name(), "ignoring address");
+        if let Err(why) = self.is_address_handled(&network_address) {
+            event!(Level::DEBUG, ?why, %network_address, "ignoring address");
 
             return;
         }
@@ -342,23 +344,23 @@ impl NetworkHandler {
         // Ignore addresses or interfaces we already handle. There can only be
         // one multicast handler per address family and network interface
         for handler in &self.multicast_handlers {
-            if handler.handles_address(&address) {
+            if handler.handles_address(&network_address) {
                 return;
             }
         }
 
-        event!(Level::DEBUG, address = %address.address, interface = %address.interface.name(), "handling traffic");
+        event!(Level::DEBUG, address = %network_address.address, interface = %network_address.interface.name(), "handling traffic");
 
         // TODO think of a way to avoid the clone here if we want to print
         // the address in the error path
         let mut multicast_handler = match MulticastHandler::new(
-            address.clone(),
+            network_address,
             self.cancellation_token.child_token(),
-            &self.config,
+            Arc::clone(&self.config),
             Arc::clone(&self.devices),
         ) {
             Ok(handler) => handler,
-            Err(err) => {
+            Err((address, err)) => {
                 event!(Level::ERROR, ?err, %address, "Failed to launch multicast handler");
 
                 return;
@@ -382,14 +384,14 @@ impl NetworkHandler {
         self.multicast_handlers.push(multicast_handler);
     }
 
-    pub async fn handle_deleted_address(&mut self, address: NetworkAddress) {
-        event!(Level::INFO, address = %address.address, interface = %address.interface.name(), "deleted address");
+    pub async fn handle_deleted_address(&mut self, network_address: NetworkAddress) {
+        event!(Level::INFO, %network_address, "deleted address");
 
-        if self.is_address_handled(&address).is_err() {
+        if self.is_address_handled(&network_address).is_err() {
             return;
         }
 
-        let Some(handler) = self.take_mch_by_address(&address) else {
+        let Some(handler) = self.take_mch_by_address(&network_address) else {
             return;
         };
 

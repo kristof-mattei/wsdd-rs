@@ -110,7 +110,6 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
             "invalid resolve request: missing endpoint address"
         );
 
-        // TODO error
         return Err(ResolveParsingError::MissingEndpoint);
     };
 
@@ -176,6 +175,5 @@ pub fn parse_resolve_body(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> Parsed
         }
     }
 
-    // TODO error
     Err(ResolveParsingError::MissingResolveElement)
 }

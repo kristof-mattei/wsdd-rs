@@ -119,7 +119,7 @@ async fn handle_post(
         return (StatusCode::BAD_REQUEST, "Invalid Content-Type").into_response();
     }
 
-    match build_response(&config, &message_handler, body).await {
+    match build_response(&config, &message_handler, &body) {
         Ok(ok) => (
             StatusCode::OK,
             [(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)],
@@ -137,15 +137,15 @@ fn handle_get(config: &Config, relates_to: Urn) -> Result<Vec<u8>, eyre::Report>
     Ok(builder::Builder::build_get_response(config, relates_to)?)
 }
 
-async fn build_response(
+fn build_response(
     config: &Config,
     message_handler: &MessageHandler,
-    buffer: Bytes,
+    buffer: &[u8],
 ) -> Result<Vec<u8>, eyre::Report> {
-    let (header, _body_reader) = match message_handler.deconstruct_message(&buffer, None).await {
+    let (header, _body_reader) = match message_handler.deconstruct_message_for_http(buffer, None) {
         Ok(pieces) => pieces,
         Err(error) => {
-            error.log(&buffer);
+            error.log(buffer);
 
             return Err(eyre::Report::msg("Invalid XML"));
         },

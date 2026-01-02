@@ -139,9 +139,9 @@ fn find_first_non_lo_network_interface() -> Result<(Box<str>, u32), std::io::Err
 }
 
 pub fn build_message_handler_with_network_address(
-    ip_net: IpNet,
+    address: IpNet,
 ) -> (MessageHandler, NetworkAddress) {
-    let (name, index) = if ip_net.addr() == IpAddr::V4(Ipv4Addr::LOCALHOST) {
+    let (name, index) = if address.addr() == IpAddr::V4(Ipv4Addr::LOCALHOST) {
         let name: Box<str> = Box::from("lo");
         let index = if_nametoindex(&name).expect("Test needs lo's interface id");
 
@@ -151,7 +151,7 @@ pub fn build_message_handler_with_network_address(
     };
 
     let network_address = NetworkAddress::new(
-        ip_net,
+        address,
         Arc::new(NetworkInterface::new_with_index(
             name.into_string(),
             RT_SCOPE_SITE,
