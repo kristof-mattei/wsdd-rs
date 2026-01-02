@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
-use color_eyre::{Section as _, eyre};
+use color_eyre::eyre::{self, Context as _};
 use hashbrown::HashMap;
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use rand::Rng as _;
@@ -71,16 +71,14 @@ struct Sockets {
     uc_wsd_port_socket: Socket,
 }
 
-fn create_sockets(domain: Domain) -> Result<Sockets, std::io::Error> {
+fn create_sockets(domain: Domain) -> Result<Sockets, eyre::Report> {
     let mc_wsd_port_socket = Socket::new(domain, Type::DGRAM, None)?;
     mc_wsd_port_socket.set_nonblocking(true)?;
     mc_wsd_port_socket.set_reuse_address(true)?;
 
-    // TODO error
     let mc_local_port_socket = Socket::new(domain, Type::DGRAM, None)?;
     mc_local_port_socket.set_nonblocking(true)?;
 
-    // TODO error
     let uc_wsd_port_socket = Socket::new(domain, Type::DGRAM, None)?;
     uc_wsd_port_socket.set_nonblocking(true)?;
     uc_wsd_port_socket.set_reuse_address(true)?;
@@ -104,9 +102,9 @@ impl MulticastHandler {
             IpNet::V6(_) => Domain::IPV6,
         };
 
-        let sockets = match create_sockets(domain) {
+        let sockets = match create_sockets(domain).wrap_err("Failed to set up sockets") {
             Ok(sockets) => sockets,
-            Err(err) => return Err((network_address, err.into())),
+            Err(err) => return Err((network_address, err)),
         };
 
         let (multicast_address, http_listen_address) = match MulticastHandler::init(
@@ -281,11 +279,13 @@ impl MulticastHandler {
             interface,
         );
 
-        // TODO handle error
-        mc_wsd_port_socket.join_multicast_v6(&constants::WSD_MCAST_GRP_V6, index)?;
+        mc_wsd_port_socket
+            .join_multicast_v6(&constants::WSD_MCAST_GRP_V6, index)
+            .wrap_err("Failed to join multicast group")?;
 
-        // TODO error
-        mc_wsd_port_socket.set_only_v6(true)?;
+        mc_wsd_port_socket
+            .set_only_v6(true)
+            .wrap_err("Failed to set IPV6_V6ONLY")?;
 
         // TODO error
         // https://github.com/torvalds/linux/commit/15033f0457dca569b284bef0c8d3ad55fb37eacb
@@ -303,37 +303,31 @@ impl MulticastHandler {
 
             let fallback = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, index);
 
-            if let Err(error) = mc_wsd_port_socket.bind(&fallback.into()) {
-                event!(
-                    Level::ERROR,
-                    ?error,
-                    %fallback,
-                    "Fallback also failed to bind",
-                );
-
-                return Err(eyre::Report::msg(format!(
-                    "Fallback also failed to bind to {}",
-                    fallback
-                )));
-            }
+            mc_wsd_port_socket
+                .bind(&fallback.into())
+                .wrap_err("Failed to bind to fallback socket")?;
         }
 
-        // TODO error
-        mc_local_port_socket.set_multicast_loop_v6(false)?;
-
-        // TODO error
-        mc_local_port_socket.set_multicast_hops_v6(config.hoplimit.into())?;
-
-        // TODO error
-        mc_local_port_socket.set_multicast_if_v6(index)?;
-
-        // TODO error
         mc_local_port_socket
-            .bind(&(SocketAddrV6::new(ipv6_net.addr(), config.source_port, 0, index)).into())?;
+            .set_multicast_loop_v6(false)
+            .wrap_err("Failed to disable IPV6_MULTICAST_LOOP")?;
+
+        mc_local_port_socket
+            .set_multicast_hops_v6(config.hoplimit.into())
+            .wrap_err("Failed to set IPV6_MULTICAST_HOPS")?;
+
+        mc_local_port_socket
+            .set_multicast_if_v6(index)
+            .wrap_err("Failed to set IPV6_MULTICAST_IF")?;
+
+        mc_local_port_socket
+            .bind(&(SocketAddrV6::new(ipv6_net.addr(), config.source_port, 0, index)).into())
+            .wrap_err("Failed to bind to the socket")?;
 
         // bind unicast socket to interface address and WSD's udp port
         uc_wsd_port_socket
-            .bind(&SocketAddrV6::new(ipv6_net.addr(), WSD_UDP_PORT.into(), 0, index).into())?;
+            .bind(&SocketAddrV6::new(ipv6_net.addr(), WSD_UDP_PORT.into(), 0, index).into())
+            .wrap_err("Failed to bind to the socket")?;
 
         let listen_address = SocketAddrV6::new(ipv6_net.addr(), WSD_HTTP_PORT.into(), 0, index);
 
@@ -358,19 +352,13 @@ impl MulticastHandler {
             interface,
         );
 
-        if let Err(error) = mc_wsd_port_socket
+        mc_wsd_port_socket
             .join_multicast_v4_n(&WSD_MCAST_GRP_V4, &InterfaceIndexOrAddress::Index(index))
-        {
-            event!(Level::ERROR, ?error, multi_addr = ?WSD_MCAST_GRP_V4, ifindex = ?index, "could not join multicast group");
+            .wrap_err("Failed to join multicast group")?;
 
-            return Err(eyre::Report::msg("could not join multicast group"));
-        }
-
-        if let Err(error) = mc_wsd_port_socket.set_multicast_all_v4(false) {
-            event!(Level::ERROR, ?error, "could not unset IP_MULTICAST_ALL");
-
-            return Err(eyre::Report::msg("could not unset IP_MULTICAST_ALL"));
-        }
+        mc_wsd_port_socket
+            .set_multicast_all_v4(false)
+            .wrap_err("Failed to disable IP_MULTICAST_ALL")?;
 
         let socket_addr = SocketAddrV4::new(WSD_MCAST_GRP_V4, WSD_UDP_PORT.into());
 
@@ -379,63 +367,34 @@ impl MulticastHandler {
 
             let fallback = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, WSD_UDP_PORT.into());
 
-            if let Err(error) = mc_wsd_port_socket.bind(&fallback.into()) {
-                event!(
-                    Level::ERROR,
-                    ?error,
-                    %fallback,
-                    "Fallback also failed to bind",
-                );
-
-                return Err(eyre::Report::msg(format!(
-                    "Fallback also failed to bind to {}",
-                    fallback
-                )));
-            }
+            mc_wsd_port_socket
+                .bind(&fallback.into())
+                .wrap_err("Failed to bind to fallback socket")?;
         }
 
-        if let Err(error) = mc_local_port_socket.set_multicast_if_v4(&ipv4_net.addr()) {
-            event!(
-                Level::ERROR,
-                ?error,
-                "Failed to set IPPROTO_IP -> IP_MULTICAST_IF on socket"
-            );
-
-            return Err(eyre::Report::from(error)
-                .with_note(|| "Failed to set IPPROTO_IP -> IP_MULTICAST_IF on socket"));
-        }
+        mc_local_port_socket
+            .set_multicast_if_v4(&ipv4_net.addr())
+            .wrap_err("Failed to set IP_MULTICAST_IF")?;
 
         // # OpenBSD requires the optlen to be sizeof(char) for LOOP and TTL options
         // # (see also https://github.com/python/cpython/issues/67316)
         // TODO openBSD/freebsd case
-        if let Err(error) = mc_local_port_socket.set_multicast_loop_v4(false) {
-            event!(
-                Level::ERROR,
-                ?error,
-                "Failed to set IPPROTO_IP -> IP_MULTICAST_LOOP on socket"
-            );
-
-            return Err(eyre::Report::from(error)
-                .with_note(|| "Failed to set IPPROTO_IP -> IP_MULTICAST_LOOP on socket"));
-        }
-
-        if let Err(error) = mc_local_port_socket.set_multicast_ttl_v4(config.hoplimit.into()) {
-            event!(
-                Level::ERROR,
-                ?error,
-                "Failed to set IPPROTO_IP -> IP_MULTICAST_TTL on socket"
-            );
-
-            return Err(eyre::Report::from(error)
-                .with_note(|| "Failed to set IPPROTO_IP -> IP_MULTICAST_TTL on socket"));
-        }
-
-        // TODO error
         mc_local_port_socket
-            .bind(&(SocketAddrV4::new(ipv4_net.addr(), config.source_port)).into())?;
+            .set_multicast_loop_v4(false)
+            .wrap_err("Failed to set IP_MULTICAST_LOOP")?;
+
+        mc_local_port_socket
+            .set_multicast_ttl_v4(config.hoplimit.into())
+            .wrap_err("Failed to set IP_MULTICAST_TTL")?;
+
+        mc_local_port_socket
+            .bind(&(SocketAddrV4::new(ipv4_net.addr(), config.source_port)).into())
+            .wrap_err("Failed to bind to the socket")?;
 
         // bind unicast socket to interface address and WSD's udp port
-        uc_wsd_port_socket.bind(&SocketAddrV4::new(ipv4_net.addr(), WSD_UDP_PORT.into()).into())?;
+        uc_wsd_port_socket
+            .bind(&SocketAddrV4::new(ipv4_net.addr(), WSD_UDP_PORT.into()).into())
+            .wrap_err("Failed to bind to the socket")?;
 
         let listen_address = SocketAddrV4::new(ipv4_net.addr(), WSD_HTTP_PORT.into());
 
