@@ -120,7 +120,7 @@ impl MulticastHandler {
         event!(
             Level::INFO,
             "joined multicast group {} on {}",
-            UrlIpAddr::from(multicast_address.transport_address.ip()),
+            UrlIpAddr::from(multicast_address.get_transport_address().ip()),
             network_address
         );
 
@@ -163,7 +163,7 @@ impl MulticastHandler {
         let mc_local_port_tx = MessageSender::new(
             Arc::clone(&mc_local_port_socket),
             MulticastMessageSplitter {
-                target: multicast_address.transport_address,
+                target: multicast_address.get_transport_address(),
             },
         );
 

@@ -9,7 +9,7 @@ use crate::network_interface::NetworkInterface;
 pub struct UdpAddress {
     _network_address: NetworkAddress,
     // _transport_address: Tuple
-    pub transport_address: SocketAddr,
+    transport_address: SocketAddr,
     // _port: int
 }
 
@@ -25,6 +25,10 @@ impl UdpAddress {
             _network_address: network_address,
             transport_address,
         }
+    }
+
+    pub fn get_transport_address(&self) -> SocketAddr {
+        self.transport_address
     }
 }
 
