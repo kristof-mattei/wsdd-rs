@@ -5,7 +5,6 @@ use color_eyre::eyre;
 use hashbrown::{HashMap, HashSet};
 use time::OffsetDateTime;
 use tracing::{Level, event};
-use url::Url;
 use xml::name::Name;
 use xml::reader::XmlEvent;
 
@@ -16,6 +15,7 @@ use crate::constants::{
 };
 use crate::network_address::NetworkAddress;
 use crate::soap::parser;
+use crate::soap::parser::xaddrs::XAddr;
 use crate::xml::{GenericParsingError, Wrapper, find_descendant, read_text};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -61,7 +61,7 @@ pub struct WSDDiscoveredDevice {
 impl WSDDiscoveredDevice {
     pub fn new(
         meta: &[u8],
-        xaddr: &Url,
+        xaddr: &XAddr,
         network_address: &NetworkAddress,
     ) -> Result<Self, eyre::Report> {
         let mut device = Self {
@@ -97,12 +97,11 @@ impl WSDDiscoveredDevice {
         &self.types
     }
 
-    // TODO better error type
     #[expect(clippy::too_many_lines, reason = "WIP")]
     pub fn update(
         &mut self,
         meta: &[u8],
-        xaddr: &Url,
+        xaddr: &XAddr,
         network_address: &NetworkAddress,
     ) -> Result<(), eyre::Report> {
         let (_header, _has_body, mut reader) = parser::deconstruct_raw(meta)?;
@@ -214,11 +213,7 @@ impl WSDDiscoveredDevice {
             }
         }
 
-        let host = xaddr
-            .host_str()
-            .ok_or_else(|| eyre::Report::msg("Device's address does not have a host portion"))?
-            .to_owned()
-            .into_boxed_str();
+        let host = xaddr.host_str().to_owned().into_boxed_str();
 
         //         if interface.name not in self.addresses:
         //             self.addresses[interface.name] = set([addr])

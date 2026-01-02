@@ -351,7 +351,6 @@ impl NetworkHandler {
 
         event!(Level::DEBUG, address = %network_address.address, interface = %network_address.interface.name(), "handling traffic");
 
-        // TODO think of a way to avoid the clone here if we want to print
         // the address in the error path
         let mut multicast_handler = match MulticastHandler::new(
             network_address,

@@ -6,8 +6,14 @@ pub struct XAddr {
 }
 
 impl XAddr {
-    pub fn get_url(&self) -> &Url {
+    pub fn url(&self) -> &Url {
         &self.url
+    }
+
+    pub fn host_str(&self) -> &str {
+        self.url
+            .host_str()
+            .expect("XAddrs cannot be constructed from URLs that don't have a host")
     }
 }
 
