@@ -233,10 +233,10 @@ impl<'config> Builder<'config> {
         config: &Config,
         messages_built: &AtomicU64,
         xaddr: IpAddr,
-    ) -> Result<Vec<u8>, xml::writer::Error> {
+    ) -> Result<Message, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
-        let message = builder.build_message(
+        let message: (Vec<_>, _) = builder.build_message(
             WSA_DISCOVERY,
             WSD_HELLO,
             None,
@@ -247,17 +247,17 @@ impl<'config> Builder<'config> {
             Hello::new(xaddr),
         )?;
 
-        Ok(message.0)
+        Ok(Message::Hello(message.0.into_boxed_slice()))
     }
 
     /// WS-Discovery, Section 4.2, Bye message
     pub fn build_bye(
         config: &Config,
         messages_built: &AtomicU64,
-    ) -> Result<Vec<u8>, xml::writer::Error> {
+    ) -> Result<Message, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
-        let message = builder.build_message(
+        let message: (Vec<_>, _) = builder.build_message(
             WSA_DISCOVERY,
             WSD_BYE,
             None,
@@ -268,14 +268,14 @@ impl<'config> Builder<'config> {
             Bye::new(),
         )?;
 
-        Ok(message.0)
+        Ok(Message::Bye(message.0.into_boxed_slice()))
     }
 
     // WS-Discovery, Section 4.3, Probe message
     pub fn build_probe(config: &Config) -> Result<(Message, Urn), xml::writer::Error> {
         let mut builder = Builder::new(config);
 
-        let message: (Vec<u8>, _) = builder.build_message(
+        let message: (Vec<_>, _) = builder.build_message(
             WSA_DISCOVERY,
             WSD_PROBE,
             None,
@@ -290,10 +290,10 @@ impl<'config> Builder<'config> {
     pub fn build_resolve(
         config: &Config,
         endpoint: &DeviceUri,
-    ) -> Result<(Vec<u8>, Urn), xml::writer::Error> {
+    ) -> Result<(Message, Urn), xml::writer::Error> {
         let mut builder = Builder::new(config);
 
-        let message = builder.build_message(
+        let message: (Vec<_>, _) = builder.build_message(
             WSA_DISCOVERY,
             WSD_RESOLVE,
             None,
@@ -301,7 +301,7 @@ impl<'config> Builder<'config> {
             Resolve::new(endpoint),
         )?;
 
-        Ok((message.0, message.1))
+        Ok((Message::Resolve(message.0.into_boxed_slice()), message.1))
     }
 
     pub fn build_resolve_matches(
@@ -309,10 +309,10 @@ impl<'config> Builder<'config> {
         address: IpAddr,
         messages_built: &AtomicU64,
         relates_to: Urn,
-    ) -> Result<Vec<u8>, xml::writer::Error> {
+    ) -> Result<Message, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
-        let message = builder.build_message(
+        let message: (Vec<_>, _) = builder.build_message(
             WSA_ANON,
             WSD_RESOLVE_MATCH,
             Some(relates_to),
@@ -323,17 +323,17 @@ impl<'config> Builder<'config> {
             ResolveMatches::new(address),
         )?;
 
-        Ok(message.0)
+        Ok(Message::ResolveMatches(message.0.into_boxed_slice()))
     }
 
     pub fn build_probe_matches(
         config: &Config,
         messages_built: &AtomicU64,
         relates_to: Urn,
-    ) -> Result<Vec<u8>, xml::writer::Error> {
+    ) -> Result<Message, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
-        let message = builder.build_message(
+        let message: (Vec<_>, _) = builder.build_message(
             WSA_ANON,
             WSD_PROBE_MATCH,
             Some(relates_to),
@@ -344,7 +344,7 @@ impl<'config> Builder<'config> {
             ProbeMatches::new(),
         )?;
 
-        Ok(message.0)
+        Ok(Message::ProbeMatches(message.0.into_boxed_slice()))
     }
 
     pub fn build_get(config: &Config, endpoint: &DeviceUri) -> Result<Vec<u8>, xml::writer::Error> {

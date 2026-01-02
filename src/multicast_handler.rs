@@ -626,6 +626,8 @@ async fn repeatedly_send_buffer<T: MessageSplitter>(
 ) {
     let buffer = message.as_bytes();
 
+    event!(Level::INFO, "scheduling {} message via ...", message,);
+
     // TODO log message_type ONCE
     // Schedule to send the given message to the given address.
     // Implements SOAP over UDP, Appendix I.

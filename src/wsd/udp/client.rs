@@ -270,9 +270,7 @@ async fn handle_hello(
 
         let (message, _) = Builder::build_resolve(config, &endpoint)?;
 
-        multicast
-            .send(Message::Resolve(message.into_boxed_slice()))
-            .await?;
+        multicast.send(message).await?;
 
         return Ok(());
     };
@@ -352,9 +350,7 @@ async fn handle_probe_match(
 
         let (message, _) = Builder::build_resolve(config, &endpoint)?;
 
-        mc_local_port_tx
-            .send(Message::Resolve(message.into_boxed_slice()))
-            .await?;
+        mc_local_port_tx.send(message).await?;
 
         return Ok(());
     };

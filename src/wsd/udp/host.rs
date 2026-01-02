@@ -119,10 +119,7 @@ impl WSDHost {
         // TODO move event to here and write properly
         // event!(Level::INFO, "scheduling {} message", Message::Bye);
 
-        Ok(self
-            .mc_local_port_tx
-            .send(Message::Bye(bye.into_boxed_slice()))
-            .await?)
+        Ok(self.mc_local_port_tx.send(bye).await?)
     }
 }
 
@@ -136,12 +133,8 @@ async fn send_hello(
     let future = async move {
         let hello = Builder::build_hello(config, messages_built, address)?;
 
-        // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
-        // TODO move event to here and write properly
-        // event!(Level::INFO, "scheduling {} message", Message::Hello);
-
         mc_local_port_tx
-            .send(Message::Hello(hello.into_boxed_slice()))
+            .send(hello)
             .await
             .map_err(|_| eyre::Report::msg("Receiver gone, failed to send hello"))
     };
@@ -159,10 +152,11 @@ fn handle_probe(
     reader: &mut Wrapper<'_>,
 ) -> Result<Option<Message>, eyre::Report> {
     if parser::probe::parse_probe_body(reader)? {
-        Ok(Some(Message::ProbeMatches(
-            builder::Builder::build_probe_matches(config, messages_built, relates_to)?
-                .into_boxed_slice(),
-        )))
+        Ok(Some(builder::Builder::build_probe_matches(
+            config,
+            messages_built,
+            relates_to,
+        )?))
     } else {
         Ok(None)
     }
@@ -177,10 +171,12 @@ fn handle_resolve(
     reader: &mut Wrapper<'_>,
 ) -> Result<Option<Message>, eyre::Report> {
     if parser::resolve::parse_resolve_body(reader, target_uuid)? {
-        Ok(Some(Message::ResolveMatches(
-            builder::Builder::build_resolve_matches(config, address, messages_built, relates_to)?
-                .into_boxed_slice(),
-        )))
+        Ok(Some(builder::Builder::build_resolve_matches(
+            config,
+            address,
+            messages_built,
+            relates_to,
+        )?))
     } else {
         Ok(None)
     }
