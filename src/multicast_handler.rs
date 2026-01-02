@@ -267,14 +267,14 @@ impl MulticastHandler {
         }: &Sockets,
         config: &Config,
     ) -> Result<(UdpAddress, SocketAddr), eyre::Report> {
-        let idx = interface.index();
+        let index = interface.index();
 
         let multicast_address = UdpAddress::new(
             SocketAddrV6::new(
                 constants::WSD_MCAST_GRP_V6,
                 constants::WSD_UDP_PORT.into(),
                 0x575C_u32,
-                idx,
+                index,
             )
             .into(),
             ipv6_net.into(),
@@ -282,7 +282,7 @@ impl MulticastHandler {
         );
 
         // TODO handle error
-        mc_wsd_port_socket.join_multicast_v6(&constants::WSD_MCAST_GRP_V6, idx)?;
+        mc_wsd_port_socket.join_multicast_v6(&constants::WSD_MCAST_GRP_V6, index)?;
 
         // TODO error
         mc_wsd_port_socket.set_only_v6(true)?;
@@ -296,12 +296,12 @@ impl MulticastHandler {
         // bind to network interface, i.e. scope and handle OS differences,
         // see Stevens: Unix Network Programming, Section 21.6, last paragraph
         let socket_addr =
-            SocketAddrV6::new(constants::WSD_MCAST_GRP_V6, WSD_UDP_PORT.into(), 0, idx);
+            SocketAddrV6::new(constants::WSD_MCAST_GRP_V6, WSD_UDP_PORT.into(), 0, index);
 
         if let Err(error) = mc_wsd_port_socket.bind(&socket_addr.into()) {
             event!(Level::WARN, ?error, %socket_addr, "Failed to bind to socket");
 
-            let fallback = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, idx);
+            let fallback = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, index);
 
             if let Err(error) = mc_wsd_port_socket.bind(&fallback.into()) {
                 event!(
@@ -325,17 +325,17 @@ impl MulticastHandler {
         mc_local_port_socket.set_multicast_hops_v6(config.hoplimit.into())?;
 
         // TODO error
-        mc_local_port_socket.set_multicast_if_v6(idx)?;
+        mc_local_port_socket.set_multicast_if_v6(index)?;
 
         // TODO error
         mc_local_port_socket
-            .bind(&(SocketAddrV6::new(ipv6_net.addr(), config.source_port, 0, idx)).into())?;
+            .bind(&(SocketAddrV6::new(ipv6_net.addr(), config.source_port, 0, index)).into())?;
 
         // bind unicast socket to interface address and WSD's udp port
         uc_wsd_port_socket
-            .bind(&SocketAddrV6::new(ipv6_net.addr(), WSD_UDP_PORT.into(), 0, idx).into())?;
+            .bind(&SocketAddrV6::new(ipv6_net.addr(), WSD_UDP_PORT.into(), 0, index).into())?;
 
-        let listen_address = SocketAddrV6::new(ipv6_net.addr(), WSD_HTTP_PORT.into(), 0, idx);
+        let listen_address = SocketAddrV6::new(ipv6_net.addr(), WSD_HTTP_PORT.into(), 0, index);
 
         Ok((multicast_address, listen_address.into()))
     }
@@ -350,7 +350,7 @@ impl MulticastHandler {
         }: &Sockets,
         config: &Config,
     ) -> Result<(UdpAddress, SocketAddr), eyre::Report> {
-        let idx = interface.index();
+        let index = interface.index();
 
         let multicast_address = UdpAddress::new(
             SocketAddrV4::new(WSD_MCAST_GRP_V4, WSD_UDP_PORT.into()).into(),
@@ -359,9 +359,9 @@ impl MulticastHandler {
         );
 
         if let Err(error) = mc_wsd_port_socket
-            .join_multicast_v4_n(&WSD_MCAST_GRP_V4, &InterfaceIndexOrAddress::Index(idx))
+            .join_multicast_v4_n(&WSD_MCAST_GRP_V4, &InterfaceIndexOrAddress::Index(index))
         {
-            event!(Level::ERROR, ?error, multi_addr = ?WSD_MCAST_GRP_V4, ifindex = ?idx, "could not join multicast group");
+            event!(Level::ERROR, ?error, multi_addr = ?WSD_MCAST_GRP_V4, ifindex = ?index, "could not join multicast group");
 
             return Err(eyre::Report::msg("could not join multicast group"));
         }

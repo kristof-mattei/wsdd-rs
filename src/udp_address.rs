@@ -7,7 +7,7 @@ use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
 
 pub struct UdpAddress {
-    pub _network_address: NetworkAddress,
+    _network_address: NetworkAddress,
     // _transport_address: Tuple
     pub transport_address: SocketAddr,
     // _port: int
