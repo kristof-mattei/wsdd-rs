@@ -441,6 +441,7 @@ impl MulticastHandler {
                     self.network_address.clone(),
                     self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
+                    Arc::clone(&self.messages_built),
                     self.http_listen_address,
                 )
                 .await;

@@ -1,12 +1,13 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
-use axum::Router;
 use axum::extract::State;
 use axum::handler::HandlerWithoutStateExt as _;
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use axum::{Router, debug_handler};
 use bytes::Bytes;
 use color_eyre::eyre;
 use http::StatusCode;
@@ -23,12 +24,15 @@ use crate::soap::parser::MessageHandler;
 use crate::soap::{UnicastMessage, builder};
 use crate::span::MakeSpanWithUuid;
 use crate::wsd::HANDLED_MESSAGES;
+use crate::wsd::udp::host::handle_probe;
 
 pub struct WSDHttpServer {
     _bound_to: NetworkAddress,
     cancellation_token: CancellationToken,
     _config: Arc<Config>,
     handle: tokio::task::JoinHandle<Result<(), eyre::Error>>,
+    #[cfg_attr(not(test), expect(unused, reason = "Not needed"))]
+    http_bound_to: SocketAddr,
 }
 
 impl WSDHttpServer {
@@ -36,6 +40,7 @@ impl WSDHttpServer {
         bound_to: NetworkAddress,
         cancellation_token: CancellationToken,
         config: Arc<Config>,
+        messages_built: Arc<AtomicU64>,
         http_listen_address: SocketAddr,
     ) -> Result<WSDHttpServer, std::io::Error> {
         let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to.clone());
@@ -43,6 +48,8 @@ impl WSDHttpServer {
         event!(Level::INFO, ?http_listen_address, "Trying to bind");
 
         let listener = tokio::net::TcpListener::bind(http_listen_address).await?;
+
+        let http_bound_to = listener.local_addr()?;
 
         event!(Level::INFO, ?listener, "Bound successfully");
 
@@ -52,7 +59,7 @@ impl WSDHttpServer {
         let handle = tokio::task::spawn(launch_http_server(
             cancellation_token.clone(),
             listener,
-            build_router(Arc::clone(&config), message_handler),
+            build_router(Arc::clone(&config), messages_built, message_handler),
         ));
 
         Ok(Self {
@@ -60,6 +67,7 @@ impl WSDHttpServer {
             cancellation_token,
             _config: config,
             handle,
+            http_bound_to,
         })
     }
 
@@ -70,7 +78,11 @@ impl WSDHttpServer {
     }
 }
 
-fn build_router(config: Arc<Config>, message_handler: MessageHandler) -> Router {
+fn build_router(
+    config: Arc<Config>,
+    messages_built: Arc<AtomicU64>,
+    message_handler: MessageHandler,
+) -> Router {
     let post_path = format!("/{}", config.uuid);
 
     let router = Router::new()
@@ -83,7 +95,7 @@ fn build_router(config: Arc<Config>, message_handler: MessageHandler) -> Router 
                 .on_request(DefaultOnRequest::new().level(Level::TRACE))
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
-        .with_state((config, Arc::new(message_handler)));
+        .with_state((config, messages_built, Arc::new(message_handler)));
 
     router
 }
@@ -96,9 +108,14 @@ async fn handler_404() -> impl IntoResponse {
     StatusCode::NOT_FOUND
 }
 
+#[debug_handler]
 async fn handle_post(
     headers: HeaderMap,
-    State((config, message_handler)): State<(Arc<Config>, Arc<MessageHandler>)>,
+    State((config, messages_built, message_handler)): State<(
+        Arc<Config>,
+        Arc<AtomicU64>,
+        Arc<MessageHandler>,
+    )>,
     body: Bytes,
 ) -> Response {
     let valid_content_type = headers
@@ -110,15 +127,21 @@ async fn handle_post(
         return (StatusCode::BAD_REQUEST, "Invalid Content-Type").into_response();
     }
 
-    match build_response(&config, &message_handler, &body) {
-        Ok(ok) => (
+    match build_response(&config, &message_handler, &body, &messages_built).await {
+        Ok(Some(message)) => (
             StatusCode::OK,
             [(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)],
-            ok,
+            message,
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::ACCEPTED,
+            [(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)],
         )
             .into_response(),
         Err(error) => {
-            event!(Level::ERROR, ?error);
+            event!(Level::ERROR, ?error, "Error parsing/building XML response");
+
             (StatusCode::BAD_REQUEST).into_response()
         },
     }
@@ -128,12 +151,13 @@ fn handle_get(config: &Config, relates_to: Urn) -> Result<UnicastMessage, eyre::
     Ok(builder::Builder::build_get_response(config, relates_to)?)
 }
 
-fn build_response(
+async fn build_response(
     config: &Config,
     message_handler: &MessageHandler,
     buffer: &[u8],
-) -> Result<UnicastMessage, eyre::Report> {
-    let (header, _body_reader) = match message_handler.deconstruct_http_message(buffer) {
+    messages_built: &AtomicU64,
+) -> Result<Option<UnicastMessage>, eyre::Report> {
+    let (header, mut body_reader) = match message_handler.deconstruct_http_message(buffer) {
         Ok(pieces) => pieces,
         Err(error) => {
             error.log(buffer);
@@ -142,17 +166,50 @@ fn build_response(
         },
     };
 
-    if &*header.action != constants::WSD_GET {
-        return Err(eyre::Report::msg("Invalid Action"));
-    }
+    // dispatch based on the SOAP Action header
+    let response = match &*header.action {
+        constants::WSD_GET => {
+            match header.to.as_ref() {
+                Some(to) if to == &config.uuid_as_device_uri => {
+                    Ok(Some(handle_get(config, header.message_id)?))
+                },
+                Some(_) => {
+                    // error when `To` doesn't match us
+                    // send Error 500
+                    // <?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"><soap:Header><wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To><wsa:Action>http://schemas.xmlsoap.org/ws/2004/08/addressing/fault</wsa:Action><wsa:MessageID>urn:uuid:8b1ad6d1-d578-49f0-811e-f67fcb6e3bf2</wsa:MessageID><wsa:RelatesTo>urn:uuid:f3448e61-3f8c-4040-9dc3-013ac09f3a77</wsa:RelatesTo></soap:Header><soap:Body><soap:Fault><soap:Code><soap:Value>soap:Sender</soap:Value><soap:Subcode><soap:Value>wsa:DestinationUnreachable</soap:Value></soap:Subcode></soap:Code><soap:Reason><soap:Text xml:lang="en-US">No route can be determined to reach the destination role defined by the WS-Addressing To.</soap:Text></soap:Reason></soap:Fault></soap:Body></soap:Envelope>
+                    Err(eyre::Report::msg("Invalid To"))
+                },
+                None => {
+                    // no error when To is missing
+                    Ok(None)
+                },
+            }
+        },
+        constants::WSD_PROBE => {
+            // only the probe one is checked for duplicates
+            if message_handler.is_duplicated_msg(header.message_id).await {
+                event!(
+                    Level::DEBUG,
+                    message_id = %header.message_id,
+                    "known message: dropping it",
+                );
 
-    if header.to.as_deref() != Some(&config.uuid_as_device_uri) {
-        return Err(eyre::Report::msg("Invalid To"));
-    }
+                Ok(None)
+            } else {
+                Ok(handle_probe(
+                    config,
+                    messages_built,
+                    header.message_id,
+                    &mut body_reader,
+                )?)
+            }
+        },
+        _ => {
+            return Err(eyre::Report::msg("Invalid Action"));
+        },
+    };
 
-    let response = handle_get(config, header.message_id)?;
-
-    Ok(response)
+    response
 }
 
 /// Set up server on a bound listener, with a router, and a cancellation token for graceful shutdown
@@ -177,7 +234,9 @@ pub async fn launch_http_server(
 mod tests {
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
+    use http::StatusCode;
     use ipnet::IpNet;
     use libc::RT_SCOPE_SITE;
     use pretty_assertions::assert_eq;
@@ -197,17 +256,19 @@ mod tests {
         // host
         let host_ip = Ipv4Addr::LOCALHOST;
         let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
-        let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 6000));
+        let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
+        let host_messages_built = Arc::new(AtomicU64::new(0));
 
         let cancellation_token = CancellationToken::new();
 
-        let _http_server = WSDHttpServer::init(
+        let http_server = WSDHttpServer::init(
             NetworkAddress::new(
                 IpNet::new(host_ip.into(), 8).unwrap(),
                 Arc::new(NetworkInterface::new_with_index("lo", RT_SCOPE_SITE, 5)),
             ),
             cancellation_token.child_token(),
             Arc::clone(&host_config),
+            host_messages_built,
             host_http_listening_address,
         )
         .await
@@ -224,7 +285,7 @@ mod tests {
             .unwrap()
             .post(format!(
                 "http://{}/{}",
-                host_http_listening_address, host_config.uuid
+                http_server.http_bound_to, host_config.uuid
             ))
             .header("Content-Type", MIME_TYPE_SOAP_XML)
             .header("User-Agent", "wsdd-rs");
@@ -250,5 +311,143 @@ mod tests {
             to_string_pretty(expected_response.as_bytes()).unwrap(),
             to_string_pretty(&response.bytes().await.unwrap()).unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn handles_probe_wsdp_device() {
+        let client_message_id = Uuid::now_v7();
+        let probe = format!(
+            include_str!("../../test/probe-template-wsdp-device.xml"),
+            client_message_id
+        );
+
+        handles_probe_generic(client_message_id, &probe).await;
+    }
+
+    #[tokio::test]
+    async fn handles_probe_pub_computer() {
+        // client
+        let client_message_id = Uuid::now_v7();
+        let probe = format!(
+            include_str!("../../test/probe-template-pub-computer.xml"),
+            client_message_id
+        );
+
+        handles_probe_generic(client_message_id, &probe).await;
+    }
+
+    #[tokio::test]
+    async fn handles_probe_no_types() {
+        let client_message_id = Uuid::now_v7();
+        let probe = format!(
+            include_str!("../../test/probe-template-no-types.xml"),
+            client_message_id
+        );
+
+        handles_probe_generic(client_message_id, &probe).await;
+    }
+
+    async fn handles_probe_generic(client_message_id: Uuid, probe: &str) {
+        // host
+        let host_ip = Ipv4Addr::LOCALHOST;
+        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
+        let host_messages_built = Arc::new(AtomicU64::new(0));
+
+        let cancellation_token = CancellationToken::new();
+
+        let http_server = WSDHttpServer::init(
+            NetworkAddress::new(
+                IpNet::new(host_ip.into(), 8).unwrap(),
+                Arc::new(NetworkInterface::new_with_index("lo", RT_SCOPE_SITE, 5)),
+            ),
+            cancellation_token.child_token(),
+            Arc::clone(&host_config),
+            Arc::clone(&host_messages_built),
+            host_http_listening_address,
+        )
+        .await
+        .unwrap_or_else(|_| panic!("Failed to launch server on {}", host_http_listening_address));
+
+        let builder = reqwest::ClientBuilder::new()
+            .build()
+            .unwrap()
+            .post(format!(
+                "http://{}/{}",
+                http_server.http_bound_to, host_config.uuid
+            ))
+            .header("Content-Type", MIME_TYPE_SOAP_XML)
+            .header("User-Agent", "wsdd-rs");
+
+        let response = builder
+            .body(probe.to_owned())
+            .timeout(host_config.metadata_timeout)
+            .send()
+            .await
+            .unwrap();
+
+        let expected = format!(
+            include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
+            client_message_id,
+            host_config.wsd_instance_id,
+            host_messages_built.load(Ordering::Relaxed) - 1,
+            host_config.uuid_as_device_uri,
+        );
+
+        let response = to_string_pretty(response.bytes().await.unwrap().as_ref()).unwrap();
+        let expected = to_string_pretty(expected.as_bytes()).unwrap();
+
+        assert_eq!(expected, response);
+    }
+
+    #[tokio::test]
+    async fn handles_probe_non_matching_type() {
+        let client_message_id = Uuid::now_v7();
+        let probe = format!(
+            include_str!("../../test/probe-template-non-matching-type.xml"),
+            client_message_id
+        );
+
+        // host
+        let host_ip = Ipv4Addr::LOCALHOST;
+        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
+        let host_messages_built = Arc::new(AtomicU64::new(0));
+
+        let cancellation_token = CancellationToken::new();
+
+        let http_server = WSDHttpServer::init(
+            NetworkAddress::new(
+                IpNet::new(host_ip.into(), 8).unwrap(),
+                Arc::new(NetworkInterface::new_with_index("lo", RT_SCOPE_SITE, 5)),
+            ),
+            cancellation_token.child_token(),
+            Arc::clone(&host_config),
+            Arc::clone(&host_messages_built),
+            host_http_listening_address,
+        )
+        .await
+        .unwrap();
+
+        let builder = reqwest::ClientBuilder::new()
+            .build()
+            .unwrap()
+            .post(format!(
+                "http://{}/{}",
+                http_server.http_bound_to, host_config.uuid
+            ))
+            .header("Content-Type", MIME_TYPE_SOAP_XML)
+            .header("User-Agent", "wsdd-rs");
+
+        let response = builder
+            .body(probe)
+            .timeout(host_config.metadata_timeout)
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(StatusCode::ACCEPTED, response.status());
+        // no content
+        assert_eq!(vec![], response.bytes().await.unwrap());
     }
 }

@@ -531,8 +531,8 @@ async fn listen_forever(
                 },
             };
 
-        // handle based on action
-        if let Err(error) = match &*header.action {
+        // dispatch based on the SOAP Action header
+        let response = match &*header.action {
             WSD_HELLO => {
                 handle_hello(
                     &client,
@@ -578,7 +578,9 @@ async fn listen_forever(
 
                 continue;
             },
-        } {
+        };
+
+        if let Err(error) = response {
             event!(
                 Level::ERROR,
                 action = &*header.action,
@@ -1200,7 +1202,7 @@ mod tests {
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let (header, mut reader) = message_handler
+        let (header, mut body_reader) = message_handler
             .deconstruct_message(
                 probe_matches.as_bytes(),
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
@@ -1224,7 +1226,7 @@ mod tests {
             header.relates_to,
             probes,
             &multicast_tx,
-            &mut reader,
+            &mut body_reader,
         )
         .await
         .unwrap();
@@ -1306,7 +1308,7 @@ mod tests {
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let (header, mut reader) = message_handler
+        let (header, mut body_reader) = message_handler
             .deconstruct_message(
                 probe_matches.as_bytes(),
                 SocketAddr::new(server.socket_address().ip(), 5000),
@@ -1330,7 +1332,7 @@ mod tests {
             header.relates_to,
             probes,
             &multicast_tx,
-            &mut reader,
+            &mut body_reader,
         )
         .await
         .unwrap();

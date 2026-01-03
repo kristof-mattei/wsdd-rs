@@ -143,7 +143,7 @@ async fn send_hello(
         .unwrap_or(Ok(()))
 }
 
-fn handle_probe(
+pub fn handle_probe(
     config: &Config,
     messages_built: &AtomicU64,
     relates_to: Urn,
@@ -217,7 +217,7 @@ async fn listen_forever(
                 },
             };
 
-        // handle based on action
+        // dispatch based on the SOAP Action header
         let response = match &*header.action {
             constants::WSD_PROBE => handle_probe(
                 &config,
@@ -398,7 +398,7 @@ mod tests {
         );
 
         // host receives client's probe
-        let (header, mut reader) = host_message_handler
+        let (header, mut body_reader) = host_message_handler
             .deconstruct_message(
                 resolve.as_bytes(),
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
@@ -413,7 +413,7 @@ mod tests {
             &host_messages_built,
             host_config.uuid,
             header.message_id,
-            &mut reader,
+            &mut body_reader,
         )
         .unwrap()
         .unwrap();
@@ -477,7 +477,7 @@ mod tests {
         let host_messages_built = Arc::new(AtomicU64::new(0));
 
         // host receives client's probe
-        let (header, mut reader) = host_message_handler
+        let (header, mut body_reader) = host_message_handler
             .deconstruct_message(
                 probe.as_bytes(),
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
@@ -490,7 +490,7 @@ mod tests {
             &host_config,
             &host_messages_built,
             header.message_id,
-            &mut reader,
+            &mut body_reader,
         )
         .unwrap()
         .unwrap();
