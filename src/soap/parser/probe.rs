@@ -1,3 +1,5 @@
+use std::io::Read;
+
 use thiserror::Error;
 use tracing::{Level, event};
 use xml::reader::XmlEvent;
@@ -20,7 +22,10 @@ pub enum ProbeParsingError {
 /// Expects a reader inside of the `Probe` tag
 /// This function makes NO claims about the position of the reader
 /// should the structure XML be invalid (e.g. missing `Address`)
-fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
+fn parse_probe<R>(reader: &mut Wrapper<R>) -> ParsedProbeResult
+where
+    R: Read,
+{
     let mut types_and_namespace = None;
 
     let mut depth = 0_usize;
@@ -137,7 +142,10 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
 /// * `Ok(true)`: when we offer the requested `wsd:Types`, or when no `wsd:Types` are provided (ergo no type-based filtering is applied)
 /// * `Ok(false)`: when we do not offer the `wsd:Types` requested
 /// * `Err(_)`: Anything went wrong trying to parse the XML
-pub fn parse_probe_body(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
+pub fn parse_probe_body<R>(reader: &mut Wrapper<R>) -> ParsedProbeResult
+where
+    R: Read,
+{
     let mut depth = 0_usize;
     loop {
         match reader.next()? {

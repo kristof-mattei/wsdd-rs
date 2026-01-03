@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
@@ -143,12 +144,15 @@ async fn send_hello(
         .unwrap_or(Ok(()))
 }
 
-pub fn handle_probe(
+pub fn handle_probe<R>(
     config: &Config,
     messages_built: &AtomicU64,
     relates_to: Urn,
-    reader: &mut Wrapper<'_>,
-) -> Result<Option<UnicastMessage>, eyre::Report> {
+    reader: &mut Wrapper<R>,
+) -> Result<Option<UnicastMessage>, eyre::Report>
+where
+    R: Read,
+{
     if parser::probe::parse_probe_body(reader)? {
         Ok(Some(builder::Builder::build_probe_matches(
             config,
@@ -160,14 +164,17 @@ pub fn handle_probe(
     }
 }
 
-fn handle_resolve(
+fn handle_resolve<R>(
     address: IpAddr,
     config: &Config,
     messages_built: &AtomicU64,
     target_uuid: uuid::Uuid,
     relates_to: Urn,
-    reader: &mut Wrapper<'_>,
-) -> Result<Option<UnicastMessage>, eyre::Report> {
+    reader: &mut Wrapper<R>,
+) -> Result<Option<UnicastMessage>, eyre::Report>
+where
+    R: Read,
+{
     if parser::resolve::parse_resolve_body(reader, target_uuid)? {
         Ok(Some(builder::Builder::build_resolve_matches(
             config,

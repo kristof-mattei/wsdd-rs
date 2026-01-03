@@ -1,3 +1,5 @@
+use std::io::Read;
+
 use thiserror::Error;
 use tracing::{Level, event};
 use uuid::Uuid;
@@ -27,7 +29,10 @@ pub enum ResolveParsingError {
 /// Expects a reader inside of the `Resolve` tag
 /// This function makes NO claims about the position of the reader
 /// should the structure XML be invalid (e.g. missing `Address`)
-fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveResult {
+fn parse_resolve<R>(reader: &mut Wrapper<R>, target_uuid: Uuid) -> ParsedResolveResult
+where
+    R: Read,
+{
     let mut addr = None;
 
     let mut depth = 0_usize;
@@ -138,7 +143,10 @@ fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveRe
 }
 
 /// This takes in a reader that is stopped at the body tag.
-pub fn parse_resolve_body(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveResult {
+pub fn parse_resolve_body<R>(reader: &mut Wrapper<R>, target_uuid: Uuid) -> ParsedResolveResult
+where
+    R: Read,
+{
     let mut depth = 0_usize;
     loop {
         match reader.next()? {

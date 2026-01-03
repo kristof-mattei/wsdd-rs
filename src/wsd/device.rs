@@ -1,4 +1,5 @@
 use std::borrow::ToOwned;
+use std::io::Read;
 use std::ops::Deref;
 
 use color_eyre::eyre;
@@ -294,11 +295,14 @@ impl WSDDiscoveredDevice {
     }
 }
 
-fn extract_wsdp_props(
-    reader: &mut Wrapper<'_>,
+fn extract_wsdp_props<R>(
+    reader: &mut Wrapper<R>,
     namespace: &str,
     closing: Name<'_>,
-) -> Result<HashMap<Box<str>, Box<str>>, GenericParsingError> {
+) -> Result<HashMap<Box<str>, Box<str>>, GenericParsingError>
+where
+    R: Read,
+{
     // we're now in `namespace:path`, depth is already 1
     let mut depth: usize = 1;
 
@@ -358,7 +362,10 @@ fn extract_wsdp_props(
 type ExtractHostPropsResult =
     Result<(HashSet<Box<str>>, Option<(Box<str>, Box<str>)>), GenericParsingError>;
 
-fn extract_host_props(reader: &mut Wrapper<'_>) -> ExtractHostPropsResult {
+fn extract_host_props<R>(reader: &mut Wrapper<R>) -> ExtractHostPropsResult
+where
+    R: Read,
+{
     // we are inside of the relationship metadata section, which contains ... RELATIONSHIPS
     // for each relationship, we find the one with Type=Host
     loop {
@@ -425,7 +432,10 @@ fn extract_host_props(reader: &mut Wrapper<'_>) -> ExtractHostPropsResult {
     }
 }
 
-fn read_types_and_pub_computer(reader: &mut Wrapper<'_>) -> ExtractHostPropsResult {
+fn read_types_and_pub_computer<R>(reader: &mut Wrapper<R>) -> ExtractHostPropsResult
+where
+    R: Read,
+{
     let mut types = None;
     let mut computer = None;
     let mut computer_namespace_prefix = None;

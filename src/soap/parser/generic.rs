@@ -1,3 +1,5 @@
+use std::io::Read;
+
 use tracing::{Level, event};
 use xml::reader::XmlEvent;
 
@@ -5,9 +7,12 @@ use crate::constants::{XML_WSA_NAMESPACE, XML_WSD_NAMESPACE};
 use crate::wsd::device::DeviceUri;
 use crate::xml::{GenericParsingError, Wrapper, read_text};
 
-pub fn extract_endpoint_reference_address(
-    reader: &mut Wrapper<'_>,
-) -> Result<Box<str>, GenericParsingError> {
+pub fn extract_endpoint_reference_address<R>(
+    reader: &mut Wrapper<R>,
+) -> Result<Box<str>, GenericParsingError>
+where
+    R: Read,
+{
     let mut address = None;
 
     let mut depth = 0_usize;
@@ -63,9 +68,12 @@ pub fn extract_endpoint_reference_address(
     Ok(address.into_boxed_str())
 }
 
-pub fn extract_endpoint_metadata(
-    reader: &mut Wrapper<'_>,
-) -> Result<(DeviceUri, Option<Box<str>>), GenericParsingError> {
+pub fn extract_endpoint_metadata<R>(
+    reader: &mut Wrapper<R>,
+) -> Result<(DeviceUri, Option<Box<str>>), GenericParsingError>
+where
+    R: Read,
+{
     let mut endpoint = None;
     let mut xaddrs = None;
 

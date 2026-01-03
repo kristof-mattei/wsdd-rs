@@ -1,4 +1,5 @@
 use std::cmp::Reverse;
+use std::io::Read;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -248,13 +249,13 @@ fn parse_xaddrs(bound_to: IpNet, raw_xaddrs: &str) -> Vec<XAddr> {
     xaddrs
 }
 
-async fn handle_hello(
+async fn handle_hello<R: Read>(
     client: &reqwest::Client,
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
     multicast: &Sender<MulticastMessage>,
-    reader: &mut Wrapper<'_>,
+    reader: &mut Wrapper<R>,
 ) -> Result<(), eyre::Report> {
     find_descendant(reader, Some(XML_WSD_NAMESPACE), "Hello")?;
 
@@ -285,10 +286,13 @@ async fn handle_hello(
     Ok(())
 }
 
-async fn handle_bye(
+async fn handle_bye<R>(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
-    reader: &mut Wrapper<'_>,
-) -> Result<(), eyre::Report> {
+    reader: &mut Wrapper<R>,
+) -> Result<(), eyre::Report>
+where
+    R: Read,
+{
     find_descendant(reader, Some(XML_WSD_NAMESPACE), "Bye")?;
 
     let (endpoint, _) = extract_endpoint_metadata(reader)?;
@@ -307,7 +311,7 @@ async fn handle_bye(
 }
 
 #[expect(clippy::too_many_arguments, reason = "WIP")]
-async fn handle_probe_match(
+async fn handle_probe_match<R>(
     client: &reqwest::Client,
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
@@ -315,8 +319,11 @@ async fn handle_probe_match(
     relates_to: Option<Urn>,
     probes: Arc<RwLock<HashMap<Urn, Duration>>>,
     mc_local_port_tx: &Sender<MulticastMessage>,
-    reader: &mut Wrapper<'_>,
-) -> Result<(), eyre::Report> {
+    reader: &mut Wrapper<R>,
+) -> Result<(), eyre::Report>
+where
+    R: Read,
+{
     let Some(relates_to) = relates_to else {
         event!(Level::DEBUG, "missing `RelatesTo`");
         return Ok(());
@@ -365,13 +372,16 @@ async fn handle_probe_match(
     Ok(())
 }
 
-async fn handle_resolve_match(
+async fn handle_resolve_match<R>(
     client: &reqwest::Client,
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
-    reader: &mut Wrapper<'_>,
-) -> Result<(), eyre::Report> {
+    reader: &mut Wrapper<R>,
+) -> Result<(), eyre::Report>
+where
+    R: Read,
+{
     find_descendants(
         reader,
         &[

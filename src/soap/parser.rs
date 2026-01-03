@@ -3,7 +3,7 @@ pub mod probe;
 pub mod resolve;
 pub mod xaddrs;
 
-use std::io::BufReader;
+use std::io::Read;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -146,16 +146,19 @@ pub enum HeaderError {
     XmlError(#[from] xml::reader::Error),
 }
 
-type RawMessageResult<'r> = Result<(Header, bool, Wrapper<'r>), MessageHandlerError>;
+type RawMessageResult<R> = Result<(Header, bool, Wrapper<R>), MessageHandlerError>;
 
-pub fn deconstruct_raw(raw: &[u8]) -> RawMessageResult<'_> {
+pub fn deconstruct_raw<R>(raw: R) -> RawMessageResult<R>
+where
+    R: Read,
+{
     let mut reader = Wrapper::new(
         ParserConfig::new()
             .cdata_to_characters(true)
             .ignore_comments(true)
             .trim_whitespace(true)
             .whitespace_to_characters(true)
-            .create_reader(BufReader::new(raw)),
+            .create_reader(raw),
     );
 
     let mut header = None;
@@ -218,7 +221,7 @@ impl MessageHandler {
         &self,
         raw: &'r [u8],
         src: SocketAddr,
-    ) -> Result<(Header, Wrapper<'r>), MessageHandlerError> {
+    ) -> Result<(Header, Wrapper<&'r [u8]>), MessageHandlerError> {
         let (header, has_body, reader) = deconstruct_raw(raw)?;
 
         // check for duplicates
@@ -241,7 +244,7 @@ impl MessageHandler {
     pub fn deconstruct_http_message<'r>(
         &self,
         raw: &'r [u8],
-    ) -> Result<(Header, Wrapper<'r>), MessageHandlerError> {
+    ) -> Result<(Header, Wrapper<&'r [u8]>), MessageHandlerError> {
         let (header, has_body, reader) = deconstruct_raw(raw)?;
 
         let header = self.validate_action_body(raw, None, header, has_body)?;
@@ -321,7 +324,10 @@ impl MessageHandler {
     }
 }
 
-fn parse_header(reader: &mut Wrapper<'_>) -> ParsedHeaderResult {
+fn parse_header<R>(reader: &mut Wrapper<R>) -> ParsedHeaderResult
+where
+    R: Read,
+{
     // <wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
     let mut to = None;
     // <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches</wsa:Action>
