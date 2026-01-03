@@ -225,8 +225,8 @@ impl MessageHandler {
         if self.is_duplicated_msg(header.message_id).await {
             event!(
                 Level::DEBUG,
-                "known message ({}): dropping it",
-                header.message_id
+                message_id = %header.message_id,
+                "known message: dropping it",
             );
 
             return Err(MessageHandlerError::DuplicateMessage);
@@ -300,7 +300,7 @@ impl MessageHandler {
     /// can insert and evict the same `Urn` before our write guard runs, so some
     /// in-flight duplicates may be reprocessed, but we avoid taking a write lock for
     /// every message.
-    async fn is_duplicated_msg(&self, message_id: Urn) -> bool {
+    pub async fn is_duplicated_msg(&self, message_id: Urn) -> bool {
         {
             let read_lock = self.handled_messages.read().await;
 

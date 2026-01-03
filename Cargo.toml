@@ -19,9 +19,10 @@ tokio-console = ["dep:console-subscriber"]
 
 [dependencies]
 axum = { version = "0.8.8", default-features = false, features = [
-    "tracing",
     "http1",
+    "macros",
     "tokio",
+    "tracing",
 ] }
 bytes = "1.11.0"
 clap = { version = "4.5.54", features = ["cargo", "string", "derive"] }
