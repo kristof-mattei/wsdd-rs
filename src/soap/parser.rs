@@ -258,7 +258,7 @@ impl MessageHandler {
     ) -> Result<Header, MessageHandlerError> {
         event!(
             Level::DEBUG,
-            xml = String::from_utf8_lossy(raw).trim(),
+            xml = %String::from_utf8_lossy(raw).trim(),
             "incoming message content",
         );
 
