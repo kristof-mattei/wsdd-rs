@@ -51,6 +51,7 @@ impl std::fmt::Display for DeviceUri {
 
 #[derive(Clone, Debug)]
 pub struct WSDDiscoveredDevice {
+    device_uri: DeviceUri,
     addresses: HashMap<Box<str>, HashSet<Box<str>>>,
     props: HashMap<Box<str>, Box<str>>,
     display_name: Option<Box<str>>,
@@ -60,11 +61,13 @@ pub struct WSDDiscoveredDevice {
 
 impl WSDDiscoveredDevice {
     pub fn new(
+        device_uri: DeviceUri,
         meta: &[u8],
         xaddr: &XAddr,
         network_address: &NetworkAddress,
     ) -> Result<Self, eyre::Report> {
         let mut device = Self {
+            device_uri,
             addresses: HashMap::new(),
             props: HashMap::new(),
             display_name: None,
@@ -141,23 +144,38 @@ impl WSDDiscoveredDevice {
 
                 event!(
                     Level::INFO,
-                    display_name,
-                    belongs_to,
+                    device_uri = %self.device_uri,
+                    %display_name,
+                    %belongs_to,
                     addr = %xaddr,
-                    "discovered device"
+                    "Discovered device"
                 );
             } else if let Some(friendly_name) = self.props.get("FriendlyName") {
                 //         elif ('FriendlyName' in self.props) and (report):
                 //             self.display_name = self.props['FriendlyName']
                 self.display_name = Some(friendly_name.clone());
                 //             logger.info('discovered {} on {}'.format(self.display_name, addr))
-                event!(Level::INFO, display_name = friendly_name, addr = %xaddr, "discovered device");
+                event!(
+                    Level::INFO,
+                    device_uri = %self.device_uri,
+                    display_name = %friendly_name,
+                    addr = %xaddr,
+                    "Discovered device"
+                );
             } else {
                 // No way to get a display name
             }
         }
 
-        event!(Level::DEBUG, ?self.props);
+        event!(
+            Level::DEBUG,
+            device_uri = %self.device_uri,
+            addresses = ?self.addresses,
+            types = ?self.types,
+            props = ?self.props,
+            last_seen = ?self.last_seen,
+            "Device updated",
+        );
 
         Ok(())
     }

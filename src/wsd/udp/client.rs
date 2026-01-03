@@ -464,18 +464,18 @@ fn build_getmetadata_message(
 async fn handle_metadata(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     meta: &[u8],
-    endpoint: DeviceUri,
+    device_uri: DeviceUri,
     xaddr: XAddr,
     bound_to: &NetworkAddress,
 ) -> Result<(), eyre::Report> {
-    let device_uuid = endpoint;
-
-    match devices.write().await.entry(device_uuid) {
+    match devices.write().await.entry(device_uri) {
         hashbrown::hash_map::Entry::Occupied(mut occupied_entry) => {
             occupied_entry.get_mut().update(meta, &xaddr, bound_to)?;
         },
         hashbrown::hash_map::Entry::Vacant(vacant_entry) => {
-            vacant_entry.insert(WSDDiscoveredDevice::new(meta, &xaddr, bound_to)?);
+            let key = vacant_entry.key().clone();
+
+            vacant_entry.insert(WSDDiscoveredDevice::new(key, meta, &xaddr, bound_to)?);
         },
     }
 
