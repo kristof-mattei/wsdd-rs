@@ -117,10 +117,6 @@ impl WSDHost {
     async fn send_bye(&self, messages_built: &AtomicU64) -> Result<(), eyre::Report> {
         let bye = Builder::build_bye(&self.config, messages_built)?;
 
-        // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
-        // TODO move event to here and write properly
-        // event!(Level::INFO, "scheduling {} message", Message::Bye);
-
         Ok(self.mc_local_port_tx.send(bye).await?)
     }
 }

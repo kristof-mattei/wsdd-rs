@@ -247,7 +247,7 @@ mod tests {
         );
 
         assert_eq!(
-            to_string_pretty(expected_response.as_ref()).unwrap(),
+            to_string_pretty(expected_response.as_bytes()).unwrap(),
             to_string_pretty(&response.bytes().await.unwrap()).unwrap()
         );
     }
