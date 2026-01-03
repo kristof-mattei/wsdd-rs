@@ -9,6 +9,7 @@ use clap::{Arg, ArgAction, Command, command, value_parser};
 use color_eyre::eyre;
 use tracing::{Level, event};
 use uuid::Uuid;
+use uuid::fmt::Urn;
 
 use crate::config::{Config, PortOrSocket};
 use crate::ffi::listen_fds;
@@ -297,6 +298,7 @@ where
             .copied()
             .expect("source-port has a default"),
         wsd_instance_id: now().as_secs().to_string().into_boxed_str(),
+        sequence_id: sequence_id().to_string().into_boxed_str(),
     };
 
     Ok(config)
@@ -315,6 +317,25 @@ fn now() -> Duration {
         SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("Before epoch? Time travel?")
+    }
+}
+
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::cfg_not_test,
+        reason = "Adding in the ability to control UUID generation seems excessive"
+    )
+)]
+fn sequence_id() -> Urn {
+    #[cfg(test)]
+    {
+        Uuid::nil().urn()
+    }
+
+    #[cfg(not(test))]
+    {
+        Uuid::now_v7().urn()
     }
 }
 

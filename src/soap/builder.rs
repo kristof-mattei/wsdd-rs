@@ -55,25 +55,6 @@ fn generate_message_id() -> Urn {
     }
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        clippy::cfg_not_test,
-        reason = "Adding in the ability to control UUID generation seems excessive"
-    )
-)]
-fn sequence_id() -> Urn {
-    #[cfg(test)]
-    {
-        Uuid::nil().urn()
-    }
-
-    #[cfg(not(test))]
-    {
-        Uuid::now_v7().urn()
-    }
-}
-
 impl<'config> Builder<'config> {
     fn new(config: &'config Config) -> Self {
         Self { config }
@@ -211,6 +192,7 @@ impl<'config> Builder<'config> {
             None,
             AppSequence::new(
                 &config.wsd_instance_id,
+                &config.sequence_id,
                 messages_built.fetch_add(1, Ordering::Relaxed),
             ),
             Hello::new(xaddr),
@@ -232,6 +214,7 @@ impl<'config> Builder<'config> {
             None,
             AppSequence::new(
                 &config.wsd_instance_id,
+                &config.sequence_id,
                 messages_built.fetch_add(1, Ordering::Relaxed),
             ),
             Bye::new(),
@@ -287,6 +270,7 @@ impl<'config> Builder<'config> {
             Some(relates_to),
             AppSequence::new(
                 &config.wsd_instance_id,
+                &config.sequence_id,
                 messages_built.fetch_add(1, Ordering::Relaxed),
             ),
             ResolveMatches::new(address),
@@ -308,6 +292,7 @@ impl<'config> Builder<'config> {
             Some(relates_to),
             AppSequence::new(
                 &config.wsd_instance_id,
+                &config.sequence_id,
                 messages_built.fetch_add(1, Ordering::Relaxed),
             ),
             ProbeMatches::new(),
