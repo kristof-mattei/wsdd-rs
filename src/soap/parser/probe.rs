@@ -134,7 +134,8 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
 /// This takes in a reader that is stopped at the body tag.
 ///
 /// Returns
-/// * `Ok(true)`: when we offer the `wsd:Types` requested, or when no `wsd:Types` have been provided and therefore no type-based filtering is applied
+/// * `Ok(true)`: when we offer the `wsd:Types` requested
+/// * `Ok(true)`: when no `wsd:Types` have been provided and therefore no type-based filtering is applied
 /// * `Ok(false)`: when we do not offer the `wsd:Types` requested
 /// * `Err(_)`: Anything went wrong trying to parse the XML
 pub fn parse_probe_body(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
