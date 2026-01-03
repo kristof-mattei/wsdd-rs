@@ -31,6 +31,8 @@ pub struct WSDHttpServer {
     cancellation_token: CancellationToken,
     _config: Arc<Config>,
     handle: tokio::task::JoinHandle<Result<(), eyre::Error>>,
+    #[cfg_attr(not(test), expect(unused, reason = "Not needed"))]
+    http_bound_to: SocketAddr,
 }
 
 impl WSDHttpServer {
@@ -46,6 +48,8 @@ impl WSDHttpServer {
         event!(Level::INFO, ?http_listen_address, "Trying to bind");
 
         let listener = tokio::net::TcpListener::bind(http_listen_address).await?;
+
+        let http_bound_to = listener.local_addr()?;
 
         event!(Level::INFO, ?listener, "Bound successfully");
 
@@ -63,6 +67,7 @@ impl WSDHttpServer {
             cancellation_token,
             _config: config,
             handle,
+            http_bound_to,
         })
     }
 
@@ -229,7 +234,7 @@ pub async fn launch_http_server(
 mod tests {
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use http::StatusCode;
     use ipnet::IpNet;
@@ -245,23 +250,18 @@ mod tests {
     use crate::test_utils::xml::to_string_pretty;
     use crate::wsd::http::http_server::WSDHttpServer;
 
-    static PORT: AtomicU16 = AtomicU16::new(4000);
-
     #[cfg_attr(not(miri), tokio::test)]
     #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn http_server_listens() {
         // host
         let host_ip = Ipv4Addr::LOCALHOST;
         let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
-        let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(
-            host_ip,
-            PORT.fetch_add(1, Ordering::Relaxed),
-        ));
+        let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
         let host_messages_built = Arc::new(AtomicU64::new(0));
 
         let cancellation_token = CancellationToken::new();
 
-        let _http_server = WSDHttpServer::init(
+        let http_server = WSDHttpServer::init(
             NetworkAddress::new(
                 IpNet::new(host_ip.into(), 8).unwrap(),
                 Arc::new(NetworkInterface::new_with_index("lo", RT_SCOPE_SITE, 5)),
@@ -285,7 +285,7 @@ mod tests {
             .unwrap()
             .post(format!(
                 "http://{}/{}",
-                host_http_listening_address, host_config.uuid
+                http_server.http_bound_to, host_config.uuid
             ))
             .header("Content-Type", MIME_TYPE_SOAP_XML)
             .header("User-Agent", "wsdd-rs");
@@ -351,15 +351,12 @@ mod tests {
         // host
         let host_ip = Ipv4Addr::LOCALHOST;
         let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
-        let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(
-            host_ip,
-            PORT.fetch_add(1, Ordering::Relaxed),
-        ));
+        let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
         let host_messages_built = Arc::new(AtomicU64::new(0));
 
         let cancellation_token = CancellationToken::new();
 
-        let _http_server = WSDHttpServer::init(
+        let http_server = WSDHttpServer::init(
             NetworkAddress::new(
                 IpNet::new(host_ip.into(), 8).unwrap(),
                 Arc::new(NetworkInterface::new_with_index("lo", RT_SCOPE_SITE, 5)),
@@ -377,7 +374,7 @@ mod tests {
             .unwrap()
             .post(format!(
                 "http://{}/{}",
-                host_http_listening_address, host_config.uuid
+                http_server.http_bound_to, host_config.uuid
             ))
             .header("Content-Type", MIME_TYPE_SOAP_XML)
             .header("User-Agent", "wsdd-rs");
@@ -414,15 +411,12 @@ mod tests {
         // host
         let host_ip = Ipv4Addr::LOCALHOST;
         let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
-        let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(
-            host_ip,
-            PORT.fetch_add(1, Ordering::Relaxed),
-        ));
+        let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
         let host_messages_built = Arc::new(AtomicU64::new(0));
 
         let cancellation_token = CancellationToken::new();
 
-        let _http_server = WSDHttpServer::init(
+        let http_server = WSDHttpServer::init(
             NetworkAddress::new(
                 IpNet::new(host_ip.into(), 8).unwrap(),
                 Arc::new(NetworkInterface::new_with_index("lo", RT_SCOPE_SITE, 5)),
@@ -440,7 +434,7 @@ mod tests {
             .unwrap()
             .post(format!(
                 "http://{}/{}",
-                host_http_listening_address, host_config.uuid
+                http_server.http_bound_to, host_config.uuid
             ))
             .header("Content-Type", MIME_TYPE_SOAP_XML)
             .header("User-Agent", "wsdd-rs");
