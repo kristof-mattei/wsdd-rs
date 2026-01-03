@@ -143,7 +143,7 @@ async fn send_hello(
         .unwrap_or(Ok(()))
 }
 
-fn handle_probe(
+pub fn handle_probe(
     config: &Config,
     messages_built: &AtomicU64,
     relates_to: Urn,
