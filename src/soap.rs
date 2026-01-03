@@ -1,6 +1,10 @@
 pub mod builder;
 pub mod parser;
 
+pub trait MessageType {
+    fn message_type(&self) -> &str;
+}
+
 #[derive(Debug)]
 pub enum UnicastMessage {
     ProbeMatches(Box<[u8]>),
@@ -16,11 +20,11 @@ impl AsRef<[u8]> for UnicastMessage {
     }
 }
 
-impl std::fmt::Display for UnicastMessage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl MessageType for UnicastMessage {
+    fn message_type(&self) -> &str {
         match *self {
-            UnicastMessage::ProbeMatches(_) => write!(f, "ProbeMatches"),
-            UnicastMessage::ResolveMatches(_) => write!(f, "ResolveMatches"),
+            UnicastMessage::ProbeMatches(_) => "ProbeMatches",
+            UnicastMessage::ResolveMatches(_) => "ResolveMatches",
         }
     }
 }
@@ -43,13 +47,13 @@ impl AsRef<[u8]> for MulticastMessage {
     }
 }
 
-impl std::fmt::Display for MulticastMessage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl MessageType for MulticastMessage {
+    fn message_type(&self) -> &str {
         match *self {
-            MulticastMessage::Hello(_) => write!(f, "Hello"),
-            MulticastMessage::Bye(_) => write!(f, "Bye"),
-            MulticastMessage::Probe(_) => write!(f, "Probe"),
-            MulticastMessage::Resolve(_) => write!(f, "Resolve"),
+            MulticastMessage::Hello(_) => "Hello",
+            MulticastMessage::Bye(_) => "Bye",
+            MulticastMessage::Probe(_) => "Probe",
+            MulticastMessage::Resolve(_) => "Resolve",
         }
     }
 }

@@ -155,10 +155,6 @@ async fn send_probe(
 
         probes.write().await.insert(message_id, now());
 
-        // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
-        // TODO move event to here and write properly
-        // event!(Level::INFO, "scheduling {} message", Message::Probe);
-
         mc_local_port_tx
             .send(probe)
             .await
