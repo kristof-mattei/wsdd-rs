@@ -330,17 +330,17 @@ impl<'config> Builder<'config> {
     pub fn build_get_response(
         config: &Config,
         relates_to: Urn,
-    ) -> Result<Vec<u8>, xml::writer::Error> {
+    ) -> Result<UnicastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
-        builder
-            .build_message(
-                WSA_ANON,
-                WSD_GET_RESPONSE,
-                Some(relates_to),
-                NoExtraHeaders::new(),
-                MetaData::new(),
-            )
-            .map(|(m, _)| m)
+        let (message, _): (Vec<_>, _) = builder.build_message(
+            WSA_ANON,
+            WSD_GET_RESPONSE,
+            Some(relates_to),
+            NoExtraHeaders::new(),
+            MetaData::new(),
+        )?;
+
+        Ok(UnicastMessage::GetResponse(message.into_boxed_slice()))
     }
 }

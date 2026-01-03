@@ -1,3 +1,5 @@
+use axum::response::IntoResponse;
+
 pub mod builder;
 pub mod parser;
 
@@ -7,6 +9,7 @@ pub trait MessageType {
 
 #[derive(Debug)]
 pub enum UnicastMessage {
+    GetResponse(Box<[u8]>),
     ProbeMatches(Box<[u8]>),
     ResolveMatches(Box<[u8]>),
 }
@@ -14,7 +17,8 @@ pub enum UnicastMessage {
 impl AsRef<[u8]> for UnicastMessage {
     fn as_ref(&self) -> &[u8] {
         match *self {
-            UnicastMessage::ProbeMatches(ref buffer)
+            UnicastMessage::GetResponse(ref buffer)
+            | UnicastMessage::ProbeMatches(ref buffer)
             | UnicastMessage::ResolveMatches(ref buffer) => buffer,
         }
     }
@@ -23,8 +27,19 @@ impl AsRef<[u8]> for UnicastMessage {
 impl MessageType for UnicastMessage {
     fn message_type(&self) -> &str {
         match *self {
+            UnicastMessage::GetResponse(_) => "GetResponse",
             UnicastMessage::ProbeMatches(_) => "ProbeMatches",
             UnicastMessage::ResolveMatches(_) => "ResolveMatches",
+        }
+    }
+}
+
+impl IntoResponse for UnicastMessage {
+    fn into_response(self) -> axum::response::Response {
+        match self {
+            UnicastMessage::GetResponse(buffer)
+            | UnicastMessage::ProbeMatches(buffer)
+            | UnicastMessage::ResolveMatches(buffer) => buffer.into_response(),
         }
     }
 }

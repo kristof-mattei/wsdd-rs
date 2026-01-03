@@ -1,4 +1,5 @@
 absolute-paths-allowed-crates = [
+    "axum",
     "color_eyre",
     "clap",
     "crate",

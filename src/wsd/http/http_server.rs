@@ -19,8 +19,8 @@ use uuid::fmt::Urn;
 use crate::config::Config;
 use crate::constants;
 use crate::network_address::NetworkAddress;
-use crate::soap::builder;
 use crate::soap::parser::MessageHandler;
+use crate::soap::{UnicastMessage, builder};
 use crate::span::MakeSpanWithUuid;
 use crate::wsd::HANDLED_MESSAGES;
 
@@ -124,7 +124,7 @@ async fn handle_post(
     }
 }
 
-fn handle_get(config: &Config, relates_to: Urn) -> Result<Vec<u8>, eyre::Report> {
+fn handle_get(config: &Config, relates_to: Urn) -> Result<UnicastMessage, eyre::Report> {
     Ok(builder::Builder::build_get_response(config, relates_to)?)
 }
 
@@ -132,7 +132,7 @@ fn build_response(
     config: &Config,
     message_handler: &MessageHandler,
     buffer: &[u8],
-) -> Result<Vec<u8>, eyre::Report> {
+) -> Result<UnicastMessage, eyre::Report> {
     let (header, _body_reader) = match message_handler.deconstruct_http_message(buffer) {
         Ok(pieces) => pieces,
         Err(error) => {
