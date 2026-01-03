@@ -1,4 +1,4 @@
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
@@ -10,9 +10,11 @@ use uuid::fmt::Urn;
 
 use crate::config::Config;
 use crate::constants;
+use crate::multicast_handler::{IncomingUnicastMessage, OutgoingUnicastMessage};
 use crate::network_address::NetworkAddress;
-use crate::soap::builder::{self, Builder, Message};
+use crate::soap::builder::{self, Builder};
 use crate::soap::parser::{self, MessageHandler};
+use crate::soap::{MulticastMessage, UnicastMessage};
 use crate::utils::task::spawn_with_name;
 use crate::wsd::HANDLED_MESSAGES;
 use crate::xml::Wrapper;
@@ -23,7 +25,7 @@ pub struct WSDHost {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     messages_built: Arc<AtomicU64>,
-    mc_local_port_tx: Sender<Message>,
+    mc_local_port_tx: Sender<MulticastMessage>,
 }
 
 impl WSDHost {
@@ -32,9 +34,9 @@ impl WSDHost {
         config: Arc<Config>,
         messages_built: Arc<AtomicU64>,
         bound_to: NetworkAddress,
-        mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-        mc_local_port_tx: Sender<Message>,
-        uc_wsd_port_tx: Sender<(SocketAddr, Message)>,
+        mc_wsd_port_rx: Receiver<IncomingUnicastMessage>,
+        mc_local_port_tx: Sender<MulticastMessage>,
+        uc_wsd_port_tx: Sender<OutgoingUnicastMessage>,
     ) -> Self {
         let address = bound_to.address;
 
@@ -128,7 +130,7 @@ async fn send_hello(
     config: &Config,
     address: IpAddr,
     messages_built: &AtomicU64,
-    mc_local_port_tx: &Sender<Message>,
+    mc_local_port_tx: &Sender<MulticastMessage>,
 ) -> Result<(), eyre::Report> {
     let future = async move {
         let hello = Builder::build_hello(config, messages_built, address)?;
@@ -150,7 +152,7 @@ fn handle_probe(
     messages_built: &AtomicU64,
     relates_to: Urn,
     reader: &mut Wrapper<'_>,
-) -> Result<Option<Message>, eyre::Report> {
+) -> Result<Option<UnicastMessage>, eyre::Report> {
     if parser::probe::parse_probe_body(reader)? {
         Ok(Some(builder::Builder::build_probe_matches(
             config,
@@ -169,7 +171,7 @@ fn handle_resolve(
     target_uuid: uuid::Uuid,
     relates_to: Urn,
     reader: &mut Wrapper<'_>,
-) -> Result<Option<Message>, eyre::Report> {
+) -> Result<Option<UnicastMessage>, eyre::Report> {
     if parser::resolve::parse_resolve_body(reader, target_uuid)? {
         Ok(Some(builder::Builder::build_resolve_matches(
             config,
@@ -187,8 +189,8 @@ async fn listen_forever(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     messages_built: Arc<AtomicU64>,
-    mut mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-    uc_wsd_port_tx: Sender<(SocketAddr, Message)>,
+    mut mc_wsd_port_rx: Receiver<IncomingUnicastMessage>,
+    uc_wsd_port_tx: Sender<OutgoingUnicastMessage>,
 ) {
     let address = bound_to.address.addr();
 
@@ -204,22 +206,20 @@ async fn listen_forever(
             }
         };
 
-        let Some((from, buffer)) = message else {
+        let Some(IncomingUnicastMessage { from, buffer }) = message else {
             // the end, but we just got it before the cancellation
             break;
         };
 
-        let (header, mut body_reader) = match message_handler
-            .deconstruct_message(&buffer, Some(from))
-            .await
-        {
-            Ok(pieces) => pieces,
-            Err(error) => {
-                error.log(&buffer);
+        let (header, mut body_reader) =
+            match message_handler.deconstruct_message(&buffer, from).await {
+                Ok(pieces) => pieces,
+                Err(error) => {
+                    error.log(&buffer);
 
-                continue;
-            },
-        };
+                    continue;
+                },
+            };
 
         // handle based on action
         let response = match &*header.action {
@@ -263,7 +263,13 @@ async fn listen_forever(
         };
 
         // return to sender
-        if let Err(error) = uc_wsd_port_tx.send((from, response)).await {
+        if let Err(error) = uc_wsd_port_tx
+            .send(OutgoingUnicastMessage {
+                to: from,
+                buffer: response,
+            })
+            .await
+        {
             event!(Level::ERROR, ?error, to = ?from, "Failed to respond to message");
         }
     }
@@ -325,7 +331,7 @@ mod tests {
             host_config.uuid,
         );
 
-        let response = to_string_pretty(hello.as_bytes()).unwrap();
+        let response = to_string_pretty(hello.as_ref()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(expected, response);
@@ -373,7 +379,7 @@ mod tests {
             host_config.uuid_as_device_uri,
         );
 
-        let response = to_string_pretty(bye.as_bytes()).unwrap();
+        let response = to_string_pretty(bye.as_ref()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(expected, response);
@@ -399,7 +405,7 @@ mod tests {
         let (header, mut reader) = host_message_handler
             .deconstruct_message(
                 resolve.as_bytes(),
-                Some(SocketAddr::V4(SocketAddrV4::new(host_ip, 5000))),
+                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
             )
             .await
             .unwrap();
@@ -426,7 +432,7 @@ mod tests {
             host_config.uuid
         );
 
-        let response = to_string_pretty(response.as_bytes()).unwrap();
+        let response = to_string_pretty(response.as_ref()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(expected, response);
@@ -452,7 +458,7 @@ mod tests {
         let (header, mut reader) = host_message_handler
             .deconstruct_message(
                 probe.as_bytes(),
-                Some(SocketAddr::V4(SocketAddrV4::new(host_ip, 5000))),
+                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
             )
             .await
             .unwrap();
@@ -475,7 +481,7 @@ mod tests {
             host_config.uuid_as_device_uri,
         );
 
-        let response = to_string_pretty(response.as_bytes()).unwrap();
+        let response = to_string_pretty(response.as_ref()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(expected, response);
@@ -503,7 +509,7 @@ mod tests {
         let (header, mut reader) = host_message_handler
             .deconstruct_message(
                 probe.as_bytes(),
-                Some(SocketAddr::V4(SocketAddrV4::new(host_ip, 5000))),
+                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
             )
             .await
             .unwrap();
@@ -526,7 +532,7 @@ mod tests {
             host_config.uuid_as_device_uri,
         );
 
-        let response = to_string_pretty(response.as_bytes()).unwrap();
+        let response = to_string_pretty(response.as_ref()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(expected, response);

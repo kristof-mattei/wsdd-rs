@@ -217,7 +217,7 @@ impl MessageHandler {
     pub async fn deconstruct_message<'r>(
         &self,
         raw: &'r [u8],
-        src: Option<SocketAddr>,
+        src: SocketAddr,
     ) -> Result<(Header, Wrapper<'r>), MessageHandlerError> {
         let (header, has_body, reader) = deconstruct_raw(raw)?;
 
@@ -232,20 +232,19 @@ impl MessageHandler {
             return Err(MessageHandlerError::DuplicateMessage);
         }
 
-        let header = self.validate_action_body(raw, src, header, has_body)?;
+        let header = self.validate_action_body(raw, Some(src), header, has_body)?;
 
         Ok((header, reader))
     }
 
     /// Handle a WSD message
-    pub fn deconstruct_message_for_http<'r>(
+    pub fn deconstruct_http_message<'r>(
         &self,
         raw: &'r [u8],
-        src: Option<SocketAddr>,
     ) -> Result<(Header, Wrapper<'r>), MessageHandlerError> {
         let (header, has_body, reader) = deconstruct_raw(raw)?;
 
-        let header = self.validate_action_body(raw, src, header, has_body)?;
+        let header = self.validate_action_body(raw, None, header, has_body)?;
 
         Ok((header, reader))
     }

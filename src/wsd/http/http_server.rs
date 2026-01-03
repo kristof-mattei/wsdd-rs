@@ -133,7 +133,7 @@ fn build_response(
     message_handler: &MessageHandler,
     buffer: &[u8],
 ) -> Result<Vec<u8>, eyre::Report> {
-    let (header, _body_reader) = match message_handler.deconstruct_message_for_http(buffer, None) {
+    let (header, _body_reader) = match message_handler.deconstruct_http_message(buffer) {
         Ok(pieces) => pieces,
         Err(error) => {
             error.log(buffer);
@@ -247,7 +247,7 @@ mod tests {
         );
 
         assert_eq!(
-            to_string_pretty(expected_response.as_bytes()).unwrap(),
+            to_string_pretty(expected_response.as_ref()).unwrap(),
             to_string_pretty(&response.bytes().await.unwrap()).unwrap()
         );
     }
