@@ -436,70 +436,45 @@ mod tests {
 
     #[tokio::test]
     async fn handles_probe_wsdp_device() {
-        let host_message_handler = build_message_handler();
-
-        // host
-        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
-        let host_messages_built = Arc::new(AtomicU64::new(0));
-
-        // client
         let client_message_id = Uuid::now_v7();
         let probe = format!(
             include_str!("../../test/probe-template-wsdp-device.xml"),
             client_message_id
         );
 
-        // host receives client's probe
-        let (header, mut reader) = host_message_handler
-            .deconstruct_message(
-                probe.as_bytes(),
-                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
-            )
-            .await
-            .unwrap();
-
-        // host produces answer
-        let response = handle_probe(
-            &host_config,
-            &host_messages_built,
-            header.message_id,
-            &mut reader,
-        )
-        .unwrap()
-        .unwrap();
-
-        let expected = format!(
-            include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
-            client_message_id,
-            host_config.wsd_instance_id,
-            host_messages_built.load(Ordering::Relaxed) - 1,
-            host_config.uuid_as_device_uri,
-        );
-
-        let response = to_string_pretty(response.as_ref()).unwrap();
-        let expected = to_string_pretty(expected.as_bytes()).unwrap();
-
-        assert_eq!(expected, response);
+        handles_probe_generic(client_message_id, &probe).await;
     }
 
     #[tokio::test]
-    // Identical to `handles_probe_wsdp_device` except for different file
-    // Need to figure out a way to parameterize this
     async fn handles_probe_pub_computer() {
-        let host_message_handler = build_message_handler();
-
-        // host
-        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
-        let host_messages_built = Arc::new(AtomicU64::new(0));
-
         // client
         let client_message_id = Uuid::now_v7();
         let probe = format!(
             include_str!("../../test/probe-template-pub-computer.xml"),
             client_message_id
         );
+
+        handles_probe_generic(client_message_id, &probe).await;
+    }
+
+    #[tokio::test]
+    async fn handles_probe_no_types() {
+        let client_message_id = Uuid::now_v7();
+        let probe = format!(
+            include_str!("../../test/probe-template-no-types.xml"),
+            client_message_id
+        );
+
+        handles_probe_generic(client_message_id, &probe).await;
+    }
+
+    async fn handles_probe_generic(client_message_id: Uuid, probe: &str) {
+        let host_message_handler = build_message_handler();
+
+        // host
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_messages_built = Arc::new(AtomicU64::new(0));
 
         // host receives client's probe
         let (header, mut reader) = host_message_handler

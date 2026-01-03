@@ -13,8 +13,6 @@ pub enum ProbeParsingError {
     XmlError(#[from] xml::reader::Error),
     #[error("Error reading text")]
     TextReadError(#[from] TextReadError),
-    #[error("Missing types")]
-    MissingTypes,
     #[error("Missing ./Probe in body")]
     MissingProbeElement,
 }
@@ -83,12 +81,9 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
     }
 
     let Some((types, namespace)) = types_and_namespace else {
-        event!(
-            Level::DEBUG,
-            "Probe message lacks wsd:Types element. Ignored."
-        );
+        event!(Level::DEBUG, "Probe message lacks wsd:Types element.");
 
-        return Err(ProbeParsingError::MissingTypes);
+        return Ok(true);
     };
 
     let requested_type_match = {
@@ -139,7 +134,7 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
 /// This takes in a reader that is stopped at the body tag.
 ///
 /// Returns
-/// * `Ok(true)`: when we offer the `wsd:Types` requested
+/// * `Ok(true)`: when we offer the `wsd:Types` requested, or when no `wsd:Types` have been provided and therefore no type-based filtering is applied
 /// * `Ok(false)`: when we do not offer the `wsd:Types` requested
 /// * `Err(_)`: Anything went wrong trying to parse the XML
 pub fn parse_probe_body(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
