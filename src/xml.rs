@@ -1,4 +1,4 @@
-use std::io::BufReader;
+use std::io::Read;
 
 use thiserror::Error;
 use tracing::{Level, event};
@@ -17,13 +17,19 @@ pub enum TextReadError {
     XmlError(#[from] xml::reader::Error),
 }
 
-pub struct Wrapper<'r> {
+pub struct Wrapper<R>
+where
+    R: Read,
+{
     next: Option<std::result::Result<XmlEvent, xml::reader::Error>>,
-    reader: EventReader<BufReader<&'r [u8]>>,
+    reader: EventReader<R>,
 }
 
-impl<'r> Wrapper<'r> {
-    pub fn new(reader: EventReader<BufReader<&'r [u8]>>) -> Wrapper<'r> {
+impl<R> Wrapper<R>
+where
+    R: Read,
+{
+    pub fn new(reader: EventReader<R>) -> Wrapper<R> {
         Self { next: None, reader }
     }
 
@@ -47,7 +53,10 @@ impl<'r> Wrapper<'r> {
 ///
 /// Errors:
 /// * When it encounters anything other than character data (including normalized whitespace and CDATA)
-pub fn read_text(reader: &mut Wrapper<'_>) -> Result<Option<String>, TextReadError> {
+pub fn read_text<R>(reader: &mut Wrapper<R>) -> Result<Option<String>, TextReadError>
+where
+    R: Read,
+{
     let mut text: String = String::with_capacity(STRING_DEFAULT_CAPACITY);
 
     loop {
@@ -126,11 +135,14 @@ impl From<xml::reader::Error> for FindDescendantsError {
 type FindDescendantResult = Result<(OwnedName, Vec<OwnedAttribute>), GenericParsingError>;
 type FindDescendantsResult = Result<(OwnedName, Vec<OwnedAttribute>), FindDescendantsError>;
 
-pub fn find_descendant(
-    reader: &mut Wrapper<'_>,
+pub fn find_descendant<R>(
+    reader: &mut Wrapper<R>,
     namespace: Option<&str>,
     path: &str,
-) -> FindDescendantResult {
+) -> FindDescendantResult
+where
+    R: Read,
+{
     find_descendants(reader, &[(namespace, path)]).map_err(|err| {
         match err {
             FindDescendantsError::EmptyPaths => {
@@ -144,18 +156,24 @@ pub fn find_descendant(
     })
 }
 
-pub fn find_descendants(
-    reader: &mut Wrapper,
+pub fn find_descendants<R>(
+    reader: &mut Wrapper<R>,
     paths: &[(Option<&str>, &str)],
-) -> FindDescendantsResult {
+) -> FindDescendantsResult
+where
+    R: Read,
+{
     find_descendants_recursive(reader, paths, 0)
 }
 
-fn find_descendants_recursive(
-    reader: &mut Wrapper,
+fn find_descendants_recursive<R>(
+    reader: &mut Wrapper<R>,
     paths: &[(Option<&str>, &str)],
     start_depth: usize,
-) -> FindDescendantsResult {
+) -> FindDescendantsResult
+where
+    R: Read,
+{
     let Some((&(namespace, path), rest)) = paths.split_first() else {
         return Err(FindDescendantsError::EmptyPaths);
     };
@@ -235,9 +253,7 @@ mod tests {
     use xml::attribute::OwnedAttribute;
     use xml::name::OwnedName;
 
-    use crate::xml::{
-        BufReader, FindDescendantsError, GenericParsingError, Wrapper, find_descendants,
-    };
+    use crate::xml::{FindDescendantsError, GenericParsingError, Wrapper, find_descendants};
 
     #[test]
     fn parse_generic_body_missing_element() {
@@ -249,7 +265,7 @@ mod tests {
                 .ignore_comments(true)
                 .trim_whitespace(true)
                 .whitespace_to_characters(true)
-                .create_reader(BufReader::new(xml.as_ref()));
+                .create_reader(xml.as_bytes());
 
             Wrapper::new(reader)
         };
@@ -276,7 +292,7 @@ mod tests {
                 .ignore_comments(true)
                 .trim_whitespace(true)
                 .whitespace_to_characters(true)
-                .create_reader(BufReader::new(xml.as_ref()));
+                .create_reader(xml.as_bytes());
 
             Wrapper::new(reader)
         };
@@ -309,7 +325,7 @@ mod tests {
                 .ignore_comments(true)
                 .trim_whitespace(true)
                 .whitespace_to_characters(true)
-                .create_reader(BufReader::new(xml.as_ref()));
+                .create_reader(xml.as_bytes());
 
             Wrapper::new(reader)
         };
@@ -333,7 +349,7 @@ mod tests {
                 .ignore_comments(true)
                 .trim_whitespace(true)
                 .whitespace_to_characters(true)
-                .create_reader(BufReader::new(xml.as_ref()));
+                .create_reader(xml.as_bytes());
 
             Wrapper::new(reader)
         };
@@ -356,7 +372,7 @@ mod tests {
                 .ignore_comments(true)
                 .trim_whitespace(true)
                 .whitespace_to_characters(true)
-                .create_reader(BufReader::new(xml.as_ref()));
+                .create_reader(xml.as_bytes());
 
             Wrapper::new(reader)
         };
@@ -380,7 +396,7 @@ mod tests {
                 .ignore_comments(true)
                 .trim_whitespace(true)
                 .whitespace_to_characters(true)
-                .create_reader(BufReader::new(xml.as_ref()));
+                .create_reader(xml.as_bytes());
 
             Wrapper::new(reader)
         };
