@@ -29,23 +29,8 @@ use crate::soap::builder::header::WriteExtraHeaders;
 use crate::soap::builder::header::app_sequence::AppSequence;
 use crate::soap::builder::header::none::NoExtraHeaders;
 use crate::soap::builder::header::reply_to_from::ReplyToFrom;
+use crate::soap::{MulticastMessage, UnicastMessage};
 use crate::wsd::device::DeviceUri;
-
-pub enum MessageType {
-    Hello,
-    Bye,
-    Probe,
-}
-
-impl std::fmt::Display for MessageType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match *self {
-            MessageType::Hello => write!(f, "Hello"),
-            MessageType::Bye => write!(f, "Bye"),
-            MessageType::Probe => write!(f, "Probe"),
-        }
-    }
-}
 
 pub struct Builder<'config> {
     config: &'config Config,
@@ -214,10 +199,10 @@ impl<'config> Builder<'config> {
         config: &Config,
         messages_built: &AtomicU64,
         xaddr: IpAddr,
-    ) -> Result<Vec<u8>, xml::writer::Error> {
+    ) -> Result<MulticastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
-        let message = builder.build_message(
+        let (message, _): (Vec<_>, _) = builder.build_message(
             WSA_DISCOVERY,
             WSD_HELLO,
             None,
@@ -228,17 +213,17 @@ impl<'config> Builder<'config> {
             Hello::new(xaddr),
         )?;
 
-        Ok(message.0)
+        Ok(MulticastMessage::Hello(message.into_boxed_slice()))
     }
 
     /// WS-Discovery, Section 4.2, Bye message
     pub fn build_bye(
         config: &Config,
         messages_built: &AtomicU64,
-    ) -> Result<Vec<u8>, xml::writer::Error> {
+    ) -> Result<MulticastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
-        let message = builder.build_message(
+        let (message, _): (Vec<_>, _) = builder.build_message(
             WSA_DISCOVERY,
             WSD_BYE,
             None,
@@ -249,14 +234,14 @@ impl<'config> Builder<'config> {
             Bye::new(),
         )?;
 
-        Ok(message.0)
+        Ok(MulticastMessage::Bye(message.into_boxed_slice()))
     }
 
     // WS-Discovery, Section 4.3, Probe message
-    pub fn build_probe(config: &Config) -> Result<(Vec<u8>, Urn), xml::writer::Error> {
+    pub fn build_probe(config: &Config) -> Result<(MulticastMessage, Urn), xml::writer::Error> {
         let mut builder = Builder::new(config);
 
-        let message = builder.build_message(
+        let (message, urn): (Vec<_>, _) = builder.build_message(
             WSA_DISCOVERY,
             WSD_PROBE,
             None,
@@ -264,17 +249,17 @@ impl<'config> Builder<'config> {
             Probe::new(),
         )?;
 
-        Ok((message.0, message.1))
+        Ok((MulticastMessage::Probe(message.into_boxed_slice()), urn))
     }
 
     // WS-Discovery, Section 6.1, Resolve message
     pub fn build_resolve(
         config: &Config,
         endpoint: &DeviceUri,
-    ) -> Result<(Vec<u8>, Urn), xml::writer::Error> {
+    ) -> Result<(MulticastMessage, Urn), xml::writer::Error> {
         let mut builder = Builder::new(config);
 
-        let message = builder.build_message(
+        let (message, urn): (Vec<_>, _) = builder.build_message(
             WSA_DISCOVERY,
             WSD_RESOLVE,
             None,
@@ -282,7 +267,7 @@ impl<'config> Builder<'config> {
             Resolve::new(endpoint),
         )?;
 
-        Ok((message.0, message.1))
+        Ok((MulticastMessage::Resolve(message.into_boxed_slice()), urn))
     }
 
     pub fn build_resolve_matches(
@@ -290,10 +275,10 @@ impl<'config> Builder<'config> {
         address: IpAddr,
         messages_built: &AtomicU64,
         relates_to: Urn,
-    ) -> Result<Vec<u8>, xml::writer::Error> {
+    ) -> Result<UnicastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
-        let message = builder.build_message(
+        let (message, _): (Vec<_>, _) = builder.build_message(
             WSA_ANON,
             WSD_RESOLVE_MATCH,
             Some(relates_to),
@@ -304,17 +289,17 @@ impl<'config> Builder<'config> {
             ResolveMatches::new(address),
         )?;
 
-        Ok(message.0)
+        Ok(UnicastMessage::ResolveMatches(message.into_boxed_slice()))
     }
 
     pub fn build_probe_matches(
         config: &Config,
         messages_built: &AtomicU64,
         relates_to: Urn,
-    ) -> Result<Vec<u8>, xml::writer::Error> {
+    ) -> Result<UnicastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
-        let message = builder.build_message(
+        let (message, _): (Vec<_>, _) = builder.build_message(
             WSA_ANON,
             WSD_PROBE_MATCH,
             Some(relates_to),
@@ -325,7 +310,7 @@ impl<'config> Builder<'config> {
             ProbeMatches::new(),
         )?;
 
-        Ok(message.0)
+        Ok(UnicastMessage::ProbeMatches(message.into_boxed_slice()))
     }
 
     pub fn build_get(config: &Config, endpoint: &DeviceUri) -> Result<Vec<u8>, xml::writer::Error> {

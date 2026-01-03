@@ -22,6 +22,7 @@ use crate::config::Config;
 use crate::constants;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
+use crate::soap::{MessageType, MulticastMessage, UnicastMessage};
 use crate::udp_address::UdpAddress;
 use crate::url_ip_addr::UrlIpAddr;
 use crate::utils::task::spawn_with_name;
@@ -93,26 +94,19 @@ impl MulticastHandler {
         cancellation_token: CancellationToken,
         config: Arc<Config>,
         devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
-    ) -> Result<Self, (NetworkAddress, eyre::Report)> {
+    ) -> Result<Self, eyre::Report> {
         let domain = match network_address.address {
             IpNet::V4(_) => Domain::IPV4,
             IpNet::V6(_) => Domain::IPV6,
         };
 
-        let sockets = match create_sockets(domain).wrap_err("Failed to set up sockets") {
-            Ok(sockets) => sockets,
-            Err(err) => return Err((network_address, err)),
-        };
-
-        let (multicast_address, http_listen_address) = match MulticastHandler::init(
+        let sockets = create_sockets(domain).wrap_err("Failed to set up sockets")?;
+        let (multicast_address, http_listen_address) = MulticastHandler::init(
             network_address.address,
             Arc::clone(&network_address.interface),
             &sockets,
             &config,
-        ) {
-            Ok(addresses) => addresses,
-            Err(err) => return Err((network_address, err)),
-        };
+        )?;
 
         event!(
             Level::INFO,
@@ -140,28 +134,19 @@ impl MulticastHandler {
             uc_wsd_port_socket,
         } = sockets;
 
-        let mc_wsd_port_socket = Arc::new({
-            match UdpSocket::from_std(mc_wsd_port_socket.into()) {
-                Ok(socket) => socket,
-                Err(err) => return Err((network_address, err.into())),
-            }
-        });
+        let mc_wsd_port_socket = Arc::new(UdpSocket::from_std(mc_wsd_port_socket.into())?);
 
         let mc_wsd_port_rx =
             MessageReceiver::new(cancellation_token.clone(), Arc::clone(&mc_wsd_port_socket));
 
-        let mc_local_port_socket = Arc::new({
-            match UdpSocket::from_std(mc_local_port_socket.into()) {
-                Ok(socket) => socket,
-                Err(err) => return Err((network_address, err.into())),
-            }
-        });
+        let mc_local_port_socket = Arc::new(UdpSocket::from_std(mc_local_port_socket.into())?);
 
         let mc_local_port_tx = MessageSender::new(
             Arc::clone(&mc_local_port_socket),
             MulticastMessageSplitter {
                 target: multicast_address.get_transport_address(),
             },
+            network_address.clone(),
         );
 
         let mc_local_port_rx = MessageReceiver::new(
@@ -169,15 +154,13 @@ impl MulticastHandler {
             Arc::clone(&mc_local_port_socket),
         );
 
-        let uc_wsd_port_socket = Arc::new({
-            match UdpSocket::from_std(uc_wsd_port_socket.into()) {
-                Ok(socket) => socket,
-                Err(err) => return Err((network_address, err.into())),
-            }
-        });
+        let uc_wsd_port_socket = Arc::new(UdpSocket::from_std(uc_wsd_port_socket.into())?);
 
-        let uc_wsd_port_tx =
-            MessageSender::new(Arc::clone(&uc_wsd_port_socket), UnicastMessageSplitter {});
+        let uc_wsd_port_tx = MessageSender::new(
+            Arc::clone(&uc_wsd_port_socket),
+            UnicastMessageSplitter {},
+            network_address.clone(),
+        );
 
         Ok(Self {
             config,
@@ -480,7 +463,7 @@ impl MulticastHandler {
     }
 }
 
-type Receivers = Arc<RwLock<Vec<Sender<(SocketAddr, Arc<[u8]>)>>>>;
+type Receivers = Arc<RwLock<Vec<Sender<IncomingUnicastMessage>>>>;
 
 struct MessageReceiver {
     cancellation_token: CancellationToken,
@@ -488,7 +471,7 @@ struct MessageReceiver {
     listeners: Receivers,
 }
 
-type Channels = Arc<RwLock<Vec<Sender<(SocketAddr, Arc<[u8]>)>>>>;
+type Channels = Arc<RwLock<Vec<Sender<IncomingUnicastMessage>>>>;
 
 async fn socket_rx_forever(
     cancellation_token: CancellationToken,
@@ -504,7 +487,7 @@ async fn socket_rx_forever(
             tokio::select! {
                 () = cancellation_token.cancelled() => {
                     break;
-                }
+                },
                 result = socket.recv_buf_from(&mut buffer_byte_cursor) => {
                     result
                 },
@@ -541,7 +524,13 @@ async fn socket_rx_forever(
         let lock = channels.read().await;
 
         for channel in &*lock {
-            if let Err(error) = channel.send((from, Arc::clone(&buffer))).await {
+            if let Err(error) = channel
+                .send(IncomingUnicastMessage {
+                    from,
+                    buffer: Arc::clone(&buffer),
+                })
+                .await
+            {
                 event!(Level::ERROR, ?error, socket = ?socket.local_addr().unwrap(), "Failed to send data to channel");
             }
         }
@@ -566,7 +555,7 @@ impl MessageReceiver {
         }
     }
 
-    async fn get_rx(&mut self) -> Receiver<(SocketAddr, Arc<[u8]>)> {
+    async fn get_rx(&mut self) -> Receiver<IncomingUnicastMessage> {
         let (tx, rx) = tokio::sync::mpsc::channel(10);
 
         self.listeners.write().await.push(tx);
@@ -581,13 +570,24 @@ impl MessageReceiver {
     }
 }
 
+pub struct IncomingUnicastMessage {
+    pub from: SocketAddr,
+    pub buffer: Arc<[u8]>,
+}
+
+pub struct OutgoingUnicastMessage {
+    pub to: SocketAddr,
+    pub buffer: UnicastMessage,
+}
+
 trait MessageSplitter {
     const NAME: &str;
     const REPEAT: usize;
 
-    type Message: Send;
+    type Message: AsRef<[u8]> + Send + MessageType;
+    type ChannelMessage: Send;
 
-    fn split_message(&self, message: Self::Message) -> (SocketAddr, Box<[u8]>);
+    fn split_message(&self, message: Self::ChannelMessage) -> (SocketAddr, Self::Message);
 }
 
 struct MulticastMessageSplitter {
@@ -598,9 +598,10 @@ impl MessageSplitter for MulticastMessageSplitter {
     const NAME: &str = "MulticastMessageSplitter";
     const REPEAT: usize = constants::MULTICAST_UDP_REPEAT;
 
-    type Message = Box<[u8]>;
+    type Message = MulticastMessage;
+    type ChannelMessage = Self::Message;
 
-    fn split_message(&self, message: Self::Message) -> (SocketAddr, Box<[u8]>) {
+    fn split_message(&self, message: Self::ChannelMessage) -> (SocketAddr, Self::Message) {
         (self.target, message)
     }
 }
@@ -611,23 +612,31 @@ impl MessageSplitter for UnicastMessageSplitter {
     const NAME: &str = "UnicastMessageSplitter";
     const REPEAT: usize = constants::UNICAST_UDP_REPEAT;
 
-    type Message = (SocketAddr, Box<[u8]>);
+    type Message = UnicastMessage;
+    type ChannelMessage = OutgoingUnicastMessage;
 
-    fn split_message(&self, message: Self::Message) -> (SocketAddr, Box<[u8]>) {
-        (message.0, message.1)
+    fn split_message(&self, message: Self::ChannelMessage) -> (SocketAddr, Self::Message) {
+        (message.to, message.buffer)
     }
-}
-
-struct MessageSender<T: MessageSplitter> {
-    handler: JoinHandle<()>,
-    tx: Sender<T::Message>,
 }
 
 async fn repeatedly_send_buffer<T: MessageSplitter>(
     socket: Arc<UdpSocket>,
-    buffer: Box<[u8]>,
+    message: T::Message,
+    network_address: &NetworkAddress,
     to: SocketAddr,
 ) {
+    let buffer = message.as_ref();
+
+    // logger.info('scheduling {0} message via {1} to {2}'.format(msg_type, address.interface, address))
+    event!(
+        Level::INFO,
+        "scheduling {} message via {} to {}",
+        message.message_type(),
+        network_address.interface.name(),
+        network_address
+    );
+
     // Schedule to send the given message to the given address.
     // Implements SOAP over UDP, Appendix I.
     let mut delta = rand::rng().random_range(constants::UDP_MIN_DELAY..=constants::UDP_MAX_DELAY);
@@ -647,12 +656,17 @@ async fn repeatedly_send_buffer<T: MessageSplitter>(
     }
 }
 
+struct MessageSender<T: MessageSplitter> {
+    handler: JoinHandle<()>,
+    tx: Sender<T::ChannelMessage>,
+}
+
 impl<T> MessageSender<T>
 where
     T: MessageSplitter + Send + 'static,
 {
-    fn new(socket: Arc<UdpSocket>, message_splitter: T) -> Self {
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<T::Message>(10);
+    fn new(socket: Arc<UdpSocket>, message_splitter: T, network_address: NetworkAddress) -> Self {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<T::ChannelMessage>(10);
 
         let handler = spawn_with_name("sender", async move {
             let tracker = TaskTracker::new();
@@ -671,16 +685,20 @@ where
                     break;
                 };
 
-                let (to, buffer) = message_splitter.split_message(buffer);
+                let (to, message) = message_splitter.split_message(buffer);
 
-                let socket = Arc::clone(&socket);
+                {
+                    let socket = Arc::clone(&socket);
+                    let network_address = network_address.clone();
 
-                spawn_with_name(
-                    "message sender",
-                    tracker.track_future(async move {
-                        repeatedly_send_buffer::<T>(socket, buffer, to).await;
-                    }),
-                );
+                    spawn_with_name(
+                        "message sender",
+                        tracker.track_future(async move {
+                            repeatedly_send_buffer::<T>(socket, message, &network_address, to)
+                                .await;
+                        }),
+                    );
+                }
             }
 
             tracker.close();
@@ -690,7 +708,7 @@ where
         Self { handler, tx }
     }
 
-    fn get_tx(&mut self) -> Sender<T::Message> {
+    fn get_tx(&mut self) -> Sender<T::ChannelMessage> {
         self.tx.clone()
     }
 

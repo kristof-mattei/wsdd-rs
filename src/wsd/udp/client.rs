@@ -1,5 +1,4 @@
 use std::cmp::Reverse;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,8 +18,10 @@ use crate::constants::{
     APP_MAX_DELAY, MIME_TYPE_SOAP_XML, PROBE_TIMEOUT_MILLISECONDS, WSD_BYE, WSD_HELLO,
     WSD_PROBE_MATCH, WSD_RESOLVE_MATCH, XML_WSD_NAMESPACE,
 };
+use crate::multicast_handler::IncomingUnicastMessage;
 use crate::network_address::NetworkAddress;
-use crate::soap::builder::{Builder, MessageType};
+use crate::soap::MulticastMessage;
+use crate::soap::builder::Builder;
 use crate::soap::parser::MessageHandler;
 use crate::soap::parser::generic::extract_endpoint_metadata;
 use crate::soap::parser::xaddrs::XAddr;
@@ -36,7 +37,7 @@ pub(crate) struct WSDClient {
     _bound_to: NetworkAddress,
     _devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     handle: tokio::task::JoinHandle<()>,
-    mc_local_port_tx: Sender<Box<[u8]>>,
+    mc_local_port_tx: Sender<MulticastMessage>,
     probes: Arc<RwLock<HashMap<Urn, Duration>>>,
 }
 
@@ -51,9 +52,9 @@ impl WSDClient {
         config: Arc<Config>,
         devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
         bound_to: NetworkAddress,
-        mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-        mc_local_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-        mc_local_port_tx: Sender<Box<[u8]>>,
+        mc_wsd_port_rx: Receiver<IncomingUnicastMessage>,
+        mc_local_port_rx: Receiver<IncomingUnicastMessage>,
+        mc_local_port_tx: Sender<MulticastMessage>,
     ) -> Self {
         let probes = Arc::new(RwLock::new(HashMap::<Urn, Duration>::new()));
 
@@ -145,7 +146,7 @@ async fn send_probe(
     cancellation_token: &CancellationToken,
     config: &Arc<Config>,
     probes: &Arc<RwLock<HashMap<Urn, Duration>>>,
-    mc_local_port_tx: &Sender<Box<[u8]>>,
+    mc_local_port_tx: &Sender<MulticastMessage>,
 ) -> Result<(), eyre::Report> {
     let future = async move {
         remove_outdated_probes(probes).await;
@@ -154,12 +155,8 @@ async fn send_probe(
 
         probes.write().await.insert(message_id, now());
 
-        // deviation, we can't write that we're scheduling it with the same data, as we don't have the knowledge
-        // TODO move event to here and write properly
-        event!(Level::INFO, "scheduling {} message", MessageType::Probe);
-
         mc_local_port_tx
-            .send(probe.into_boxed_slice())
+            .send(probe)
             .await
             .map_err(|_| eyre::Report::msg("Receiver gone, failed to send probe"))
     };
@@ -258,7 +255,7 @@ async fn handle_hello(
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
-    multicast: &Sender<Box<[u8]>>,
+    multicast: &Sender<MulticastMessage>,
     reader: &mut Wrapper<'_>,
 ) -> Result<(), eyre::Report> {
     find_descendant(reader, Some(XML_WSD_NAMESPACE), "Hello")?;
@@ -270,7 +267,7 @@ async fn handle_hello(
 
         let (message, _) = Builder::build_resolve(config, &endpoint)?;
 
-        multicast.send(message.into_boxed_slice()).await?;
+        multicast.send(message).await?;
 
         return Ok(());
     };
@@ -319,7 +316,7 @@ async fn handle_probe_match(
     bound_to: &NetworkAddress,
     relates_to: Option<Urn>,
     probes: Arc<RwLock<HashMap<Urn, Duration>>>,
-    mc_local_port_tx: &Sender<Box<[u8]>>,
+    mc_local_port_tx: &Sender<MulticastMessage>,
     reader: &mut Wrapper<'_>,
 ) -> Result<(), eyre::Report> {
     let Some(relates_to) = relates_to else {
@@ -350,7 +347,7 @@ async fn handle_probe_match(
 
         let (message, _) = Builder::build_resolve(config, &endpoint)?;
 
-        mc_local_port_tx.send(message.into_boxed_slice()).await?;
+        mc_local_port_tx.send(message).await?;
 
         return Ok(());
     };
@@ -491,9 +488,9 @@ async fn listen_forever(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
-    mut mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-    mut mc_local_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-    mc_local_port_tx: Sender<Box<[u8]>>,
+    mut mc_wsd_port_rx: Receiver<IncomingUnicastMessage>,
+    mut mc_local_port_rx: Receiver<IncomingUnicastMessage>,
+    mc_local_port_tx: Sender<MulticastMessage>,
     probes: Arc<RwLock<HashMap<Urn, Duration>>>,
 ) {
     // Note: we bind on the interface's name.
@@ -515,28 +512,26 @@ async fn listen_forever(
             },
             message = mc_wsd_port_rx.recv() => {
                 message
-            }
+            },
             message = mc_local_port_rx.recv() => {
                 message
-            }
+            },
         };
 
-        let Some((from, buffer)) = message else {
+        let Some(IncomingUnicastMessage { from, buffer }) = message else {
             // the end, but we just got it before the cancellation
             break;
         };
 
-        let (header, mut body_reader) = match message_handler
-            .deconstruct_message(&buffer, Some(from))
-            .await
-        {
-            Ok(pieces) => pieces,
-            Err(error) => {
-                error.log(&buffer);
+        let (header, mut body_reader) =
+            match message_handler.deconstruct_message(&buffer, from).await {
+                Ok(pieces) => pieces,
+                Err(error) => {
+                    error.log(&buffer);
 
-                continue;
-            },
-        };
+                    continue;
+                },
+            };
 
         // handle based on action
         if let Err(error) = match &*header.action {
@@ -575,13 +570,14 @@ async fn listen_forever(
                 )
                 .await
             },
-            _ => {
+            action => {
                 event!(
                     Level::DEBUG,
-                    "unhandled action {}/{}",
-                    header.action,
-                    header.message_id
+                    ?action,
+                    ?header.message_id,
+                    "Unhandled action",
                 );
+
                 continue;
             },
         } {
@@ -591,6 +587,7 @@ async fn listen_forever(
                 ?error,
                 "Failure to parse XML"
             );
+
             continue;
         }
     }
@@ -658,7 +655,7 @@ mod tests {
         let (_, mut reader) = message_handler
             .deconstruct_message(
                 hello_without_xaddrs.as_bytes(),
-                Some(SocketAddr::V4(SocketAddrV4::new(host_ip, 5000))),
+                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
             )
             .await
             .unwrap();
@@ -683,7 +680,7 @@ mod tests {
         let response = {
             let response = multicast_rx.try_recv().unwrap();
 
-            to_string_pretty(&response).unwrap()
+            to_string_pretty(response.as_ref()).unwrap()
         };
 
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
@@ -755,7 +752,7 @@ mod tests {
         let (_, mut reader) = message_handler
             .deconstruct_message(
                 hello.as_bytes(),
-                Some(SocketAddr::new(server.socket_address().ip(), 5000)),
+                SocketAddr::new(server.socket_address().ip(), 5000),
             )
             .await
             .unwrap();
@@ -833,7 +830,7 @@ mod tests {
         let (_, mut reader) = message_handler
             .deconstruct_message(
                 bye.as_bytes(),
-                Some(SocketAddr::V4(SocketAddrV4::new(host_ip, 5000))),
+                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
             )
             .await
             .unwrap();
@@ -906,7 +903,7 @@ mod tests {
         let (_, mut reader) = message_handler
             .deconstruct_message(
                 hello.as_bytes(),
-                Some(SocketAddr::new(server.socket_address().ip(), 5000)),
+                SocketAddr::new(server.socket_address().ip(), 5000),
             )
             .await
             .unwrap();
@@ -948,7 +945,7 @@ mod tests {
         let (_, mut reader) = message_handler
             .deconstruct_message(
                 bye.as_bytes(),
-                Some(SocketAddr::new(server.socket_address().ip(), 5000)),
+                SocketAddr::new(server.socket_address().ip(), 5000),
             )
             .await
             .unwrap();
@@ -1001,7 +998,7 @@ mod tests {
             Uuid::nil()
         );
 
-        let response = to_string_pretty(&probe).unwrap();
+        let response = to_string_pretty(probe.as_ref()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(expected, response);
@@ -1208,7 +1205,7 @@ mod tests {
         let (header, mut reader) = message_handler
             .deconstruct_message(
                 probe_matches.as_bytes(),
-                Some(SocketAddr::V4(SocketAddrV4::new(host_ip, 5000))),
+                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
             )
             .await
             .unwrap();
@@ -1243,7 +1240,7 @@ mod tests {
         let response = {
             let response = multicast_rx.try_recv().unwrap();
 
-            to_string_pretty(&response).unwrap()
+            to_string_pretty(response.as_ref()).unwrap()
         };
 
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
@@ -1314,7 +1311,7 @@ mod tests {
         let (header, mut reader) = message_handler
             .deconstruct_message(
                 probe_matches.as_bytes(),
-                Some(SocketAddr::new(server.socket_address().ip(), 5000)),
+                SocketAddr::new(server.socket_address().ip(), 5000),
             )
             .await
             .unwrap();
@@ -1409,7 +1406,7 @@ mod tests {
         let (_, mut reader) = message_handler
             .deconstruct_message(
                 resolve_matches.as_bytes(),
-                Some(SocketAddr::new(server.socket_address().ip(), 5000)),
+                SocketAddr::new(server.socket_address().ip(), 5000),
             )
             .await
             .unwrap();

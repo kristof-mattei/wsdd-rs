@@ -97,13 +97,72 @@ impl WSDDiscoveredDevice {
         &self.types
     }
 
-    #[expect(clippy::too_many_lines, reason = "WIP")]
     pub fn update(
         &mut self,
         meta: &[u8],
         xaddr: &XAddr,
         network_address: &NetworkAddress,
     ) -> Result<(), eyre::Report> {
+        self.update_metadata(meta)?;
+
+        let host = xaddr.host_str().to_owned().into_boxed_str();
+
+        //         if interface.name not in self.addresses:
+        //             self.addresses[interface.name] = set([addr])
+        //         else:
+        //             if addr not in self.addresses[interface.name]:
+        //                 self.addresses[interface.name].add(addr)
+        //             else:
+        //                 report = False
+        let report =
+            if let Some(addresses) = self.addresses.get_mut(network_address.interface.name()) {
+                addresses.insert(host)
+            } else {
+                self.addresses.insert(
+                    network_address.interface.name().to_owned().into_boxed_str(),
+                    HashSet::from_iter([host]),
+                );
+
+                true
+            };
+
+        self.last_seen = OffsetDateTime::now_utc();
+
+        //         if ('DisplayName' in self.props) and ('BelongsTo' in self.props) and (report):
+        if report {
+            if let Some((display_name, belongs_to)) = self
+                .props
+                .get("DisplayName")
+                .and_then(|d| self.props.get("BelongsTo").map(|b| (d, b)))
+            {
+                //             self.display_name = self.props['DisplayName']
+                //             logger.info('discovered {} in {} on {}'.format(self.display_name, self.props['BelongsTo'], addr))
+                self.display_name = Some(display_name.clone());
+
+                event!(
+                    Level::INFO,
+                    display_name,
+                    belongs_to,
+                    addr = %xaddr,
+                    "discovered device"
+                );
+            } else if let Some(friendly_name) = self.props.get("FriendlyName") {
+                //         elif ('FriendlyName' in self.props) and (report):
+                //             self.display_name = self.props['FriendlyName']
+                self.display_name = Some(friendly_name.clone());
+                //             logger.info('discovered {} on {}'.format(self.display_name, addr))
+                event!(Level::INFO, display_name = friendly_name, addr = %xaddr, "discovered device");
+            } else {
+                // No way to get a display name
+            }
+        }
+
+        event!(Level::DEBUG, ?self.props);
+
+        Ok(())
+    }
+
+    fn update_metadata(&mut self, meta: &[u8]) -> Result<(), eyre::Report> {
         let (_header, _has_body, mut reader) = parser::deconstruct_raw(meta)?;
 
         let (_name, _attributes) =
@@ -212,60 +271,6 @@ impl WSDDiscoveredDevice {
                 }
             }
         }
-
-        let host = xaddr.host_str().to_owned().into_boxed_str();
-
-        //         if interface.name not in self.addresses:
-        //             self.addresses[interface.name] = set([addr])
-        //         else:
-        //             if addr not in self.addresses[interface.name]:
-        //                 self.addresses[interface.name].add(addr)
-        //             else:
-        //                 report = False
-        let report =
-            if let Some(addresses) = self.addresses.get_mut(network_address.interface.name()) {
-                addresses.insert(host)
-            } else {
-                self.addresses.insert(
-                    network_address.interface.name().to_owned().into_boxed_str(),
-                    HashSet::from_iter([host]),
-                );
-
-                true
-            };
-
-        self.last_seen = OffsetDateTime::now_utc();
-
-        //         if ('DisplayName' in self.props) and ('BelongsTo' in self.props) and (report):
-        if report {
-            if let Some((display_name, belongs_to)) = self
-                .props
-                .get("DisplayName")
-                .and_then(|d| self.props.get("BelongsTo").map(|b| (d, b)))
-            {
-                //             self.display_name = self.props['DisplayName']
-                //             logger.info('discovered {} in {} on {}'.format(self.display_name, self.props['BelongsTo'], addr))
-                self.display_name = Some(display_name.clone());
-
-                event!(
-                    Level::INFO,
-                    display_name,
-                    belongs_to,
-                    addr = %xaddr,
-                    "discovered device"
-                );
-            } else if let Some(friendly_name) = self.props.get("FriendlyName") {
-                //         elif ('FriendlyName' in self.props) and (report):
-                //             self.display_name = self.props['FriendlyName']
-                self.display_name = Some(friendly_name.clone());
-                //             logger.info('discovered {} on {}'.format(self.display_name, addr))
-                event!(Level::INFO, display_name = friendly_name, addr = %xaddr, "discovered device");
-            } else {
-                // No way to get a display name
-            }
-        }
-
-        event!(Level::DEBUG, ?self.props);
 
         Ok(())
     }

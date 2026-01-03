@@ -116,8 +116,9 @@ impl NetworkHandler {
                 },
                 command = self.command_rx.recv() => {
                     command
-                }
+                },
             };
+
             let Some(command) = command else {
                 event!(
                     Level::INFO,
@@ -353,14 +354,14 @@ impl NetworkHandler {
 
         // the address in the error path
         let mut multicast_handler = match MulticastHandler::new(
-            network_address,
+            network_address.clone(),
             self.cancellation_token.child_token(),
             Arc::clone(&self.config),
             Arc::clone(&self.devices),
         ) {
             Ok(handler) => handler,
-            Err((address, err)) => {
-                event!(Level::ERROR, ?err, %address, "Failed to launch multicast handler");
+            Err(err) => {
+                event!(Level::ERROR, ?err, %network_address, "Failed to launch multicast handler");
 
                 return;
             },
