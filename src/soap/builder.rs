@@ -32,36 +32,68 @@ use crate::soap::builder::header::reply_to_from::ReplyToFrom;
 use crate::wsd::device::DeviceUri;
 
 #[derive(Debug)]
-pub enum Message {
-    Hello(Box<[u8]>),
-    Bye(Box<[u8]>),
-    Probe(Box<[u8]>),
+pub enum UnicastMessage {
     ProbeMatches(Box<[u8]>),
     ResolveMatches(Box<[u8]>),
-    Resolve(Box<[u8]>),
 }
-impl Message {
-    pub fn as_bytes(&self) -> &[u8] {
+
+impl AsRef<[u8]> for UnicastMessage {
+    fn as_ref(&self) -> &[u8] {
         match *self {
-            Message::Hello(ref buffer)
-            | Message::Bye(ref buffer)
-            | Message::Probe(ref buffer)
-            | Message::ProbeMatches(ref buffer)
-            | Message::ResolveMatches(ref buffer)
-            | Message::Resolve(ref buffer) => buffer,
+            UnicastMessage::ProbeMatches(ref buffer)
+            | UnicastMessage::ResolveMatches(ref buffer) => buffer,
         }
     }
 }
 
-impl std::fmt::Display for Message {
+impl std::fmt::Display for UnicastMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
-            Message::Hello(_) => write!(f, "Hello"),
-            Message::Bye(_) => write!(f, "Bye"),
-            Message::Probe(_) => write!(f, "Probe"),
-            Message::Resolve(_) => write!(f, "Resolve"),
-            Message::ProbeMatches(_) => write!(f, "ProbeMatches"),
-            Message::ResolveMatches(_) => write!(f, "ResolveMatches"),
+            UnicastMessage::ProbeMatches(_) => write!(f, "ProbeMatches"),
+            UnicastMessage::ResolveMatches(_) => write!(f, "ResolveMatches"),
+        }
+    }
+}
+
+#[cfg_attr(not(test), expect(unused, reason = "Just used in tests"))]
+pub trait AsBytes {
+    fn as_bytes(&self) -> &[u8];
+}
+
+impl<T> AsBytes for T
+where
+    T: AsRef<[u8]>,
+{
+    fn as_bytes(&self) -> &[u8] {
+        self.as_ref()
+    }
+}
+
+#[derive(Debug)]
+pub enum MulticastMessage {
+    Hello(Box<[u8]>),
+    Bye(Box<[u8]>),
+    Probe(Box<[u8]>),
+    Resolve(Box<[u8]>),
+}
+impl AsRef<[u8]> for MulticastMessage {
+    fn as_ref(&self) -> &[u8] {
+        match *self {
+            MulticastMessage::Hello(ref buffer)
+            | MulticastMessage::Bye(ref buffer)
+            | MulticastMessage::Probe(ref buffer)
+            | MulticastMessage::Resolve(ref buffer) => buffer,
+        }
+    }
+}
+
+impl std::fmt::Display for MulticastMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            MulticastMessage::Hello(_) => write!(f, "Hello"),
+            MulticastMessage::Bye(_) => write!(f, "Bye"),
+            MulticastMessage::Probe(_) => write!(f, "Probe"),
+            MulticastMessage::Resolve(_) => write!(f, "Resolve"),
         }
     }
 }
@@ -233,7 +265,7 @@ impl<'config> Builder<'config> {
         config: &Config,
         messages_built: &AtomicU64,
         xaddr: IpAddr,
-    ) -> Result<Message, xml::writer::Error> {
+    ) -> Result<MulticastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
         let (message, _): (Vec<_>, _) = builder.build_message(
@@ -247,14 +279,14 @@ impl<'config> Builder<'config> {
             Hello::new(xaddr),
         )?;
 
-        Ok(Message::Hello(message.into_boxed_slice()))
+        Ok(MulticastMessage::Hello(message.into_boxed_slice()))
     }
 
     /// WS-Discovery, Section 4.2, Bye message
     pub fn build_bye(
         config: &Config,
         messages_built: &AtomicU64,
-    ) -> Result<Message, xml::writer::Error> {
+    ) -> Result<MulticastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
         let (message, _): (Vec<_>, _) = builder.build_message(
@@ -268,11 +300,11 @@ impl<'config> Builder<'config> {
             Bye::new(),
         )?;
 
-        Ok(Message::Bye(message.into_boxed_slice()))
+        Ok(MulticastMessage::Bye(message.into_boxed_slice()))
     }
 
     // WS-Discovery, Section 4.3, Probe message
-    pub fn build_probe(config: &Config) -> Result<(Message, Urn), xml::writer::Error> {
+    pub fn build_probe(config: &Config) -> Result<(MulticastMessage, Urn), xml::writer::Error> {
         let mut builder = Builder::new(config);
 
         let (message, urn): (Vec<_>, _) = builder.build_message(
@@ -283,14 +315,14 @@ impl<'config> Builder<'config> {
             Probe::new(),
         )?;
 
-        Ok((Message::Probe(message.into_boxed_slice()), urn))
+        Ok((MulticastMessage::Probe(message.into_boxed_slice()), urn))
     }
 
     // WS-Discovery, Section 6.1, Resolve message
     pub fn build_resolve(
         config: &Config,
         endpoint: &DeviceUri,
-    ) -> Result<(Message, Urn), xml::writer::Error> {
+    ) -> Result<(MulticastMessage, Urn), xml::writer::Error> {
         let mut builder = Builder::new(config);
 
         let (message, urn): (Vec<_>, _) = builder.build_message(
@@ -301,7 +333,7 @@ impl<'config> Builder<'config> {
             Resolve::new(endpoint),
         )?;
 
-        Ok((Message::Resolve(message.into_boxed_slice()), urn))
+        Ok((MulticastMessage::Resolve(message.into_boxed_slice()), urn))
     }
 
     pub fn build_resolve_matches(
@@ -309,7 +341,7 @@ impl<'config> Builder<'config> {
         address: IpAddr,
         messages_built: &AtomicU64,
         relates_to: Urn,
-    ) -> Result<Message, xml::writer::Error> {
+    ) -> Result<UnicastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
         let (message, _): (Vec<_>, _) = builder.build_message(
@@ -323,14 +355,14 @@ impl<'config> Builder<'config> {
             ResolveMatches::new(address),
         )?;
 
-        Ok(Message::ResolveMatches(message.into_boxed_slice()))
+        Ok(UnicastMessage::ResolveMatches(message.into_boxed_slice()))
     }
 
     pub fn build_probe_matches(
         config: &Config,
         messages_built: &AtomicU64,
         relates_to: Urn,
-    ) -> Result<Message, xml::writer::Error> {
+    ) -> Result<UnicastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
         let (message, _): (Vec<_>, _) = builder.build_message(
@@ -344,7 +376,7 @@ impl<'config> Builder<'config> {
             ProbeMatches::new(),
         )?;
 
-        Ok(Message::ProbeMatches(message.into_boxed_slice()))
+        Ok(UnicastMessage::ProbeMatches(message.into_boxed_slice()))
     }
 
     pub fn build_get(config: &Config, endpoint: &DeviceUri) -> Result<Vec<u8>, xml::writer::Error> {

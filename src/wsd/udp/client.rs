@@ -1,5 +1,4 @@
 use std::cmp::Reverse;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,8 +18,9 @@ use crate::constants::{
     APP_MAX_DELAY, MIME_TYPE_SOAP_XML, PROBE_TIMEOUT_MILLISECONDS, WSD_BYE, WSD_HELLO,
     WSD_PROBE_MATCH, WSD_RESOLVE_MATCH, XML_WSD_NAMESPACE,
 };
+use crate::multicast_handler::IncomingUnicastMessage;
 use crate::network_address::NetworkAddress;
-use crate::soap::builder::{Builder, Message};
+use crate::soap::builder::{Builder, MulticastMessage};
 use crate::soap::parser::MessageHandler;
 use crate::soap::parser::generic::extract_endpoint_metadata;
 use crate::soap::parser::xaddrs::XAddr;
@@ -36,7 +36,7 @@ pub(crate) struct WSDClient {
     _bound_to: NetworkAddress,
     _devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     handle: tokio::task::JoinHandle<()>,
-    mc_local_port_tx: Sender<Message>,
+    mc_local_port_tx: Sender<MulticastMessage>,
     probes: Arc<RwLock<HashMap<Urn, Duration>>>,
 }
 
@@ -51,9 +51,9 @@ impl WSDClient {
         config: Arc<Config>,
         devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
         bound_to: NetworkAddress,
-        mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-        mc_local_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-        mc_local_port_tx: Sender<Message>,
+        mc_wsd_port_rx: Receiver<IncomingUnicastMessage>,
+        mc_local_port_rx: Receiver<IncomingUnicastMessage>,
+        mc_local_port_tx: Sender<MulticastMessage>,
     ) -> Self {
         let probes = Arc::new(RwLock::new(HashMap::<Urn, Duration>::new()));
 
@@ -145,7 +145,7 @@ async fn send_probe(
     cancellation_token: &CancellationToken,
     config: &Arc<Config>,
     probes: &Arc<RwLock<HashMap<Urn, Duration>>>,
-    mc_local_port_tx: &Sender<Message>,
+    mc_local_port_tx: &Sender<MulticastMessage>,
 ) -> Result<(), eyre::Report> {
     let future = async move {
         remove_outdated_probes(probes).await;
@@ -258,7 +258,7 @@ async fn handle_hello(
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
-    multicast: &Sender<Message>,
+    multicast: &Sender<MulticastMessage>,
     reader: &mut Wrapper<'_>,
 ) -> Result<(), eyre::Report> {
     find_descendant(reader, Some(XML_WSD_NAMESPACE), "Hello")?;
@@ -319,7 +319,7 @@ async fn handle_probe_match(
     bound_to: &NetworkAddress,
     relates_to: Option<Urn>,
     probes: Arc<RwLock<HashMap<Urn, Duration>>>,
-    mc_local_port_tx: &Sender<Message>,
+    mc_local_port_tx: &Sender<MulticastMessage>,
     reader: &mut Wrapper<'_>,
 ) -> Result<(), eyre::Report> {
     let Some(relates_to) = relates_to else {
@@ -491,9 +491,9 @@ async fn listen_forever(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
-    mut mc_wsd_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-    mut mc_local_port_rx: Receiver<(SocketAddr, Arc<[u8]>)>,
-    mc_local_port_tx: Sender<Message>,
+    mut mc_wsd_port_rx: Receiver<IncomingUnicastMessage>,
+    mut mc_local_port_rx: Receiver<IncomingUnicastMessage>,
+    mc_local_port_tx: Sender<MulticastMessage>,
     probes: Arc<RwLock<HashMap<Urn, Duration>>>,
 ) {
     // Note: we bind on the interface's name.
@@ -521,7 +521,7 @@ async fn listen_forever(
             }
         };
 
-        let Some((from, buffer)) = message else {
+        let Some(IncomingUnicastMessage { from, buffer }) = message else {
             // the end, but we just got it before the cancellation
             break;
         };
@@ -614,6 +614,7 @@ mod tests {
     use uuid::Uuid;
 
     use crate::network_interface::NetworkInterface;
+    use crate::soap::builder::AsBytes as _;
     use crate::soap::parser::xaddrs::XAddr;
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler_with_network_address};

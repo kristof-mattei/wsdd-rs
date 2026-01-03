@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::mem::MaybeUninit;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
@@ -22,7 +23,7 @@ use crate::config::Config;
 use crate::constants;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
-use crate::soap::builder::Message;
+use crate::soap::builder::{MulticastMessage, UnicastMessage};
 use crate::udp_address::UdpAddress;
 use crate::url_ip_addr::UrlIpAddr;
 use crate::utils::task::spawn_with_name;
@@ -414,6 +415,7 @@ impl MulticastHandler {
     pub async fn enable_wsd_host(&mut self) {
         self.wsd_host
             .get_or_init(|| async {
+                let meee = self.uc_wsd_port_tx.get_tx();
                 let host = WSDHost::init(
                     self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
@@ -421,7 +423,7 @@ impl MulticastHandler {
                     self.network_address.clone(),
                     self.mc_wsd_port_rx.get_rx().await,
                     self.mc_local_port_tx.get_tx(),
-                    self.uc_wsd_port_tx.get_tx(),
+                    meee,
                 );
 
                 host
@@ -481,7 +483,7 @@ impl MulticastHandler {
     }
 }
 
-type Receivers = Arc<RwLock<Vec<Sender<(SocketAddr, Arc<[u8]>)>>>>;
+type Receivers = Arc<RwLock<Vec<Sender<IncomingUnicastMessage>>>>;
 
 struct MessageReceiver {
     cancellation_token: CancellationToken,
@@ -489,7 +491,7 @@ struct MessageReceiver {
     listeners: Receivers,
 }
 
-type Channels = Arc<RwLock<Vec<Sender<(SocketAddr, Arc<[u8]>)>>>>;
+type Channels = Arc<RwLock<Vec<Sender<IncomingUnicastMessage>>>>;
 
 async fn socket_rx_forever(
     cancellation_token: CancellationToken,
@@ -542,7 +544,13 @@ async fn socket_rx_forever(
         let lock = channels.read().await;
 
         for channel in &*lock {
-            if let Err(error) = channel.send((from, Arc::clone(&buffer))).await {
+            if let Err(error) = channel
+                .send(IncomingUnicastMessage {
+                    from,
+                    buffer: Arc::clone(&buffer),
+                })
+                .await
+            {
                 event!(Level::ERROR, ?error, socket = ?socket.local_addr().unwrap(), "Failed to send data to channel");
             }
         }
@@ -567,7 +575,7 @@ impl MessageReceiver {
         }
     }
 
-    async fn get_rx(&mut self) -> Receiver<(SocketAddr, Arc<[u8]>)> {
+    async fn get_rx(&mut self) -> Receiver<IncomingUnicastMessage> {
         let (tx, rx) = tokio::sync::mpsc::channel(10);
 
         self.listeners.write().await.push(tx);
@@ -586,9 +594,10 @@ trait MessageSplitter {
     const NAME: &str;
     const REPEAT: usize;
 
-    type Message: Send;
+    type Message: AsRef<[u8]> + Send + Display;
+    type ChannelMessage: Send;
 
-    fn split_message(&self, message: Self::Message) -> (SocketAddr, Message);
+    fn split_message(&self, message: Self::ChannelMessage) -> (SocketAddr, Self::Message);
 }
 
 struct MulticastMessageSplitter {
@@ -599,9 +608,10 @@ impl MessageSplitter for MulticastMessageSplitter {
     const NAME: &str = "MulticastMessageSplitter";
     const REPEAT: usize = constants::MULTICAST_UDP_REPEAT;
 
-    type Message = Message;
+    type Message = MulticastMessage;
+    type ChannelMessage = Self::Message;
 
-    fn split_message(&self, message: Self::Message) -> (SocketAddr, Message) {
+    fn split_message(&self, message: Self::ChannelMessage) -> (SocketAddr, Self::Message) {
         (self.target, message)
     }
 }
@@ -612,21 +622,22 @@ impl MessageSplitter for UnicastMessageSplitter {
     const NAME: &str = "UnicastMessageSplitter";
     const REPEAT: usize = constants::UNICAST_UDP_REPEAT;
 
-    type Message = (SocketAddr, Message);
+    type Message = UnicastMessage;
+    type ChannelMessage = OutgoingUnicastMessage;
 
-    fn split_message(&self, message: Self::Message) -> (SocketAddr, Message) {
-        message
+    fn split_message(&self, message: Self::ChannelMessage) -> (SocketAddr, Self::Message) {
+        (message.to, message.buffer)
     }
 }
 
 async fn repeatedly_send_buffer<T: MessageSplitter>(
     socket: Arc<UdpSocket>,
-    message: Message,
+    message: T::Message,
     to: SocketAddr,
 ) {
-    let buffer = message.as_bytes();
+    let buffer = message.as_ref();
 
-    event!(Level::INFO, "scheduling {} message via ...", message,);
+    // event!(Level::INFO, "scheduling {} message via ...", message);
 
     // TODO log message_type ONCE
     // Schedule to send the given message to the given address.
@@ -650,7 +661,7 @@ async fn repeatedly_send_buffer<T: MessageSplitter>(
 
 struct MessageSender<T: MessageSplitter> {
     handler: JoinHandle<()>,
-    tx: Sender<T::Message>,
+    tx: Sender<T::ChannelMessage>,
 }
 
 impl<T> MessageSender<T>
@@ -658,7 +669,7 @@ where
     T: MessageSplitter + Send + 'static,
 {
     fn new(socket: Arc<UdpSocket>, message_splitter: T) -> Self {
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<T::Message>(10);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<T::ChannelMessage>(10);
 
         let handler = spawn_with_name("sender", async move {
             let tracker = TaskTracker::new();
@@ -696,7 +707,7 @@ where
         Self { handler, tx }
     }
 
-    fn get_tx(&mut self) -> Sender<T::Message> {
+    fn get_tx(&mut self) -> Sender<T::ChannelMessage> {
         self.tx.clone()
     }
 
@@ -708,4 +719,14 @@ where
         // to allow everybody to send their messages and shut down gracefully before we shut down
         let _r = self.handler.await;
     }
+}
+
+pub struct IncomingUnicastMessage {
+    pub from: SocketAddr,
+    pub buffer: Arc<[u8]>,
+}
+
+pub struct OutgoingUnicastMessage {
+    pub to: SocketAddr,
+    pub buffer: UnicastMessage,
 }
