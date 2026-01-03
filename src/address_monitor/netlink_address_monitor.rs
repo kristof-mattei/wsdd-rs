@@ -161,12 +161,12 @@ impl NetlinkAddressMonitor {
                 let mut buffer_byte_cursor = &mut *buffer;
 
                 tokio::select! {
-                        () = self.cancellation_token.cancelled() => {
-                            break;
-                        },
-                        result = self.socket.recv_buf(&mut buffer_byte_cursor) => {
-                            result?
-                        }
+                    () = self.cancellation_token.cancelled() => {
+                        break;
+                    },
+                    result = self.socket.recv_buf(&mut buffer_byte_cursor) => {
+                        result?
+                    },
                 }
             };
 

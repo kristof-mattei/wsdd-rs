@@ -116,8 +116,9 @@ impl NetworkHandler {
                 },
                 command = self.command_rx.recv() => {
                     command
-                }
+                },
             };
+
             let Some(command) = command else {
                 event!(
                     Level::INFO,

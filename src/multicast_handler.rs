@@ -487,7 +487,7 @@ async fn socket_rx_forever(
             tokio::select! {
                 () = cancellation_token.cancelled() => {
                     break;
-                }
+                },
                 result = socket.recv_buf_from(&mut buffer_byte_cursor) => {
                     result
                 },
@@ -568,6 +568,11 @@ impl MessageReceiver {
 
         let _r = self.handle.await;
     }
+}
+
+pub struct IncomingUnicastMessage {
+    pub from: SocketAddr,
+    pub buffer: Arc<[u8]>,
 }
 
 pub struct OutgoingUnicastMessage {
@@ -715,9 +720,4 @@ where
         // to allow everybody to send their messages and shut down gracefully before we shut down
         let _r = self.handler.await;
     }
-}
-
-pub struct IncomingUnicastMessage {
-    pub from: SocketAddr,
-    pub buffer: Arc<[u8]>,
 }

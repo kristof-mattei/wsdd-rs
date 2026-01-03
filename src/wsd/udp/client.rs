@@ -512,10 +512,10 @@ async fn listen_forever(
             },
             message = mc_wsd_port_rx.recv() => {
                 message
-            }
+            },
             message = mc_local_port_rx.recv() => {
                 message
-            }
+            },
         };
 
         let Some(IncomingUnicastMessage { from, buffer }) = message else {

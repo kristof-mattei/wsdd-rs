@@ -95,7 +95,7 @@ impl ApiServer {
                 },
                 new_connection = self.listener.accept() => {
                     new_connection
-                }
+                },
             };
 
             match new_connection {
@@ -173,7 +173,7 @@ async fn handle_single_connection(
             },
             read = reader.read(&mut buffer) => {
                 read
-            }
+            },
         };
 
         match read {
