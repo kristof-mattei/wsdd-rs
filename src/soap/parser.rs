@@ -258,8 +258,8 @@ impl MessageHandler {
     ) -> Result<Header, MessageHandlerError> {
         event!(
             Level::DEBUG,
-            "incoming message content is {}",
-            String::from_utf8_lossy(raw)
+            xml = String::from_utf8_lossy(raw).trim(),
+            "incoming message content",
         );
 
         let Some((_, action_method)) = header.action.rsplit_once('/') else {
