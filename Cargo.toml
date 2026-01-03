@@ -78,7 +78,7 @@ uuid = { version = "1.19.0", default-features = false, features = [
     "v5",
     "v7",
 ] }
-xml = "1.2.0"
+xml = { git = "https://github.com/kristof-mattei/xml-rs", branch = "clone" }
 
 [target.'cfg(all(any(target_arch = "x86_64", target_arch = "aarch64"), target_os="linux", target_env="musl"))'.dependencies]
 reqwest = { version = "0.13.1", default-features = false, features = [

@@ -2494,8 +2494,7 @@ dependencies = [
 [[package]]
 name = "xml"
 version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2df5825faced2427b2da74d9100f1e2e93c533fff063506a81ede1cf517b2e7e"
+source = "git+https://github.com/kristof-mattei/xml-rs?branch=clone#29ee48aec93031af26468c58e1417674411ca205"
 
 [[package]]
 name = "yansi"
