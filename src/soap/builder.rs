@@ -94,7 +94,7 @@ impl<'config> Builder<'config> {
         W: Write + Default + AsRef<[u8]>,
     {
         let response = self.build_message_tree::<D, H, B, W>(
-            to_addr,
+            &to_addr,
             action,
             relates_to,
             extra_headers,
@@ -103,8 +103,11 @@ impl<'config> Builder<'config> {
 
         event!(
             Level::DEBUG,
-            "constructed xml for WSD message: {}",
-            String::from_utf8_lossy(response.0.as_ref()).as_ref()
+            to_addr = %to_addr.as_ref(),
+            %action,
+            ?relates_to,
+            xml = %String::from_utf8_lossy(response.0.as_ref()).as_ref(),
+            "constructed xml for WSD message",
         );
 
         Ok(response)
@@ -117,7 +120,7 @@ impl<'config> Builder<'config> {
     /// serves as the message's body
     fn build_message_tree<D, H, B, W>(
         &mut self,
-        to_addr: D,
+        to_addr: &D,
         action: &str,
         relates_to: Option<Urn>,
         extra_headers: H,

@@ -245,8 +245,6 @@ fn parse_xaddrs(bound_to: IpNet, raw_xaddrs: &str) -> Vec<XAddr> {
         }
     });
 
-    event!(Level::TRACE, xaddrs = %SliceDisplay(&xaddrs));
-
     xaddrs
 }
 
@@ -280,7 +278,7 @@ async fn handle_hello(
         return Ok(());
     }
 
-    event!(Level::INFO, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "Hello");
+    event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "Hello");
 
     perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddrs).await?;
 
@@ -360,7 +358,7 @@ async fn handle_probe_match(
         return Ok(());
     }
 
-    event!(Level::INFO, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ProbeMatch");
+    event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ProbeMatch");
 
     perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddrs).await?;
 
@@ -398,7 +396,7 @@ async fn handle_resolve_match(
         return Ok(());
     }
 
-    event!(Level::INFO, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ResolveMatch");
+    event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ResolveMatch");
 
     perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddrs).await?;
 

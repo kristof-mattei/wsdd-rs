@@ -42,8 +42,8 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
 
                             event!(
                                 Level::DEBUG,
-                                scopes = &raw_scopes,
-                                "ignoring unsupported scopes in probe request"
+                                scopes = %raw_scopes,
+                                "Ignoring unsupported scopes in probe request"
                             );
 
                             // read_text consumed the closing `Scopes`
@@ -126,7 +126,7 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
     if !requested_type_match {
         event!(
             Level::DEBUG,
-            types = &*types,
+            %types,
             "client requests types we don't offer"
         );
 
@@ -137,6 +137,11 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
 }
 
 /// This takes in a reader that is stopped at the body tag.
+///
+/// Returns
+/// * `Ok(true)`: when we offer the `wsd:Types` requested
+/// * `Ok(false)`: when we do not offer the `wsd:Types` requested
+/// * `Err(_)`: Anything went wrong trying to parse the XML
 pub fn parse_probe_body(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
     let mut depth = 0_usize;
     loop {
