@@ -570,13 +570,14 @@ async fn listen_forever(
                 )
                 .await
             },
-            _ => {
+            action => {
                 event!(
                     Level::DEBUG,
-                    "unhandled action {}/{}",
-                    header.action,
-                    header.message_id
+                    ?action,
+                    ?header.message_id,
+                    "Unhandled action",
                 );
+
                 continue;
             },
         } {
@@ -586,6 +587,7 @@ async fn listen_forever(
                 ?error,
                 "Failure to parse XML"
             );
+
             continue;
         }
     }
