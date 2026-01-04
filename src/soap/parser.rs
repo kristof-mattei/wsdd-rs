@@ -344,17 +344,25 @@ where
     // TODO?
     // <wsd:AppSequence InstanceId="1742000334" SequenceId="urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9" MessageNumber="1" />
 
+    let mut depth = 0_usize;
+
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
-                if name.namespace_ref() == Some(constants::WSA_URI) {
+                depth += 1;
+
+                if depth == 1 && name.namespace_ref() == Some(constants::WSA_URI) {
                     // header items can be in any order, as per SOAP 1.1 and 1.2
                     match &*name.local_name {
                         "To" => {
                             to = read_text(reader)?.map(|to| DeviceUri::new(to.into_boxed_str()));
+
+                            depth -= 1;
                         },
                         "Action" => {
                             action = read_text(reader)?.map(String::into_boxed_str);
+
+                            depth -= 1;
                         },
                         "MessageID" => {
                             let m_id = read_text(reader)?
@@ -364,6 +372,8 @@ where
                                 .transpose()?;
 
                             message_id = m_id;
+
+                            depth -= 1;
                         },
                         "RelatesTo" => {
                             let r_to = read_text(reader)?
@@ -373,6 +383,8 @@ where
                                 .transpose()?;
 
                             relates_to = r_to;
+
+                            depth -= 1;
                         },
                         _ => {
                             // Not a match, continue
@@ -381,11 +393,14 @@ where
                 }
             },
             XmlEvent::EndElement { name, .. } => {
-                if name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE)
+                if depth == 0
+                    && name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE)
                     && name.local_name == "Header"
                 {
                     break;
                 }
+
+                depth -= 1;
             },
             XmlEvent::CData(_)
             | XmlEvent::Characters(_)
