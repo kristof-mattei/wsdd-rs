@@ -90,6 +90,9 @@ mockito = "=1.7.1"
 pretty_assertions = { version = "=1.4.1", features = ["unstable"] }
 tracing-test = "=0.2.5"
 
+[package.metadata.spellcheck]
+config = "spellcheck.toml"
+
 [lints.clippy]
 # don't stop from compiling / running
 all = "warn"

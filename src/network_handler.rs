@@ -80,10 +80,6 @@ pub enum NetworkHandlerError {
     InterfaceDetectionFailed(std::io::Error),
 }
 
-/// Observes changes of network addresses, handles addition and removal of
-/// network addresses, and filters for addresses/interfaces that are or are not
-/// handled. The actual OS-specific implementation that detects the changes is
-/// done in subclasses. This class is used as a singleton
 impl NetworkHandler {
     pub fn new(
         cancellation_token: CancellationToken,
@@ -472,7 +468,6 @@ impl NetworkHandler {
     //     self.teardown()
 
     /// Get the MCI for the address, its family and the interface.
-    /// adress must be given as a string.
     #[expect(unused, reason = "WIP")]
     fn get_mch_by_address(&mut self, address: &NetworkAddress) -> Option<&MulticastHandler> {
         self.multicast_handlers
@@ -481,7 +476,6 @@ impl NetworkHandler {
     }
 
     /// Takes the MCI for the address, its family and the interface.
-    /// adress must be given as a string.
     fn take_mch_by_address(&mut self, address: &NetworkAddress) -> Option<MulticastHandler> {
         let position = self
             .multicast_handlers
