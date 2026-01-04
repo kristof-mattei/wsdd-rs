@@ -118,22 +118,7 @@ pub enum GenericParsingError {
     InvalidDepth(usize),
 }
 
-#[derive(Error, Debug)]
-pub enum FindDescendantsError {
-    #[error("paths cannot be empty")]
-    EmptyPaths,
-    #[error("{0}")]
-    GenericParsingError(#[from] GenericParsingError),
-}
-
-impl From<xml::reader::Error> for FindDescendantsError {
-    fn from(value: xml::reader::Error) -> Self {
-        FindDescendantsError::GenericParsingError(GenericParsingError::XmlError(value))
-    }
-}
-
 type FindDescendantResult = Result<(OwnedName, Vec<OwnedAttribute>), GenericParsingError>;
-type FindDescendantsResult = Result<(OwnedName, Vec<OwnedAttribute>), FindDescendantsError>;
 
 pub fn find_descendant<R>(
     reader: &mut Wrapper<R>,
@@ -143,42 +128,7 @@ pub fn find_descendant<R>(
 where
     R: Read,
 {
-    find_descendants(reader, &[(namespace, path)]).map_err(|err| {
-        match err {
-            FindDescendantsError::EmptyPaths => {
-                // `find_descendant` always calls `find_descendants` with a single-element `paths` slice
-                unreachable!()
-            },
-            FindDescendantsError::GenericParsingError(generic_parsing_error) => {
-                generic_parsing_error
-            },
-        }
-    })
-}
-
-pub fn find_descendants<R>(
-    reader: &mut Wrapper<R>,
-    paths: &[(Option<&str>, &str)],
-) -> FindDescendantsResult
-where
-    R: Read,
-{
-    find_descendants_recursive(reader, paths, 0)
-}
-
-fn find_descendants_recursive<R>(
-    reader: &mut Wrapper<R>,
-    paths: &[(Option<&str>, &str)],
-    start_depth: usize,
-) -> FindDescendantsResult
-where
-    R: Read,
-{
-    let Some((&(namespace, path), rest)) = paths.split_first() else {
-        return Err(FindDescendantsError::EmptyPaths);
-    };
-
-    let mut depth: usize = start_depth;
+    let mut depth: usize = 0;
 
     loop {
         match reader.next()? {
@@ -187,19 +137,12 @@ where
             } => {
                 depth += 1;
 
-                if start_depth + 1 == depth
-                    && name.namespace_ref() == namespace
-                    && name.local_name == path
-                {
-                    return if rest.is_empty() {
-                        Ok((name, attributes))
-                    } else {
-                        find_descendants_recursive(reader, rest, depth)
-                    };
+                if depth == 1 && name.namespace_ref() == namespace && name.local_name == path {
+                    return Ok((name, attributes));
                 }
             },
             XmlEvent::EndElement { name } => {
-                if start_depth == depth {
+                if depth == 0 {
                     let missing_element = Name {
                         local_name: path,
                         namespace,
@@ -215,8 +158,7 @@ where
 
                     return Err(GenericParsingError::MissingElement(
                         missing_element.to_string().into_boxed_str(),
-                    )
-                    .into());
+                    ));
                 }
 
                 depth -= 1;
@@ -243,7 +185,9 @@ where
         prefix: None,
     };
 
-    Err(GenericParsingError::MissingElement(name.to_string().into_boxed_str()).into())
+    Err(GenericParsingError::MissingElement(
+        name.to_string().into_boxed_str(),
+    ))
 }
 
 #[cfg(test)]
@@ -253,7 +197,7 @@ mod tests {
     use xml::attribute::OwnedAttribute;
     use xml::name::OwnedName;
 
-    use crate::xml::{FindDescendantsError, GenericParsingError, Wrapper, find_descendants};
+    use crate::xml::{GenericParsingError, Wrapper, find_descendant};
 
     #[test]
     fn parse_generic_body_missing_element() {
@@ -270,16 +214,11 @@ mod tests {
             Wrapper::new(reader)
         };
 
-        let result = find_descendants(
-            &mut reader,
-            &[
-                (None, "Level1"),
-                (None, "Level2"),
-                (Some("urn:level3_ns"), "Level3"),
-            ],
-        );
+        let _result = find_descendant(&mut reader, None, "Level1").unwrap();
+        let _result = find_descendant(&mut reader, None, "Level2").unwrap();
+        let result = find_descendant(&mut reader, Some("urn:level3_ns"), "Level3");
 
-        assert_matches!(result, Err(FindDescendantsError::GenericParsingError(GenericParsingError::MissingElement(name))) if &*name == "{urn:level3_ns}Level3");
+        assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "{urn:level3_ns}Level3");
     }
 
     #[test]
@@ -303,16 +242,11 @@ mod tests {
             let _unused: Result<xml::reader::XmlEvent, xml::reader::Error> = reader.next();
         }
 
-        let result = find_descendants(
-            &mut reader,
-            &[
-                (Some("urn:level3_ns"), "Level3"),
-                (None, "Level4"),
-                (Some("urn:level5_ns"), "Level5"),
-            ],
-        );
+        let _result = find_descendant(&mut reader, Some("urn:level3_ns"), "Level3");
+        let _result = find_descendant(&mut reader, None, "Level4");
+        let result = find_descendant(&mut reader, Some("urn:level5_ns"), "Level5");
 
-        assert_matches!(result, Err(FindDescendantsError::GenericParsingError(GenericParsingError::MissingElement(name))) if &*name == "{urn:level5_ns}Level5");
+        assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "{urn:level5_ns}Level5");
     }
 
     #[test]
@@ -330,10 +264,8 @@ mod tests {
             Wrapper::new(reader)
         };
 
-        let result = find_descendants(
-            &mut reader,
-            &[(Some("urn:first"), "Envelope"), (Some("urn:first"), "Body")],
-        );
+        let _result = find_descendant(&mut reader, Some("urn:first"), "Envelope");
+        let result = find_descendant(&mut reader, Some("urn:first"), "Body");
 
         let attribute = OwnedAttribute::new(OwnedName::local("attribute"), "this-one");
         assert_matches!(result, Ok((_, attributes)) if attributes.contains(&attribute));
@@ -354,12 +286,10 @@ mod tests {
             Wrapper::new(reader)
         };
 
-        let result = find_descendants(
-            &mut reader,
-            &[(Some("urn:first"), "Envelope"), (Some("urn:first"), "Body")],
-        );
+        let _result = find_descendant(&mut reader, Some("urn:first"), "Envelope");
+        let result = find_descendant(&mut reader, Some("urn:first"), "Body");
 
-        assert_matches!(result, Err(FindDescendantsError::GenericParsingError(GenericParsingError::MissingElement(name))) if &*name == "{urn:first}Body");
+        assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "{urn:first}Body");
     }
 
     #[test]
@@ -377,10 +307,8 @@ mod tests {
             Wrapper::new(reader)
         };
 
-        let result = find_descendants(
-            &mut reader,
-            &[(Some("urn:first"), "Envelope"), (Some("urn:first"), "Body")],
-        );
+        let _result = find_descendant(&mut reader, Some("urn:first"), "Envelope");
+        let result = find_descendant(&mut reader, Some("urn:first"), "Body");
 
         let attribute = OwnedAttribute::new(OwnedName::local("attribute"), "this-one");
         assert_matches!(result, Ok((_, attributes)) if attributes.contains(&attribute));
@@ -410,8 +338,8 @@ mod tests {
             let _unused = reader.next();
         }
 
-        let result = find_descendants(&mut reader, &[(None, "NotFound")]);
+        let result = find_descendant(&mut reader, None, "NotFound");
 
-        assert_matches!(result, Err(FindDescendantsError::GenericParsingError(GenericParsingError::MissingElement(name))) if &*name == "NotFound");
+        assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "NotFound");
     }
 }
