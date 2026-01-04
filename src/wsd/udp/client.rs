@@ -481,7 +481,10 @@ async fn listen_forever(
         .build()
         .expect("WSD Client cannot operate without HTTP Client");
 
-    let _message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES));
+    let _message_handler = MessageHandler::new(
+        Arc::clone(&HANDLED_MESSAGES),
+        Arc::clone(&bound_to.interface),
+    );
 
     loop {
         let message = tokio::select! {
@@ -497,7 +500,7 @@ async fn listen_forever(
         };
 
         let Some(IncomingClientMessage {
-            from,
+            from: _from,
             header,
             message,
         }) = message
@@ -506,28 +509,7 @@ async fn listen_forever(
             break;
         };
 
-        // let (header, mut body_reader) = match message_handler.deconstruct_message(&buffer).await {
-        //     Ok(pieces) => pieces,
-        //     Err(error) => {
-        //         error.log(&buffer);
-
-        //         continue;
-        //     },
-        // };
-
-        event!(
-            Level::INFO,
-            "{}({}) - - \"{} {} UDP\" - -",
-            from,
-            bound_to.interface,
-            header
-                .action
-                .rsplit_once('/')
-                .map_or(&*header.action, |(_, action)| action),
-            header.message_id
-        );
-
-        // // dispatch based on the SOAP Action header
+        // dispatch based on the SOAP Action header
         let response = match message {
             ClientMessage::Hello(hello) => {
                 handle_hello(
@@ -566,23 +548,25 @@ async fn listen_forever(
             },
         };
 
-        if let Err(error) = response {
-            // TODO WRONG KIND OF ERROR
-            event!(
-                Level::ERROR,
-                action = &*header.action,
-                ?error,
-                "Failure to parse XML"
-            );
+        match response {
+            Ok(()) => (),
+            Err(error) => {
+                event!(
+                    Level::ERROR,
+                    action = &*header.action,
+                    ?error,
+                    "Failure to handle message"
+                );
 
-            continue;
+                continue;
+            },
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -627,7 +611,7 @@ mod tests {
         let (client_config, client_devices) = setup_client();
 
         // host
-        let _host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
 
         let host_endpoint_device_uri =
             DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
@@ -640,7 +624,10 @@ mod tests {
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
         let (_, message) = message_handler
-            .deconstruct_message(hello_without_xaddrs.as_bytes())
+            .deconstruct_message(
+                hello_without_xaddrs.as_bytes(),
+                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
+            )
             .await
             .unwrap();
 
@@ -736,7 +723,10 @@ mod tests {
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
         let (_, message) = message_handler
-            .deconstruct_message(hello.as_bytes())
+            .deconstruct_message(
+                hello.as_bytes(),
+                SocketAddr::new(server.socket_address().ip(), 5000),
+            )
             .await
             .unwrap();
 
@@ -800,7 +790,7 @@ mod tests {
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
 
         // host
-        let _host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
         let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
 
         let bye = format!(
@@ -813,7 +803,10 @@ mod tests {
         );
 
         let (_, message) = message_handler
-            .deconstruct_message(bye.as_bytes())
+            .deconstruct_message(
+                bye.as_bytes(),
+                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
+            )
             .await
             .unwrap();
 
@@ -883,7 +876,10 @@ mod tests {
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
         let (_, message) = message_handler
-            .deconstruct_message(hello.as_bytes())
+            .deconstruct_message(
+                hello.as_bytes(),
+                SocketAddr::new(server.socket_address().ip(), 5000),
+            )
             .await
             .unwrap();
 
@@ -924,7 +920,10 @@ mod tests {
         );
 
         let (_, message) = message_handler
-            .deconstruct_message(bye.as_bytes())
+            .deconstruct_message(
+                bye.as_bytes(),
+                SocketAddr::new(server.socket_address().ip(), 5000),
+            )
             .await
             .unwrap();
 
@@ -1170,7 +1169,7 @@ mod tests {
 
         // host
         let host_message_id = Uuid::now_v7();
-        let _host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
         let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
 
         let probe_matches = format!(
@@ -1181,7 +1180,10 @@ mod tests {
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
         let (header, message) = message_handler
-            .deconstruct_message(probe_matches.as_bytes())
+            .deconstruct_message(
+                probe_matches.as_bytes(),
+                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
+            )
             .await
             .unwrap();
 
@@ -1286,7 +1288,10 @@ mod tests {
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
         let (header, message) = message_handler
-            .deconstruct_message(probe_matches.as_bytes())
+            .deconstruct_message(
+                probe_matches.as_bytes(),
+                SocketAddr::new(server.socket_address().ip(), 5000),
+            )
             .await
             .unwrap();
 
@@ -1380,7 +1385,10 @@ mod tests {
         );
 
         let (_, message) = message_handler
-            .deconstruct_message(resolve_matches.as_bytes())
+            .deconstruct_message(
+                resolve_matches.as_bytes(),
+                SocketAddr::new(server.socket_address().ip(), 5000),
+            )
             .await
             .unwrap();
 

@@ -42,7 +42,7 @@ impl WSDHttpServer {
         messages_built: Arc<AtomicU64>,
         http_listen_address: SocketAddr,
     ) -> Result<WSDHttpServer, std::io::Error> {
-        let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES));
+        let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), Arc::clone(&bound_to.interface));
 
         event!(Level::INFO, ?http_listen_address, "Trying to bind");
 

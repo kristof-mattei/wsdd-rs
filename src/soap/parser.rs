@@ -9,6 +9,7 @@ pub mod resolve_match;
 pub mod xaddrs;
 
 use std::io::Read;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use thiserror::Error;
@@ -20,6 +21,7 @@ use xml::reader::XmlEvent;
 
 use crate::constants::{self, WSA_URI, XML_SOAP_NAMESPACE};
 use crate::max_size_deque::MaxSizeDeque;
+use crate::network_interface::NetworkInterface;
 use crate::soap::parser::get::Get;
 use crate::soap::{self, WSDMessage};
 use crate::wsd::device::DeviceUri;
@@ -27,6 +29,7 @@ use crate::xml::{GenericParsingError, TextReadError, Wrapper, read_text};
 
 pub struct MessageHandler {
     handled_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
+    network_interface: Arc<NetworkInterface>,
 }
 
 pub struct Header {
@@ -242,6 +245,7 @@ where
 fn validate_action_body(
     raw: &[u8],
     header: Header,
+    via: Option<(SocketAddr, &NetworkInterface)>,
     has_body: bool,
 ) -> Result<Header, MessageHandlerError> {
     event!(
@@ -250,30 +254,28 @@ fn validate_action_body(
         "incoming message content",
     );
 
-    // let Some((_, action_method)) = header.action.rsplit_once('/') else {
-    //     return Err(MessageHandlerError::HeaderError(
-    //         HeaderError::InvalidAction(header.action),
-    //     ));
-    // };
+    let Some((_, action_method)) = header.action.rsplit_once('/') else {
+        return Err(MessageHandlerError::InvalidAction(header.action));
+    };
 
-    // if let Some(src) = src {
-    //     event!(
-    //         Level::INFO,
-    //         "{}({}) - - \"{} {} UDP\" - -",
-    //         src,
-    //         self.network_address.interface,
-    //         action_method,
-    //         header.message_id
-    //     );
-    // } else {
-    //     // http logging is already done by according server
-    //     event!(
-    //         Level::DEBUG,
-    //         "processing WSD {} message ({})",
-    //         action_method,
-    //         header.message_id
-    //     );
-    // }
+    if let Some((src, network_interface)) = via {
+        event!(
+            Level::INFO,
+            "{}({}) - - \"{} {} UDP\" - -",
+            src,
+            network_interface,
+            action_method,
+            header.message_id
+        );
+    } else {
+        // http logging is already done by according server
+        event!(
+            Level::DEBUG,
+            "processing WSD {} message ({})",
+            action_method,
+            header.message_id
+        );
+    }
 
     if !has_body {
         return Err(GenericParsingError::MissingElement(Box::from("soap:Body")).into());
@@ -317,7 +319,7 @@ fn decompose_body(
 pub fn deconstruct_http_message(raw: &[u8]) -> Result<(Header, WSDMessage), MessageHandlerError> {
     let (header, has_body, reader) = deconstruct_raw(raw)?;
 
-    let header = validate_action_body(raw, header, has_body)?;
+    let header = validate_action_body(raw, header, None, has_body)?;
 
     // TODO !!! ERROR HANDLING
     let body = decompose_body(&header, reader).unwrap();
@@ -326,14 +328,21 @@ pub fn deconstruct_http_message(raw: &[u8]) -> Result<(Header, WSDMessage), Mess
 }
 
 impl MessageHandler {
-    pub fn new(handled_messages: Arc<RwLock<MaxSizeDeque<Urn>>>) -> Self {
-        Self { handled_messages }
+    pub fn new(
+        handled_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
+        network_interface: Arc<NetworkInterface>,
+    ) -> Self {
+        Self {
+            handled_messages,
+            network_interface,
+        }
     }
 
     /// Handle a WSD message
     pub async fn deconstruct_message(
         &self,
         raw: &'_ [u8],
+        src: SocketAddr,
     ) -> Result<(Header, WSDMessage), MessageHandlerError> {
         let (header, has_body, reader) = deconstruct_raw(raw)?;
 
@@ -348,7 +357,8 @@ impl MessageHandler {
             return Err(MessageHandlerError::DuplicateMessage);
         }
 
-        let header = validate_action_body(raw, header, has_body)?;
+        let header =
+            validate_action_body(raw, header, Some((src, &*self.network_interface)), has_body)?;
 
         let body = decompose_body(&header, reader)?;
 
@@ -473,16 +483,21 @@ mod tests {
 
     use std::sync::Arc;
 
+    use libc::RT_SCOPE_SITE;
     use tokio::sync::RwLock;
     use tokio::time::{Duration, timeout};
     use uuid::Uuid;
     use uuid::fmt::Urn;
 
     use crate::max_size_deque::MaxSizeDeque;
+    use crate::network_interface::NetworkInterface;
     use crate::soap::parser::MessageHandler;
 
     fn handler_for_tests(history: usize) -> MessageHandler {
-        MessageHandler::new(Arc::new(RwLock::new(MaxSizeDeque::new(history))))
+        MessageHandler::new(
+            Arc::new(RwLock::new(MaxSizeDeque::new(history))),
+            Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+        )
     }
 
     #[tokio::test(flavor = "current_thread")]

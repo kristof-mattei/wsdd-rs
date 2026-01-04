@@ -203,7 +203,10 @@ async fn listen_forever(
 ) {
     let address = bound_to.address.addr();
 
-    let _message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES));
+    let _message_handler = MessageHandler::new(
+        Arc::clone(&HANDLED_MESSAGES),
+        Arc::clone(&bound_to.interface),
+    );
 
     loop {
         let message = tokio::select! {
@@ -224,18 +227,6 @@ async fn listen_forever(
             // the end, but we just got it before the cancellation
             break;
         };
-
-        event!(
-            Level::INFO,
-            "{}({}) - - \"{} {} UDP\" - -",
-            from,
-            bound_to.interface,
-            header
-                .action
-                .rsplit_once('/')
-                .map_or(&*header.action, |(_, action)| action),
-            header.message_id
-        );
 
         // dispatch based on the SOAP Action header
         let response = match message {
@@ -290,7 +281,7 @@ async fn listen_forever(
 
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -416,7 +407,10 @@ mod tests {
 
         // host receives client's probe
         let (header, message) = host_message_handler
-            .deconstruct_message(resolve.as_bytes())
+            .deconstruct_message(
+                resolve.as_bytes(),
+                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
+            )
             .await
             .unwrap();
 
@@ -488,13 +482,16 @@ mod tests {
         let host_message_handler = build_message_handler();
 
         // host
-        let _host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
         let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
         let host_messages_built = Arc::new(AtomicU64::new(0));
 
         // host receives client's probe
         let (header, message) = host_message_handler
-            .deconstruct_message(probe.as_bytes())
+            .deconstruct_message(
+                probe.as_bytes(),
+                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
+            )
             .await
             .unwrap();
 

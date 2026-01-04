@@ -140,8 +140,11 @@ impl MulticastHandler {
 
         let mc_wsd_port_socket = Arc::new(UdpSocket::from_std(mc_wsd_port_socket.into())?);
 
-        let mc_wsd_port_rx =
-            MessageReceiver::new(cancellation_token.clone(), Arc::clone(&mc_wsd_port_socket));
+        let mc_wsd_port_rx = MessageReceiver::new(
+            cancellation_token.clone(),
+            Arc::clone(&network_address.interface),
+            Arc::clone(&mc_wsd_port_socket),
+        );
 
         let mc_local_port_socket = Arc::new(UdpSocket::from_std(mc_local_port_socket.into())?);
 
@@ -155,6 +158,7 @@ impl MulticastHandler {
 
         let mc_local_port_rx = MessageReceiver::new(
             cancellation_token.clone(),
+            Arc::clone(&network_address.interface),
             Arc::clone(&mc_local_port_socket),
         );
 
@@ -488,10 +492,11 @@ struct MessageReceiver {
 
 async fn socket_rx_forever(
     cancellation_token: CancellationToken,
+    network_interface: Arc<NetworkInterface>,
     listeners: Arc<RwLock<ClientHostListener>>,
     socket: Arc<UdpSocket>,
 ) {
-    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES));
+    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_interface);
 
     loop {
         let mut buffer = vec![MaybeUninit::<u8>::uninit(); constants::WSD_MAX_LEN];
@@ -534,7 +539,7 @@ async fn socket_rx_forever(
         // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
         let buffer = unsafe { &*(&raw const *buffer as *const [u8]) };
 
-        let (header, message) = match message_handler.deconstruct_message(buffer).await {
+        let (header, message) = match message_handler.deconstruct_message(buffer, from).await {
             Ok(ok) => ok,
             Err(err) => {
                 err.log(buffer);
@@ -579,7 +584,11 @@ async fn socket_rx_forever(
 }
 
 impl MessageReceiver {
-    fn new(cancellation_token: CancellationToken, socket: Arc<UdpSocket>) -> Self {
+    fn new(
+        cancellation_token: CancellationToken,
+        network_interface: Arc<NetworkInterface>,
+        socket: Arc<UdpSocket>,
+    ) -> Self {
         let listeners = Arc::new(RwLock::const_new(ClientHostListener {
             host_tx: None,
             client_tx: None,
@@ -590,7 +599,12 @@ impl MessageReceiver {
 
             spawn_with_name(
                 format!("socket rx ({})", socket.local_addr().unwrap()).as_str(),
-                socket_rx_forever(cancellation_token.clone(), listeners, socket),
+                socket_rx_forever(
+                    cancellation_token.clone(),
+                    network_interface,
+                    listeners,
+                    socket,
+                ),
             )
         };
 

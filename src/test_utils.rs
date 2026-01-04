@@ -78,7 +78,10 @@ pub fn build_config(endpoint_uuid: Uuid, instance_id: &str) -> Config {
 }
 
 pub fn build_message_handler() -> MessageHandler {
-    MessageHandler::new(Arc::new(RwLock::new(MaxSizeDeque::new(20))))
+    MessageHandler::new(
+        Arc::new(RwLock::new(MaxSizeDeque::new(20))),
+        Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+    )
 }
 
 #[expect(unused, reason = "WIP")]
@@ -149,7 +152,10 @@ pub fn build_message_handler_with_network_address(
     );
 
     (
-        MessageHandler::new(Arc::new(RwLock::new(MaxSizeDeque::new(20)))),
+        MessageHandler::new(
+            Arc::new(RwLock::new(MaxSizeDeque::new(20))),
+            Arc::clone(&network_address.interface),
+        ),
         network_address,
     )
 }
