@@ -205,7 +205,7 @@ async fn listen_forever(
 
     let _message_handler = MessageHandler::new(
         Arc::clone(&HANDLED_MESSAGES),
-        Arc::clone(&bound_to.interface),
+        bound_to.clone(),
     );
 
     loop {

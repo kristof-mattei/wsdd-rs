@@ -21,6 +21,7 @@ use xml::reader::XmlEvent;
 
 use crate::constants::{self, WSA_URI, XML_SOAP_NAMESPACE};
 use crate::max_size_deque::MaxSizeDeque;
+use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
 use crate::soap::parser::get::Get;
 use crate::soap::{self, WSDMessage};
@@ -29,7 +30,7 @@ use crate::xml::{GenericParsingError, TextReadError, Wrapper, read_text};
 
 pub struct MessageHandler {
     handled_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
-    network_interface: Arc<NetworkInterface>,
+    network_address: NetworkAddress,
 }
 
 pub struct Header {
@@ -330,11 +331,11 @@ pub fn deconstruct_http_message(raw: &[u8]) -> Result<(Header, WSDMessage), Mess
 impl MessageHandler {
     pub fn new(
         handled_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
-        network_interface: Arc<NetworkInterface>,
+        network_address: NetworkAddress,
     ) -> Self {
         Self {
             handled_messages,
-            network_interface,
+            network_address,
         }
     }
 
@@ -357,8 +358,12 @@ impl MessageHandler {
             return Err(MessageHandlerError::DuplicateMessage);
         }
 
-        let header =
-            validate_action_body(raw, header, Some((src, &*self.network_interface)), has_body)?;
+        let header = validate_action_body(
+            raw,
+            header,
+            Some((src, &*self.network_address.interface)),
+            has_body,
+        )?;
 
         let body = decompose_body(&header, reader)?;
 
@@ -480,9 +485,10 @@ where
 
 #[cfg(test)]
 mod tests {
-
+    use std::net::Ipv4Addr;
     use std::sync::Arc;
 
+    use ipnet::IpNet;
     use libc::RT_SCOPE_SITE;
     use tokio::sync::RwLock;
     use tokio::time::{Duration, timeout};
@@ -490,13 +496,17 @@ mod tests {
     use uuid::fmt::Urn;
 
     use crate::max_size_deque::MaxSizeDeque;
+    use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
     use crate::soap::parser::MessageHandler;
 
     fn handler_for_tests(history: usize) -> MessageHandler {
         MessageHandler::new(
             Arc::new(RwLock::new(MaxSizeDeque::new(history))),
-            Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+            NetworkAddress::new(
+                IpNet::new(Ipv4Addr::new(127, 1, 2, 3).into(), 16).unwrap(),
+                Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+            ),
         )
     }
 

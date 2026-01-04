@@ -142,7 +142,7 @@ impl MulticastHandler {
 
         let mc_wsd_port_rx = MessageReceiver::new(
             cancellation_token.clone(),
-            Arc::clone(&network_address.interface),
+            network_address.clone(),
             Arc::clone(&mc_wsd_port_socket),
         );
 
@@ -158,7 +158,7 @@ impl MulticastHandler {
 
         let mc_local_port_rx = MessageReceiver::new(
             cancellation_token.clone(),
-            Arc::clone(&network_address.interface),
+            network_address.clone(),
             Arc::clone(&mc_local_port_socket),
         );
 
@@ -492,11 +492,11 @@ struct MessageReceiver {
 
 async fn socket_rx_forever(
     cancellation_token: CancellationToken,
-    network_interface: Arc<NetworkInterface>,
+    network_address: NetworkAddress,
     listeners: Arc<RwLock<ClientHostListener>>,
     socket: Arc<UdpSocket>,
 ) {
-    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_interface);
+    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_address);
 
     loop {
         let mut buffer = vec![MaybeUninit::<u8>::uninit(); constants::WSD_MAX_LEN];
@@ -586,7 +586,7 @@ async fn socket_rx_forever(
 impl MessageReceiver {
     fn new(
         cancellation_token: CancellationToken,
-        network_interface: Arc<NetworkInterface>,
+        network_address: NetworkAddress,
         socket: Arc<UdpSocket>,
     ) -> Self {
         let listeners = Arc::new(RwLock::const_new(ClientHostListener {
@@ -601,7 +601,7 @@ impl MessageReceiver {
                 format!("socket rx ({})", socket.local_addr().unwrap()).as_str(),
                 socket_rx_forever(
                     cancellation_token.clone(),
-                    network_interface,
+                    network_address,
                     listeners,
                     socket,
                 ),
