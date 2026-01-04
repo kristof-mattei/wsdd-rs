@@ -214,10 +214,10 @@ fn parse_xaddrs(bound_to: IpNet, raw_xaddrs: &str) -> Vec<XAddr> {
         .split_whitespace()
         .filter_map(|raw_xaddr| match XAddr::try_from(raw_xaddr) {
             Ok(xaddr) => Some(xaddr),
-            Err(err) => {
+            Err(error) => {
                 event!(
                     Level::INFO,
-                    ?err,
+                    ?error,
                     %raw_xaddr,
                     "Message sent with invalid/non-http/https xaddr or no host, ignoring"
                 );

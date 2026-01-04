@@ -360,8 +360,8 @@ impl NetworkHandler {
             Arc::clone(&self.devices),
         ) {
             Ok(handler) => handler,
-            Err(err) => {
-                event!(Level::ERROR, ?err, %network_address, "Failed to launch multicast handler");
+            Err(error) => {
+                event!(Level::ERROR, ?error, %network_address, "Failed to launch multicast handler");
 
                 return;
             },

@@ -499,7 +499,7 @@ async fn socket_rx_forever(
             Ok(read) => read,
             Err(error) => {
                 let local_addr = socket.local_addr().map_or_else(
-                    |err| format!("Failed to get local socket address: {:?}", err),
+                    |error| format!("Failed to get local socket address: {:?}", error),
                     |addr| addr.to_string(),
                 );
 

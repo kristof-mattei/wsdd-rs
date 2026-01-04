@@ -38,7 +38,7 @@ impl GaiResolver {
             this.call(name)
                 .await
                 .map(|addrs| Box::new(addrs) as Addrs)
-                .map_err(|err| Box::new(err) as BoxError)
+                .map_err(|error| Box::new(error) as BoxError)
         })
     }
 }
