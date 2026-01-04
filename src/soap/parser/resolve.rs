@@ -35,7 +35,7 @@ where
                 "invalid resolve request: address is not a valid urn"
             );
 
-            Err(GenericParsingError::UrnUuidError(err))
+            Err(GenericParsingError::InvalidUrnUuid(err))
         },
     }
 }

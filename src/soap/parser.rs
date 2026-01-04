@@ -112,7 +112,7 @@ impl MessageHandlerError {
                 HeaderError::InvalidMessageId(ref uuid_error)
                 | HeaderError::InvalidRelatesTo(ref uuid_error),
             )
-            | &MessageHandlerError::GenericParsingError(GenericParsingError::UrnUuidError(
+            | &MessageHandlerError::GenericParsingError(GenericParsingError::InvalidUrnUuid(
                 ref uuid_error,
             )) => {
                 event!(
