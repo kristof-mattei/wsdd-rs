@@ -25,7 +25,7 @@ where
 {
     find_descendant(reader, Some(XML_WSD_NAMESPACE), "Probe")?;
 
-    let mut types_and_namespace = None;
+    let mut raw_types_and_namespaces = None;
 
     let mut depth = 0_usize;
     loop {
@@ -52,7 +52,8 @@ where
                             depth -= 1;
                         },
                         "Types" => {
-                            types_and_namespace = read_text(reader)?.map(|text| (text, namespace));
+                            raw_types_and_namespaces =
+                                read_text(reader)?.map(|text| (text, namespace));
 
                             break;
                         },
@@ -84,7 +85,7 @@ where
         }
     }
 
-    let Some((raw_types, namespaces)) = types_and_namespace else {
+    let Some((raw_types, namespaces)) = raw_types_and_namespaces else {
         event!(Level::DEBUG, "Probe message lacks wsd:Types element.");
 
         return Ok(Probe {
