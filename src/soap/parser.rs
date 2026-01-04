@@ -246,7 +246,7 @@ where
 fn validate_action_body(
     raw: &[u8],
     header: Header,
-    via: Option<(SocketAddr, &NetworkInterface)>,
+    source_info: Option<(SocketAddr, &NetworkInterface)>,
     has_body: bool,
 ) -> Result<Header, MessageHandlerError> {
     event!(
@@ -259,7 +259,7 @@ fn validate_action_body(
         return Err(MessageHandlerError::InvalidAction(header.action));
     };
 
-    if let Some((src, network_interface)) = via {
+    if let Some((src, network_interface)) = source_info {
         event!(
             Level::INFO,
             "{}({}) - - \"{} {} UDP\" - -",
@@ -342,7 +342,7 @@ impl MessageHandler {
     pub async fn deconstruct_message(
         &self,
         raw: &'_ [u8],
-        src: SocketAddr,
+        source: SocketAddr,
     ) -> Result<(Header, WSDMessage), MessageHandlerError> {
         let (header, has_body, reader) = deconstruct_raw(raw)?;
 
@@ -360,7 +360,7 @@ impl MessageHandler {
         let header = validate_action_body(
             raw,
             header,
-            Some((src, &*self.network_address.interface)),
+            Some((source, &*self.network_address.interface)),
             has_body,
         )?;
 
