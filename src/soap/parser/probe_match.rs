@@ -1,6 +1,6 @@
 use std::io::Read;
 
-use crate::constants::XML_WSD_NAMESPACE;
+use crate::constants;
 use crate::soap::parser::generic::extract_endpoint_metadata;
 use crate::wsd::device::DeviceUri;
 use crate::xml::{GenericParsingError, Wrapper, find_descendant};
@@ -20,8 +20,8 @@ pub fn parse_probe_match<R>(reader: &mut Wrapper<R>) -> ParsedProbeMatchResult
 where
     R: Read,
 {
-    find_descendant(reader, Some(XML_WSD_NAMESPACE), "ProbeMatches")?;
-    find_descendant(reader, Some(XML_WSD_NAMESPACE), "ProbeMatch")?;
+    find_descendant(reader, Some(constants::XML_WSD_NAMESPACE), "ProbeMatches")?;
+    find_descendant(reader, Some(constants::XML_WSD_NAMESPACE), "ProbeMatch")?;
 
     let (endpoint, raw_xaddrs) = extract_endpoint_metadata(reader)?;
 

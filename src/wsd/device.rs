@@ -9,11 +9,7 @@ use tracing::{Level, event};
 use xml::name::Name;
 use xml::reader::XmlEvent;
 
-use crate::constants::{
-    WSDP_RELATIONSHIP, WSDP_RELATIONSHIP_DIALECT, WSDP_RELATIONSHIP_TYPE_HOST, WSDP_THIS_DEVICE,
-    WSDP_THIS_DEVICE_DIALECT, WSDP_THIS_MODEL, WSDP_THIS_MODEL_DIALECT, WSDP_URI,
-    XML_PUB_NAMESPACE, XML_WSDP_NAMESPACE, XML_WSX_NAMESPACE,
-};
+use crate::constants;
 use crate::network_address::NetworkAddress;
 use crate::soap::parser;
 use crate::soap::parser::xaddrs::XAddr;
@@ -185,57 +181,60 @@ impl WSDDiscoveredDevice {
         let (_header, _has_body, mut reader) = parser::deconstruct_raw(meta)?;
 
         let (_name, _attributes) =
-            find_descendant(&mut reader, Some(XML_WSX_NAMESPACE), "Metadata")?;
+            find_descendant(&mut reader, Some(constants::XML_WSX_NAMESPACE), "Metadata")?;
 
         // we're now in metadata
 
         // loop though the reader for each wsx:MetadataSection at depth 1 from where we are now
         loop {
-            let (scope, attributes) =
-                match find_descendant(&mut reader, Some(XML_WSX_NAMESPACE), "MetadataSection") {
-                    Ok((name, attributes)) => (name, attributes),
-                    Err(GenericParsingError::MissingElement(_)) => {
-                        // no more `MetadataSections to be found`
-                        break;
-                    },
-                    Err(error) => return Err(error.into()),
-                };
+            let (scope, attributes) = match find_descendant(
+                &mut reader,
+                Some(constants::XML_WSX_NAMESPACE),
+                "MetadataSection",
+            ) {
+                Ok((name, attributes)) => (name, attributes),
+                Err(GenericParsingError::MissingElement(_)) => {
+                    // no more `MetadataSections to be found`
+                    break;
+                },
+                Err(error) => return Err(error.into()),
+            };
 
             for attribute in attributes {
                 if attribute.name.namespace_ref().is_none()
                     && attribute.name.local_name == "Dialect"
                 {
-                    if attribute.value == WSDP_THIS_DEVICE_DIALECT {
+                    if attribute.value == constants::WSDP_THIS_DEVICE_DIALECT {
                         // open ThisDevice
                         let (this_device_scope, ..) = find_descendant(
                             &mut reader,
-                            Some(XML_WSDP_NAMESPACE),
-                            WSDP_THIS_DEVICE,
+                            Some(constants::XML_WSDP_NAMESPACE),
+                            constants::WSDP_THIS_DEVICE,
                         )?;
 
                         let new_props = extract_wsdp_props(
                             &mut reader,
-                            XML_WSDP_NAMESPACE,
+                            constants::XML_WSDP_NAMESPACE,
                             this_device_scope.borrow(),
                         )?;
 
                         self.props.extend(new_props);
-                    } else if attribute.value == WSDP_THIS_MODEL_DIALECT {
+                    } else if attribute.value == constants::WSDP_THIS_MODEL_DIALECT {
                         // open ThisModel
                         let (this_model_scope, ..) = find_descendant(
                             &mut reader,
-                            Some(XML_WSDP_NAMESPACE),
-                            WSDP_THIS_MODEL,
+                            Some(constants::XML_WSDP_NAMESPACE),
+                            constants::WSDP_THIS_MODEL,
                         )?;
 
                         let new_props = extract_wsdp_props(
                             &mut reader,
-                            XML_WSDP_NAMESPACE,
+                            constants::XML_WSDP_NAMESPACE,
                             this_model_scope.borrow(),
                         )?;
 
                         self.props.extend(new_props);
-                    } else if attribute.value == WSDP_RELATIONSHIP_DIALECT {
+                    } else if attribute.value == constants::WSDP_RELATIONSHIP_DIALECT {
                         let (types, display_name_belongs_to) = extract_host_props(&mut reader)?;
 
                         self.types = types;
@@ -369,23 +368,26 @@ where
     // we are inside of the relationship metadata section, which contains ... RELATIONSHIPS
     // for each relationship, we find the one with Type=Host
     loop {
-        let (_element, attributes) =
-            match find_descendant(reader, Some(XML_WSDP_NAMESPACE), WSDP_RELATIONSHIP) {
-                Ok((name, attributes)) => {
-                    // we'll need to ensure that the depth is always the same
-                    (name, attributes)
-                },
-                Err(GenericParsingError::MissingElement(_)) => {
-                    // no `wsdp:Relationship` to be found`
-                    return Ok((HashSet::new(), None));
-                },
-                Err(error) => return Err(error),
-            };
+        let (_element, attributes) = match find_descendant(
+            reader,
+            Some(constants::XML_WSDP_NAMESPACE),
+            constants::WSDP_RELATIONSHIP,
+        ) {
+            Ok((name, attributes)) => {
+                // we'll need to ensure that the depth is always the same
+                (name, attributes)
+            },
+            Err(GenericParsingError::MissingElement(_)) => {
+                // no `wsdp:Relationship` to be found`
+                return Ok((HashSet::new(), None));
+            },
+            Err(error) => return Err(error),
+        };
 
         for attribute in attributes {
             if attribute.name.namespace_ref().is_none() && attribute.name.local_name == "Type" {
-                if attribute.value == WSDP_RELATIONSHIP_TYPE_HOST {
-                    match find_descendant(reader, Some(XML_WSDP_NAMESPACE), "Host") {
+                if attribute.value == constants::WSDP_RELATIONSHIP_TYPE_HOST {
+                    match find_descendant(reader, Some(constants::XML_WSDP_NAMESPACE), "Host") {
                         Ok((_name, _attributes)) => {
                             let (types, display_name_belongs_to) =
                                 read_types_and_pub_computer(reader)?;
@@ -400,8 +402,8 @@ where
                                     continue;
                                 };
 
-                                if name.borrow().local_name == WSDP_RELATIONSHIP
-                                    && name.namespace_ref() == Some(XML_WSDP_NAMESPACE)
+                                if name.borrow().local_name == constants::WSDP_RELATIONSHIP
+                                    && name.namespace_ref() == Some(constants::XML_WSDP_NAMESPACE)
                                 {
                                     break;
                                 }
@@ -449,14 +451,14 @@ where
 
                 if depth == 1 {
                     match (name.namespace_ref(), name.local_name.as_str()) {
-                        (Some(WSDP_URI), "Types") => {
+                        (Some(constants::WSDP_URI), "Types") => {
                             // we're in wsdp:Types
                             types = read_text(reader)?.map(String::into_boxed_str);
 
                             // `read_text` stops when it has hit the closing element, so we go back up 1 level
                             depth -= 1;
                         },
-                        (Some(XML_PUB_NAMESPACE), "Computer") => {
+                        (Some(constants::XML_PUB_NAMESPACE), "Computer") => {
                             computer = read_text(reader)?.map(String::into_boxed_str);
 
                             // store the actual prefix, as it is not always `pub`

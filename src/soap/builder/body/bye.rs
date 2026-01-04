@@ -4,7 +4,7 @@ use xml::EventWriter;
 use xml::writer::XmlEvent;
 
 use crate::config::Config;
-use crate::constants::XML_WSD_NAMESPACE;
+use crate::constants;
 use crate::soap::builder::WriteBody;
 use crate::soap::builder::body::add_endpoint_reference;
 
@@ -22,7 +22,7 @@ where
     W: Write,
 {
     fn namespaces(&self) -> impl Iterator<Item = (impl Into<String>, impl Into<String>)> {
-        [("wsd", XML_WSD_NAMESPACE)].into_iter()
+        [("wsd", constants::XML_WSD_NAMESPACE)].into_iter()
     }
 
     fn write_body(

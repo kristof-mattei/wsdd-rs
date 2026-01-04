@@ -7,7 +7,7 @@ use xml::attribute::OwnedAttribute;
 use xml::name::{Name, OwnedName};
 use xml::reader::XmlEvent;
 
-use crate::constants::STRING_DEFAULT_CAPACITY;
+use crate::constants;
 
 #[derive(Debug, Error)]
 pub enum TextReadError {
@@ -57,7 +57,7 @@ pub fn read_text<R>(reader: &mut Wrapper<R>) -> Result<Option<String>, TextReadE
 where
     R: Read,
 {
-    let mut text: String = String::with_capacity(STRING_DEFAULT_CAPACITY);
+    let mut text: String = String::with_capacity(constants::STRING_DEFAULT_CAPACITY);
 
     loop {
         match reader.next()? {

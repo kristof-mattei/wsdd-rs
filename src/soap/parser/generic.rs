@@ -3,7 +3,7 @@ use std::io::Read;
 use tracing::{Level, event};
 use xml::reader::XmlEvent;
 
-use crate::constants::{XML_WSA_NAMESPACE, XML_WSD_NAMESPACE};
+use crate::constants;
 use crate::wsd::device::DeviceUri;
 use crate::xml::{GenericParsingError, Wrapper, read_text};
 
@@ -23,7 +23,7 @@ where
                 depth += 1;
 
                 if depth == 1
-                    && name.namespace_ref() == Some(XML_WSA_NAMESPACE)
+                    && name.namespace_ref() == Some(constants::XML_WSA_NAMESPACE)
                     && name.local_name == "Address"
                 {
                     address = read_text(reader)?;
@@ -86,7 +86,7 @@ where
 
                 if depth == 1 {
                     match (name.namespace_ref(), &*name.local_name) {
-                        (Some(XML_WSA_NAMESPACE), "EndpointReference") => {
+                        (Some(constants::XML_WSA_NAMESPACE), "EndpointReference") => {
                             if endpoint.is_some() || xaddrs.is_some() {
                                 return Err(GenericParsingError::InvalidElementOrder);
                             }
@@ -95,7 +95,7 @@ where
                             // `extract_endpoint_reference_address` stops when it has consumed the closing tag
                             depth -= 1;
                         },
-                        (Some(XML_WSD_NAMESPACE), "XAddrs") => {
+                        (Some(constants::XML_WSD_NAMESPACE), "XAddrs") => {
                             if endpoint.is_none() || xaddrs.is_some() {
                                 return Err(GenericParsingError::InvalidElementOrder);
                             }

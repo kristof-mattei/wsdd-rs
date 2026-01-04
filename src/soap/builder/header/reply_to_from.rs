@@ -2,7 +2,7 @@ use std::io::Write;
 
 use xml::writer::XmlEvent;
 
-use crate::constants::{WSA_ANON, XML_WSA_NAMESPACE};
+use crate::constants;
 use crate::soap::builder::WriteExtraHeaders;
 use crate::wsd::device::DeviceUri;
 
@@ -21,7 +21,7 @@ where
     W: Write,
 {
     fn namespaces(&self) -> impl Iterator<Item = (impl Into<String>, impl Into<String>)> {
-        [("wsa", XML_WSA_NAMESPACE)].into_iter()
+        [("wsa", constants::XML_WSA_NAMESPACE)].into_iter()
     }
 
     fn write_extra_headers(
@@ -30,7 +30,7 @@ where
     ) -> Result<(), xml::writer::Error> {
         writer.write(XmlEvent::start_element("wsa:ReplyTo"))?;
         writer.write(XmlEvent::start_element("wsa:Address"))?;
-        writer.write(XmlEvent::Characters(WSA_ANON))?;
+        writer.write(XmlEvent::Characters(constants::WSA_ANON))?;
         writer.write(XmlEvent::end_element())?;
         writer.write(XmlEvent::end_element())?;
 
