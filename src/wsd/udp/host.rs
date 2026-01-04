@@ -12,12 +12,10 @@ use crate::config::Config;
 use crate::multicast_handler::{IncomingHostMessage, OutgoingMessage};
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::{self, Builder};
-use crate::soap::parser::MessageHandler;
 use crate::soap::parser::probe::Probe;
 use crate::soap::parser::resolve::Resolve;
 use crate::soap::{HostMessage, MulticastMessage, UnicastMessage};
 use crate::utils::task::spawn_with_name;
-use crate::wsd::HANDLED_MESSAGES;
 
 /// handles WSD requests coming from UDP datagrams.
 pub struct WSDHost {

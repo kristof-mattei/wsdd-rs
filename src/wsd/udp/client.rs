@@ -18,7 +18,6 @@ use crate::constants::{APP_MAX_DELAY, MIME_TYPE_SOAP_XML, PROBE_TIMEOUT_MILLISEC
 use crate::multicast_handler::IncomingClientMessage;
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::Builder;
-use crate::soap::parser::MessageHandler;
 use crate::soap::parser::bye::Bye;
 use crate::soap::parser::hello::Hello;
 use crate::soap::parser::probe_match::ProbeMatch;
@@ -27,7 +26,6 @@ use crate::soap::parser::xaddrs::XAddr;
 use crate::soap::{ClientMessage, MulticastMessage};
 use crate::utils::SliceDisplay;
 use crate::utils::task::spawn_with_name;
-use crate::wsd::HANDLED_MESSAGES;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 
 pub(crate) struct WSDClient {
