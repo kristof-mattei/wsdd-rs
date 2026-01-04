@@ -1,11 +1,11 @@
-29
+26
 backport
 cdata
 chroot
 codecov
 datagram
 datagrams
-Deduplicates
+deduplicates
 dns
 interoperability
 io
@@ -16,8 +16,6 @@ pdf
 prepend
 prepends
 PRs
-sigint
-SIGTERM
 struct
 TODO
 TODOs
@@ -25,6 +23,5 @@ UDP
 unicast
 untagged
 URI
-whitespace
 WSD
 xsd
