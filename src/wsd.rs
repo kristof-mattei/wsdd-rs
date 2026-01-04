@@ -9,5 +9,5 @@ use uuid::fmt::Urn;
 
 use crate::max_size_deque::MaxSizeDeque;
 
-static HANDLED_MESSAGES: LazyLock<Arc<RwLock<MaxSizeDeque<Urn>>>> =
+pub static HANDLED_MESSAGES: LazyLock<Arc<RwLock<MaxSizeDeque<Urn>>>> =
     LazyLock::new(|| Arc::new(RwLock::new(MaxSizeDeque::new(10))));

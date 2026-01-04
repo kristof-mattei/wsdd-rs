@@ -14,8 +14,8 @@ use crate::constants;
 use crate::multicast_handler::{IncomingUnicastMessage, OutgoingUnicastMessage};
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::{self, Builder};
-use crate::soap::parser::{self, MessageHandler};
-use crate::soap::{MulticastMessage, UnicastMessage};
+use crate::soap::parser::MessageHandler;
+use crate::soap::{MulticastMessage, UnicastMessage, parser};
 use crate::utils::task::spawn_with_name;
 use crate::wsd::HANDLED_MESSAGES;
 use crate::xml::Wrapper;
@@ -153,13 +153,21 @@ pub fn handle_probe<R>(
 where
     R: Read,
 {
-    if parser::probe::parse_probe_body(reader)? {
+    let probe = parser::probe::parse_probe(reader)?;
+
+    if probe.types.is_empty() || probe.requested_type_match() {
         Ok(Some(builder::Builder::build_probe_matches(
             config,
             messages_built,
             relates_to,
         )?))
     } else {
+        event!(
+            Level::DEBUG,
+            ?probe.types,
+            "client requests types we don't offer"
+        );
+
         Ok(None)
     }
 }
@@ -175,7 +183,9 @@ fn handle_resolve<R>(
 where
     R: Read,
 {
-    if parser::resolve::parse_resolve_body(reader, target_uuid)? {
+    let resolve = parser::resolve::parse_resolve(reader)?;
+
+    if resolve.addr_urn == target_uuid.urn() {
         Ok(Some(builder::Builder::build_resolve_matches(
             config,
             address,
@@ -183,6 +193,13 @@ where
             relates_to,
         )?))
     } else {
+        event!(
+            Level::DEBUG,
+            addr_urn = %resolve.addr_urn,
+            expected = %target_uuid.urn(),
+            "invalid resolve request: address does not match own one"
+        );
+
         Ok(None)
     }
 }
