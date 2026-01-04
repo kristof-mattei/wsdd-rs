@@ -3,7 +3,7 @@ use std::io::Read;
 use tracing::{Level, event};
 use uuid::fmt::Urn;
 
-use crate::constants::{XML_WSA_NAMESPACE, XML_WSD_NAMESPACE};
+use crate::constants;
 use crate::soap::parser::generic::extract_endpoint_reference_address;
 use crate::xml::{GenericParsingError, Wrapper, find_descendant};
 
@@ -21,8 +21,12 @@ pub fn parse_resolve<R>(reader: &mut Wrapper<R>) -> ParsedResolveResult
 where
     R: Read,
 {
-    find_descendant(reader, Some(XML_WSD_NAMESPACE), "Resolve")?;
-    find_descendant(reader, Some(XML_WSA_NAMESPACE), "EndpointReference")?;
+    find_descendant(reader, Some(constants::XML_WSD_NAMESPACE), "Resolve")?;
+    find_descendant(
+        reader,
+        Some(constants::XML_WSA_NAMESPACE),
+        "EndpointReference",
+    )?;
 
     let raw_addr = extract_endpoint_reference_address(reader)?;
 

@@ -2,7 +2,7 @@ use std::io::Write;
 
 use xml::writer::XmlEvent;
 
-use crate::constants::XML_WSD_NAMESPACE;
+use crate::constants;
 use crate::soap::builder::WriteExtraHeaders;
 
 pub struct AppSequence<'s> {
@@ -26,7 +26,7 @@ where
     W: Write,
 {
     fn namespaces(&self) -> impl Iterator<Item = (impl Into<String>, impl Into<String>)> {
-        [("wsd", XML_WSD_NAMESPACE)].into_iter()
+        [("wsd", constants::XML_WSD_NAMESPACE)].into_iter()
     }
 
     fn write_extra_headers(

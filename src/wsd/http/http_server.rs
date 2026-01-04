@@ -253,7 +253,7 @@ mod tests {
     use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
 
-    use crate::constants::MIME_TYPE_SOAP_XML;
+    use crate::constants;
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
     use crate::test_utils::build_config;
@@ -297,7 +297,7 @@ mod tests {
                 "http://{}/{}",
                 http_server.http_bound_to, host_config.uuid
             ))
-            .header("Content-Type", MIME_TYPE_SOAP_XML)
+            .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
             .header("User-Agent", "wsdd-rs");
 
         let response = builder
@@ -386,7 +386,7 @@ mod tests {
                 "http://{}/{}",
                 http_server.http_bound_to, host_config.uuid
             ))
-            .header("Content-Type", MIME_TYPE_SOAP_XML)
+            .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
             .header("User-Agent", "wsdd-rs");
 
         let response = builder
@@ -446,7 +446,7 @@ mod tests {
                 "http://{}/{}",
                 http_server.http_bound_to, host_config.uuid
             ))
-            .header("Content-Type", MIME_TYPE_SOAP_XML)
+            .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
             .header("User-Agent", "wsdd-rs");
 
         let response = builder

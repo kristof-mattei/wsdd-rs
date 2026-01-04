@@ -19,7 +19,7 @@ use uuid::fmt::Urn;
 use xml::ParserConfig;
 use xml::reader::XmlEvent;
 
-use crate::constants::{WSA_URI, XML_SOAP_NAMESPACE};
+use crate::constants;
 use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
 use crate::wsd::device::DeviceUri;
@@ -175,7 +175,7 @@ where
         // in all other parsing functions we could theoretically mark them as `unreachable!()`
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
-                if name.namespace_ref() == Some(XML_SOAP_NAMESPACE) {
+                if name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE) {
                     if name.local_name == "Header" {
                         header = Some(parse_header(&mut reader)?);
                     } else if name.local_name == "Body" {
@@ -347,7 +347,7 @@ where
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
-                if name.namespace_ref() == Some(WSA_URI) {
+                if name.namespace_ref() == Some(constants::WSA_URI) {
                     // header items can be in any order, as per SOAP 1.1 and 1.2
                     match &*name.local_name {
                         "To" => {
@@ -381,7 +381,9 @@ where
                 }
             },
             XmlEvent::EndElement { name, .. } => {
-                if name.namespace_ref() == Some(XML_SOAP_NAMESPACE) && name.local_name == "Header" {
+                if name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE)
+                    && name.local_name == "Header"
+                {
                     break;
                 }
             },

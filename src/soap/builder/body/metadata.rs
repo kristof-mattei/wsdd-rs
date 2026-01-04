@@ -4,11 +4,7 @@ use xml::EventWriter;
 use xml::writer::XmlEvent;
 
 use crate::config::Config;
-use crate::constants::{
-    PUB_COMPUTER, WSDP_RELATIONSHIP_DIALECT, WSDP_RELATIONSHIP_TYPE_HOST, WSDP_THIS_DEVICE_DIALECT,
-    WSDP_THIS_MODEL_DIALECT, XML_PNPX_NAMESPACE, XML_PUB_NAMESPACE, XML_WSDP_NAMESPACE,
-    XML_WSX_NAMESPACE,
-};
+use crate::constants;
 use crate::soap::builder::WriteBody;
 use crate::soap::builder::body::add_endpoint_reference;
 
@@ -26,10 +22,10 @@ where
 {
     fn namespaces(&self) -> impl Iterator<Item = (impl Into<String>, impl Into<String>)> {
         [
-            ("pnpx", XML_PNPX_NAMESPACE),
-            ("pub", XML_PUB_NAMESPACE),
-            ("wsx", XML_WSX_NAMESPACE),
-            ("wsdp", XML_WSDP_NAMESPACE),
+            ("pnpx", constants::XML_PNPX_NAMESPACE),
+            ("pub", constants::XML_PUB_NAMESPACE),
+            ("wsx", constants::XML_WSX_NAMESPACE),
+            ("wsdp", constants::XML_WSDP_NAMESPACE),
         ]
         .into_iter()
     }
@@ -47,7 +43,7 @@ where
 
         writer.write(
             XmlEvent::start_element("wsx:MetadataSection")
-                .attr("Dialect", WSDP_THIS_DEVICE_DIALECT),
+                .attr("Dialect", constants::WSDP_THIS_DEVICE_DIALECT),
         )?;
         writer.write(XmlEvent::start_element("wsdp:ThisDevice"))?;
 
@@ -72,7 +68,8 @@ where
         writer.write(XmlEvent::end_element())?;
 
         writer.write(
-            XmlEvent::start_element("wsx:MetadataSection").attr("Dialect", WSDP_THIS_MODEL_DIALECT),
+            XmlEvent::start_element("wsx:MetadataSection")
+                .attr("Dialect", constants::WSDP_THIS_MODEL_DIALECT),
         )?;
         writer.write(XmlEvent::start_element("wsdp:ThisModel"))?;
 
@@ -96,24 +93,25 @@ where
 
         writer.write(
             XmlEvent::start_element("wsx:MetadataSection")
-                .attr("Dialect", WSDP_RELATIONSHIP_DIALECT),
+                .attr("Dialect", constants::WSDP_RELATIONSHIP_DIALECT),
         )?;
         writer.write(
-            XmlEvent::start_element("wsdp:Relationship").attr("Type", WSDP_RELATIONSHIP_TYPE_HOST),
+            XmlEvent::start_element("wsdp:Relationship")
+                .attr("Type", constants::WSDP_RELATIONSHIP_TYPE_HOST),
         )?;
 
         writer.write(XmlEvent::start_element("wsdp:Host"))?;
         add_endpoint_reference(writer, &config.uuid_as_device_uri)?;
 
         writer.write(XmlEvent::start_element("wsdp:Types"))?;
-        writer.write(XmlEvent::Characters(PUB_COMPUTER))?;
+        writer.write(XmlEvent::Characters(constants::PUB_COMPUTER))?;
         writer.write(XmlEvent::end_element())?;
 
         writer.write(XmlEvent::start_element("wsdp:ServiceId"))?;
         writer.write(XmlEvent::Characters(&config.uuid_as_device_uri))?;
         writer.write(XmlEvent::end_element())?;
 
-        writer.write(XmlEvent::start_element(PUB_COMPUTER))?;
+        writer.write(XmlEvent::start_element(constants::PUB_COMPUTER))?;
         writer.write(XmlEvent::Characters(&config.full_hostname))?;
         writer.write(XmlEvent::end_element())?;
 

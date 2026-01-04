@@ -4,7 +4,7 @@ use hashbrown::HashSet;
 use tracing::{Level, event};
 use xml::reader::XmlEvent;
 
-use crate::constants::{self, XML_WSD_NAMESPACE};
+use crate::constants;
 use crate::xml::{GenericParsingError, Wrapper, find_descendant, read_text};
 
 type ParsedProbeResult = Result<Probe, GenericParsingError>;
@@ -23,7 +23,7 @@ pub fn parse_probe<R>(reader: &mut Wrapper<R>) -> ParsedProbeResult
 where
     R: Read,
 {
-    find_descendant(reader, Some(XML_WSD_NAMESPACE), "Probe")?;
+    find_descendant(reader, Some(constants::XML_WSD_NAMESPACE), "Probe")?;
 
     let mut raw_types_and_namespaces = None;
 
@@ -35,7 +35,7 @@ where
             } => {
                 depth += 1;
 
-                if depth == 1 && name.namespace_ref() == Some(XML_WSD_NAMESPACE) {
+                if depth == 1 && name.namespace_ref() == Some(constants::XML_WSD_NAMESPACE) {
                     match &*name.local_name {
                         "Scopes" => {
                             let text = read_text(reader)?;

@@ -14,7 +14,7 @@ use xml::EventWriter;
 use xml::writer::XmlEvent;
 
 use crate::config::Config;
-use crate::constants::WSD_HTTP_PORT;
+use crate::constants;
 use crate::url_ip_addr::UrlIpAddr;
 use crate::wsd::device::DeviceUri;
 
@@ -67,7 +67,7 @@ fn add_xaddr<W: Write>(
     let address = format!(
         "http://{}:{}/{}",
         UrlIpAddr::from(ip_addr),
-        WSD_HTTP_PORT,
+        constants::WSD_HTTP_PORT,
         config.uuid
     );
 
