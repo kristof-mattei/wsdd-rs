@@ -404,8 +404,11 @@ impl MulticastHandler {
     pub async fn enable_wsd_host(&mut self) {
         self.wsd_host
             .get_or_init(|| async {
-                // TODO ERROR
-                let mc_wsd_port_rx = self.mc_wsd_port_rx.get_host_rx().await.unwrap();
+                let mc_wsd_port_rx = self
+                    .mc_wsd_port_rx
+                    .get_host_rx()
+                    .await
+                    .expect("Can't get host_rx twice");
 
                 let host = WSDHost::init(
                     self.cancellation_token.child_token(),
@@ -429,9 +432,16 @@ impl MulticastHandler {
     pub async fn enable_wsd_client(&mut self) {
         self.wsd_client
             .get_or_init(|| async {
-                // TODO error
-                let mc_wsd_port_rx = self.mc_wsd_port_rx.get_client_rx().await.unwrap();
-                let mc_local_port_rx = self.mc_local_port_rx.get_client_rx().await.unwrap();
+                let mc_wsd_port_rx = self
+                    .mc_wsd_port_rx
+                    .get_client_rx()
+                    .await
+                    .expect("Can't get client_rx twice");
+                let mc_local_port_rx = self
+                    .mc_local_port_rx
+                    .get_client_rx()
+                    .await
+                    .expect("Can't get client_rx twice");
 
                 let client = WSDClient::init(
                     self.cancellation_token.child_token(),
@@ -561,7 +571,7 @@ async fn socket_rx_forever(
                         })
                         .await
                     {
-                        event!(Level::ERROR, ?error, socket = ?socket.local_addr().unwrap(), "Failed to send data to channel");
+                        event!(Level::ERROR, ?error, socket = ?socket.local_addr(), "Failed to send data to channel");
                     }
                 }
             },
@@ -575,7 +585,7 @@ async fn socket_rx_forever(
                         })
                         .await
                     {
-                        event!(Level::ERROR, ?error, socket = ?socket.local_addr().unwrap(), "Failed to send data to channel");
+                        event!(Level::ERROR, ?error, socket = ?socket.local_addr(), "Failed to send data to channel");
                     }
                 }
             },
@@ -598,7 +608,15 @@ impl MessageReceiver {
             let listeners = Arc::clone(&listeners);
 
             spawn_with_name(
-                format!("socket rx ({})", socket.local_addr().unwrap()).as_str(),
+                format!(
+                    "socket rx ({})",
+                    socket
+                        .local_addr()
+                        .map(|addr| addr.to_string())
+                        .as_deref()
+                        .unwrap_or("Failed to get socket's local addr")
+                )
+                .as_str(),
                 socket_rx_forever(
                     cancellation_token.clone(),
                     network_address,
@@ -763,11 +781,13 @@ where
                         Level::INFO,
                         socket = %socket
                             .local_addr()
-                            .map(|l| l.to_string())
-                            .unwrap_or_default(),
+                            .map(|addr| addr.to_string())
+                            .as_deref()
+                            .unwrap_or("Failed to get socket's local addr"),
                         splitter = %T::NAME,
                         "All senders gone, stopping sender"
                     );
+
                     break;
                 };
 

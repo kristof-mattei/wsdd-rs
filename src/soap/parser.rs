@@ -322,8 +322,7 @@ pub fn deconstruct_http_message(raw: &[u8]) -> Result<(Header, WSDMessage), Mess
 
     let header = validate_action_body(raw, header, None, has_body)?;
 
-    // TODO !!! ERROR HANDLING
-    let body = decompose_body(&header, reader).unwrap();
+    let body = decompose_body(&header, reader)?;
 
     Ok((header, body))
 }
