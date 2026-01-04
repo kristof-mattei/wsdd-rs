@@ -1,13 +1,18 @@
+use std::io::Read;
+
 use tracing::{Level, event};
 use xml::reader::XmlEvent;
 
-use crate::constants::{XML_WSA_NAMESPACE, XML_WSD_NAMESPACE};
+use crate::constants;
 use crate::wsd::device::DeviceUri;
 use crate::xml::{GenericParsingError, Wrapper, read_text};
 
-pub fn extract_endpoint_reference_address(
-    reader: &mut Wrapper<'_>,
-) -> Result<Box<str>, GenericParsingError> {
+pub fn extract_endpoint_reference_address<R>(
+    reader: &mut Wrapper<R>,
+) -> Result<Box<str>, GenericParsingError>
+where
+    R: Read,
+{
     let mut address = None;
 
     let mut depth = 0_usize;
@@ -18,7 +23,7 @@ pub fn extract_endpoint_reference_address(
                 depth += 1;
 
                 if depth == 1
-                    && name.namespace_ref() == Some(XML_WSA_NAMESPACE)
+                    && name.namespace_ref() == Some(constants::XML_WSA_NAMESPACE)
                     && name.local_name == "Address"
                 {
                     address = read_text(reader)?;
@@ -63,9 +68,12 @@ pub fn extract_endpoint_reference_address(
     Ok(address.into_boxed_str())
 }
 
-pub fn extract_endpoint_metadata(
-    reader: &mut Wrapper<'_>,
-) -> Result<(DeviceUri, Option<Box<str>>), GenericParsingError> {
+pub fn extract_endpoint_metadata<R>(
+    reader: &mut Wrapper<R>,
+) -> Result<(DeviceUri, Option<Box<str>>), GenericParsingError>
+where
+    R: Read,
+{
     let mut endpoint = None;
     let mut xaddrs = None;
 
@@ -78,7 +86,7 @@ pub fn extract_endpoint_metadata(
 
                 if depth == 1 {
                     match (name.namespace_ref(), &*name.local_name) {
-                        (Some(XML_WSA_NAMESPACE), "EndpointReference") => {
+                        (Some(constants::XML_WSA_NAMESPACE), "EndpointReference") => {
                             if endpoint.is_some() || xaddrs.is_some() {
                                 return Err(GenericParsingError::InvalidElementOrder);
                             }
@@ -87,7 +95,7 @@ pub fn extract_endpoint_metadata(
                             // `extract_endpoint_reference_address` stops when it has consumed the closing tag
                             depth -= 1;
                         },
-                        (Some(XML_WSD_NAMESPACE), "XAddrs") => {
+                        (Some(constants::XML_WSD_NAMESPACE), "XAddrs") => {
                             if endpoint.is_none() || xaddrs.is_some() {
                                 return Err(GenericParsingError::InvalidElementOrder);
                             }

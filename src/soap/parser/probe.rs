@@ -1,27 +1,31 @@
-use thiserror::Error;
+use std::io::Read;
+
+use hashbrown::HashSet;
 use tracing::{Level, event};
 use xml::reader::XmlEvent;
 
-use crate::constants::{XML_PUB_NAMESPACE, XML_WSD_NAMESPACE, XML_WSDP_NAMESPACE};
-use crate::xml::{TextReadError, Wrapper, read_text};
+use crate::constants;
+use crate::xml::{GenericParsingError, Wrapper, find_descendant, read_text};
 
-type ParsedProbeResult = Result<bool, ProbeParsingError>;
+type ParsedProbeResult = Result<Probe, GenericParsingError>;
 
-#[derive(Error, Debug)]
-pub enum ProbeParsingError {
-    #[error("Error parsing XML")]
-    XmlError(#[from] xml::reader::Error),
-    #[error("Error reading text")]
-    TextReadError(#[from] TextReadError),
-    #[error("Missing ./Probe in body")]
-    MissingProbeElement,
+pub struct Probe {
+    pub types: HashSet<(Box<str>, Box<str>)>,
 }
 
-/// Expects a reader inside of the `Probe` tag
+/// This takes in a reader that is stopped at the body tag.
 /// This function makes NO claims about the position of the reader
 /// should the structure XML be invalid (e.g. missing `Address`)
-fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
-    let mut types_and_namespace = None;
+/// Returns
+/// * `Ok(Probe {})`: when we were able to successfully decode the XML as a `Probe`
+/// * `Err(_)`: Anything went wrong trying to parse the XML
+pub fn parse_probe<R>(reader: &mut Wrapper<R>) -> ParsedProbeResult
+where
+    R: Read,
+{
+    find_descendant(reader, Some(constants::XML_WSD_NAMESPACE), "Probe")?;
+
+    let mut raw_types_and_namespaces = None;
 
     let mut depth = 0_usize;
     loop {
@@ -31,7 +35,7 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
             } => {
                 depth += 1;
 
-                if depth == 1 && name.namespace_ref() == Some(XML_WSD_NAMESPACE) {
+                if depth == 1 && name.namespace_ref() == Some(constants::XML_WSD_NAMESPACE) {
                     match &*name.local_name {
                         "Scopes" => {
                             let text = read_text(reader)?;
@@ -48,7 +52,8 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
                             depth -= 1;
                         },
                         "Types" => {
-                            types_and_namespace = read_text(reader)?.map(|text| (text, namespace));
+                            raw_types_and_namespaces =
+                                read_text(reader)?.map(|text| (text, namespace));
 
                             break;
                         },
@@ -80,34 +85,45 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
         }
     }
 
-    let Some((types, namespace)) = types_and_namespace else {
+    let Some((raw_types, namespaces)) = raw_types_and_namespaces else {
         event!(Level::DEBUG, "Probe message lacks wsd:Types element.");
 
-        return Ok(true);
+        return Ok(Probe {
+            types: HashSet::new(),
+        });
     };
 
-    let requested_type_match = {
+    let mut types = HashSet::new();
+
+    for raw_type in raw_types.split_whitespace() {
+        // split
+        let Some((prefix, name)) = raw_type.split_once(':') else {
+            continue;
+        };
+
+        let Some(namespace) = namespaces.get(prefix) else {
+            continue;
+        };
+
+        types.insert((
+            namespace.to_owned().into_boxed_str(),
+            name.to_owned().into_boxed_str(),
+        ));
+    }
+
+    Ok(Probe { types })
+}
+
+impl Probe {
+    pub fn requested_type_match(&self) -> bool {
         let mut requested_type_match = false;
 
-        for r#type in types.split_whitespace() {
-            // split
-            let Some((prefix, name)) = r#type.split_once(':') else {
-                continue;
-            };
-
-            match name {
-                "Device" => {
-                    if namespace.get(prefix) == Some(XML_WSDP_NAMESPACE) {
-                        requested_type_match = true;
-                        break;
-                    }
-                },
-
-                "Computer" => {
-                    if namespace.get(prefix) == Some(XML_PUB_NAMESPACE) {
-                        requested_type_match = true;
-                        break;
-                    }
+        for &(ref namespace, ref name) in &self.types {
+            match (&**namespace, &**name) {
+                (constants::XML_WSDP_NAMESPACE, "Device")
+                | (constants::XML_PUB_NAMESPACE, "Computer") => {
+                    requested_type_match = true;
+                    break;
                 },
                 _ => {
                     continue;
@@ -116,64 +132,5 @@ fn parse_probe(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
         }
 
         requested_type_match
-    };
-
-    if !requested_type_match {
-        event!(
-            Level::DEBUG,
-            %types,
-            "client requests types we don't offer"
-        );
-
-        return Ok(false);
     }
-
-    Ok(true)
-}
-
-/// This takes in a reader that is stopped at the body tag.
-///
-/// Returns
-/// * `Ok(true)`: when we offer the `wsd:Types` requested
-/// * `Ok(true)`: when no `wsd:Types` have been provided and therefore no type-based filtering is applied
-/// * `Ok(false)`: when we do not offer the `wsd:Types` requested
-/// * `Err(_)`: Anything went wrong trying to parse the XML
-pub fn parse_probe_body(reader: &mut Wrapper<'_>) -> ParsedProbeResult {
-    let mut depth = 0_usize;
-    loop {
-        match reader.next()? {
-            XmlEvent::StartElement { name, .. } => {
-                depth += 1;
-
-                if depth == 1
-                    && name.namespace_ref() == Some(XML_WSD_NAMESPACE)
-                    && name.local_name == "Probe"
-                {
-                    return parse_probe(reader);
-                }
-            },
-            XmlEvent::EndElement { .. } => {
-                if depth == 0 {
-                    return Err(ProbeParsingError::MissingProbeElement);
-                }
-
-                depth -= 1;
-            },
-            XmlEvent::EndDocument => {
-                break;
-            },
-            XmlEvent::CData(_)
-            | XmlEvent::Characters(_)
-            | XmlEvent::Comment(_)
-            | XmlEvent::Doctype { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::StartDocument { .. }
-            | XmlEvent::Whitespace(_) => {
-                // these events are squelched by the parser config, or they're valid, but we ignore them
-                // or they just won't occur
-            },
-        }
-    }
-
-    Err(ProbeParsingError::MissingProbeElement)
 }

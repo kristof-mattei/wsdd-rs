@@ -1,179 +1,45 @@
-use thiserror::Error;
+use std::io::Read;
+
 use tracing::{Level, event};
-use uuid::Uuid;
 use uuid::fmt::Urn;
-use xml::reader::XmlEvent;
 
-use crate::constants::{XML_WSA_NAMESPACE, XML_WSD_NAMESPACE};
-use crate::xml::{TextReadError, Wrapper, read_text};
+use crate::constants;
+use crate::soap::parser::generic::extract_endpoint_reference_address;
+use crate::xml::{GenericParsingError, Wrapper, find_descendant};
 
-/// The `Ok` branch signifies whether the message is for us (`true`, urn matches), or not
-type ParsedResolveResult = Result<bool, ResolveParsingError>;
+type ParsedResolveResult = Result<Resolve, GenericParsingError>;
 
-#[derive(Error, Debug)]
-pub enum ResolveParsingError {
-    #[error("Error reading text")]
-    TextReadError(#[from] TextReadError),
-    #[error("Error parsing XML")]
-    XmlError(#[from] xml::reader::Error),
-    #[error("Missing ./Resolve in body")]
-    MissingResolveElement,
-    #[error("invalid resolve request: missing endpoint address")]
-    MissingEndpoint,
-    #[error("invalid resolve request: address is not a valid urn")]
-    EndpointNotAValidUrn,
-}
-
-/// Expects a reader inside of the `Resolve` tag
-/// This function makes NO claims about the position of the reader
-/// should the structure XML be invalid (e.g. missing `Address`)
-fn parse_resolve(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveResult {
-    let mut addr = None;
-
-    let mut depth = 0_usize;
-
-    loop {
-        match reader.next()? {
-            XmlEvent::StartElement { name, .. } => {
-                depth += 1;
-
-                if depth == 1
-                    && name.namespace_ref() == Some(XML_WSA_NAMESPACE)
-                    && name.local_name == "EndpointReference"
-                {
-                    let mut endpoint_reference_depth = 0_usize;
-
-                    loop {
-                        match reader.next()? {
-                            XmlEvent::StartElement { name, .. } => {
-                                endpoint_reference_depth += 1;
-
-                                if endpoint_reference_depth == 1
-                                    && name.namespace_ref() == Some(XML_WSA_NAMESPACE)
-                                    && name.local_name == "Address"
-                                {
-                                    addr = read_text(reader)?;
-
-                                    break;
-                                }
-                            },
-                            XmlEvent::EndElement { .. } => {
-                                if endpoint_reference_depth == 0 {
-                                    // we've exited the EndpointReference Block
-                                    break;
-                                }
-
-                                endpoint_reference_depth -= 1;
-                            },
-                            XmlEvent::CData(_)
-                            | XmlEvent::Characters(_)
-                            | XmlEvent::Comment(_)
-                            | XmlEvent::Doctype { .. }
-                            | XmlEvent::EndDocument
-                            | XmlEvent::ProcessingInstruction { .. }
-                            | XmlEvent::StartDocument { .. }
-                            | XmlEvent::Whitespace(_) => {
-                                // these events are squelched by the parser config, or they're valid, but we ignore them
-                                // or they just won't occur
-                            },
-                        }
-                    }
-                }
-            },
-            XmlEvent::EndElement { .. } => {
-                if depth == 0 {
-                    // we've exited the Resolve
-                    break;
-                }
-
-                depth -= 1;
-            },
-            XmlEvent::EndDocument => {
-                break;
-            },
-            XmlEvent::CData(_)
-            | XmlEvent::Characters(_)
-            | XmlEvent::Comment(_)
-            | XmlEvent::Doctype { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::StartDocument { .. }
-            | XmlEvent::Whitespace(_) => {
-                // these events are squelched by the parser config, or they're valid, but we ignore them
-                // or they just won't occur
-            },
-        }
-    }
-
-    let Some(addr) = addr else {
-        event!(
-            Level::DEBUG,
-            "invalid resolve request: missing endpoint address"
-        );
-
-        return Err(ResolveParsingError::MissingEndpoint);
-    };
-
-    let Ok(addr_urn) = addr.parse::<Urn>() else {
-        event!(
-            Level::DEBUG,
-            addr = %addr,
-            "invalid resolve request: address is not a valid urn"
-        );
-
-        return Err(ResolveParsingError::EndpointNotAValidUrn);
-    };
-
-    if addr_urn != target_uuid.urn() {
-        event!(
-            Level::DEBUG,
-            addr = %addr,
-            expected = %target_uuid.urn(),
-            "invalid resolve request: address does not match own one"
-        );
-
-        return Ok(false);
-    }
-
-    Ok(true)
+pub struct Resolve {
+    pub addr_urn: Urn,
 }
 
 /// This takes in a reader that is stopped at the body tag.
-pub fn parse_resolve_body(reader: &mut Wrapper<'_>, target_uuid: Uuid) -> ParsedResolveResult {
-    let mut depth = 0_usize;
-    loop {
-        match reader.next()? {
-            XmlEvent::StartElement { name, .. } => {
-                depth += 1;
+///
+/// This function makes NO claims about the position of the reader
+/// should the structure XML be invalid (e.g. missing `Address`)
+pub fn parse_resolve<R>(reader: &mut Wrapper<R>) -> ParsedResolveResult
+where
+    R: Read,
+{
+    find_descendant(reader, Some(constants::XML_WSD_NAMESPACE), "Resolve")?;
+    find_descendant(
+        reader,
+        Some(constants::XML_WSA_NAMESPACE),
+        "EndpointReference",
+    )?;
 
-                if depth == 1
-                    && name.namespace_ref() == Some(XML_WSD_NAMESPACE)
-                    && name.local_name == "Resolve"
-                {
-                    return parse_resolve(reader, target_uuid);
-                }
-            },
-            XmlEvent::EndElement { .. } => {
-                if depth == 0 {
-                    return Err(ResolveParsingError::MissingResolveElement);
-                }
+    let raw_addr = extract_endpoint_reference_address(reader)?;
 
-                depth -= 1;
-            },
-            XmlEvent::EndDocument => {
-                break;
-            },
-            XmlEvent::CData(_)
-            | XmlEvent::Characters(_)
-            | XmlEvent::Comment(_)
-            | XmlEvent::Doctype { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::StartDocument { .. }
-            | XmlEvent::Whitespace(_) => {
-                // these events are squelched by the parser config, or they're valid, but we ignore them
-                // or they just won't occur
-            },
-        }
+    match raw_addr.parse::<Urn>() {
+        Ok(addr_urn) => Ok(Resolve { addr_urn }),
+        Err(error) => {
+            event!(
+                Level::DEBUG,
+                addr = %raw_addr,
+                "invalid resolve request: address is not a valid urn"
+            );
+
+            Err(GenericParsingError::InvalidUrnUuid(error))
+        },
     }
-
-    Err(ResolveParsingError::MissingResolveElement)
 }

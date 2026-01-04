@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
@@ -13,8 +14,8 @@ use crate::constants;
 use crate::multicast_handler::{IncomingUnicastMessage, OutgoingUnicastMessage};
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::{self, Builder};
-use crate::soap::parser::{self, MessageHandler};
-use crate::soap::{MulticastMessage, UnicastMessage};
+use crate::soap::parser::MessageHandler;
+use crate::soap::{MulticastMessage, UnicastMessage, parser};
 use crate::utils::task::spawn_with_name;
 use crate::wsd::HANDLED_MESSAGES;
 use crate::xml::Wrapper;
@@ -143,32 +144,48 @@ async fn send_hello(
         .unwrap_or(Ok(()))
 }
 
-pub fn handle_probe(
+pub fn handle_probe<R>(
     config: &Config,
     messages_built: &AtomicU64,
     relates_to: Urn,
-    reader: &mut Wrapper<'_>,
-) -> Result<Option<UnicastMessage>, eyre::Report> {
-    if parser::probe::parse_probe_body(reader)? {
+    reader: &mut Wrapper<R>,
+) -> Result<Option<UnicastMessage>, eyre::Report>
+where
+    R: Read,
+{
+    let probe = parser::probe::parse_probe(reader)?;
+
+    if probe.types.is_empty() || probe.requested_type_match() {
         Ok(Some(builder::Builder::build_probe_matches(
             config,
             messages_built,
             relates_to,
         )?))
     } else {
+        event!(
+            Level::DEBUG,
+            ?probe.types,
+            "client requests types we don't offer"
+        );
+
         Ok(None)
     }
 }
 
-fn handle_resolve(
+fn handle_resolve<R>(
     address: IpAddr,
     config: &Config,
     messages_built: &AtomicU64,
     target_uuid: uuid::Uuid,
     relates_to: Urn,
-    reader: &mut Wrapper<'_>,
-) -> Result<Option<UnicastMessage>, eyre::Report> {
-    if parser::resolve::parse_resolve_body(reader, target_uuid)? {
+    reader: &mut Wrapper<R>,
+) -> Result<Option<UnicastMessage>, eyre::Report>
+where
+    R: Read,
+{
+    let resolve = parser::resolve::parse_resolve(reader)?;
+
+    if resolve.addr_urn == target_uuid.urn() {
         Ok(Some(builder::Builder::build_resolve_matches(
             config,
             address,
@@ -176,6 +193,13 @@ fn handle_resolve(
             relates_to,
         )?))
     } else {
+        event!(
+            Level::DEBUG,
+            addr_urn = %resolve.addr_urn,
+            expected = %target_uuid.urn(),
+            "invalid resolve request: address does not match own one"
+        );
+
         Ok(None)
     }
 }
@@ -217,7 +241,7 @@ async fn listen_forever(
                 },
             };
 
-        // handle based on action
+        // dispatch based on the SOAP Action header
         let response = match &*header.action {
             constants::WSD_PROBE => handle_probe(
                 &config,
@@ -398,7 +422,7 @@ mod tests {
         );
 
         // host receives client's probe
-        let (header, mut reader) = host_message_handler
+        let (header, mut body_reader) = host_message_handler
             .deconstruct_message(
                 resolve.as_bytes(),
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
@@ -413,7 +437,7 @@ mod tests {
             &host_messages_built,
             host_config.uuid,
             header.message_id,
-            &mut reader,
+            &mut body_reader,
         )
         .unwrap()
         .unwrap();
@@ -477,7 +501,7 @@ mod tests {
         let host_messages_built = Arc::new(AtomicU64::new(0));
 
         // host receives client's probe
-        let (header, mut reader) = host_message_handler
+        let (header, mut body_reader) = host_message_handler
             .deconstruct_message(
                 probe.as_bytes(),
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
@@ -490,7 +514,7 @@ mod tests {
             &host_config,
             &host_messages_built,
             header.message_id,
-            &mut reader,
+            &mut body_reader,
         )
         .unwrap()
         .unwrap();

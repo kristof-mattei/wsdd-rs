@@ -1,9 +1,14 @@
+pub mod bye;
 pub mod generic;
+pub mod get;
+pub mod hello;
 pub mod probe;
+pub mod probe_match;
 pub mod resolve;
+pub mod resolve_match;
 pub mod xaddrs;
 
-use std::io::BufReader;
+use std::io::Read;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -14,7 +19,7 @@ use uuid::fmt::Urn;
 use xml::ParserConfig;
 use xml::reader::XmlEvent;
 
-use crate::constants::{WSA_URI, XML_SOAP_NAMESPACE};
+use crate::constants;
 use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
 use crate::wsd::device::DeviceUri;
@@ -146,16 +151,19 @@ pub enum HeaderError {
     XmlError(#[from] xml::reader::Error),
 }
 
-type RawMessageResult<'r> = Result<(Header, bool, Wrapper<'r>), MessageHandlerError>;
+type RawMessageResult<R> = Result<(Header, bool, Wrapper<R>), MessageHandlerError>;
 
-pub fn deconstruct_raw(raw: &[u8]) -> RawMessageResult<'_> {
+pub fn deconstruct_raw<R>(raw: R) -> RawMessageResult<R>
+where
+    R: Read,
+{
     let mut reader = Wrapper::new(
         ParserConfig::new()
             .cdata_to_characters(true)
             .ignore_comments(true)
             .trim_whitespace(true)
             .whitespace_to_characters(true)
-            .create_reader(BufReader::new(raw)),
+            .create_reader(raw),
     );
 
     let mut header = None;
@@ -167,7 +175,7 @@ pub fn deconstruct_raw(raw: &[u8]) -> RawMessageResult<'_> {
         // in all other parsing functions we could theoretically mark them as `unreachable!()`
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
-                if name.namespace_ref() == Some(XML_SOAP_NAMESPACE) {
+                if name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE) {
                     if name.local_name == "Header" {
                         header = Some(parse_header(&mut reader)?);
                     } else if name.local_name == "Body" {
@@ -218,7 +226,7 @@ impl MessageHandler {
         &self,
         raw: &'r [u8],
         src: SocketAddr,
-    ) -> Result<(Header, Wrapper<'r>), MessageHandlerError> {
+    ) -> Result<(Header, Wrapper<&'r [u8]>), MessageHandlerError> {
         let (header, has_body, reader) = deconstruct_raw(raw)?;
 
         // check for duplicates
@@ -241,7 +249,7 @@ impl MessageHandler {
     pub fn deconstruct_http_message<'r>(
         &self,
         raw: &'r [u8],
-    ) -> Result<(Header, Wrapper<'r>), MessageHandlerError> {
+    ) -> Result<(Header, Wrapper<&'r [u8]>), MessageHandlerError> {
         let (header, has_body, reader) = deconstruct_raw(raw)?;
 
         let header = self.validate_action_body(raw, None, header, has_body)?;
@@ -321,7 +329,10 @@ impl MessageHandler {
     }
 }
 
-fn parse_header(reader: &mut Wrapper<'_>) -> ParsedHeaderResult {
+fn parse_header<R>(reader: &mut Wrapper<R>) -> ParsedHeaderResult
+where
+    R: Read,
+{
     // <wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
     let mut to = None;
     // <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches</wsa:Action>
@@ -333,17 +344,25 @@ fn parse_header(reader: &mut Wrapper<'_>) -> ParsedHeaderResult {
     // TODO?
     // <wsd:AppSequence InstanceId="1742000334" SequenceId="urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9" MessageNumber="1" />
 
+    let mut depth = 0_usize;
+
     loop {
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
-                if name.namespace_ref() == Some(WSA_URI) {
+                depth += 1;
+
+                if depth == 1 && name.namespace_ref() == Some(constants::WSA_URI) {
                     // header items can be in any order, as per SOAP 1.1 and 1.2
                     match &*name.local_name {
                         "To" => {
                             to = read_text(reader)?.map(|to| DeviceUri::new(to.into_boxed_str()));
+
+                            depth -= 1;
                         },
                         "Action" => {
                             action = read_text(reader)?.map(String::into_boxed_str);
+
+                            depth -= 1;
                         },
                         "MessageID" => {
                             let m_id = read_text(reader)?
@@ -353,6 +372,8 @@ fn parse_header(reader: &mut Wrapper<'_>) -> ParsedHeaderResult {
                                 .transpose()?;
 
                             message_id = m_id;
+
+                            depth -= 1;
                         },
                         "RelatesTo" => {
                             let r_to = read_text(reader)?
@@ -362,6 +383,8 @@ fn parse_header(reader: &mut Wrapper<'_>) -> ParsedHeaderResult {
                                 .transpose()?;
 
                             relates_to = r_to;
+
+                            depth -= 1;
                         },
                         _ => {
                             // Not a match, continue
@@ -370,9 +393,14 @@ fn parse_header(reader: &mut Wrapper<'_>) -> ParsedHeaderResult {
                 }
             },
             XmlEvent::EndElement { name, .. } => {
-                if name.namespace_ref() == Some(XML_SOAP_NAMESPACE) && name.local_name == "Header" {
+                if depth == 0
+                    && name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE)
+                    && name.local_name == "Header"
+                {
                     break;
                 }
+
+                depth -= 1;
             },
             XmlEvent::CData(_)
             | XmlEvent::Characters(_)

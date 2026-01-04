@@ -1,4 +1,5 @@
 use std::cmp::Reverse;
+use std::io::Read;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -14,22 +15,22 @@ use url::Host;
 use uuid::fmt::Urn;
 
 use crate::config::Config;
-use crate::constants::{
-    APP_MAX_DELAY, MIME_TYPE_SOAP_XML, PROBE_TIMEOUT_MILLISECONDS, WSD_BYE, WSD_HELLO,
-    WSD_PROBE_MATCH, WSD_RESOLVE_MATCH, XML_WSD_NAMESPACE,
-};
 use crate::multicast_handler::IncomingUnicastMessage;
 use crate::network_address::NetworkAddress;
-use crate::soap::MulticastMessage;
 use crate::soap::builder::Builder;
 use crate::soap::parser::MessageHandler;
-use crate::soap::parser::generic::extract_endpoint_metadata;
+use crate::soap::parser::bye::Bye;
+use crate::soap::parser::hello::Hello;
+use crate::soap::parser::probe_match::ProbeMatch;
+use crate::soap::parser::resolve_match::ResolveMatch;
 use crate::soap::parser::xaddrs::XAddr;
+use crate::soap::{MulticastMessage, parser};
 use crate::utils::SliceDisplay;
 use crate::utils::task::spawn_with_name;
 use crate::wsd::HANDLED_MESSAGES;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
-use crate::xml::{Wrapper, find_descendant, find_descendants};
+use crate::xml::Wrapper;
+use crate::{constants, soap};
 
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
@@ -116,7 +117,7 @@ impl WSDClient {
             tokio::select! {
                 biased;
                 () = cancellation_token.cancelled() => { return; },
-                () = tokio::time::sleep(Duration::from_millis(rand::random_range(0..=APP_MAX_DELAY))) => { }
+                () = tokio::time::sleep(Duration::from_millis(rand::random_range(0..=constants::APP_MAX_DELAY))) => { }
             }
 
             if let Err(error) =
@@ -168,7 +169,8 @@ async fn send_probe(
 }
 
 async fn remove_outdated_probes(probes: &Arc<RwLock<HashMap<Urn, Duration>>>) {
-    const PROBE_TIMEOUT: Duration = const { Duration::from_millis(PROBE_TIMEOUT_MILLISECONDS) };
+    const PROBE_TIMEOUT: Duration =
+        const { Duration::from_millis(constants::PROBE_TIMEOUT_MILLISECONDS) };
 
     let now = now();
 
@@ -213,10 +215,10 @@ fn parse_xaddrs(bound_to: IpNet, raw_xaddrs: &str) -> Vec<XAddr> {
         .split_whitespace()
         .filter_map(|raw_xaddr| match XAddr::try_from(raw_xaddr) {
             Ok(xaddr) => Some(xaddr),
-            Err(err) => {
+            Err(error) => {
                 event!(
                     Level::INFO,
-                    ?err,
+                    ?error,
                     %raw_xaddr,
                     "Message sent with invalid/non-http/https xaddr or no host, ignoring"
                 );
@@ -248,17 +250,21 @@ fn parse_xaddrs(bound_to: IpNet, raw_xaddrs: &str) -> Vec<XAddr> {
     xaddrs
 }
 
-async fn handle_hello(
+async fn handle_hello<R>(
     client: &reqwest::Client,
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
     multicast: &Sender<MulticastMessage>,
-    reader: &mut Wrapper<'_>,
-) -> Result<(), eyre::Report> {
-    find_descendant(reader, Some(XML_WSD_NAMESPACE), "Hello")?;
-
-    let (endpoint, raw_xaddrs) = extract_endpoint_metadata(reader)?;
+    reader: &mut Wrapper<R>,
+) -> Result<(), eyre::Report>
+where
+    R: Read,
+{
+    let Hello {
+        raw_xaddrs,
+        endpoint,
+    } = soap::parser::hello::parse_hello(reader)?;
 
     let Some(raw_xaddrs) = raw_xaddrs else {
         event!(Level::INFO, "Hello without XAddrs, sending resolve");
@@ -285,13 +291,14 @@ async fn handle_hello(
     Ok(())
 }
 
-async fn handle_bye(
+async fn handle_bye<R>(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
-    reader: &mut Wrapper<'_>,
-) -> Result<(), eyre::Report> {
-    find_descendant(reader, Some(XML_WSD_NAMESPACE), "Bye")?;
-
-    let (endpoint, _) = extract_endpoint_metadata(reader)?;
+    reader: &mut Wrapper<R>,
+) -> Result<(), eyre::Report>
+where
+    R: Read,
+{
+    let Bye { endpoint } = soap::parser::bye::parse_bye(reader)?;
 
     let mut guard = devices.write().await;
 
@@ -307,7 +314,7 @@ async fn handle_bye(
 }
 
 #[expect(clippy::too_many_arguments, reason = "WIP")]
-async fn handle_probe_match(
+async fn handle_probe_match<R>(
     client: &reqwest::Client,
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
@@ -315,28 +322,26 @@ async fn handle_probe_match(
     relates_to: Option<Urn>,
     probes: Arc<RwLock<HashMap<Urn, Duration>>>,
     mc_local_port_tx: &Sender<MulticastMessage>,
-    reader: &mut Wrapper<'_>,
-) -> Result<(), eyre::Report> {
+    reader: &mut Wrapper<R>,
+) -> Result<(), eyre::Report>
+where
+    R: Read,
+{
+    let ProbeMatch {
+        endpoint,
+        raw_xaddrs,
+    } = soap::parser::probe_match::parse_probe_match(reader)?;
+
     let Some(relates_to) = relates_to else {
         event!(Level::DEBUG, "missing `RelatesTo`");
         return Ok(());
     };
-
-    find_descendants(
-        reader,
-        &[
-            (Some(XML_WSD_NAMESPACE), "ProbeMatches"),
-            (Some(XML_WSD_NAMESPACE), "ProbeMatch"),
-        ],
-    )?;
 
     // do not handle to probematches issued not sent by ourself
     if probes.read().await.get(&relates_to).is_none() {
         event!(Level::DEBUG, %relates_to, "unknown probe");
         return Ok(());
     }
-
-    let (endpoint, raw_xaddrs) = extract_endpoint_metadata(reader)?;
 
     //  If no XAddrs are included in the ProbeMatches message, then the client may send a
     //  Resolve message by UDP multicast to port 3702.
@@ -365,22 +370,20 @@ async fn handle_probe_match(
     Ok(())
 }
 
-async fn handle_resolve_match(
+async fn handle_resolve_match<R>(
     client: &reqwest::Client,
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
-    reader: &mut Wrapper<'_>,
-) -> Result<(), eyre::Report> {
-    find_descendants(
-        reader,
-        &[
-            (Some(XML_WSD_NAMESPACE), "ResolveMatches"),
-            (Some(XML_WSD_NAMESPACE), "ResolveMatch"),
-        ],
-    )?;
-
-    let (endpoint, raw_xaddrs) = extract_endpoint_metadata(reader)?;
+    reader: &mut Wrapper<R>,
+) -> Result<(), eyre::Report>
+where
+    R: Read,
+{
+    let ResolveMatch {
+        raw_xaddrs,
+        endpoint,
+    } = parser::resolve_match::parse_resolve_match(reader)?;
 
     let Some(raw_xaddrs) = raw_xaddrs else {
         event!(Level::DEBUG, "ResolveMatch without xaddr, nothing to do");
@@ -416,7 +419,7 @@ async fn perform_metadata_exchange(
     for xaddr in xaddrs {
         let builder = client
             .post(xaddr.url().clone())
-            .header("Content-Type", MIME_TYPE_SOAP_XML)
+            .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
             .header("User-Agent", "wsdd-rs");
 
         let response = builder
@@ -531,9 +534,9 @@ async fn listen_forever(
                 },
             };
 
-        // handle based on action
-        if let Err(error) = match &*header.action {
-            WSD_HELLO => {
+        // dispatch based on the SOAP Action header
+        let response = match &*header.action {
+            constants::WSD_HELLO => {
                 handle_hello(
                     &client,
                     &config,
@@ -544,8 +547,8 @@ async fn listen_forever(
                 )
                 .await
             },
-            WSD_BYE => handle_bye(Arc::clone(&devices), &mut body_reader).await,
-            WSD_PROBE_MATCH => {
+            constants::WSD_BYE => handle_bye(Arc::clone(&devices), &mut body_reader).await,
+            constants::WSD_PROBE_MATCH => {
                 handle_probe_match(
                     &client,
                     &config,
@@ -558,7 +561,7 @@ async fn listen_forever(
                 )
                 .await
             },
-            WSD_RESOLVE_MATCH => {
+            constants::WSD_RESOLVE_MATCH => {
                 handle_resolve_match(
                     &client,
                     &config,
@@ -578,7 +581,9 @@ async fn listen_forever(
 
                 continue;
             },
-        } {
+        };
+
+        if let Err(error) = response {
             event!(
                 Level::ERROR,
                 action = &*header.action,
@@ -1200,7 +1205,7 @@ mod tests {
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let (header, mut reader) = message_handler
+        let (header, mut body_reader) = message_handler
             .deconstruct_message(
                 probe_matches.as_bytes(),
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
@@ -1224,7 +1229,7 @@ mod tests {
             header.relates_to,
             probes,
             &multicast_tx,
-            &mut reader,
+            &mut body_reader,
         )
         .await
         .unwrap();
@@ -1306,7 +1311,7 @@ mod tests {
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let (header, mut reader) = message_handler
+        let (header, mut body_reader) = message_handler
             .deconstruct_message(
                 probe_matches.as_bytes(),
                 SocketAddr::new(server.socket_address().ip(), 5000),
@@ -1330,7 +1335,7 @@ mod tests {
             header.relates_to,
             probes,
             &multicast_tx,
-            &mut reader,
+            &mut body_reader,
         )
         .await
         .unwrap();

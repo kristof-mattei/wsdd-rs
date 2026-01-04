@@ -4,7 +4,7 @@ use xml::EventWriter;
 use xml::writer::XmlEvent;
 
 use crate::config::Config;
-use crate::constants::{WSDP_TYPE_DEVICE, XML_WSD_NAMESPACE, XML_WSDP_NAMESPACE};
+use crate::constants;
 use crate::soap::builder::WriteBody;
 use crate::soap::builder::body::add_types;
 
@@ -22,7 +22,11 @@ where
     W: Write,
 {
     fn namespaces(&self) -> impl Iterator<Item = (impl Into<String>, impl Into<String>)> {
-        [("wsd", XML_WSD_NAMESPACE), ("wsdp", XML_WSDP_NAMESPACE)].into_iter()
+        [
+            ("wsd", constants::XML_WSD_NAMESPACE),
+            ("wsdp", constants::XML_WSDP_NAMESPACE),
+        ]
+        .into_iter()
     }
 
     fn write_body(
@@ -32,7 +36,7 @@ where
     ) -> Result<(), xml::writer::Error> {
         writer.write(XmlEvent::start_element("wsd:Probe"))?;
 
-        add_types(writer, WSDP_TYPE_DEVICE)?;
+        add_types(writer, constants::WSDP_TYPE_DEVICE)?;
 
         writer.write(XmlEvent::end_element())?;
 

@@ -39,6 +39,7 @@ pub struct Config {
     pub metadata_timeout: Duration,
     pub source_port: u16,
     pub wsd_instance_id: Box<str>,
+    pub sequence_id: Box<str>,
 }
 
 #[derive(Debug, Clone)]

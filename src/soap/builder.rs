@@ -12,10 +12,7 @@ use xml::EventWriter;
 use xml::writer::XmlEvent;
 
 use crate::config::Config;
-use crate::constants::{
-    WSA_ANON, WSA_DISCOVERY, WSD_BYE, WSD_GET, WSD_GET_RESPONSE, WSD_HELLO, WSD_PROBE,
-    WSD_PROBE_MATCH, WSD_RESOLVE, WSD_RESOLVE_MATCH, XML_SOAP_NAMESPACE, XML_WSA_NAMESPACE,
-};
+use crate::constants;
 use crate::soap::builder::body::WriteBody;
 use crate::soap::builder::body::bye::Bye;
 use crate::soap::builder::body::empty_body::EmptyBody;
@@ -44,25 +41,6 @@ pub struct Builder<'config> {
     )
 )]
 fn generate_message_id() -> Urn {
-    #[cfg(test)]
-    {
-        Uuid::nil().urn()
-    }
-
-    #[cfg(not(test))]
-    {
-        Uuid::now_v7().urn()
-    }
-}
-
-#[cfg_attr(
-    not(test),
-    expect(
-        clippy::cfg_not_test,
-        reason = "Adding in the ability to control UUID generation seems excessive"
-    )
-)]
-fn sequence_id() -> Urn {
     #[cfg(test)]
     {
         Uuid::nil().urn()
@@ -143,8 +121,8 @@ impl<'config> Builder<'config> {
         })?;
 
         let mut start_element = XmlEvent::start_element("soap:Envelope")
-            .ns("soap", XML_SOAP_NAMESPACE)
-            .ns("wsa", XML_WSA_NAMESPACE);
+            .ns("soap", constants::XML_SOAP_NAMESPACE)
+            .ns("wsa", constants::XML_WSA_NAMESPACE);
 
         for (prefix, namespace) in extra_headers.namespaces() {
             start_element = start_element.ns(prefix, namespace);
@@ -206,11 +184,12 @@ impl<'config> Builder<'config> {
         let mut builder = Builder::new(config);
 
         let (message, _): (Vec<_>, _) = builder.build_message(
-            WSA_DISCOVERY,
-            WSD_HELLO,
+            constants::WSA_DISCOVERY,
+            constants::WSD_HELLO,
             None,
             AppSequence::new(
                 &config.wsd_instance_id,
+                &config.sequence_id,
                 messages_built.fetch_add(1, Ordering::Relaxed),
             ),
             Hello::new(xaddr),
@@ -227,11 +206,12 @@ impl<'config> Builder<'config> {
         let mut builder = Builder::new(config);
 
         let (message, _): (Vec<_>, _) = builder.build_message(
-            WSA_DISCOVERY,
-            WSD_BYE,
+            constants::WSA_DISCOVERY,
+            constants::WSD_BYE,
             None,
             AppSequence::new(
                 &config.wsd_instance_id,
+                &config.sequence_id,
                 messages_built.fetch_add(1, Ordering::Relaxed),
             ),
             Bye::new(),
@@ -245,8 +225,8 @@ impl<'config> Builder<'config> {
         let mut builder = Builder::new(config);
 
         let (message, urn): (Vec<_>, _) = builder.build_message(
-            WSA_DISCOVERY,
-            WSD_PROBE,
+            constants::WSA_DISCOVERY,
+            constants::WSD_PROBE,
             None,
             NoExtraHeaders::new(),
             Probe::new(),
@@ -263,8 +243,8 @@ impl<'config> Builder<'config> {
         let mut builder = Builder::new(config);
 
         let (message, urn): (Vec<_>, _) = builder.build_message(
-            WSA_DISCOVERY,
-            WSD_RESOLVE,
+            constants::WSA_DISCOVERY,
+            constants::WSD_RESOLVE,
             None,
             NoExtraHeaders::new(),
             Resolve::new(endpoint),
@@ -282,11 +262,12 @@ impl<'config> Builder<'config> {
         let mut builder = Builder::new(config);
 
         let (message, _): (Vec<_>, _) = builder.build_message(
-            WSA_ANON,
-            WSD_RESOLVE_MATCH,
+            constants::WSA_ANON,
+            constants::WSD_RESOLVE_MATCH,
             Some(relates_to),
             AppSequence::new(
                 &config.wsd_instance_id,
+                &config.sequence_id,
                 messages_built.fetch_add(1, Ordering::Relaxed),
             ),
             ResolveMatches::new(address),
@@ -303,11 +284,12 @@ impl<'config> Builder<'config> {
         let mut builder = Builder::new(config);
 
         let (message, _): (Vec<_>, _) = builder.build_message(
-            WSA_ANON,
-            WSD_PROBE_MATCH,
+            constants::WSA_ANON,
+            constants::WSD_PROBE_MATCH,
             Some(relates_to),
             AppSequence::new(
                 &config.wsd_instance_id,
+                &config.sequence_id,
                 messages_built.fetch_add(1, Ordering::Relaxed),
             ),
             ProbeMatches::new(),
@@ -322,7 +304,7 @@ impl<'config> Builder<'config> {
         builder
             .build_message(
                 endpoint,
-                WSD_GET,
+                constants::WSD_GET,
                 None,
                 ReplyToFrom::new(&config.uuid_as_device_uri),
                 EmptyBody::new(),
@@ -337,8 +319,8 @@ impl<'config> Builder<'config> {
         let mut builder = Builder::new(config);
 
         let (message, _): (Vec<_>, _) = builder.build_message(
-            WSA_ANON,
-            WSD_GET_RESPONSE,
+            constants::WSA_ANON,
+            constants::WSD_GET_RESPONSE,
             Some(relates_to),
             NoExtraHeaders::new(),
             MetaData::new(),
