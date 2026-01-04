@@ -93,6 +93,9 @@ tracing-test = "=0.2.5"
 [package.metadata.spellcheck]
 config = "spellcheck.toml"
 
+[package.metadata.spellcheck]
+config = "spellcheck.toml"
+
 [lints.clippy]
 # don't stop from compiling / running
 all = "warn"
