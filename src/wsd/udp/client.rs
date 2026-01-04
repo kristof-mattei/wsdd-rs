@@ -30,7 +30,7 @@ use crate::utils::SliceDisplay;
 use crate::utils::task::spawn_with_name;
 use crate::wsd::HANDLED_MESSAGES;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
-use crate::xml::{Wrapper, find_descendant, find_descendants};
+use crate::xml::{Wrapper, find_descendant};
 
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
@@ -329,13 +329,8 @@ where
         return Ok(());
     };
 
-    find_descendants(
-        reader,
-        &[
-            (Some(XML_WSD_NAMESPACE), "ProbeMatches"),
-            (Some(XML_WSD_NAMESPACE), "ProbeMatch"),
-        ],
-    )?;
+    find_descendant(reader, Some(XML_WSD_NAMESPACE), "ProbeMatches")?;
+    find_descendant(reader, Some(XML_WSD_NAMESPACE), "ProbeMatch")?;
 
     // do not handle to probematches issued not sent by ourself
     if probes.read().await.get(&relates_to).is_none() {
@@ -382,13 +377,8 @@ async fn handle_resolve_match<R>(
 where
     R: Read,
 {
-    find_descendants(
-        reader,
-        &[
-            (Some(XML_WSD_NAMESPACE), "ResolveMatches"),
-            (Some(XML_WSD_NAMESPACE), "ResolveMatch"),
-        ],
-    )?;
+    find_descendant(reader, Some(XML_WSD_NAMESPACE), "ResolveMatches")?;
+    find_descendant(reader, Some(XML_WSD_NAMESPACE), "ResolveMatch")?;
 
     let (endpoint, raw_xaddrs) = extract_endpoint_metadata(reader)?;
 
