@@ -22,10 +22,14 @@ use crate::config::Config;
 use crate::constants;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
-use crate::soap::{MessageType, MulticastMessage, UnicastMessage};
+use crate::soap::parser::{Header, MessageHandler};
+use crate::soap::{
+    ClientMessage, HostMessage, MessageType, MulticastMessage, UnicastMessage, WSDMessage,
+};
 use crate::udp_address::UdpAddress;
 use crate::url_ip_addr::UrlIpAddr;
 use crate::utils::task::spawn_with_name;
+use crate::wsd::HANDLED_MESSAGES;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 use crate::wsd::http::http_server::WSDHttpServer;
 use crate::wsd::udp::client::WSDClient;
@@ -136,8 +140,11 @@ impl MulticastHandler {
 
         let mc_wsd_port_socket = Arc::new(UdpSocket::from_std(mc_wsd_port_socket.into())?);
 
-        let mc_wsd_port_rx =
-            MessageReceiver::new(cancellation_token.clone(), Arc::clone(&mc_wsd_port_socket));
+        let mc_wsd_port_rx = MessageReceiver::new(
+            cancellation_token.clone(),
+            network_address.clone(),
+            Arc::clone(&mc_wsd_port_socket),
+        );
 
         let mc_local_port_socket = Arc::new(UdpSocket::from_std(mc_local_port_socket.into())?);
 
@@ -151,6 +158,7 @@ impl MulticastHandler {
 
         let mc_local_port_rx = MessageReceiver::new(
             cancellation_token.clone(),
+            network_address.clone(),
             Arc::clone(&mc_local_port_socket),
         );
 
@@ -396,12 +404,18 @@ impl MulticastHandler {
     pub async fn enable_wsd_host(&mut self) {
         self.wsd_host
             .get_or_init(|| async {
+                let mc_wsd_port_rx = self
+                    .mc_wsd_port_rx
+                    .get_host_rx()
+                    .await
+                    .expect("Can't get host_rx twice");
+
                 let host = WSDHost::init(
                     self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
                     Arc::clone(&self.messages_built),
                     self.network_address.clone(),
-                    self.mc_wsd_port_rx.get_rx().await,
+                    mc_wsd_port_rx,
                     self.mc_local_port_tx.get_tx(),
                     self.uc_wsd_port_tx.get_tx(),
                 );
@@ -418,13 +432,24 @@ impl MulticastHandler {
     pub async fn enable_wsd_client(&mut self) {
         self.wsd_client
             .get_or_init(|| async {
+                let mc_wsd_port_rx = self
+                    .mc_wsd_port_rx
+                    .get_client_rx()
+                    .await
+                    .expect("Can't get client_rx twice");
+                let mc_local_port_rx = self
+                    .mc_local_port_rx
+                    .get_client_rx()
+                    .await
+                    .expect("Can't get client_rx twice");
+
                 let client = WSDClient::init(
                     self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
                     Arc::clone(&self.devices),
                     self.network_address.clone(),
-                    self.mc_wsd_port_rx.get_rx().await,
-                    self.mc_local_port_rx.get_rx().await,
+                    mc_wsd_port_rx,
+                    mc_local_port_rx,
                     self.mc_local_port_tx.get_tx(),
                 );
 
@@ -464,21 +489,25 @@ impl MulticastHandler {
     }
 }
 
-type Receivers = Arc<RwLock<Vec<Sender<IncomingUnicastMessage>>>>;
+struct ClientHostListener {
+    host_tx: Option<Sender<IncomingHostMessage>>,
+    client_tx: Option<Sender<IncomingClientMessage>>,
+}
 
 struct MessageReceiver {
     cancellation_token: CancellationToken,
     handle: JoinHandle<()>,
-    listeners: Receivers,
+    listeners: Arc<RwLock<ClientHostListener>>,
 }
-
-type Channels = Arc<RwLock<Vec<Sender<IncomingUnicastMessage>>>>;
 
 async fn socket_rx_forever(
     cancellation_token: CancellationToken,
-    channels: Channels,
+    network_address: NetworkAddress,
+    listeners: Arc<RwLock<ClientHostListener>>,
     socket: Arc<UdpSocket>,
 ) {
+    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_address);
+
     loop {
         let mut buffer = vec![MaybeUninit::<u8>::uninit(); constants::WSD_MAX_LEN];
 
@@ -517,37 +546,85 @@ async fn socket_rx_forever(
         // `recv_buf` tells us that `bytes_read` were read from the socket into our `buffer`, so they're initialized
         buffer.truncate(bytes_read);
 
-        let buffer = Arc::<[_]>::from(buffer);
-
         // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
-        let buffer = unsafe { buffer.assume_init() };
+        let buffer = unsafe { &*(&raw const *buffer as *const [u8]) };
 
-        let lock = channels.read().await;
+        let (header, message) = match message_handler.deconstruct_message(buffer, from).await {
+            Ok(decoded) => decoded,
+            Err(error) => {
+                error.log(buffer);
 
-        for channel in &*lock {
-            if let Err(error) = channel
-                .send(IncomingUnicastMessage {
-                    from,
-                    buffer: Arc::clone(&buffer),
-                })
-                .await
-            {
-                event!(Level::ERROR, ?error, socket = ?socket.local_addr().unwrap(), "Failed to send data to channel");
-            }
+                continue;
+            },
+        };
+
+        let lock = listeners.read().await;
+
+        match message {
+            WSDMessage::ClientMessage(message) => {
+                if let &Some(ref client_tx) = &lock.client_tx {
+                    if let Err(error) = client_tx
+                        .send(IncomingClientMessage {
+                            from,
+                            header,
+                            message,
+                        })
+                        .await
+                    {
+                        event!(Level::ERROR, ?error, socket = ?socket.local_addr(), "Failed to send data to channel");
+                    }
+                }
+            },
+            WSDMessage::HostMessage(message) => {
+                if let &Some(ref host_tx) = &lock.host_tx {
+                    if let Err(error) = host_tx
+                        .send(IncomingHostMessage {
+                            from,
+                            header,
+                            message,
+                        })
+                        .await
+                    {
+                        event!(Level::ERROR, ?error, socket = ?socket.local_addr(), "Failed to send data to channel");
+                    }
+                }
+            },
         }
     }
 }
 
 impl MessageReceiver {
-    fn new(cancellation_token: CancellationToken, socket: Arc<UdpSocket>) -> Self {
-        let listeners: Receivers = Receivers::new(RwLock::const_new(vec![]));
+    fn new(
+        cancellation_token: CancellationToken,
+        network_address: NetworkAddress,
+        socket: Arc<UdpSocket>,
+    ) -> Self {
+        let listeners = Arc::new(RwLock::const_new(ClientHostListener {
+            host_tx: None,
+            client_tx: None,
+        }));
 
-        let channels = Arc::clone(&listeners);
+        let handle = {
+            let listeners = Arc::clone(&listeners);
 
-        let handle = spawn_with_name(
-            format!("socket rx ({})", socket.local_addr().unwrap()).as_str(),
-            socket_rx_forever(cancellation_token.clone(), channels, socket),
-        );
+            spawn_with_name(
+                format!(
+                    "socket rx ({})",
+                    socket
+                        .local_addr()
+                        .map(|addr| addr.to_string())
+                        .as_deref()
+                        .unwrap_or("Failed to get socket's local addr")
+                )
+                .as_str(),
+                socket_rx_forever(
+                    cancellation_token.clone(),
+                    network_address,
+                    listeners,
+                    socket,
+                ),
+            )
+        };
 
         Self {
             cancellation_token,
@@ -556,12 +633,32 @@ impl MessageReceiver {
         }
     }
 
-    async fn get_rx(&mut self) -> Receiver<IncomingUnicastMessage> {
+    async fn get_host_rx(&mut self) -> Result<Receiver<IncomingHostMessage>, ()> {
+        let mut writer = self.listeners.write().await;
+
+        if writer.host_tx.is_some() {
+            return Err(());
+        }
+
         let (tx, rx) = tokio::sync::mpsc::channel(10);
 
-        self.listeners.write().await.push(tx);
+        writer.host_tx = Some(tx);
 
-        rx
+        Ok(rx)
+    }
+
+    async fn get_client_rx(&mut self) -> Result<Receiver<IncomingClientMessage>, ()> {
+        let mut writer = self.listeners.write().await;
+
+        if writer.client_tx.is_some() {
+            return Err(());
+        }
+
+        let (tx, rx) = tokio::sync::mpsc::channel(10);
+
+        writer.client_tx = Some(tx);
+
+        Ok(rx)
     }
 
     async fn teardown(self) {
@@ -571,14 +668,20 @@ impl MessageReceiver {
     }
 }
 
-pub struct IncomingUnicastMessage {
+pub struct IncomingHostMessage {
     pub from: SocketAddr,
-    pub buffer: Arc<[u8]>,
+    pub header: Header,
+    pub message: HostMessage,
+}
+pub struct IncomingClientMessage {
+    pub from: SocketAddr,
+    pub header: Header,
+    pub message: ClientMessage,
 }
 
-pub struct OutgoingUnicastMessage {
+pub struct OutgoingMessage {
     pub to: SocketAddr,
-    pub buffer: UnicastMessage,
+    pub message: UnicastMessage,
 }
 
 trait MessageSplitter {
@@ -614,10 +717,10 @@ impl MessageSplitter for UnicastMessageSplitter {
     const REPEAT: usize = constants::UNICAST_UDP_REPEAT;
 
     type Message = UnicastMessage;
-    type ChannelMessage = OutgoingUnicastMessage;
+    type ChannelMessage = OutgoingMessage;
 
     fn split_message(&self, message: Self::ChannelMessage) -> (SocketAddr, Self::Message) {
-        (message.to, message.buffer)
+        (message.to, message.message)
     }
 }
 
@@ -678,11 +781,13 @@ where
                         Level::INFO,
                         socket = %socket
                             .local_addr()
-                            .map(|l| l.to_string())
-                            .unwrap_or_default(),
+                            .map(|addr| addr.to_string())
+                            .as_deref()
+                            .unwrap_or("Failed to get socket's local addr"),
                         splitter = %T::NAME,
                         "All senders gone, stopping sender"
                     );
+
                     break;
                 };
 

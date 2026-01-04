@@ -1,4 +1,3 @@
-use std::io::Read;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
@@ -10,15 +9,13 @@ use tracing::{Level, event};
 use uuid::fmt::Urn;
 
 use crate::config::Config;
-use crate::constants;
-use crate::multicast_handler::{IncomingUnicastMessage, OutgoingUnicastMessage};
+use crate::multicast_handler::{IncomingHostMessage, OutgoingMessage};
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::{self, Builder};
-use crate::soap::parser::MessageHandler;
-use crate::soap::{MulticastMessage, UnicastMessage, parser};
+use crate::soap::parser::probe::Probe;
+use crate::soap::parser::resolve::Resolve;
+use crate::soap::{HostMessage, MulticastMessage, UnicastMessage};
 use crate::utils::task::spawn_with_name;
-use crate::wsd::HANDLED_MESSAGES;
-use crate::xml::Wrapper;
 
 /// handles WSD requests coming from UDP datagrams.
 pub struct WSDHost {
@@ -35,9 +32,9 @@ impl WSDHost {
         config: Arc<Config>,
         messages_built: Arc<AtomicU64>,
         bound_to: NetworkAddress,
-        mc_wsd_port_rx: Receiver<IncomingUnicastMessage>,
+        mc_wsd_port_rx: Receiver<IncomingHostMessage>,
         mc_local_port_tx: Sender<MulticastMessage>,
-        uc_wsd_port_tx: Sender<OutgoingUnicastMessage>,
+        uc_wsd_port_tx: Sender<OutgoingMessage>,
     ) -> Self {
         let address = bound_to.address;
 
@@ -144,17 +141,12 @@ async fn send_hello(
         .unwrap_or(Ok(()))
 }
 
-pub fn handle_probe<R>(
+pub fn handle_probe(
     config: &Config,
     messages_built: &AtomicU64,
     relates_to: Urn,
-    reader: &mut Wrapper<R>,
-) -> Result<Option<UnicastMessage>, eyre::Report>
-where
-    R: Read,
-{
-    let probe = parser::probe::parse_probe(reader)?;
-
+    probe: &Probe,
+) -> Result<Option<UnicastMessage>, eyre::Report> {
     if probe.types.is_empty() || probe.requested_type_match() {
         Ok(Some(builder::Builder::build_probe_matches(
             config,
@@ -172,19 +164,14 @@ where
     }
 }
 
-fn handle_resolve<R>(
+fn handle_resolve(
     address: IpAddr,
     config: &Config,
     messages_built: &AtomicU64,
     target_uuid: uuid::Uuid,
     relates_to: Urn,
-    reader: &mut Wrapper<R>,
-) -> Result<Option<UnicastMessage>, eyre::Report>
-where
-    R: Read,
-{
-    let resolve = parser::resolve::parse_resolve(reader)?;
-
+    resolve: &Resolve,
+) -> Result<Option<UnicastMessage>, eyre::Report> {
     if resolve.addr_urn == target_uuid.urn() {
         Ok(Some(builder::Builder::build_resolve_matches(
             config,
@@ -209,12 +196,10 @@ async fn listen_forever(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     messages_built: Arc<AtomicU64>,
-    mut mc_wsd_port_rx: Receiver<IncomingUnicastMessage>,
-    uc_wsd_port_tx: Sender<OutgoingUnicastMessage>,
+    mut mc_wsd_port_rx: Receiver<IncomingHostMessage>,
+    uc_wsd_port_tx: Sender<OutgoingMessage>,
 ) {
     let address = bound_to.address.addr();
-
-    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to);
 
     loop {
         let message = tokio::select! {
@@ -226,38 +211,30 @@ async fn listen_forever(
             }
         };
 
-        let Some(IncomingUnicastMessage { from, buffer }) = message else {
+        let Some(IncomingHostMessage {
+            from,
+            header,
+            message,
+        }) = message
+        else {
             // the end, but we just got it before the cancellation
             break;
         };
 
-        let (header, mut body_reader) =
-            match message_handler.deconstruct_message(&buffer, from).await {
-                Ok(pieces) => pieces,
-                Err(error) => {
-                    error.log(&buffer);
-
-                    continue;
-                },
-            };
-
         // dispatch based on the SOAP Action header
-        let response = match &*header.action {
-            constants::WSD_PROBE => handle_probe(
-                &config,
-                &messages_built,
-                header.message_id,
-                &mut body_reader,
-            ),
-            constants::WSD_RESOLVE => handle_resolve(
+        let response = match message {
+            HostMessage::Probe(probe) => {
+                handle_probe(&config, &messages_built, header.message_id, &probe)
+            },
+            HostMessage::Resolve(resolve) => handle_resolve(
                 address,
                 &config,
                 &messages_built,
                 config.uuid,
                 header.message_id,
-                &mut body_reader,
+                &resolve,
             ),
-            _ => {
+            HostMessage::Get(_) => {
                 event!(
                     Level::DEBUG,
                     "unhandled action {}/{}",
@@ -284,9 +261,9 @@ async fn listen_forever(
 
         // return to sender
         if let Err(error) = uc_wsd_port_tx
-            .send(OutgoingUnicastMessage {
+            .send(OutgoingMessage {
                 to: from,
-                buffer: response,
+                message: response,
             })
             .await
         {
@@ -422,13 +399,15 @@ mod tests {
         );
 
         // host receives client's probe
-        let (header, mut body_reader) = host_message_handler
+        let (header, message) = host_message_handler
             .deconstruct_message(
                 resolve.as_bytes(),
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
             )
             .await
             .unwrap();
+
+        let resolve = message.into_resolve().unwrap();
 
         // host produces answer
         let response = handle_resolve(
@@ -437,7 +416,7 @@ mod tests {
             &host_messages_built,
             host_config.uuid,
             header.message_id,
-            &mut body_reader,
+            &resolve,
         )
         .unwrap()
         .unwrap();
@@ -501,7 +480,7 @@ mod tests {
         let host_messages_built = Arc::new(AtomicU64::new(0));
 
         // host receives client's probe
-        let (header, mut body_reader) = host_message_handler
+        let (header, message) = host_message_handler
             .deconstruct_message(
                 probe.as_bytes(),
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
@@ -509,12 +488,14 @@ mod tests {
             .await
             .unwrap();
 
+        let probe = message.into_probe().unwrap();
+
         // host produces answer
         let response = handle_probe(
             &host_config,
             &host_messages_built,
             header.message_id,
-            &mut body_reader,
+            &probe,
         )
         .unwrap()
         .unwrap();

@@ -1,5 +1,4 @@
 use std::cmp::Reverse;
-use std::io::Read;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,22 +14,19 @@ use url::Host;
 use uuid::fmt::Urn;
 
 use crate::config::Config;
-use crate::multicast_handler::IncomingUnicastMessage;
+use crate::constants;
+use crate::multicast_handler::IncomingClientMessage;
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::Builder;
-use crate::soap::parser::MessageHandler;
 use crate::soap::parser::bye::Bye;
 use crate::soap::parser::hello::Hello;
 use crate::soap::parser::probe_match::ProbeMatch;
 use crate::soap::parser::resolve_match::ResolveMatch;
 use crate::soap::parser::xaddrs::XAddr;
-use crate::soap::{MulticastMessage, parser};
+use crate::soap::{ClientMessage, MulticastMessage};
 use crate::utils::SliceDisplay;
 use crate::utils::task::spawn_with_name;
-use crate::wsd::HANDLED_MESSAGES;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
-use crate::xml::Wrapper;
-use crate::{constants, soap};
 
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
@@ -53,8 +49,8 @@ impl WSDClient {
         config: Arc<Config>,
         devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
         bound_to: NetworkAddress,
-        mc_wsd_port_rx: Receiver<IncomingUnicastMessage>,
-        mc_local_port_rx: Receiver<IncomingUnicastMessage>,
+        mc_wsd_port_rx: Receiver<IncomingClientMessage>,
+        mc_local_port_rx: Receiver<IncomingClientMessage>,
         mc_local_port_tx: Sender<MulticastMessage>,
     ) -> Self {
         let probes = Arc::new(RwLock::new(HashMap::<Urn, Duration>::new()));
@@ -250,22 +246,17 @@ fn parse_xaddrs(bound_to: IpNet, raw_xaddrs: &str) -> Vec<XAddr> {
     xaddrs
 }
 
-async fn handle_hello<R>(
+async fn handle_hello(
     client: &reqwest::Client,
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
     multicast: &Sender<MulticastMessage>,
-    reader: &mut Wrapper<R>,
-) -> Result<(), eyre::Report>
-where
-    R: Read,
-{
-    let Hello {
-        raw_xaddrs,
+    Hello {
         endpoint,
-    } = soap::parser::hello::parse_hello(reader)?;
-
+        raw_xaddrs,
+    }: Hello,
+) -> Result<(), eyre::Report> {
     let Some(raw_xaddrs) = raw_xaddrs else {
         event!(Level::INFO, "Hello without XAddrs, sending resolve");
 
@@ -291,15 +282,10 @@ where
     Ok(())
 }
 
-async fn handle_bye<R>(
+async fn handle_bye(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
-    reader: &mut Wrapper<R>,
-) -> Result<(), eyre::Report>
-where
-    R: Read,
-{
-    let Bye { endpoint } = soap::parser::bye::parse_bye(reader)?;
-
+    Bye { endpoint }: Bye,
+) -> Result<(), eyre::Report> {
     let mut guard = devices.write().await;
 
     if guard.remove(&endpoint).is_none() {
@@ -314,7 +300,7 @@ where
 }
 
 #[expect(clippy::too_many_arguments, reason = "WIP")]
-async fn handle_probe_match<R>(
+async fn handle_probe_match(
     client: &reqwest::Client,
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
@@ -322,16 +308,11 @@ async fn handle_probe_match<R>(
     relates_to: Option<Urn>,
     probes: Arc<RwLock<HashMap<Urn, Duration>>>,
     mc_local_port_tx: &Sender<MulticastMessage>,
-    reader: &mut Wrapper<R>,
-) -> Result<(), eyre::Report>
-where
-    R: Read,
-{
-    let ProbeMatch {
+    ProbeMatch {
         endpoint,
         raw_xaddrs,
-    } = soap::parser::probe_match::parse_probe_match(reader)?;
-
+    }: ProbeMatch,
+) -> Result<(), eyre::Report> {
     let Some(relates_to) = relates_to else {
         event!(Level::DEBUG, "missing `RelatesTo`");
         return Ok(());
@@ -370,21 +351,16 @@ where
     Ok(())
 }
 
-async fn handle_resolve_match<R>(
+async fn handle_resolve_match(
     client: &reqwest::Client,
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
-    reader: &mut Wrapper<R>,
-) -> Result<(), eyre::Report>
-where
-    R: Read,
-{
-    let ResolveMatch {
-        raw_xaddrs,
+    ResolveMatch {
         endpoint,
-    } = parser::resolve_match::parse_resolve_match(reader)?;
-
+        raw_xaddrs,
+    }: ResolveMatch,
+) -> Result<(), eyre::Report> {
     let Some(raw_xaddrs) = raw_xaddrs else {
         event!(Level::DEBUG, "ResolveMatch without xaddr, nothing to do");
 
@@ -489,8 +465,8 @@ async fn listen_forever(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
-    mut mc_wsd_port_rx: Receiver<IncomingUnicastMessage>,
-    mut mc_local_port_rx: Receiver<IncomingUnicastMessage>,
+    mut mc_wsd_port_rx: Receiver<IncomingClientMessage>,
+    mut mc_local_port_rx: Receiver<IncomingClientMessage>,
     mc_local_port_tx: Sender<MulticastMessage>,
     probes: Arc<RwLock<HashMap<Urn, Duration>>>,
 ) {
@@ -503,8 +479,6 @@ async fn listen_forever(
         .interface(bound_to.interface.name())
         .build()
         .expect("WSD Client cannot operate without HTTP Client");
-
-    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to.clone());
 
     loop {
         let message = tokio::select! {
@@ -519,36 +493,31 @@ async fn listen_forever(
             },
         };
 
-        let Some(IncomingUnicastMessage { from, buffer }) = message else {
+        let Some(IncomingClientMessage {
+            from: _from,
+            header,
+            message,
+        }) = message
+        else {
             // the end, but we just got it before the cancellation
             break;
         };
 
-        let (header, mut body_reader) =
-            match message_handler.deconstruct_message(&buffer, from).await {
-                Ok(pieces) => pieces,
-                Err(error) => {
-                    error.log(&buffer);
-
-                    continue;
-                },
-            };
-
         // dispatch based on the SOAP Action header
-        let response = match &*header.action {
-            constants::WSD_HELLO => {
+        let response = match message {
+            ClientMessage::Hello(hello) => {
                 handle_hello(
                     &client,
                     &config,
                     Arc::clone(&devices),
                     &bound_to,
                     &mc_local_port_tx,
-                    &mut body_reader,
+                    hello,
                 )
                 .await
             },
-            constants::WSD_BYE => handle_bye(Arc::clone(&devices), &mut body_reader).await,
-            constants::WSD_PROBE_MATCH => {
+            ClientMessage::Bye(bye) => handle_bye(Arc::clone(&devices), bye).await,
+            ClientMessage::ProbeMatch(probe_match) => {
                 handle_probe_match(
                     &client,
                     &config,
@@ -557,41 +526,34 @@ async fn listen_forever(
                     header.relates_to,
                     Arc::clone(&probes),
                     &mc_local_port_tx,
-                    &mut body_reader,
+                    probe_match,
                 )
                 .await
             },
-            constants::WSD_RESOLVE_MATCH => {
+            ClientMessage::ResolveMatch(resolve_match) => {
                 handle_resolve_match(
                     &client,
                     &config,
                     Arc::clone(&devices),
                     &bound_to,
-                    &mut body_reader,
+                    resolve_match,
                 )
                 .await
             },
-            action => {
+        };
+
+        match response {
+            Ok(()) => (),
+            Err(error) => {
                 event!(
-                    Level::DEBUG,
-                    ?action,
-                    ?header.message_id,
-                    "Unhandled action",
+                    Level::ERROR,
+                    action = &*header.action,
+                    ?error,
+                    "Failure to handle message"
                 );
 
                 continue;
             },
-        };
-
-        if let Err(error) = response {
-            event!(
-                Level::ERROR,
-                action = &*header.action,
-                ?error,
-                "Failure to parse XML"
-            );
-
-            continue;
         }
     }
 }
@@ -655,7 +617,7 @@ mod tests {
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let (_, mut reader) = message_handler
+        let (_, message) = message_handler
             .deconstruct_message(
                 hello_without_xaddrs.as_bytes(),
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
@@ -663,13 +625,15 @@ mod tests {
             .await
             .unwrap();
 
+        let hello = message.into_hello().unwrap();
+
         handle_hello(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
             &multicast_tx,
-            &mut reader,
+            hello,
         )
         .await
         .unwrap();
@@ -752,7 +716,7 @@ mod tests {
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let (_, mut reader) = message_handler
+        let (_, message) = message_handler
             .deconstruct_message(
                 hello.as_bytes(),
                 SocketAddr::new(server.socket_address().ip(), 5000),
@@ -760,13 +724,15 @@ mod tests {
             .await
             .unwrap();
 
+        let hello = message.into_hello().unwrap();
+
         handle_hello(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
             &bound_to,
             &multicast_tx,
-            &mut reader,
+            hello,
         )
         .await
         .unwrap();
@@ -830,7 +796,7 @@ mod tests {
             host_config.uuid_as_device_uri,
         );
 
-        let (_, mut reader) = message_handler
+        let (_, message) = message_handler
             .deconstruct_message(
                 bye.as_bytes(),
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
@@ -838,9 +804,9 @@ mod tests {
             .await
             .unwrap();
 
-        handle_bye(Arc::clone(&client_devices), &mut reader)
-            .await
-            .unwrap();
+        let bye = message.into_bye().unwrap();
+
+        handle_bye(Arc::clone(&client_devices), bye).await.unwrap();
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -903,7 +869,7 @@ mod tests {
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let (_, mut reader) = message_handler
+        let (_, message) = message_handler
             .deconstruct_message(
                 hello.as_bytes(),
                 SocketAddr::new(server.socket_address().ip(), 5000),
@@ -911,13 +877,15 @@ mod tests {
             .await
             .unwrap();
 
+        let hello = message.into_hello().unwrap();
+
         handle_hello(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
             &network_address,
             &multicast_tx,
-            &mut reader,
+            hello,
         )
         .await
         .unwrap();
@@ -945,7 +913,7 @@ mod tests {
             host_config.uuid_as_device_uri
         );
 
-        let (_, mut reader) = message_handler
+        let (_, message) = message_handler
             .deconstruct_message(
                 bye.as_bytes(),
                 SocketAddr::new(server.socket_address().ip(), 5000),
@@ -953,9 +921,9 @@ mod tests {
             .await
             .unwrap();
 
-        handle_bye(Arc::clone(&client_devices), &mut reader)
-            .await
-            .unwrap();
+        let bye = message.into_bye().unwrap();
+
+        handle_bye(Arc::clone(&client_devices), bye).await.unwrap();
 
         // ensure the host is no longer present
         assert!(
@@ -1205,7 +1173,7 @@ mod tests {
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let (header, mut body_reader) = message_handler
+        let (header, message) = message_handler
             .deconstruct_message(
                 probe_matches.as_bytes(),
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
@@ -1221,6 +1189,8 @@ mod tests {
             Arc::new(RwLock::new(hash_map))
         };
 
+        let probe_match = message.into_probe_match().unwrap();
+
         handle_probe_match(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
@@ -1229,7 +1199,7 @@ mod tests {
             header.relates_to,
             probes,
             &multicast_tx,
-            &mut body_reader,
+            probe_match,
         )
         .await
         .unwrap();
@@ -1311,7 +1281,7 @@ mod tests {
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let (header, mut body_reader) = message_handler
+        let (header, message) = message_handler
             .deconstruct_message(
                 probe_matches.as_bytes(),
                 SocketAddr::new(server.socket_address().ip(), 5000),
@@ -1327,6 +1297,8 @@ mod tests {
             Arc::new(RwLock::new(hash_map))
         };
 
+        let probe_match = message.into_probe_match().unwrap();
+
         handle_probe_match(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
@@ -1335,7 +1307,7 @@ mod tests {
             header.relates_to,
             probes,
             &multicast_tx,
-            &mut body_reader,
+            probe_match,
         )
         .await
         .unwrap();
@@ -1406,7 +1378,7 @@ mod tests {
             host_config.uuid
         );
 
-        let (_, mut reader) = message_handler
+        let (_, message) = message_handler
             .deconstruct_message(
                 resolve_matches.as_bytes(),
                 SocketAddr::new(server.socket_address().ip(), 5000),
@@ -1414,12 +1386,14 @@ mod tests {
             .await
             .unwrap();
 
+        let resolve_match = message.into_resolve_match().unwrap();
+
         handle_resolve_match(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
-            &mut reader,
+            resolve_match,
         )
         .await
         .unwrap();
