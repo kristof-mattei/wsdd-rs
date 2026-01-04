@@ -475,9 +475,7 @@ impl MulticastHandler {
     }
 }
 
-type Receivers = Arc<RwLock<ReceiversSomething>>;
-
-struct ReceiversSomething {
+struct ClientHostListener {
     host_tx: Option<Sender<IncomingHostMessage>>,
     client_tx: Option<Sender<IncomingClientMessage>>,
 }
@@ -485,14 +483,12 @@ struct ReceiversSomething {
 struct MessageReceiver {
     cancellation_token: CancellationToken,
     handle: JoinHandle<()>,
-    listeners: Receivers,
+    listeners: Arc<RwLock<ClientHostListener>>,
 }
-
-type Channels = Arc<RwLock<ReceiversSomething>>;
 
 async fn socket_rx_forever(
     cancellation_token: CancellationToken,
-    channels: Channels,
+    listeners: Arc<RwLock<ClientHostListener>>,
     socket: Arc<UdpSocket>,
 ) {
     let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES));
@@ -547,7 +543,7 @@ async fn socket_rx_forever(
             },
         };
 
-        let lock = channels.read().await;
+        let lock = listeners.read().await;
 
         match message {
             WSDMessage::ClientMessage(message) => {
@@ -582,7 +578,7 @@ async fn socket_rx_forever(
 
 impl MessageReceiver {
     fn new(cancellation_token: CancellationToken, socket: Arc<UdpSocket>) -> Self {
-        let listeners: Receivers = Receivers::new(RwLock::const_new(ReceiversSomething {
+        let listeners = Arc::new(RwLock::const_new(ClientHostListener {
             host_tx: None,
             client_tx: None,
         }));
