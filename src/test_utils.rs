@@ -4,7 +4,7 @@ use std::ffi::CStr;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
-use ipnet::{IpNet, Ipv4Net};
+use ipnet::IpNet;
 use libc::{RT_SCOPE_SITE, freeifaddrs, getifaddrs, ifaddrs};
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -78,15 +78,7 @@ pub fn build_config(endpoint_uuid: Uuid, instance_id: &str) -> Config {
 }
 
 pub fn build_message_handler() -> MessageHandler {
-    MessageHandler::new(
-        Arc::new(RwLock::new(MaxSizeDeque::new(20))),
-        NetworkAddress::new(
-            Ipv4Net::new(Ipv4Addr::new(192, 168, 100, 1), 24)
-                .unwrap()
-                .into(),
-            Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
-        ),
-    )
+    MessageHandler::new(Arc::new(RwLock::new(MaxSizeDeque::new(20))))
 }
 
 #[expect(unused, reason = "WIP")]
@@ -157,10 +149,7 @@ pub fn build_message_handler_with_network_address(
     );
 
     (
-        MessageHandler::new(
-            Arc::new(RwLock::new(MaxSizeDeque::new(20))),
-            network_address.clone(),
-        ),
+        MessageHandler::new(Arc::new(RwLock::new(MaxSizeDeque::new(20)))),
         network_address,
     )
 }

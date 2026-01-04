@@ -1,10 +1,14 @@
+pub mod bye;
 pub mod generic;
+pub mod get;
+pub mod hello;
 pub mod probe;
+pub mod probe_match;
 pub mod resolve;
+pub mod resolve_match;
 pub mod xaddrs;
 
 use std::io::Read;
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use thiserror::Error;
@@ -14,15 +18,15 @@ use uuid::fmt::Urn;
 use xml::ParserConfig;
 use xml::reader::XmlEvent;
 
-use crate::constants::{WSA_URI, XML_SOAP_NAMESPACE};
+use crate::constants::{self, WSA_URI, XML_SOAP_NAMESPACE};
 use crate::max_size_deque::MaxSizeDeque;
-use crate::network_address::NetworkAddress;
+use crate::soap::parser::get::Get;
+use crate::soap::{self, WSDMessage};
 use crate::wsd::device::DeviceUri;
-use crate::xml::{TextReadError, Wrapper, read_text};
+use crate::xml::{GenericParsingError, TextReadError, Wrapper, read_text};
 
 pub struct MessageHandler {
     handled_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
-    network_address: NetworkAddress,
 }
 
 pub struct Header {
@@ -36,35 +40,55 @@ type ParsedHeaderResult = Result<Header, HeaderError>;
 
 #[derive(Error, Debug)]
 pub enum MessageHandlerError {
-    #[error("Missing Header")]
-    MissingHeader,
-    #[error("Missing Body")]
-    MissingBody,
     #[error("Message already processed")]
     DuplicateMessage,
-    #[error("Error parsing XML")]
-    XmlError(#[from] xml::reader::Error),
     #[error("Header Error")]
     HeaderError(#[from] HeaderError),
-    #[error("Text Read Error")]
-    TextReadError(#[from] TextReadError),
+    #[error("Generic Parsing Error")]
+    GenericParsingError(#[from] GenericParsingError),
+    #[error("Invalid action")]
+    InvalidAction(Box<str>),
+    #[error("Error parsing XML")]
+    XmlError(#[from] xml::reader::Error),
 }
 impl MessageHandlerError {
+    #[expect(clippy::too_many_lines, reason = "Lots of errors")]
     #[track_caller]
     pub(crate) fn log(&self, buffer: &[u8]) {
         match self {
             &MessageHandlerError::DuplicateMessage => {
                 // nothing
             },
-            missing @ &(MessageHandlerError::MissingHeader | MessageHandlerError::MissingBody) => {
+            &MessageHandlerError::GenericParsingError(GenericParsingError::InvalidElementOrder) => {
                 event!(
                     Level::TRACE,
-                    ?missing,
+                    message = &*String::from_utf8_lossy(buffer),
+                    "XML Message has elements in invalid order",
+                );
+            },
+            &MessageHandlerError::GenericParsingError(GenericParsingError::MissingElement(
+                ref element,
+            )) => {
+                event!(
+                    Level::TRACE,
+                    ?element,
                     message = &*String::from_utf8_lossy(buffer),
                     "XML Message did not have required elements",
                 );
             },
-            &MessageHandlerError::TextReadError(ref error) => {
+            &MessageHandlerError::GenericParsingError(GenericParsingError::MissingEndElement(
+                ref end_element,
+            )) => {
+                event!(
+                    Level::TRACE,
+                    ?end_element,
+                    message = &*String::from_utf8_lossy(buffer),
+                    "XML Message did not have required end element",
+                );
+            },
+            &MessageHandlerError::GenericParsingError(GenericParsingError::TextReadError(
+                ref error,
+            )) => {
                 event!(
                     Level::TRACE,
                     %error,
@@ -72,7 +96,7 @@ impl MessageHandlerError {
                     "XML Message text read error",
                 );
             },
-            &MessageHandlerError::HeaderError(HeaderError::InvalidAction(ref malformed_action)) => {
+            &MessageHandlerError::InvalidAction(ref malformed_action) => {
                 event!(
                     Level::TRACE,
                     malformed_action,
@@ -83,7 +107,10 @@ impl MessageHandlerError {
             &MessageHandlerError::HeaderError(
                 HeaderError::InvalidMessageId(ref uuid_error)
                 | HeaderError::InvalidRelatesTo(ref uuid_error),
-            ) => {
+            )
+            | &MessageHandlerError::GenericParsingError(GenericParsingError::UrnUuidError(
+                ref uuid_error,
+            )) => {
                 event!(
                     Level::TRACE,
                     ?uuid_error,
@@ -116,12 +143,21 @@ impl MessageHandlerError {
                 TextReadError::XmlError(ref error),
             ))
             | &MessageHandlerError::HeaderError(HeaderError::XmlError(ref error))
-            | &MessageHandlerError::XmlError(ref error) => {
+            | &MessageHandlerError::XmlError(ref error)
+            | &MessageHandlerError::GenericParsingError(GenericParsingError::XmlError(ref error)) =>
+            {
                 event!(
                     Level::ERROR,
                     ?error,
                     message = &*String::from_utf8_lossy(buffer),
                     "Error while decoding XML",
+                );
+            },
+            &MessageHandlerError::GenericParsingError(GenericParsingError::InvalidDepth(_)) => {
+                event!(
+                    Level::ERROR,
+                    message = &*String::from_utf8_lossy(buffer),
+                    "Error while decoding XML, found element at wrong depth",
                 );
             },
         }
@@ -134,8 +170,6 @@ pub enum HeaderError {
     MissingMessageId,
     #[error("Missing Action")]
     MissingAction,
-    #[error("Invalid Action")]
-    InvalidAction(Box<str>),
     #[error("Invalid Message Id")]
     InvalidMessageId(uuid::Error),
     #[error("Invalid Relates To")]
@@ -199,29 +233,108 @@ where
     }
 
     let Some(header) = header else {
-        return Err(MessageHandlerError::MissingHeader);
+        return Err(GenericParsingError::MissingElement(Box::from("soap:Header")).into());
     };
 
     Ok((header, has_body, reader))
 }
 
+fn validate_action_body(
+    raw: &[u8],
+    header: Header,
+    has_body: bool,
+) -> Result<Header, MessageHandlerError> {
+    event!(
+        Level::DEBUG,
+        xml = %String::from_utf8_lossy(raw).trim(),
+        "incoming message content",
+    );
+
+    // let Some((_, action_method)) = header.action.rsplit_once('/') else {
+    //     return Err(MessageHandlerError::HeaderError(
+    //         HeaderError::InvalidAction(header.action),
+    //     ));
+    // };
+
+    // if let Some(src) = src {
+    //     event!(
+    //         Level::INFO,
+    //         "{}({}) - - \"{} {} UDP\" - -",
+    //         src,
+    //         self.network_address.interface,
+    //         action_method,
+    //         header.message_id
+    //     );
+    // } else {
+    //     // http logging is already done by according server
+    //     event!(
+    //         Level::DEBUG,
+    //         "processing WSD {} message ({})",
+    //         action_method,
+    //         header.message_id
+    //     );
+    // }
+
+    if !has_body {
+        return Err(GenericParsingError::MissingElement(Box::from("soap:Body")).into());
+    }
+
+    Ok(header)
+}
+
+fn decompose_body(
+    header: &Header,
+    mut reader: Wrapper<&[u8]>,
+) -> Result<WSDMessage, MessageHandlerError> {
+    let response = match &*header.action {
+        constants::WSD_GET => Ok(Get {}.into()),
+        constants::WSD_HELLO => Ok(soap::parser::hello::parse_hello(&mut reader)?.into()),
+        constants::WSD_BYE => Ok(soap::parser::bye::parse_bye(&mut reader)?.into()),
+        constants::WSD_PROBE_MATCH => {
+            Ok(soap::parser::probe_match::parse_probe_match(&mut reader)?.into())
+        },
+        constants::WSD_RESOLVE_MATCH => {
+            Ok(soap::parser::resolve_match::parse_resolve_match(&mut reader)?.into())
+        },
+        constants::WSD_PROBE => Ok(soap::parser::probe::parse_probe(&mut reader)?.into()),
+        constants::WSD_RESOLVE => Ok(soap::parser::resolve::parse_resolve(&mut reader)?.into()),
+        action => {
+            event!(
+                Level::DEBUG,
+                ?action,
+                ?header.message_id,
+                "Unhandled action",
+            );
+
+            Err(MessageHandlerError::InvalidAction(Box::from(action)))
+        },
+    }?;
+
+    Ok(response)
+}
+
+/// Handle a WSD message
+pub fn deconstruct_http_message(raw: &[u8]) -> Result<(Header, WSDMessage), MessageHandlerError> {
+    let (header, has_body, reader) = deconstruct_raw(raw)?;
+
+    let header = validate_action_body(raw, header, has_body)?;
+
+    // TODO !!! ERROR HANDLING
+    let body = decompose_body(&header, reader).unwrap();
+
+    Ok((header, body))
+}
+
 impl MessageHandler {
-    pub fn new(
-        handled_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
-        network_address: NetworkAddress,
-    ) -> Self {
-        Self {
-            handled_messages,
-            network_address,
-        }
+    pub fn new(handled_messages: Arc<RwLock<MaxSizeDeque<Urn>>>) -> Self {
+        Self { handled_messages }
     }
 
     /// Handle a WSD message
-    pub async fn deconstruct_message<'r>(
+    pub async fn deconstruct_message(
         &self,
-        raw: &'r [u8],
-        src: SocketAddr,
-    ) -> Result<(Header, Wrapper<&'r [u8]>), MessageHandlerError> {
+        raw: &'_ [u8],
+    ) -> Result<(Header, WSDMessage), MessageHandlerError> {
         let (header, has_body, reader) = deconstruct_raw(raw)?;
 
         // check for duplicates
@@ -235,66 +348,11 @@ impl MessageHandler {
             return Err(MessageHandlerError::DuplicateMessage);
         }
 
-        let header = self.validate_action_body(raw, Some(src), header, has_body)?;
+        let header = validate_action_body(raw, header, has_body)?;
 
-        Ok((header, reader))
-    }
+        let body = decompose_body(&header, reader)?;
 
-    /// Handle a WSD message
-    pub fn deconstruct_http_message<'r>(
-        &self,
-        raw: &'r [u8],
-    ) -> Result<(Header, Wrapper<&'r [u8]>), MessageHandlerError> {
-        let (header, has_body, reader) = deconstruct_raw(raw)?;
-
-        let header = self.validate_action_body(raw, None, header, has_body)?;
-
-        Ok((header, reader))
-    }
-
-    fn validate_action_body(
-        &self,
-        raw: &[u8],
-        src: Option<SocketAddr>,
-        header: Header,
-        has_body: bool,
-    ) -> Result<Header, MessageHandlerError> {
-        event!(
-            Level::DEBUG,
-            xml = %String::from_utf8_lossy(raw).trim(),
-            "incoming message content",
-        );
-
-        let Some((_, action_method)) = header.action.rsplit_once('/') else {
-            return Err(MessageHandlerError::HeaderError(
-                HeaderError::InvalidAction(header.action),
-            ));
-        };
-
-        if let Some(src) = src {
-            event!(
-                Level::INFO,
-                "{}({}) - - \"{} {} UDP\" - -",
-                src,
-                self.network_address.interface,
-                action_method,
-                header.message_id
-            );
-        } else {
-            // http logging is already done by according server
-            event!(
-                Level::DEBUG,
-                "processing WSD {} message ({})",
-                action_method,
-                header.message_id
-            );
-        }
-
-        if !has_body {
-            return Err(MessageHandlerError::MissingBody);
-        }
-
-        Ok(header)
+        Ok((header, body))
     }
 
     /// Implements SOAP-over-UDP Appendix II Item 2
@@ -412,29 +470,19 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::net::Ipv4Addr;
+
     use std::sync::Arc;
 
-    use ipnet::IpNet;
-    use libc::RT_SCOPE_SITE;
     use tokio::sync::RwLock;
     use tokio::time::{Duration, timeout};
     use uuid::Uuid;
     use uuid::fmt::Urn;
 
     use crate::max_size_deque::MaxSizeDeque;
-    use crate::network_address::NetworkAddress;
-    use crate::network_interface::NetworkInterface;
     use crate::soap::parser::MessageHandler;
 
     fn handler_for_tests(history: usize) -> MessageHandler {
-        MessageHandler::new(
-            Arc::new(RwLock::new(MaxSizeDeque::new(history))),
-            NetworkAddress::new(
-                IpNet::new(Ipv4Addr::new(127, 1, 2, 3).into(), 16).unwrap(),
-                Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
-            ),
-        )
+        MessageHandler::new(Arc::new(RwLock::new(MaxSizeDeque::new(history))))
     }
 
     #[tokio::test(flavor = "current_thread")]

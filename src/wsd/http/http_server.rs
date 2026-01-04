@@ -20,11 +20,10 @@ use uuid::fmt::Urn;
 use crate::config::Config;
 use crate::constants;
 use crate::network_address::NetworkAddress;
-use crate::soap::parser::MessageHandler;
-use crate::soap::{UnicastMessage, builder};
+use crate::soap::parser::{MessageHandler, deconstruct_http_message};
+use crate::soap::{HostMessage, UnicastMessage, WSDMessage, builder};
 use crate::span::MakeSpanWithUuid;
 use crate::wsd::HANDLED_MESSAGES;
-use crate::wsd::udp::host::handle_probe;
 
 pub struct WSDHttpServer {
     _bound_to: NetworkAddress,
@@ -43,7 +42,7 @@ impl WSDHttpServer {
         messages_built: Arc<AtomicU64>,
         http_listen_address: SocketAddr,
     ) -> Result<WSDHttpServer, std::io::Error> {
-        let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to.clone());
+        let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES));
 
         event!(Level::INFO, ?http_listen_address, "Trying to bind");
 
@@ -157,7 +156,7 @@ async fn build_response(
     buffer: &[u8],
     messages_built: &AtomicU64,
 ) -> Result<Option<UnicastMessage>, eyre::Report> {
-    let (header, mut body_reader) = match message_handler.deconstruct_http_message(buffer) {
+    let (header, message) = match deconstruct_http_message(buffer) {
         Ok(pieces) => pieces,
         Err(error) => {
             error.log(buffer);
@@ -167,8 +166,8 @@ async fn build_response(
     };
 
     // dispatch based on the SOAP Action header
-    let response = match &*header.action {
-        constants::WSD_GET => {
+    let response = match message {
+        WSDMessage::HostMessage(HostMessage::Get(_get)) => {
             match header.to.as_ref() {
                 Some(to) if to == &config.uuid_as_device_uri => {
                     Ok(Some(handle_get(config, header.message_id)?))
@@ -185,7 +184,7 @@ async fn build_response(
                 },
             }
         },
-        constants::WSD_PROBE => {
+        WSDMessage::HostMessage(HostMessage::Probe(probe)) => {
             // only the probe one is checked for duplicates
             if message_handler.is_duplicated_msg(header.message_id).await {
                 event!(
@@ -194,17 +193,26 @@ async fn build_response(
                     "known message: dropping it",
                 );
 
-                Ok(None)
-            } else {
-                Ok(handle_probe(
+                return Ok(None);
+            }
+
+            if probe.types.is_empty() || probe.requested_type_match() {
+                return Ok(Some(builder::Builder::build_probe_matches(
                     config,
                     messages_built,
                     header.message_id,
-                    &mut body_reader,
-                )?)
+                )?));
             }
+
+            event!(
+                Level::DEBUG,
+                ?probe.types,
+                "client requests types we don't offer"
+            );
+
+            Ok(None)
         },
-        _ => {
+        WSDMessage::ClientMessage(_) | WSDMessage::HostMessage(_) => {
             return Err(eyre::Report::msg("Invalid Action"));
         },
     };
