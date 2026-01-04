@@ -52,7 +52,7 @@ where
 /// Expects that reader has just read an opening tag and nothing further.
 ///
 /// Errors:
-/// * When it encounters anything other than character data (including normalized whitespace and CDATA)
+/// * When it encounters anything other than character data (including normalized white space and CDATA)
 pub fn read_text<R>(reader: &mut Wrapper<R>) -> Result<Option<String>, TextReadError>
 where
     R: Read,
