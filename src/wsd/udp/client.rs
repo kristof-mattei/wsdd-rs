@@ -481,8 +481,6 @@ async fn listen_forever(
         .build()
         .expect("WSD Client cannot operate without HTTP Client");
 
-    let _message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to.clone());
-
     loop {
         let message = tokio::select! {
             () = cancellation_token.cancelled() => {
