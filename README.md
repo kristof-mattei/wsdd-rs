@@ -16,17 +16,17 @@ XSD validation:
                         http://schemas.xmlsoap.org/ws/2005/04/discovery http://schemas.xmlsoap.org/ws/2005/04/discovery/ws-discovery.xsd"
 ```
 
-- Backport code since 147c9039630afd2bc6a73f1a04d5e6526947d90b (https://github.com/christgau/wsdd/commits/master/)
+- Backport code since `147c9039630afd2bc6a73f1a04d5e6526947d90b` (<https://github.com/christgau/wsdd/commits/master/>)
 
 # Information, docs
 
-- Debugging: https://learn.microsoft.com/en-us/windows/win32/wsdapi/inspecting-network-traces-for-udp-ws-discovery
+- Debugging: <https://learn.microsoft.com/en-us/windows/win32/wsdapi/inspecting-network-traces-for-udp-ws-discovery>
 
-- Online spec: https://specs.xmlsoap.org/ws/2005/04/discovery/ws-discovery.pdf (also stored in [./documentation/ws-discovery](./documentation/ws-discovery.pdf))
+- Online spec: <https://specs.xmlsoap.org/ws/2005/04/discovery/ws-discovery.pdf> (also stored in [./documentation/ws-discovery](./documentation/ws-discovery.pdf))
 
-- More definitions: https://learn.microsoft.com/en-us/windows/win32/wsdapi/discovery-and-metadata-exchange-message-patterns
+- More definitions: <https://learn.microsoft.com/en-us/windows/win32/wsdapi/discovery-and-metadata-exchange-message-patterns>
 
-- Interopability tool: https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/wsdapi-basic-interoperability-tool
+- Interoperability tool: <https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/wsdapi-basic-interoperability-tool>
 
 # Socket descriptions
 
@@ -34,7 +34,7 @@ XSD validation:
 - `mc_send_socket` SENDS multicast messages, on a custom port, RECEIVES unicast
 - `uc_send_socket` is used REPLY with unicast, it is bound to the interface's address, on the WSD Port
 
-The sockets are separate for a reason: https://github.com/christgau/wsdd/commit/ee8783ce71a408a3d9923b5d67659f7ce2712166
+The sockets are separate for a reason: <https://github.com/christgau/wsdd/commit/ee8783ce71a408a3d9923b5d67659f7ce2712166>
 
 `mc_send_socket` receives messages in `WSDClient`, because it sends out a probe over the `mc_send_socket`, and hosts reply FROM 3072 (in our case `uc_send_socket` TO the `mc_send_socket`, that port)
 
