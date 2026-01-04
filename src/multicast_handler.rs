@@ -551,7 +551,8 @@ async fn socket_rx_forever(
                     if let Err(error) = client_tx
                         .send(IncomingClientMessage {
                             from,
-                            message: (header, message),
+                            header,
+                            message,
                         })
                         .await
                     {
@@ -564,7 +565,8 @@ async fn socket_rx_forever(
                     if let Err(error) = host_tx
                         .send(IncomingHostMessage {
                             from,
-                            message: (header, message),
+                            header,
+                            message,
                         })
                         .await
                     {
@@ -636,11 +638,13 @@ impl MessageReceiver {
 
 pub struct IncomingHostMessage {
     pub from: SocketAddr,
-    pub message: (Header, HostMessage),
+    pub header: Header,
+    pub message: HostMessage,
 }
 pub struct IncomingClientMessage {
     pub from: SocketAddr,
-    pub message: (Header, ClientMessage),
+    pub header: Header,
+    pub message: ClientMessage,
 }
 
 pub struct OutgoingMessage {

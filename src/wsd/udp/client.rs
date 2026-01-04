@@ -498,15 +498,13 @@ async fn listen_forever(
 
         let Some(IncomingClientMessage {
             from,
-            message: buffer,
+            header,
+            message,
         }) = message
         else {
             // the end, but we just got it before the cancellation
             break;
         };
-
-        let header = buffer.0;
-        let message = buffer.1;
 
         // let (header, mut body_reader) = match message_handler.deconstruct_message(&buffer).await {
         //     Ok(pieces) => pieces,

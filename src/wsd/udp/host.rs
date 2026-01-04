@@ -217,15 +217,13 @@ async fn listen_forever(
 
         let Some(IncomingHostMessage {
             from,
-            message: buffer,
+            header,
+            message,
         }) = message
         else {
             // the end, but we just got it before the cancellation
             break;
         };
-
-        let header = buffer.0;
-        let message = buffer.1;
 
         event!(
             Level::INFO,
