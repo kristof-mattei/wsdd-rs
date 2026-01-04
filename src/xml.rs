@@ -113,7 +113,7 @@ pub enum GenericParsingError {
     #[error("Invalid element order")]
     InvalidElementOrder,
     #[error("Invalid UUID")]
-    InvalidUuid(#[from] uuid::Error),
+    InvalidUrnUuid(#[from] uuid::Error),
     #[error("Invalid open/close element order")]
     InvalidDepth(usize),
 }

@@ -1,6 +1,11 @@
+pub mod bye;
 pub mod generic;
+pub mod get;
+pub mod hello;
 pub mod probe;
+pub mod probe_match;
 pub mod resolve;
+pub mod resolve_match;
 pub mod xaddrs;
 
 use std::io::Read;

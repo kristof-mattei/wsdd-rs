@@ -21,10 +21,9 @@ use crate::config::Config;
 use crate::constants;
 use crate::network_address::NetworkAddress;
 use crate::soap::parser::MessageHandler;
-use crate::soap::{UnicastMessage, builder};
+use crate::soap::{UnicastMessage, builder, parser};
 use crate::span::MakeSpanWithUuid;
 use crate::wsd::HANDLED_MESSAGES;
-use crate::wsd::udp::host::handle_probe;
 
 pub struct WSDHttpServer {
     _bound_to: NetworkAddress,
@@ -194,15 +193,26 @@ async fn build_response(
                     "known message: dropping it",
                 );
 
-                Ok(None)
-            } else {
-                Ok(handle_probe(
+                return Ok(None);
+            }
+
+            let probe = parser::probe::parse_probe(&mut body_reader)?;
+
+            if probe.types.is_empty() || probe.requested_type_match() {
+                return Ok(Some(builder::Builder::build_probe_matches(
                     config,
                     messages_built,
                     header.message_id,
-                    &mut body_reader,
-                )?)
+                )?));
             }
+
+            event!(
+                Level::DEBUG,
+                ?probe.types,
+                "client requests types we don't offer"
+            );
+
+            Ok(None)
         },
         _ => {
             return Err(eyre::Report::msg("Invalid Action"));
