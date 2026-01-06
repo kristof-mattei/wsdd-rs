@@ -72,7 +72,7 @@ tracing-subscriber = { version = "0.3.22", features = [
     "time",
     "tracing-log",
 ] }
-url = "2.5.7"
+url = "2.5.8"
 uuid = { version = "1.19.0", default-features = false, features = [
     "std",
     "v5",
