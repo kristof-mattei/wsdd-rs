@@ -112,6 +112,8 @@ pub enum GenericParsingError {
     InvalidElementOrder,
     #[error("Invalid UUID")]
     InvalidUrnUuid(#[from] uuid::Error),
+    #[error("Invalid starting position")]
+    InvalidDocumentPosition,
 }
 
 type FindDescendantResult = Result<(OwnedName, Vec<OwnedAttribute>), GenericParsingError>;

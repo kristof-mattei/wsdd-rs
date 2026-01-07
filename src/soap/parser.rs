@@ -146,6 +146,15 @@ impl MessageHandlerError {
                     "Error while decoding XML",
                 );
             },
+            &MessageHandlerError::GenericParsingError(
+                GenericParsingError::InvalidDocumentPosition,
+            ) => {
+                event!(
+                    Level::ERROR,
+                    wsd_message = %String::from_utf8_lossy(buffer),
+                    "XML parsing function called at incorrect document position"
+                );
+            },
         }
     }
 }
