@@ -6,7 +6,6 @@ use hashbrown::hash_map::EntryRef;
 use hashbrown::{HashMap, HashSet};
 use time::OffsetDateTime;
 use tracing::{Level, event};
-use xml::name::Name;
 use xml::reader::XmlEvent;
 
 use crate::constants;
@@ -112,6 +111,8 @@ impl WSDDiscoveredDevice {
             EntryRef::Vacant(vacant_entry_ref) => {
                 vacant_entry_ref.insert(HashSet::from_iter([host]));
 
+                // A vacant entry means this interface was not tracked before, so inserting
+                // the initial set of addresses always represents a new insertion.
                 true
             },
         };
@@ -190,32 +191,26 @@ impl WSDDiscoveredDevice {
                 {
                     if attribute.value == constants::WSDP_THIS_DEVICE_DIALECT {
                         // open ThisDevice
-                        let (this_device_scope, ..) = find_descendant(
+                        let (_, _) = find_descendant(
                             &mut reader,
                             Some(constants::XML_WSDP_NAMESPACE),
                             constants::WSDP_THIS_DEVICE,
                         )?;
 
-                        let new_props = extract_wsdp_props(
-                            &mut reader,
-                            constants::XML_WSDP_NAMESPACE,
-                            this_device_scope.borrow(),
-                        )?;
+                        let new_props =
+                            extract_wsdp_props(&mut reader, constants::XML_WSDP_NAMESPACE)?;
 
                         self.props.extend(new_props);
                     } else if attribute.value == constants::WSDP_THIS_MODEL_DIALECT {
                         // open ThisModel
-                        let (this_model_scope, ..) = find_descendant(
+                        let (_, _) = find_descendant(
                             &mut reader,
                             Some(constants::XML_WSDP_NAMESPACE),
                             constants::WSDP_THIS_MODEL,
                         )?;
 
-                        let new_props = extract_wsdp_props(
-                            &mut reader,
-                            constants::XML_WSDP_NAMESPACE,
-                            this_model_scope.borrow(),
-                        )?;
+                        let new_props =
+                            extract_wsdp_props(&mut reader, constants::XML_WSDP_NAMESPACE)?;
 
                         self.props.extend(new_props);
                     } else if attribute.value == constants::WSDP_RELATIONSHIP_DIALECT {
@@ -281,7 +276,6 @@ impl WSDDiscoveredDevice {
 fn extract_wsdp_props<R>(
     reader: &mut Wrapper<R>,
     namespace: &str,
-    closing: Name<'_>,
 ) -> Result<HashMap<Box<str>, Box<str>>, GenericParsingError>
 where
     R: Read,
@@ -297,32 +291,28 @@ where
                 depth += 1;
 
                 if depth == 2 && name.namespace_ref() == Some(namespace) {
-                    let text = read_text(reader)?;
-                    let text = text.unwrap_or_default();
+                    let text = read_text(reader)?.unwrap_or_default().into_boxed_str();
 
                     // add to bag
                     let tag_name = name.local_name;
 
-                    bag.insert(tag_name.into_boxed_str(), text.into_boxed_str());
+                    bag.insert(tag_name.into_boxed_str(), text);
 
                     // `read_text` reads until the closing, so goes up 1 level
                     depth -= 1;
                 }
             },
-            XmlEvent::EndElement { name, .. } => {
+            XmlEvent::EndElement { .. } => {
                 depth -= 1;
 
-                // this is detection for the closing element of `namespace:path`
                 if depth == 0 {
-                    if name.borrow() == closing {
-                        return Ok(bag);
-                    }
-
-                    return Err(GenericParsingError::InvalidDepth(depth));
+                    return Ok(bag);
                 }
             },
             XmlEvent::EndDocument => {
-                break;
+                unreachable!(
+                    "You can only call this function within a tag, so getting here is impossible, unless you started at the root of the document"
+                );
             },
             XmlEvent::CData(_)
             | XmlEvent::Characters(_)
@@ -336,10 +326,6 @@ where
             },
         }
     }
-
-    Err(GenericParsingError::MissingEndElement(
-        closing.to_string().into_boxed_str(),
-    ))
 }
 
 type ExtractHostPropsResult =

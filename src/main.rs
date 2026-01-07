@@ -44,6 +44,7 @@ use tracing_subscriber::{EnvFilter, Layer as _};
 use crate::address_monitor::create_address_monitor;
 use crate::build_env::get_build_env;
 use crate::cli::parse_cli;
+use crate::config::Config;
 use crate::network_handler::NetworkHandler;
 use crate::security::{chroot, drop_privileges};
 use crate::utils::flatten_handle;
@@ -137,8 +138,7 @@ fn print_header() {
     );
 }
 
-#[expect(clippy::too_many_lines, reason = "WIP")]
-async fn start_tasks() -> Result<ExitCode, eyre::Report> {
+fn get_config() -> Result<Arc<Config>, eyre::Report> {
     let config = Arc::new(parse_cli().inspect_err(|error| {
         // this prints the error in color and exits
         // can't do anything else until
@@ -148,6 +148,15 @@ async fn start_tasks() -> Result<ExitCode, eyre::Report> {
             clap_error.exit();
         }
     })?);
+
+    Ok(config)
+}
+
+/// starts all the tasks, such as the web server, the key refresh, ...
+/// ensures all tasks are gracefully shutdown in case of error, `CTRL+c` or `SIGTERM`
+#[expect(clippy::too_many_lines, reason = "WIP")]
+async fn start_tasks() -> Result<ExitCode, eyre::Report> {
+    let config = get_config()?;
 
     print_header();
 
@@ -291,7 +300,7 @@ async fn start_tasks() -> Result<ExitCode, eyre::Report> {
 
     // now we wait forever for either
     // * SIGTERM
-    // * ctrl + c (SIGINT)
+    // * CTRL+c (SIGINT)
     // * a message on the shutdown channel, sent either by the server task or
     // another task when they complete (which means they failed)
     tokio::select! {
@@ -305,10 +314,10 @@ async fn start_tasks() -> Result<ExitCode, eyre::Report> {
         },
         result = signal_handlers::wait_for_sigint() => {
             if let Err(error) = result {
-                event!(Level::ERROR, ?error, "Failed to register CTRL+C handler, aborting");
+                event!(Level::ERROR, ?error, "Failed to register CTRL+c handler, aborting");
             } else {
                 // we completed because ...
-                event!(Level::WARN, "CTRL+C detected, stopping all tasks");
+                event!(Level::WARN, "CTRL+c detected, stopping all tasks");
             }
         },
         () = cancellation_token.cancelled() => {
