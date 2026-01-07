@@ -296,7 +296,7 @@ where
             XmlEvent::StartElement { name, .. } => {
                 depth += 1;
 
-                if name.namespace_ref() == Some(namespace) {
+                if depth == 2 && name.namespace_ref() == Some(namespace) {
                     let text = read_text(reader)?;
                     let text = text.unwrap_or_default();
 
