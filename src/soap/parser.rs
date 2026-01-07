@@ -65,8 +65,8 @@ impl MessageHandlerError {
             &MessageHandlerError::GenericParsingError(GenericParsingError::InvalidElementOrder) => {
                 event!(
                     Level::TRACE,
-                    message = &*String::from_utf8_lossy(buffer),
-                    "XML Message has elements in invalid order",
+                    wsd_message = %String::from_utf8_lossy(buffer),
+                    "XML Message has elements in invalid order"
                 );
             },
             &MessageHandlerError::GenericParsingError(GenericParsingError::MissingElement(
@@ -75,7 +75,7 @@ impl MessageHandlerError {
                 event!(
                     Level::TRACE,
                     ?element,
-                    message = &*String::from_utf8_lossy(buffer),
+                    wsd_message = %String::from_utf8_lossy(buffer),
                     "XML Message did not have required elements",
                 );
             },
@@ -85,7 +85,7 @@ impl MessageHandlerError {
                 event!(
                     Level::TRACE,
                     %error,
-                    message = &*String::from_utf8_lossy(buffer),
+                    wsd_message = %String::from_utf8_lossy(buffer),
                     "XML Message text read error",
                 );
             },
@@ -93,7 +93,7 @@ impl MessageHandlerError {
                 event!(
                     Level::TRACE,
                     malformed_action,
-                    message = &*String::from_utf8_lossy(buffer),
+                    wsd_message = %String::from_utf8_lossy(buffer),
                     "XML Message Action was malformed",
                 );
             },
@@ -107,7 +107,7 @@ impl MessageHandlerError {
                 event!(
                     Level::TRACE,
                     ?uuid_error,
-                    message = &*String::from_utf8_lossy(buffer),
+                    wsd_message = %String::from_utf8_lossy(buffer),
                     "XML Message Header was malformed",
                 );
             },
@@ -117,7 +117,7 @@ impl MessageHandlerError {
                 event!(
                     Level::TRACE,
                     %error,
-                    message = &*String::from_utf8_lossy(buffer),
+                    wsd_message = %String::from_utf8_lossy(buffer),
                     "XML Message Header is missing pieces",
                 );
             },
@@ -128,7 +128,7 @@ impl MessageHandlerError {
                     Level::ERROR,
                     ?error,
                     ?content,
-                    message = &*String::from_utf8_lossy(buffer),
+                    wsd_message = %String::from_utf8_lossy(buffer),
                     "Invalid contents in text element",
                 );
             },
@@ -142,7 +142,7 @@ impl MessageHandlerError {
                 event!(
                     Level::ERROR,
                     ?error,
-                    message = &*String::from_utf8_lossy(buffer),
+                    wsd_message = %String::from_utf8_lossy(buffer),
                     "Error while decoding XML",
                 );
             },

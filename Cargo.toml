@@ -48,7 +48,7 @@ rand = "0.9.2"
 reqwest = { version = "0.13.1", default-features = false, features = [
     "native-tls",
 ] }
-ringmap = "0.2.1"
+ringmap = "0.2.2"
 socket2 = { version = "0.6.1", features = ["all"] }
 thiserror = "2.0.17"
 time = "0.3.44"
