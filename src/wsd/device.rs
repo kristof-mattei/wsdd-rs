@@ -1,4 +1,3 @@
-use std::borrow::ToOwned;
 use std::io::Read;
 use std::ops::Deref;
 
@@ -469,8 +468,7 @@ where
     let types = types
         .unwrap_or_default()
         .split_whitespace()
-        .map(ToOwned::to_owned)
-        .map(String::into_boxed_str)
+        .map(Into::into)
         .collect::<HashSet<_>>();
 
     if let Some(mut computer_namespace_prefix) = computer_namespace_prefix
