@@ -6,7 +6,6 @@ use color_eyre::eyre;
 use hashbrown::{HashMap, HashSet};
 use time::OffsetDateTime;
 use tracing::{Level, event};
-use xml::name::Name;
 use xml::reader::XmlEvent;
 
 use crate::constants;
@@ -194,32 +193,26 @@ impl WSDDiscoveredDevice {
                 {
                     if attribute.value == constants::WSDP_THIS_DEVICE_DIALECT {
                         // open ThisDevice
-                        let (this_device_scope, ..) = find_descendant(
+                        find_descendant(
                             &mut reader,
                             Some(constants::XML_WSDP_NAMESPACE),
                             constants::WSDP_THIS_DEVICE,
                         )?;
 
-                        let new_props = extract_wsdp_props(
-                            &mut reader,
-                            constants::XML_WSDP_NAMESPACE,
-                            this_device_scope.borrow(),
-                        )?;
+                        let new_props =
+                            extract_wsdp_props(&mut reader, constants::XML_WSDP_NAMESPACE)?;
 
                         self.props.extend(new_props);
                     } else if attribute.value == constants::WSDP_THIS_MODEL_DIALECT {
                         // open ThisModel
-                        let (this_model_scope, ..) = find_descendant(
+                        find_descendant(
                             &mut reader,
                             Some(constants::XML_WSDP_NAMESPACE),
                             constants::WSDP_THIS_MODEL,
                         )?;
 
-                        let new_props = extract_wsdp_props(
-                            &mut reader,
-                            constants::XML_WSDP_NAMESPACE,
-                            this_model_scope.borrow(),
-                        )?;
+                        let new_props =
+                            extract_wsdp_props(&mut reader, constants::XML_WSDP_NAMESPACE)?;
 
                         self.props.extend(new_props);
                     } else if attribute.value == constants::WSDP_RELATIONSHIP_DIALECT {
@@ -285,7 +278,6 @@ impl WSDDiscoveredDevice {
 fn extract_wsdp_props<R>(
     reader: &mut Wrapper<R>,
     namespace: &str,
-    closing: Name<'_>,
 ) -> Result<HashMap<Box<str>, Box<str>>, GenericParsingError>
 where
     R: Read,
@@ -313,20 +305,15 @@ where
                     depth -= 1;
                 }
             },
-            XmlEvent::EndElement { name, .. } => {
+            XmlEvent::EndElement { .. } => {
                 depth -= 1;
 
-                // this is detection for the closing element of `namespace:path`
-                if name.borrow() == closing {
-                    if depth != 0 {
-                        return Err(GenericParsingError::InvalidDepth(depth));
-                    }
-
+                if depth == 0 {
                     return Ok(bag);
                 }
             },
             XmlEvent::EndDocument => {
-                break;
+                return Err(GenericParsingError::InvalidDocumentPosition);
             },
             XmlEvent::CData(_)
             | XmlEvent::Characters(_)
@@ -340,10 +327,6 @@ where
             },
         }
     }
-
-    Err(GenericParsingError::MissingEndElement(
-        closing.to_string().into_boxed_str(),
-    ))
 }
 
 type ExtractHostPropsResult =
@@ -513,4 +496,59 @@ where
     }
 
     Ok((types, None))
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::{assert_eq, assert_matches};
+    use xml::reader::EventReader;
+
+    use crate::constants;
+    use crate::wsd::device::extract_wsdp_props;
+    use crate::xml::{GenericParsingError, Wrapper, find_descendant};
+
+    #[test]
+    fn extract_wsdp_props_reads_namespaced_children() -> Result<(), GenericParsingError> {
+        let xml = format!(
+            r#"<wsdp:ThisDevice xmlns:wsdp="{}">
+                   <wsdp:FriendlyName>Printer</wsdp:FriendlyName>
+                   <wsdp:PresentationUrl>http://example</wsdp:PresentationUrl>
+               </wsdp:ThisDevice>"#,
+            constants::XML_WSDP_NAMESPACE
+        );
+
+        let mut reader = Wrapper::new(EventReader::new(xml.as_bytes()));
+
+        find_descendant(
+            &mut reader,
+            Some(constants::XML_WSDP_NAMESPACE),
+            constants::WSDP_THIS_DEVICE,
+        )?;
+
+        let bag = extract_wsdp_props(&mut reader, constants::XML_WSDP_NAMESPACE)?;
+
+        assert_eq!(bag.get("FriendlyName").map(|s| &**s), Some("Printer"));
+        assert_eq!(
+            bag.get("PresentationUrl").map(|s| &**s),
+            Some("http://example")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn extract_wsdp_props_errors_when_called_at_root() {
+        let xml = format!(
+            r#"<ThisDevice xmlns:wsdp="{}">
+                   <wsdp:FriendlyName>Printer</wsdp:FriendlyName>
+                   <wsdp:PresentationUrl>http://example</wsdp:PresentationUrl>
+               </ThisDevice>"#,
+            constants::XML_WSDP_NAMESPACE
+        );
+
+        let mut reader = Wrapper::new(EventReader::new(xml.as_bytes()));
+
+        let bag = extract_wsdp_props(&mut reader, constants::XML_WSDP_NAMESPACE);
+
+        assert_matches!(bag, Err(GenericParsingError::InvalidDocumentPosition));
+    }
 }

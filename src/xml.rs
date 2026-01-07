@@ -108,14 +108,12 @@ pub enum GenericParsingError {
     TextReadError(#[from] TextReadError),
     #[error("Missing `{0}`")]
     MissingElement(Box<str>),
-    #[error("Missing end `{0}` element")]
-    MissingEndElement(Box<str>),
     #[error("Invalid element order")]
     InvalidElementOrder,
     #[error("Invalid UUID")]
     InvalidUrnUuid(#[from] uuid::Error),
-    #[error("Invalid open/close element order")]
-    InvalidDepth(usize),
+    #[error("Invalid starting position")]
+    InvalidDocumentPosition,
 }
 
 type FindDescendantResult = Result<(OwnedName, Vec<OwnedAttribute>), GenericParsingError>;
