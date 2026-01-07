@@ -313,12 +313,12 @@ where
                 depth -= 1;
 
                 // this is detection for the closing element of `namespace:path`
-                if name.borrow() == closing {
-                    if depth != 0 {
-                        return Err(GenericParsingError::InvalidDepth(depth));
+                if depth == 0 {
+                    if name.borrow() == closing {
+                        return Ok(bag);
                     }
 
-                    return Ok(bag);
+                    return Err(GenericParsingError::InvalidDepth(depth));
                 }
             },
             XmlEvent::EndDocument => {
@@ -482,8 +482,7 @@ where
     let types = types
         .unwrap_or_default()
         .split_whitespace()
-        .map(ToOwned::to_owned)
-        .map(String::into_boxed_str)
+        .map(Into::into)
         .collect::<HashSet<_>>();
 
     if let Some(mut computer_namespace_prefix) = computer_namespace_prefix
