@@ -64,10 +64,10 @@ impl MessageHandlerError {
             },
             &MessageHandlerError::GenericParsingError(GenericParsingError::InvalidElementOrder) => {
                 event!(
-                                    Level::TRACE,
-                wsd_message = %String::from_utf8_lossy(buffer),
-                                    "XML Message has elements in invalid order",
-                                );
+                    Level::TRACE,
+                    wsd_message = %String::from_utf8_lossy(buffer),
+                    "XML Message has elements in invalid order"
+                );
             },
             &MessageHandlerError::GenericParsingError(GenericParsingError::MissingElement(
                 ref element,
