@@ -291,14 +291,14 @@ where
             XmlEvent::StartElement { name, .. } => {
                 depth += 1;
 
-                if name.namespace_ref() == Some(namespace) {
+                if depth == 2 && name.namespace_ref() == Some(namespace) {
                     let text = read_text(reader)?;
-                    let text = text.unwrap_or_default();
+                    let text = text.unwrap_or_default().into_boxed_str();
 
                     // add to bag
-                    let tag_name = name.local_name;
+                    let tag_name = name.local_name.into_boxed_str();
 
-                    bag.insert(tag_name.into_boxed_str(), text.into_boxed_str());
+                    bag.insert(tag_name, text);
 
                     // `read_text` reads until the closing, so goes up 1 level
                     depth -= 1;
