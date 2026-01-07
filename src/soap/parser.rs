@@ -56,7 +56,6 @@ pub enum MessageHandlerError {
     XmlError(#[from] xml::reader::Error),
 }
 impl MessageHandlerError {
-    #[expect(clippy::too_many_lines, reason = "Lots of errors")]
     #[track_caller]
     pub(crate) fn log(&self, buffer: &[u8]) {
         match self {
@@ -78,16 +77,6 @@ impl MessageHandlerError {
                     ?element,
                     wsd_message = %String::from_utf8_lossy(buffer),
                     "XML Message did not have required elements",
-                );
-            },
-            &MessageHandlerError::GenericParsingError(GenericParsingError::MissingEndElement(
-                ref end_element,
-            )) => {
-                event!(
-                    Level::TRACE,
-                    ?end_element,
-                    wsd_message = %String::from_utf8_lossy(buffer),
-                    "XML Message did not have required end element",
                 );
             },
             &MessageHandlerError::GenericParsingError(GenericParsingError::TextReadError(
@@ -157,11 +146,13 @@ impl MessageHandlerError {
                     "Error while decoding XML",
                 );
             },
-            &MessageHandlerError::GenericParsingError(GenericParsingError::InvalidDepth(_)) => {
+            &MessageHandlerError::GenericParsingError(
+                GenericParsingError::InvalidDocumentPosition,
+            ) => {
                 event!(
                     Level::ERROR,
                     wsd_message = %String::from_utf8_lossy(buffer),
-                    "Error while decoding XML, found element at wrong depth",
+                    "XML parsing function called at incorrect document position"
                 );
             },
         }
