@@ -2,6 +2,7 @@ use std::io::Read;
 use std::ops::Deref;
 
 use color_eyre::eyre;
+use hashbrown::hash_map::EntryRef;
 use hashbrown::{HashMap, HashSet};
 use time::OffsetDateTime;
 use tracing::{Level, event};
@@ -105,17 +106,16 @@ impl WSDDiscoveredDevice {
 
         let host = xaddr.host_str().to_owned().into_boxed_str();
 
-        let report =
-            if let Some(addresses) = self.addresses.get_mut(network_address.interface.name()) {
-                addresses.insert(host)
-            } else {
-                self.addresses.insert(
-                    network_address.interface.name().to_owned().into_boxed_str(),
-                    HashSet::from_iter([host]),
-                );
+        let report = match self.addresses.entry_ref(network_address.interface.name()) {
+            EntryRef::Occupied(mut occupied_entry) => occupied_entry.get_mut().insert(host),
+            EntryRef::Vacant(vacant_entry_ref) => {
+                vacant_entry_ref.insert(HashSet::from_iter([host]));
 
+                // A vacant entry means this interface was not tracked before, so inserting
+                // the initial set of addresses always represents a new insertion.
                 true
-            };
+            },
+        };
 
         self.last_seen = OffsetDateTime::now_utc();
 
