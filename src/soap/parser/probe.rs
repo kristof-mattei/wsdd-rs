@@ -38,7 +38,8 @@ where
                 if depth == 1 && name.namespace_ref() == Some(constants::XML_WSD_NAMESPACE) {
                     match &*name.local_name {
                         "Scopes" => {
-                            let raw_scopes = read_text(reader)?.unwrap_or_default();
+                            let text = read_text(reader)?;
+                            let raw_scopes = text.unwrap_or_default();
 
                             event!(
                                 Level::DEBUG,
