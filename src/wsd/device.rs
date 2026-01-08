@@ -119,35 +119,34 @@ impl WSDDiscoveredDevice {
 
         self.last_seen = OffsetDateTime::now_utc();
 
-        if report {
-            if let Some((display_name, belongs_to)) = self
+        if report
+            && let Some((display_name, belongs_to)) = self
                 .props
                 .get("DisplayName")
                 .and_then(|d| self.props.get("BelongsTo").map(|b| (d, b)))
-            {
-                self.display_name = Some(display_name.to_owned());
+        {
+            self.display_name = Some(display_name.to_owned());
 
-                event!(
-                    Level::INFO,
-                    device_uri = %self.device_uri,
-                    %display_name,
-                    %belongs_to,
-                    addr = %xaddr,
-                    "Discovered device"
-                );
-            } else if let Some(friendly_name) = self.props.get("FriendlyName") {
-                self.display_name = Some(friendly_name.to_owned());
+            event!(
+                Level::INFO,
+                device_uri = %self.device_uri,
+                %display_name,
+                %belongs_to,
+                addr = %xaddr,
+                "Discovered device"
+            );
+        } else if let Some(friendly_name) = self.props.get("FriendlyName") {
+            self.display_name = Some(friendly_name.to_owned());
 
-                event!(
-                    Level::INFO,
-                    device_uri = %self.device_uri,
-                    display_name = %friendly_name,
-                    addr = %xaddr,
-                    "Discovered device"
-                );
-            } else {
-                // No way to get a display name
-            }
+            event!(
+                Level::INFO,
+                device_uri = %self.device_uri,
+                display_name = %friendly_name,
+                addr = %xaddr,
+                "Discovered device"
+            );
+        } else {
+            // No way to get a display name
         }
 
         event!(
