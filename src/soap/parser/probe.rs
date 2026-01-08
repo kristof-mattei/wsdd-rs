@@ -39,7 +39,6 @@ where
                     match &*name.local_name {
                         "Scopes" => {
                             let text = read_text(reader)?;
-
                             let raw_scopes = text.unwrap_or_default();
 
                             event!(
