@@ -291,12 +291,13 @@ where
                 depth += 1;
 
                 if depth == 2 && name.namespace_ref() == Some(namespace) {
-                    let text = read_text(reader)?.unwrap_or_default().into_boxed_str();
+                    let text = read_text(reader)?;
+                    let text = text.unwrap_or_default();
 
                     // add to bag
                     let tag_name = name.local_name;
 
-                    bag.insert(tag_name.into_boxed_str(), text);
+                    bag.insert(tag_name.into_boxed_str(), text.into_boxed_str());
 
                     // `read_text` reads until the closing, so goes up 1 level
                     depth -= 1;
