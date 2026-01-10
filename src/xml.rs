@@ -25,6 +25,18 @@ where
     reader: EventReader<R>,
 }
 
+impl<R> Clone for Wrapper<R>
+where
+    R: Read + Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            next: self.next.clone(),
+            reader: self.reader.clone(),
+        }
+    }
+}
+
 impl<R> Wrapper<R>
 where
     R: Read,
