@@ -191,7 +191,7 @@ impl WSDDiscoveredDevice {
                 {
                     if attribute.value == constants::WSDP_THIS_DEVICE_DIALECT {
                         // open ThisDevice
-                        let (_, _) = find_descendant(
+                        find_descendant(
                             &mut reader,
                             Some(constants::XML_WSDP_NAMESPACE),
                             constants::WSDP_THIS_DEVICE,
@@ -203,7 +203,7 @@ impl WSDDiscoveredDevice {
                         self.props.extend(new_props);
                     } else if attribute.value == constants::WSDP_THIS_MODEL_DIALECT {
                         // open ThisModel
-                        let (_, _) = find_descendant(
+                        find_descendant(
                             &mut reader,
                             Some(constants::XML_WSDP_NAMESPACE),
                             constants::WSDP_THIS_MODEL,
@@ -291,12 +291,13 @@ where
                 depth += 1;
 
                 if depth == 2 && name.namespace_ref() == Some(namespace) {
-                    let text = read_text(reader)?.unwrap_or_default().into_boxed_str();
+                    let text = read_text(reader)?;
+                    let prop_value = text.unwrap_or_default();
 
                     // add to bag
-                    let tag_name = name.local_name;
+                    let prop_key = name.local_name;
 
-                    bag.insert(tag_name.into_boxed_str(), text);
+                    bag.insert(prop_key.into_boxed_str(), prop_value.into_boxed_str());
 
                     // `read_text` reads until the closing, so goes up 1 level
                     depth -= 1;
@@ -310,9 +311,7 @@ where
                 }
             },
             XmlEvent::EndDocument => {
-                unreachable!(
-                    "You can only call this function within a tag, so getting here is impossible, unless you started at the root of the document"
-                );
+                return Err(GenericParsingError::InvalidDocumentPosition);
             },
             XmlEvent::CData(_)
             | XmlEvent::Characters(_)
@@ -494,4 +493,59 @@ where
     }
 
     Ok((types, None))
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::{assert_eq, assert_matches};
+    use xml::reader::EventReader;
+
+    use crate::constants;
+    use crate::wsd::device::extract_wsdp_props;
+    use crate::xml::{GenericParsingError, Wrapper, find_descendant};
+
+    #[test]
+    fn extract_wsdp_props_reads_namespaced_children() -> Result<(), GenericParsingError> {
+        let xml = format!(
+            r#"<wsdp:ThisDevice xmlns:wsdp="{}">
+                   <wsdp:FriendlyName>Printer</wsdp:FriendlyName>
+                   <wsdp:PresentationUrl>http://example</wsdp:PresentationUrl>
+               </wsdp:ThisDevice>"#,
+            constants::XML_WSDP_NAMESPACE
+        );
+
+        let mut reader = Wrapper::new(EventReader::new(xml.as_bytes()));
+
+        find_descendant(
+            &mut reader,
+            Some(constants::XML_WSDP_NAMESPACE),
+            constants::WSDP_THIS_DEVICE,
+        )?;
+
+        let bag = extract_wsdp_props(&mut reader, constants::XML_WSDP_NAMESPACE)?;
+
+        assert_eq!(bag.get("FriendlyName").map(|s| &**s), Some("Printer"));
+        assert_eq!(
+            bag.get("PresentationUrl").map(|s| &**s),
+            Some("http://example")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn extract_wsdp_props_errors_when_called_at_root() {
+        let xml = format!(
+            r#"<ThisDevice xmlns:wsdp="{}">
+                   <wsdp:FriendlyName>Printer</wsdp:FriendlyName>
+                   <wsdp:PresentationUrl>http://example</wsdp:PresentationUrl>
+               </ThisDevice>"#,
+            constants::XML_WSDP_NAMESPACE
+        );
+
+        let mut reader = Wrapper::new(EventReader::new(xml.as_bytes()));
+
+        let bag = extract_wsdp_props(&mut reader, constants::XML_WSDP_NAMESPACE);
+
+        assert_matches!(bag, Err(GenericParsingError::InvalidDocumentPosition));
+    }
 }
