@@ -15,6 +15,7 @@ RUN --mount=type=cache,id=apt-cache,target=/var/cache/apt,sharing=locked \
     && apt-get upgrade --yes \
     && apt-get install --no-install-recommends --yes \
         build-essential \
+        ca-certificates \
         musl-dev
 
 FROM rust-base AS rust-linux-amd64
@@ -109,6 +110,9 @@ COPY --from=passwd-build /tmp/group_appuser /etc/group
 COPY --from=passwd-build /tmp/passwd_appuser /etc/passwd
 
 COPY --from=rust-build /output/bin/${APPLICATION_NAME} /app/entrypoint
+
+# certificates
+COPY --from=rust-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 USER appuser
 
