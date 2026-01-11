@@ -3,35 +3,36 @@ use std::ptr::null_mut;
 
 use color_eyre::eyre;
 use libc::{c_int, sigaction};
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", miri)))]
 use tokio::signal::unix::SignalKind;
+#[cfg(not(any(target_os = "windows", miri)))]
+use tokio::signal::unix::signal;
 use tracing::Level;
 
 use crate::wrap_and_report;
 
-macro_rules! await_linux_only_signal {
-    ($signal:expr) => {{
-        #[cfg(not(target_os = "windows"))]
-        use tokio::signal::unix::signal;
-
-        #[cfg(not(target_os = "windows"))]
-        signal($signal)?.recv().await;
-
-        #[cfg(target_os = "windows")]
-        let _r = std::future::pending::<Result<(), std::io::Error>>().await;
-    }};
-}
-
 /// Waits forever for a `SIGTERM`
 pub async fn wait_for_sigterm() -> Result<(), std::io::Error> {
-    await_linux_only_signal!(SignalKind::terminate());
+    #[cfg(not(any(target_os = "windows", miri)))]
+    {
+        signal(SignalKind::terminate())?.recv().await;
+    };
+
+    #[cfg(any(target_os = "windows", miri))]
+    let _r = std::future::pending::<Result<(), std::io::Error>>().await;
 
     Ok(())
 }
 
 /// Waits forever for a `SIGINT`
 pub async fn wait_for_sigint() -> Result<(), std::io::Error> {
-    tokio::signal::ctrl_c().await?;
+    #[cfg(not(any(target_os = "windows", miri)))]
+    {
+        tokio::signal::ctrl_c().await?;
+    };
+
+    #[cfg(any(target_os = "windows", miri))]
+    let _r = std::future::pending::<Result<(), std::io::Error>>().await;
 
     Ok(())
 }
