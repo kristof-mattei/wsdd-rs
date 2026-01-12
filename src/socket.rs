@@ -27,7 +27,10 @@ pub unsafe fn setsockopt<F: AsFd, T>(
 ) -> std::io::Result<()> {
     let payload = std::ptr::addr_of!(*payload).cast();
 
-    #[expect(clippy::cast_possible_truncation, reason = "Standard way of doing")]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Can't pass in things larger than `libc::socklen_t`"
+    )]
     // TODO switch to `try_into().unwrap()` once `try_into()` becomes `const`
     let length: u32 = const { std::mem::size_of::<T>() as libc::socklen_t };
 

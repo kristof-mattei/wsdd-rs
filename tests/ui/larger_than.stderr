@@ -1,0 +1,15 @@
+error[E0080]: evaluation panicked: The size of `LargerThanU8` exceeds the capacity of type `u8`
+ --> tests/ui/larger_than.rs:7:1
+  |
+7 | define_typed_size!(SIZE_OF_LARGER_THAN_U8, u8, LargerThanU8);
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `SIZE_OF_LARGER_THAN_U8::{constant#0}` failed here
+  |
+  = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the macro `define_typed_size` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+note: erroneous constant encountered
+ --> tests/ui/larger_than.rs:7:1
+  |
+7 | define_typed_size!(SIZE_OF_LARGER_THAN_U8, u8, LargerThanU8);
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this note originates in the macro `define_typed_size` (in Nightly builds, run with -Z macro-backtrace for more info)

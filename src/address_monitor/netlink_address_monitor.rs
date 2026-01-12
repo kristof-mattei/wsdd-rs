@@ -14,22 +14,13 @@ use socket2::SockAddrStorage;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
+use wsdd_rs::define_typed_size;
 
 use crate::config::Config;
 use crate::network_handler::Command;
 use crate::utils::task::spawn_with_name;
 
-#[expect(clippy::cast_possible_truncation, reason = "Compile-time checked")]
-const SIZE_OF_SOCKADDR_NL: u32 = const {
-    const SIZE: usize = size_of::<libc::sockaddr_nl>();
-
-    assert!(
-        SIZE <= u32::MAX as usize,
-        "`sockaddr_nl`'s size needs to fit in a `u32`"
-    );
-
-    SIZE as u32
-};
+define_typed_size!(SIZE_OF_SOCKADDR_NL, u32, libc::sockaddr_nl);
 
 pub struct NetlinkAddressMonitor {
     cancellation_token: CancellationToken,
@@ -427,4 +418,16 @@ fn parse_address_message(address_message: &AddressMessage) -> Option<(IpNet, Add
         address_message.header.scope,
         address_message.header.index,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+
+    use crate::address_monitor::netlink_address_monitor::SIZE_OF_SOCKADDR_NL;
+
+    #[test]
+    fn size_of_sockaddr_nl() {
+        assert_eq!(size_of::<libc::sockaddr_nl>(), SIZE_OF_SOCKADDR_NL as usize);
+    }
 }

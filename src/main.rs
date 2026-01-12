@@ -5,7 +5,6 @@ mod cli;
 mod config;
 mod constants;
 mod dns;
-mod ffi;
 mod helpers;
 mod max_size_deque;
 mod multicast_handler;
