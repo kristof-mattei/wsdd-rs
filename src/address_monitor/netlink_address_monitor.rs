@@ -106,11 +106,11 @@ impl NetlinkAddressMonitor {
                             if changed.is_err() {
                                 break;
                             }
-
-                            if let Err(error) = request_current_state(&socket) {
-                                event!(Level::ERROR, ?error, "Failed to send start packet");
-                            }
                         },
+                    }
+
+                    if let Err(error) = request_current_state(&socket) {
+                        event!(Level::ERROR, ?error, "Failed to send start packet");
                     }
                 }
             })
