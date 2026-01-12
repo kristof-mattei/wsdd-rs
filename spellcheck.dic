@@ -1,4 +1,4 @@
-24
+26
 backport
 CDATA
 chroot
@@ -7,6 +7,7 @@ datagaram
 datagrams
 deduplicate
 deduplicates
+dereference
 DNS
 interoperability
 multicast
@@ -23,3 +24,4 @@ unicast
 URI
 WSD
 XSD
+zerocopy
