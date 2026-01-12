@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 use wsdd_rs::define_typed_size;
 
-use crate::config::Config;
+use crate::config::{BindTo, Config};
 use crate::network_handler::Command;
 use crate::utils::task::spawn_with_name;
 
@@ -35,15 +35,15 @@ impl NetlinkAddressMonitor {
         cancellation_token: CancellationToken,
         command_tx: Sender<Command>,
         start_rx: tokio::sync::watch::Receiver<()>,
-        config: &Config,
+        config: Arc<Config>,
     ) -> Result<Self, std::io::Error> {
         let mut rtm_groups = RTMGRP_LINK;
 
-        if !config.ipv4only {
+        if !config.bind_to.ipv4_only() {
             rtm_groups |= RTMGRP_IPV6_IFADDR;
         }
 
-        if !config.ipv6only {
+        if !config.bind_to.ipv6_only() {
             rtm_groups |= RTMGRP_IPV4_IFADDR;
         }
 
@@ -107,9 +107,9 @@ impl NetlinkAddressMonitor {
                                 break;
                             }
                         },
-                    }
+                    };
 
-                    if let Err(error) = request_current_state(&socket) {
+                    if let Err(error) = request_current_state(&config, &socket) {
                         event!(Level::ERROR, ?error, "Failed to send start packet");
                     }
                 }
@@ -185,11 +185,24 @@ impl NetlinkAddressMonitor {
     }
 }
 
-fn request_current_state(socket: &tokio::net::UdpSocket) -> Result<(), std::io::Error> {
+fn request_current_state(
+    config: &Config,
+    socket: &tokio::net::UdpSocket,
+) -> Result<(), std::io::Error> {
     let address_message = {
         let mut address_message = AddressMessage::default();
 
-        address_message.header.family = netlink_packet_route::AddressFamily::Packet;
+        match config.bind_to {
+            BindTo::IPv4 => {
+                address_message.header.family = netlink_packet_route::AddressFamily::Inet;
+            },
+            BindTo::IPv6 => {
+                address_message.header.family = netlink_packet_route::AddressFamily::Inet6;
+            },
+            BindTo::DualStack => {
+                address_message.header.family = netlink_packet_route::AddressFamily::Unspec;
+            },
+        }
 
         address_message
     };

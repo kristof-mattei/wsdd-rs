@@ -297,11 +297,11 @@ impl NetworkHandler {
         }
 
         // filter out address families we are not interested in
-        if self.config.ipv4only && !address.address.addr().is_ipv4() {
+        if self.config.bind_to.ipv4_only() && !address.address.addr().is_ipv4() {
             return Err(Reason::IPv4Only);
         }
 
-        if self.config.ipv6only && !address.address.addr().is_ipv6() {
+        if self.config.bind_to.ipv6_only() && !address.address.addr().is_ipv6() {
             return Err(Reason::IPv6Only);
         }
 
