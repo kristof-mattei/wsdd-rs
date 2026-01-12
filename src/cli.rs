@@ -12,7 +12,7 @@ use uuid::Uuid;
 use uuid::fmt::Urn;
 use wsdd_rs::ffi::listen_fds;
 
-use crate::config::{Config, PortOrSocket};
+use crate::config::{BindTo, Config, PortOrSocket};
 use crate::security::parse_userspec;
 use crate::wsd::device::DeviceUri;
 
@@ -271,6 +271,17 @@ where
         format!("{}/Workgroup:{}", hostname, workgroup)
     };
 
+    let ipv4only = matches.get_one("ipv4only").copied().unwrap_or(false);
+    let ipv6only = matches.get_one("ipv6only").copied().unwrap_or(false);
+
+    let bind_to = if ipv4only {
+        BindTo::IPv4
+    } else if ipv6only {
+        BindTo::IPv6
+    } else {
+        BindTo::DualStack
+    };
+
     let config = Config {
         interfaces,
         hoplimit: *matches.get_one("hoplimit").expect("hoplimit has a default"),
@@ -281,8 +292,7 @@ where
         full_hostname: full_hostname.into_boxed_str(),
         no_autostart: matches.get_one("no-autostart").copied().unwrap_or(false),
         no_http: matches.get_one("no-http").copied().unwrap_or(false),
-        ipv4only: matches.get_one("ipv4only").copied().unwrap_or(false),
-        ipv6only: matches.get_one("ipv6only").copied().unwrap_or(false),
+        bind_to,
         shortlog: matches.get_one("shortlog").copied().unwrap_or(false),
         chroot: matches.get_one("chroot").cloned(),
         user: matches.get_one("user").copied(),

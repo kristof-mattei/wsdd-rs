@@ -20,8 +20,6 @@ pub struct Config {
     pub full_hostname: Box<str>,
     pub no_autostart: bool,
     pub no_http: bool,
-    pub ipv4only: bool,
-    pub ipv6only: bool,
     //     if args.shortlog:
     //         fmt = '%(levelname)s: %(message)s'
     //     else:
@@ -40,6 +38,34 @@ pub struct Config {
     pub source_port: u16,
     pub wsd_instance_id: Box<str>,
     pub sequence_id: Box<str>,
+    pub bind_to: BindTo,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum BindTo {
+    IPv4,
+    IPv6,
+    DualStack,
+}
+
+impl std::fmt::Display for BindTo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            BindTo::IPv4 => write!(f, "IPv4"),
+            BindTo::IPv6 => write!(f, "IPv6"),
+            BindTo::DualStack => write!(f, "Dual Stack"),
+        }
+    }
+}
+
+impl BindTo {
+    pub fn ipv4_only(&self) -> bool {
+        matches!(self, BindTo::IPv4)
+    }
+
+    pub fn ipv6_only(&self) -> bool {
+        matches!(self, BindTo::IPv6)
+    }
 }
 
 #[derive(Debug, Clone)]

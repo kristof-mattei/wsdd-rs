@@ -226,7 +226,7 @@ async fn start_tasks() -> Result<ExitCode, eyre::Report> {
                 cancellation_token.child_token(),
                 command_tx,
                 start_rx,
-                &config,
+                Arc::clone(&config),
             ) {
                 Ok(address_monitor) => address_monitor,
                 Err(error) => {
