@@ -10,9 +10,9 @@ use color_eyre::eyre;
 use tracing::{Level, event};
 use uuid::Uuid;
 use uuid::fmt::Urn;
-use wsdd_rs::ffi::listen_fds;
 
 use crate::config::{BindTo, Config, PortOrSocket};
+use crate::ffi::listen_fds;
 use crate::security::parse_userspec;
 use crate::wsd::device::DeviceUri;
 
