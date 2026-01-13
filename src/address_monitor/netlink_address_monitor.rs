@@ -22,6 +22,7 @@ use crate::ffi::{
     IFA_PAYLOAD, IFA_RTA, NLMSG_DATA, NLMSG_NEXT, NLMSG_OK, RTA_DATA, RTA_NEXT, RTA_OK, SendPtr,
     ifaddrmsg, netlink_req, nlmsghdr, rta_type_to_label,
 };
+use crate::kernel_buffer::KernelBuffer;
 use crate::network_handler::Command;
 use crate::utils::task::spawn_with_name;
 
@@ -144,20 +145,21 @@ impl NetlinkAddressMonitor {
         // are aligned to 4 bytes
         // Notice the buffer is u32 because all of our structs written here by the kernel
         // are aligned to 4 bytes
-        #[repr(align(4))]
-        struct Wrapper([MaybeUninit<u8>; 4096]);
-        let mut buffer = Box::from(Wrapper([MaybeUninit::<u8>::uninit(); 4096]));
+
+        let mut buffer = KernelBuffer::<4096>::new_boxed();
 
         loop {
-            let mut buffer_byte_cursor = &mut buffer.as_mut().0[..];
+            let bytes_read = {
+                let mut buffer_byte_cursor = &mut buffer;
 
-            let bytes_read = tokio::select! {
-                () = self.cancellation_token.cancelled() => {
-                    break;
-                },
-                result = self.socket.recv_buf(&mut buffer_byte_cursor) => {
-                    result?
-                },
+                tokio::select! {
+                    () = self.cancellation_token.cancelled() => {
+                        break;
+                    },
+                    result = self.socket.recv_buf(&mut buffer_byte_cursor) => {
+                        result?
+                    },
+                }
             };
 
             event!(
@@ -167,7 +169,7 @@ impl NetlinkAddressMonitor {
             );
 
             // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
-            let buffer = unsafe { &*(&raw const buffer.0[..bytes_read] as *const [u8]) };
+            let buffer = unsafe { &*(&raw const buffer[..bytes_read] as *const [u8]) };
 
             if let Err(error) =
                 parse_netlink_response(buffer, &self.cancellation_token, &self.command_tx).await
