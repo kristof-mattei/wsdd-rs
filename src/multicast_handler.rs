@@ -275,9 +275,11 @@ impl MulticastHandler {
             .set_only_v6(true)
             .wrap_err("Failed to set IPV6_V6ONLY")?;
 
-        // TODO error
+        // TODO when this fails we need to filter ourselves
         // https://github.com/torvalds/linux/commit/15033f0457dca569b284bef0c8d3ad55fb37eacb
         if let Err(error) = mc_wsd_port_socket.set_multicast_all_v6(false) {
+            // if this fails we will see a larger amount of traffic
+            // what should we do? Do we support kernels < 4.20?
             event!(Level::WARN, ?error, "cannot unset IPV6_MULTICAST_ALL");
         }
 
