@@ -1,4 +1,3 @@
-use std::mem::MaybeUninit;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 
@@ -22,6 +21,7 @@ use crate::ffi::{
     IFA_PAYLOAD, IFA_RTA, NLMSG_DATA, NLMSG_NEXT, NLMSG_OK, RTA_DATA, RTA_NEXT, RTA_OK, SendPtr,
     ifaddrmsg, netlink_req, nlmsghdr, rta_type_to_label,
 };
+use crate::kernel_buffer::KernelBuffer;
 use crate::network_handler::Command;
 use crate::utils::task::spawn_with_name;
 
@@ -144,20 +144,21 @@ impl NetlinkAddressMonitor {
         // are aligned to 4 bytes
         // Notice the buffer is u32 because all of our structs written here by the kernel
         // are aligned to 4 bytes
-        #[repr(align(4))]
-        struct Wrapper([MaybeUninit<u8>; 4096]);
-        let mut buffer = Box::from(Wrapper([MaybeUninit::<u8>::uninit(); 4096]));
+
+        let mut buffer = KernelBuffer::<4096>::new_boxed();
 
         loop {
-            let mut buffer_byte_cursor = &mut buffer.as_mut().0[..];
+            let bytes_read = {
+                let mut buffer_byte_cursor = &mut buffer;
 
-            let bytes_read = tokio::select! {
-                () = self.cancellation_token.cancelled() => {
-                    break;
-                },
-                result = self.socket.recv_buf(&mut buffer_byte_cursor) => {
-                    result?
-                },
+                tokio::select! {
+                    () = self.cancellation_token.cancelled() => {
+                        break;
+                    },
+                    result = self.socket.recv_buf(&mut buffer_byte_cursor) => {
+                        result?
+                    },
+                }
             };
 
             event!(
@@ -167,7 +168,7 @@ impl NetlinkAddressMonitor {
             );
 
             // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
-            let buffer = unsafe { &*(&raw const buffer.0[..bytes_read] as *const [u8]) };
+            let buffer = unsafe { &*(&raw const buffer[..bytes_read] as *const [u8]) };
 
             if let Err(error) =
                 parse_netlink_response(buffer, &self.cancellation_token, &self.command_tx).await
@@ -350,7 +351,7 @@ fn parse_address_message(raw_nlh: *const nlmsghdr) -> Option<(IpNet, u8, u32)> {
         );
 
         if rta.rta_type == IFA_ADDRESS && i32::from(ifa.ifa_family) == AF_INET6 {
-            // SAFETY: It'ts not
+            // SAFETY: Combination of `rta.rta_type` and `ifa.ifa_family`
             let ipv6_in_network_order = unsafe { &*RTA_DATA::<[u8; 16]>(raw_rta) };
 
             addr = Some(Ipv6Addr::from_bits(u128::from_be_bytes(*ipv6_in_network_order)).into());
@@ -360,7 +361,7 @@ fn parse_address_message(raw_nlh: *const nlmsghdr) -> Option<(IpNet, u8, u32)> {
             // but for point-to-point IFA_ADDRESS (`AddressAttribute::Address`) is DESTINATION address,
             // local address is supplied in IFA_LOCAL (`AddressAttribute::Local`) attribute.
             // https://github.com/torvalds/linux/blob/e9a6fb0bcdd7609be6969112f3fbfcce3b1d4a7c/include/uapi/linux/if_addr.h#L16-L25
-            // SAFETY: It'ts not
+            // SAFETY: Combination of `rta.rta_type` and `ifa.ifa_family`
             let ipv4_in_network_order = unsafe { &*RTA_DATA::<[u8; 4]>(raw_rta) };
 
             addr = Some(Ipv4Addr::from_bits(u32::from_be_bytes(*ipv4_in_network_order)).into());

@@ -100,11 +100,9 @@ pub const fn RTA_ALIGN(len: usize) -> usize {
 }
 
 #[expect(non_snake_case, reason = "Mirror the macros")]
-/// # Safety
-/// We will only dereference the pointer if the
 pub const fn RTA_OK(rta: *const rtattr, len: usize) -> bool {
     len >= SIZE_OF_RTATTR && {
-        // SAFETY: It's not
+        // SAFETY: This is how the macros work
         let rta_len = unsafe { (*rta).rta_len } as usize;
 
         rta_len >= SIZE_OF_RTATTR && rta_len <= len
@@ -114,7 +112,7 @@ pub const fn RTA_OK(rta: *const rtattr, len: usize) -> bool {
 #[expect(non_snake_case, reason = "Mirror the macros")]
 pub const fn RTA_NEXT(rta: *const rtattr, attrlen: &mut usize) -> *const rtattr {
     let aligned_len = {
-        // SAFETY: it's not
+        // SAFETY: This is how the macros work
         let rtattr_len = unsafe { u16_to_usize((*rta).rta_len) };
 
         RTA_ALIGN(rtattr_len)
@@ -190,7 +188,7 @@ pub const fn NLMSG_DATA<T>(nlh: *const nlmsghdr) -> *const T {
 #[expect(non_snake_case, unused, reason = "Mirror the macros")]
 pub const fn NLMSG_NEXT(nlh: *const nlmsghdr, len: &mut usize) -> *const nlmsghdr {
     let aligned_len = {
-        // SAFETY: it's not
+        // SAFETY: This is how the macros work
         let nlh_len = unsafe { &*nlh }.nlmsg_len;
 
         NLMSG_ALIGN(u32_to_usize(nlh_len))
@@ -213,7 +211,7 @@ pub const fn NLMSG_NEXT(nlh: *const nlmsghdr, len: &mut usize) -> *const nlmsghd
 #[expect(non_snake_case, reason = "Mirror the macros")]
 pub const fn NLMSG_OK(nlh: *const nlmsghdr, len: usize) -> bool {
     len >= SIZE_OF_NLMSGHDR && {
-        // SAFETY: It's not
+        // SAFETY: This is how the macros work
         let nlmsg_len = u32_to_usize(unsafe { (*nlh).nlmsg_len });
 
         nlmsg_len >= SIZE_OF_NLMSGHDR && nlmsg_len <= len
@@ -222,8 +220,9 @@ pub const fn NLMSG_OK(nlh: *const nlmsghdr, len: usize) -> bool {
 
 #[expect(non_snake_case, reason = "Mirror the macros")]
 pub const fn NLMSG_PAYLOAD(nlh: *const nlmsghdr, len: usize) -> usize {
-    // SAFETY: it's not
+    // SAFETY: This is how the macros work
     let nlh = unsafe { &*nlh };
+
     u32_to_usize(nlh.nlmsg_len) - NLMSG_SPACE(len)
 }
 

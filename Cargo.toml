@@ -49,7 +49,7 @@ reqwest = { version = "0.13.1", default-features = false, features = [
 ringmap = "0.2.3"
 socket2 = { version = "0.6.1", features = ["all"] }
 thiserror = "2.0.17"
-time = "0.3.44"
+time = "0.3.45"
 tokio = { version = "1.49.0", features = [
     "io-util",
     "macros",
@@ -76,7 +76,7 @@ uuid = { version = "1.19.0", default-features = false, features = [
     "v5",
     "v7",
 ] }
-xml = "1.2.0"
+xml = "1.2.1"
 zerocopy = { version = "=0.8.31", features = ["derive"] }
 
 [target.'cfg(all(any(target_arch = "x86_64", target_arch = "aarch64"), target_os="linux", target_env="musl"))'.dependencies]
