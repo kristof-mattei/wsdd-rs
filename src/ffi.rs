@@ -229,7 +229,7 @@ pub const fn NLMSG_PAYLOAD(nlh: *const nlmsghdr, len: usize) -> usize {
 #[derive(IntoBytes, Immutable)]
 #[repr(C)]
 /// Netlink messages consist of a byte stream with one or multiple `nlmsghdr` headers and associated payload.
-/// Note: You don't really ind a struct like this in the manual
+/// Note: This is how we send data to the kernel, but it doesn't mirror a pre-defined struct
 pub struct netlink_req {
     /// Header
     pub nh: nlmsghdr,
@@ -300,6 +300,11 @@ pub struct ifaddrmsg {
 
 // because `From::from` cannot be called in `const` yet
 const fn u16_to_usize(from: u16) -> usize {
+    const _: () = assert!(
+        usize::BITS >= 16,
+        "we only support 32-bit platforms so this should not fail"
+    );
+
     from as usize
 }
 

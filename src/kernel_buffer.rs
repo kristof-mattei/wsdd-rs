@@ -6,7 +6,7 @@ mod private {
 
 #[expect(
     private_bounds,
-    reason = "Arbirtary implementations don't make sense and are not supported"
+    reason = "Arbitrary implementations don't make sense and are not supported"
 )]
 pub trait MapConstToType: private::Private {
     type Output;
@@ -14,7 +14,7 @@ pub trait MapConstToType: private::Private {
 
 #[expect(
     private_bounds,
-    reason = "Arbirtary implementations don't make sense and are not supported"
+    reason = "Arbitrary implementations don't make sense and are not supported"
 )]
 pub struct AlignedBuffer<const A: usize, const N: usize>
 where
@@ -52,22 +52,21 @@ impl MapConstToType for ConstToType<16> {
 
 #[expect(
     private_bounds,
-    reason = "Arbirtary implementations don't make sense and are not supported"
+    reason = "Arbitrary implementations don't make sense and are not supported"
 )]
 impl<const A: usize, const N: usize> AlignedBuffer<A, N>
 where
     ConstToType<A>: MapConstToType,
 {
     const SIZE_OF_MAPPED_TYPE: usize = size_of::<<ConstToType<A> as MapConstToType>::Output>();
-
-    #[expect(clippy::disallowed_macros, reason = "Compile-time assertion")]
-    pub fn new() -> Self {
-        let _: () = assert_eq!(
-            N % Self::SIZE_OF_MAPPED_TYPE,
-            0,
+    const _ASSERT: () = {
+        assert!(
+            N.is_multiple_of(Self::SIZE_OF_MAPPED_TYPE),
             "N must be a multiple of element size for alignment"
         );
+    };
 
+    pub fn new() -> Self {
         let len = N / Self::SIZE_OF_MAPPED_TYPE;
 
         Self {
