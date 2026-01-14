@@ -59,14 +59,14 @@ where
     ConstToType<A>: MapConstToType,
 {
     const SIZE_OF_MAPPED_TYPE: usize = size_of::<<ConstToType<A> as MapConstToType>::Output>();
-    const _ASSERT: () = {
-        assert!(
-            N.is_multiple_of(Self::SIZE_OF_MAPPED_TYPE),
-            "N must be a multiple of element size for alignment"
-        );
-    };
 
     pub fn new() -> Self {
+        // TODO move this to generics once we have support for const generics
+        assert!(
+            N.is_multiple_of(size_of::<<ConstToType<A> as MapConstToType>::Output>()),
+            "The buffer is not aligned"
+        );
+
         let len = N / Self::SIZE_OF_MAPPED_TYPE;
 
         Self {
@@ -102,5 +102,16 @@ where
         unsafe {
             std::slice::from_raw_parts_mut(self.buffer.as_mut_ptr().cast::<MaybeUninit<u8>>(), N)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::kernel_buffer::AlignedBuffer;
+
+    #[test]
+    #[should_panic(expected = "The buffer is not aligned")]
+    fn fail_when_not_multiple_of_alignment() {
+        let _buffer = AlignedBuffer::<4, 5>::new();
     }
 }
