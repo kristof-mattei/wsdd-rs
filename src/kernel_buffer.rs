@@ -58,16 +58,18 @@ impl<const A: usize, const N: usize> AlignedBuffer<A, N>
 where
     ConstToType<A>: MapConstToType,
 {
-    const MAPPED_TYPE: usize = size_of::<<ConstToType<A> as MapConstToType>::Output>();
+    const SIZE_OF_MAPPED_TYPE: usize = size_of::<<ConstToType<A> as MapConstToType>::Output>();
 
-    #[expect(clippy::disallowed_macros, reason = "Panic")]
+    #[expect(clippy::disallowed_macros, reason = "Compile-time assertion")]
     pub fn new() -> Self {
-        assert_eq!(
-            N % Self::MAPPED_TYPE,
+        let _: () = assert_eq!(
+            N % Self::SIZE_OF_MAPPED_TYPE,
             0,
             "N must be a multiple of element size for alignment"
         );
-        let len = N / Self::MAPPED_TYPE;
+
+        let len = N / Self::SIZE_OF_MAPPED_TYPE;
+
         Self {
             buffer: Box::new_uninit_slice(len),
         }

@@ -168,7 +168,11 @@ impl NetlinkAddressMonitor {
             );
 
             // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
-            let buffer = unsafe { &*(&raw const buffer.as_ref()[..bytes_read] as *const [u8]) };
+            let buffer = unsafe {
+                (&raw const buffer.as_ref()[..bytes_read] as *const [u8])
+                    .as_ref()
+                    .expect("Buffer is not null")
+            };
 
             if let Err(error) =
                 parse_netlink_response(buffer, &self.cancellation_token, &self.command_tx).await
