@@ -106,7 +106,8 @@ impl WSDDiscoveredDevice {
 
         let host = xaddr.host_str().to_owned().into_boxed_str();
 
-        let report = match self.addresses.entry_ref(network_address.interface.name()) {
+        // is this the first time we see this device with this name on this interface?
+        let first_time = match self.addresses.entry_ref(network_address.interface.name()) {
             EntryRef::Occupied(mut occupied_entry) => occupied_entry.get_mut().insert(host),
             EntryRef::Vacant(vacant_entry_ref) => {
                 vacant_entry_ref.insert(HashSet::from_iter([host]));
@@ -119,32 +120,35 @@ impl WSDDiscoveredDevice {
 
         self.last_seen = OffsetDateTime::now_utc();
 
-        if report
-            && let Some((display_name, belongs_to)) = self
-                .props
-                .get("DisplayName")
-                .and_then(|d| self.props.get("BelongsTo").map(|b| (d, b)))
+        if let Some((display_name, belongs_to)) = self
+            .props
+            .get("DisplayName")
+            .and_then(|d| self.props.get("BelongsTo").map(|b| (d, b)))
         {
             self.display_name = Some(display_name.to_owned());
 
-            event!(
-                Level::INFO,
-                device_uri = %self.device_uri,
-                %display_name,
-                %belongs_to,
-                addr = %xaddr,
-                "Discovered device"
-            );
+            if first_time {
+                event!(
+                    Level::INFO,
+                    device_uri = %self.device_uri,
+                    %display_name,
+                    %belongs_to,
+                    addr = %xaddr,
+                    "Discovered device"
+                );
+            }
         } else if let Some(friendly_name) = self.props.get("FriendlyName") {
             self.display_name = Some(friendly_name.to_owned());
 
-            event!(
-                Level::INFO,
-                device_uri = %self.device_uri,
-                display_name = %friendly_name,
-                addr = %xaddr,
-                "Discovered device"
-            );
+            if first_time {
+                event!(
+                    Level::INFO,
+                    device_uri = %self.device_uri,
+                    display_name = %friendly_name,
+                    addr = %xaddr,
+                    "Discovered device"
+                );
+            }
         } else {
             // No way to get a display name
         }
