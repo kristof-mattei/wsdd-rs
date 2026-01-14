@@ -1,5 +1,21 @@
 use std::mem::{MaybeUninit, size_of};
 
+mod private {
+    pub(super) trait Private {}
+}
+
+#[expect(
+    private_bounds,
+    reason = "Arbirtary implementations don't make sense and are not supported"
+)]
+pub trait MapConstToType: private::Private {
+    type Output;
+}
+
+#[expect(
+    private_bounds,
+    reason = "Arbirtary implementations don't make sense and are not supported"
+)]
 pub struct AlignedBuffer<const A: usize, const N: usize>
 where
     ConstToType<A>: MapConstToType,
@@ -9,36 +25,42 @@ where
 
 struct ConstToType<const U: usize>;
 
-pub trait MapConstToType {
-    type Output;
-}
-
+impl private::Private for ConstToType<1> {}
 impl MapConstToType for ConstToType<1> {
     type Output = u8;
 }
 
+impl private::Private for ConstToType<2> {}
 impl MapConstToType for ConstToType<2> {
     type Output = u16;
 }
 
+impl private::Private for ConstToType<4> {}
 impl MapConstToType for ConstToType<4> {
     type Output = u32;
 }
 
+impl private::Private for ConstToType<8> {}
 impl MapConstToType for ConstToType<8> {
     type Output = u64;
 }
 
+impl private::Private for ConstToType<16> {}
 impl MapConstToType for ConstToType<16> {
     type Output = u128;
 }
 
+#[expect(
+    private_bounds,
+    reason = "Arbirtary implementations don't make sense and are not supported"
+)]
 impl<const A: usize, const N: usize> AlignedBuffer<A, N>
 where
     ConstToType<A>: MapConstToType,
 {
     const MAPPED_TYPE: usize = size_of::<<ConstToType<A> as MapConstToType>::Output>();
 
+    #[expect(clippy::disallowed_macros, reason = "Panic")]
     pub fn new() -> Self {
         assert_eq!(
             N % Self::MAPPED_TYPE,

@@ -228,16 +228,41 @@ pub const fn NLMSG_PAYLOAD(nlh: *const nlmsghdr, len: usize) -> usize {
 
 #[derive(IntoBytes, Immutable)]
 #[repr(C)]
+/// Netlink messages consist of a byte stream with one or multiple `nlmsghdr` headers and associated payload.
+/// Note: You don't really ind a struct like this in the manual
 pub struct netlink_req {
+    /// Header
     pub nh: nlmsghdr,
+    /// Payload
     pub ifa: ifaddrmsg,
 }
 
 #[repr(C)]
 #[derive(KnownLayout, FromBytes, Immutable)]
 pub struct rtattr {
+    /// Length of option
     pub rta_len: u16,
+    /// Type of option
     pub rta_type: u16,
+    // Data follows
+}
+
+impl rtattr {
+    pub fn label(&self) -> Option<&'static str> {
+        const RTA_TYPES: [&str; 9] = [
+            "IFA_UNSPEC",
+            "IFA_ADDRESS",
+            "IFA_LOCAL",
+            "IFA_LABEL",
+            "IFA_BROADCAST",
+            "IFA_ANYCAST",
+            "IFA_CACHEINFO",
+            "IFA_MULTICAST",
+            "IFA_FLAGS",
+        ];
+
+        RTA_TYPES.get(Into::<usize>::into(self.rta_type)).copied()
+    }
 }
 
 #[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
@@ -245,10 +270,15 @@ pub struct rtattr {
 #[expect(clippy::struct_field_names, reason = "Mirror the libc struct names")]
 /// Copy from `libc::nlmsghdr`, but we need zerocopy
 pub struct nlmsghdr {
+    /// Size of message including header
     pub nlmsg_len: u32,
+    /// Type of message content
     pub nlmsg_type: u16,
+    /// Additional flags
     pub nlmsg_flags: u16,
+    /// Sequence number
     pub nlmsg_seq: u32,
+    /// Sender port ID
     pub nlmsg_pid: u32,
 }
 
@@ -266,22 +296,6 @@ pub struct ifaddrmsg {
     pub ifa_scope: u8,
     /// Interface index
     pub ifa_index: u32,
-}
-
-pub fn rta_type_to_label(rta_type: u16) -> Option<&'static str> {
-    const RTA_TYPES: [&str; 9] = [
-        "IFA_UNSPEC",
-        "IFA_ADDRESS",
-        "IFA_LOCAL",
-        "IFA_LABEL",
-        "IFA_BROADCAST",
-        "IFA_ANYCAST",
-        "IFA_CACHEINFO",
-        "IFA_MULTICAST",
-        "IFA_FLAGS",
-    ];
-
-    RTA_TYPES.get(Into::<usize>::into(rta_type)).copied()
 }
 
 // because `From::from` cannot be called in `const` yet

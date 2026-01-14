@@ -19,7 +19,7 @@ use zerocopy::IntoBytes as _;
 use crate::config::{BindTo, Config};
 use crate::ffi::{
     IFA_PAYLOAD, IFA_RTA, NLMSG_DATA, NLMSG_NEXT, NLMSG_OK, RTA_DATA, RTA_NEXT, RTA_OK, SendPtr,
-    ifaddrmsg, netlink_req, nlmsghdr, rta_type_to_label,
+    ifaddrmsg, netlink_req, nlmsghdr,
 };
 use crate::kernel_buffer::AlignedBuffer;
 use crate::network_handler::Command;
@@ -347,7 +347,7 @@ fn parse_address_message(raw_nlh: *const nlmsghdr) -> Option<(IpNet, u8, u32)> {
             "rt_attr type: {} {} ({})",
             rta.rta_len,
             rta.rta_type,
-            rta_type_to_label(rta.rta_type).unwrap_or("Unknown type")
+            rta.label().unwrap_or("Unknown type")
         );
 
         if rta.rta_type == IFA_ADDRESS && i32::from(ifa.ifa_family) == AF_INET6 {
