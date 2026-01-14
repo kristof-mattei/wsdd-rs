@@ -304,6 +304,11 @@ where
                     .await?;
             }
         },
+        "help" => {
+            let list = "Valid commands are: \"clear\", \"probe\", \"list\", \"quit\", \"start\", \"stop\", \"help\"";
+
+            writer.write_all(list.as_bytes()).await?;
+        },
         _ => {
             event!(
                 Level::DEBUG,
