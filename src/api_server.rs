@@ -8,6 +8,7 @@ use std::time::Duration;
 use color_eyre::eyre;
 use socket2::{Domain, Type};
 use time::format_description::well_known::Iso8601;
+use time::format_description::well_known::iso8601::{Config as Iso8601Config, TimePrecision};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt};
 use tokio::net::UnixListener;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -22,6 +23,12 @@ use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 
 const MAX_CONNECTION_BACKLOG: u32 = 100;
 const MAX_CONCURRENT_CONNECTIONS: usize = 10;
+
+const ISO8601_SECONDS_CONFIG: Iso8601Config =
+    Iso8601Config::DEFAULT.set_time_precision(TimePrecision::Second {
+        decimal_digits: None,
+    });
+const ISO8601_SECONDS: Iso8601<{ ISO8601_SECONDS_CONFIG.encode() }> = Iso8601;
 
 pub struct ApiServer {
     cancellation_token: CancellationToken,
@@ -304,6 +311,11 @@ where
                     .await?;
             }
         },
+        "help" => {
+            let list = "Valid commands are: \"clear\", \"probe\", \"list\", \"quit\", \"start\", \"stop\", \"help\"";
+
+            writer.write_all(list.as_bytes()).await?;
+        },
         _ => {
             event!(
                 Level::DEBUG,
@@ -327,7 +339,7 @@ fn format_wsd_discovered_device(device_uri: &DeviceUri, device: &WSDDiscoveredDe
             .get("BelongsTo")
             .map(|b| &**b)
             .unwrap_or_default(),
-        device.last_seen().format(&Iso8601::DEFAULT).unwrap(),
+        device.last_seen().format(&ISO8601_SECONDS).unwrap(),
         device
             .addresses()
             .iter()
