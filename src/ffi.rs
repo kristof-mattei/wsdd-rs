@@ -235,7 +235,6 @@ pub struct netlink_req {
 
 #[repr(C)]
 #[derive(KnownLayout, FromBytes, Immutable)]
-
 pub struct rtattr {
     pub rta_len: u16,
     pub rta_type: u16,
@@ -257,11 +256,16 @@ pub struct nlmsghdr {
 #[repr(C)]
 #[expect(clippy::struct_field_names, reason = "Mirror the libc struct names")]
 pub struct ifaddrmsg {
-    pub ifa_family: u8,    /* Address type */
-    pub ifa_prefixlen: u8, /* Prefixlength of address */
-    pub ifa_flags: u8,     /* Address flags */
-    pub ifa_scope: u8,     /* Address scope */
-    pub ifa_index: u32,    /* Interface index */
+    /// Address type
+    pub ifa_family: u8,
+    /// Prefixlength of address
+    pub ifa_prefixlen: u8,
+    /// Address flags
+    pub ifa_flags: u8,
+    /// Address scope
+    pub ifa_scope: u8,
+    /// Interface index
+    pub ifa_index: u32,
 }
 
 pub fn rta_type_to_label(rta_type: u16) -> Option<&'static str> {

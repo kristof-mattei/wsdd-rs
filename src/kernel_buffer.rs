@@ -1,74 +1,83 @@
-use std::mem::MaybeUninit;
-use std::ops::{Index, IndexMut};
-use std::slice::SliceIndex;
+use std::mem::{MaybeUninit, size_of};
 
-use bytes::BufMut;
-use bytes::buf::UninitSlice;
+pub struct AlignedBuffer<const A: usize, const N: usize>
+where
+    ConstToType<A>: MapConstToType,
+{
+    buffer: Box<[MaybeUninit<<ConstToType<A> as MapConstToType>::Output>]>,
+}
 
-#[repr(align(4))]
-pub struct KernelBuffer<const N: usize>([MaybeUninit<u8>; N]);
+struct ConstToType<const U: usize>;
 
-impl<const N: usize> KernelBuffer<N> {
+pub trait MapConstToType {
+    type Output;
+}
+
+impl MapConstToType for ConstToType<1> {
+    type Output = u8;
+}
+
+impl MapConstToType for ConstToType<2> {
+    type Output = u16;
+}
+
+impl MapConstToType for ConstToType<4> {
+    type Output = u32;
+}
+
+impl MapConstToType for ConstToType<8> {
+    type Output = u64;
+}
+
+impl MapConstToType for ConstToType<16> {
+    type Output = u128;
+}
+
+impl<const A: usize, const N: usize> AlignedBuffer<A, N>
+where
+    ConstToType<A>: MapConstToType,
+{
+    const MAPPED_TYPE: usize = size_of::<<ConstToType<A> as MapConstToType>::Output>();
+
     pub fn new() -> Self {
-        Self([MaybeUninit::<u8>::uninit(); N])
-    }
-
-    pub fn new_boxed() -> Box<Self> {
-        Box::new(Self::new())
+        assert_eq!(
+            N % Self::MAPPED_TYPE,
+            0,
+            "N must be a multiple of element size for alignment"
+        );
+        let len = N / Self::MAPPED_TYPE;
+        Self {
+            buffer: Box::new_uninit_slice(len),
+        }
     }
 }
 
-impl<I, const N: usize> Index<I> for KernelBuffer<N>
+impl<const A: usize, const N: usize> AsRef<[MaybeUninit<u8>]> for AlignedBuffer<A, N>
 where
-    I: SliceIndex<[MaybeUninit<u8>]>,
+    ConstToType<A>: MapConstToType,
 {
-    type Output = I::Output;
-
-    fn index(&self, index: I) -> &Self::Output {
-        self.0.index(index)
+    fn as_ref(&self) -> &[MaybeUninit<u8>] {
+        // SAFETY:
+        // - `u32` can be transmuted to `[u8; 4]`
+        // - `MaybeUninit<T>` has the same layout as `T`
+        // - `MaybeUninit<u32>` has the same memory layout as `[MaybeUninit<u8>; 4]`
+        // - The buffer is a `Box<[MaybeUninit<u32>]>` of length N / 4, so it is valid for N bytes.
+        unsafe { std::slice::from_raw_parts(self.buffer.as_ptr().cast::<MaybeUninit<u8>>(), N) }
     }
 }
 
-impl<I, const N: usize> IndexMut<I> for KernelBuffer<N>
+impl<const A: usize, const N: usize> AsMut<[MaybeUninit<u8>]> for AlignedBuffer<A, N>
 where
-    I: SliceIndex<[MaybeUninit<u8>]>,
+    ConstToType<A>: MapConstToType,
 {
-    fn index_mut(&mut self, index: I) -> &mut Self::Output {
-        self.0.index_mut(index)
-    }
-}
-
-// SAFETY: Passing through to the underlying buffer
-unsafe impl<const N: usize> BufMut for KernelBuffer<N> {
-    #[inline]
-    fn remaining_mut(&self) -> usize {
-        self.0.len()
-    }
-
-    #[inline]
-    fn chunk_mut(&mut self) -> &mut UninitSlice {
-        UninitSlice::uninit(&mut self.0[..])
-    }
-
-    #[inline]
-    unsafe fn advance_mut(&mut self, cnt: usize) {
-        let mut buffer = &mut self.0[..];
-
-        // SAFETY: Passing through to the underlying buffer
-        unsafe { BufMut::advance_mut(&mut buffer, cnt) }
-    }
-
-    #[inline]
-    fn put_slice(&mut self, src: &[u8]) {
-        let mut buffer = &mut self.0[..];
-
-        BufMut::put_slice(&mut buffer, src);
-    }
-
-    #[inline]
-    fn put_bytes(&mut self, val: u8, cnt: usize) {
-        let mut buffer = &mut self.0[..];
-
-        BufMut::put_bytes(&mut buffer, val, cnt);
+    fn as_mut(&mut self) -> &mut [MaybeUninit<u8>] {
+        // SAFETY:
+        // - `u32` can be transmuted to `[u8; 4]`
+        // - `MaybeUninit<T>` has the same layout as `T`
+        // - `MaybeUninit<u32>` has the same memory layout as `[MaybeUninit<u8>; 4]`
+        // - The buffer is a `Box<[MaybeUninit<u32>]>` of length N / 4, so it is valid for N bytes.
+        unsafe {
+            std::slice::from_raw_parts_mut(self.buffer.as_mut_ptr().cast::<MaybeUninit<u8>>(), N)
+        }
     }
 }
