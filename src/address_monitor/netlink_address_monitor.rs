@@ -416,12 +416,19 @@ fn parse_address_message(address_message: &AddressMessage) -> Option<(IpNet, Add
         return None;
     };
 
-    Some((
-        IpNet::new(addr, address_message.header.prefix_len)
-            .expect("prefix_len must be valid for this address"),
-        address_message.header.scope,
-        address_message.header.index,
-    ))
+    match IpNet::new(addr, address_message.header.prefix_len) {
+        Ok(ip_net) => Some((
+            ip_net,
+            address_message.header.scope,
+            address_message.header.index,
+        )),
+
+        Err(error) => {
+            event!(Level::ERROR, ?error, ?addr, ?address_message.header.prefix_len, "Kernel returned `prefix_len` invalid for the type of address");
+
+            None
+        },
+    }
 }
 
 #[cfg(test)]
