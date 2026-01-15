@@ -1,4 +1,3 @@
-#![expect(unused, reason = "Not used")]
 use std::marker::PhantomData;
 
 #[cfg(feature = "systemd")]
@@ -51,22 +50,38 @@ impl<'a, T, U> SendPtr<'a, T, U>
 where
     T: ?Sized,
 {
-    /// Creates a new `SendPtr` tied to the lifetime of the given anchor.
-    ///
-    /// The `_anchor` parameter ensures, via the lifetime `'a`, that the
-    /// pointed-to buffer outlives `'a`.
-    pub fn new(_anchor: &'a T, ptr: *const U) -> Self {
+    /// Creates a new `SendPtr` from a buffer, starting at the buffer's base address.
+    pub fn from_start(anchor: &'a T) -> Self
+    where
+        T: AsRef<[u8]>,
+    {
+        Self {
+            ptr: anchor.as_ref().as_ptr().cast::<U>(),
+            _marker: PhantomData,
+        }
+    }
+
+    /// Creates a new `SendPtr` from an existing pointer, anchored to a buffer's lifetime.
+    #[expect(unused, reason = "Not used")]
+    pub fn from_ptr(_anchor: &'a T, ptr: *const U) -> Self {
         Self {
             ptr,
             _marker: PhantomData,
         }
     }
 
-    pub fn get(&self) -> *const U {
+    pub fn get_ptr(&self) -> *const U {
         self.ptr
     }
-}
 
+    /// Mutate the pointer using the given function, preserving the lifetime.
+    pub fn mutate<F>(&mut self, f: F)
+    where
+        F: FnOnce(*const U) -> *const U,
+    {
+        self.ptr = f(self.ptr);
+    }
+}
 // SAFETY: We are only wrapping a pointer to a buffer that is guaranteed
 // to live for 'a. The user must ensure no concurrent writes occur to the underlying buffer.
 unsafe impl<T, U> Send for SendPtr<'_, T, U> where T: ?Sized {}

@@ -1,14 +1,14 @@
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 
 use color_eyre::eyre;
 use ipnet::IpNet;
 use libc::{
-    AF_INET, AF_INET6, AF_UNSPEC, NETLINK_ROUTE, NLM_F_DUMP, NLM_F_REQUEST, RTM_GETADDR,
-    RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK,
+    AF_INET, AF_INET6, AF_UNSPEC, IFA_ADDRESS, IFA_F_DADFAILED, IFA_F_DEPRECATED,
+    IFA_F_HOMEADDRESS, IFA_F_TENTATIVE, IFA_FLAGS, IFA_LABEL, IFA_LOCAL, NETLINK_ROUTE, NLM_F_DUMP,
+    NLM_F_REQUEST, RTM_DELADDR, RTM_GETADDR, RTM_NEWADDR, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR,
+    RTMGRP_LINK,
 };
-use netlink_packet_core::{Emitable as _, NetlinkMessage, NetlinkPayload, Nla as _};
-use netlink_packet_route::address::{AddressHeaderFlags, AddressMessage, AddressScope};
-use netlink_packet_route::{RouteNetlinkMessage, address};
 use socket2::SockAddrStorage;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
@@ -17,7 +17,10 @@ use wsdd_rs::define_typed_size;
 use zerocopy::IntoBytes as _;
 
 use crate::config::{BindTo, Config};
-use crate::ffi::{NetlinkRequest, ifaddrmsg, nlmsghdr};
+use crate::ffi::{
+    IFA_PAYLOAD, IFA_RTA, NLMSG_DATA, NLMSG_NEXT, NLMSG_OK, NetlinkRequest, RTA_DATA, RTA_NEXT,
+    RTA_OK, SendPtr, ifaddrmsg, nlmsghdr,
+};
 use crate::kernel_buffer::AlignedBuffer;
 use crate::network_handler::Command;
 use crate::utils::task::spawn_with_name;
@@ -137,7 +140,7 @@ impl NetlinkAddressMonitor {
 
         // we don't need to zero out the buffer between runs as `recv_buf` starts at 0 and returns `bytes_read`
         // sine we only read that portion we don't need to worry about the leftovers
-        // Notice the buffer is u32 because all of our structs written here by the kernel
+        // Notice the 4 byte aligned buffer because all of our structs written here by the kernel
         // are aligned to 4 bytes
         let mut buffer = AlignedBuffer::<4, 4096>::new();
 
@@ -161,8 +164,12 @@ impl NetlinkAddressMonitor {
                 "netlink message received"
             );
 
-            // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
-            let buffer = unsafe { &*(&raw const buffer[..bytes_read] as *const [u8]) };
+            let buffer = {
+                let raw_buffer = buffer.as_ref().as_ptr().cast::<u8>();
+
+                // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
+                unsafe { std::slice::from_raw_parts(raw_buffer, bytes_read) }
+            };
 
             if let Err(error) =
                 parse_netlink_response(buffer, &self.cancellation_token, &self.command_tx).await
@@ -189,7 +196,7 @@ fn request_current_state(
         BindTo::DualStack => AF_UNSPEC,
     };
 
-    let request = NetlinkRequest {
+    let request: NetlinkRequest = NetlinkRequest {
         nh: nlmsghdr {
             nlmsg_len: size_of::<NetlinkRequest>().try_into().unwrap(),
             nlmsg_type: RTM_GETADDR,
@@ -244,59 +251,38 @@ async fn parse_netlink_response(
     cancellation_token: &CancellationToken,
     command_tx: &Sender<Command>,
 ) -> Result<(), eyre::Report> {
-    let mut message_offset = 0;
+    let mut remaining_bytes = buffer.len();
 
-    loop {
-        let message: NetlinkMessage<RouteNetlinkMessage> =
-            match NetlinkMessage::deserialize(&buffer[message_offset..]) {
-                Ok(message) => message,
-                Err(error) => {
-                    event!(
-                        Level::ERROR,
-                        ?error,
-                        offset = message_offset,
-                        "Failed to deserialize netlink message, abandoning the rest in the buffer"
-                    );
+    let mut nlh_wrapper = SendPtr::from_start(buffer);
 
-                    break Err(eyre::Report::msg("Invalid netlink message"));
-                },
-            };
+    while NLMSG_OK(nlh_wrapper.get_ptr(), remaining_bytes) {
+        // SAFETY: `NLMSG_OK`
+        let nlh = unsafe { &*nlh_wrapper.get_ptr() };
 
-        let command = match message.payload {
-            NetlinkPayload::Done(_) => {
-                break Ok(());
-            },
-            NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewAddress(new_address_message)) => {
-                parse_address_message(&new_address_message).map(|(new_address, scope, index)| {
-                    Command::NewAddress {
-                        address: new_address,
-                        scope: scope.into(),
-                        index,
-                    }
-                })
-            },
-            NetlinkPayload::InnerMessage(RouteNetlinkMessage::DelAddress(del_address_message)) => {
-                parse_address_message(&del_address_message).map(|(del_address, scope, index)| {
-                    Command::DeleteAddress {
-                        address: del_address,
-                        scope: scope.into(),
-                        index,
-                    }
-                })
-            },
-            NetlinkPayload::Error(_)
-            | NetlinkPayload::Noop
-            | NetlinkPayload::Overrun(_)
-            | NetlinkPayload::InnerMessage(_)
-            | _ => {
-                event!(
-                    Level::DEBUG,
-                    "invalid rtm_message type {}",
-                    message.payload.message_type()
-                );
+        let command = if nlh.nlmsg_type == RTM_NEWADDR {
+            parse_address_message(nlh_wrapper.get_ptr()).map(|(ip_net, scope, index)| {
+                Command::NewAddress {
+                    address: ip_net,
+                    scope,
+                    index,
+                }
+            })
+        } else if nlh.nlmsg_type == RTM_DELADDR {
+            parse_address_message(nlh_wrapper.get_ptr()).map(|(ip_net, scope, index)| {
+                Command::DeleteAddress {
+                    address: ip_net,
+                    scope,
+                    index,
+                }
+            })
+        } else {
+            event!(
+                Level::DEBUG,
+                "unhandled rtm_message type {}",
+                nlh.nlmsg_type
+            );
 
-                None
-            },
+            None
         };
 
         if let Some(command) = command {
@@ -305,34 +291,34 @@ async fn parse_netlink_response(
                     event!(Level::INFO, command = ?error.0, "Could not announce command due to shutting down");
                 } else {
                     event!(Level::ERROR, command = ?error.0, "Failed to announce command");
+                    return Err(eyre::Report::from(error));
                 }
-
-                break Err(eyre::Report::msg(
-                    "Command receiver gone, nothing left to do but abandon buffer",
-                ));
             }
         }
 
-        message_offset += message.header.length as usize;
-
-        if message_offset == buffer.len() || message.header.length == 0 {
-            break Ok(());
-        }
+        nlh_wrapper.mutate(|p| NLMSG_NEXT(p, &mut remaining_bytes));
     }
+
+    Ok(())
 }
 
-fn parse_address_message(address_message: &AddressMessage) -> Option<(IpNet, AddressScope, u32)> {
-    let header = &address_message.header;
+fn parse_address_message(raw_nlh: *const nlmsghdr) -> Option<(IpNet, u8, u32)> {
+    let raw_ifa = NLMSG_DATA::<ifaddrmsg>(raw_nlh);
 
-    if header.flags.contains(AddressHeaderFlags::Dadfailed)
-        || header.flags.contains(AddressHeaderFlags::Homeaddress)
-        || header.flags.contains(AddressHeaderFlags::Deprecated)
-        || header.flags.contains(AddressHeaderFlags::Tentative)
+    // SAFETY:`nlh` is valid, and has an `ifa`
+    let ifa = unsafe { &*raw_ifa };
+
+    let ifa_flags = u32::from(ifa.ifa_flags);
+
+    if (ifa_flags & IFA_F_DADFAILED) != 0
+        || (ifa_flags & IFA_F_HOMEADDRESS) != 0
+        || (ifa_flags & IFA_F_DEPRECATED) != 0
+        || (ifa_flags & IFA_F_TENTATIVE) != 0
     {
         event!(
             Level::DEBUG,
             "ignore address with invalid state {:#x}",
-            header.flags
+            ifa_flags
         );
 
         // skip this message and its data
@@ -341,65 +327,60 @@ fn parse_address_message(address_message: &AddressMessage) -> Option<(IpNet, Add
 
     event!(
         Level::DEBUG,
-        "RTM new/del addr family: {:?} flags: {:?} scope: {:?} idx: {}",
-        header.family,
-        header.flags,
-        header.scope,
-        header.index
+        "RTM new/del addr family: {} flags: {} scope: {} idx: {}",
+        ifa.ifa_family,
+        ifa.ifa_flags,
+        ifa.ifa_scope,
+        ifa.ifa_index
     );
 
-    let mut addr = None;
+    let mut addr: Option<IpAddr> = None;
 
-    for rta in &address_message.attributes {
+    let mut raw_rta = IFA_RTA(raw_ifa);
+    let mut ifa_payload = IFA_PAYLOAD(raw_nlh);
+
+    #[expect(clippy::big_endian_bytes, reason = "We're reading network data")]
+    while RTA_OK(raw_rta, ifa_payload) {
+        // SAFETY: See `RTA_OK`
+        let rta = unsafe { &*raw_rta };
+
         event!(
             Level::DEBUG,
-            "rt_attr type: {} {}",
-            rta.buffer_len(),
-            rta.kind(),
+            "rt_attr type: {} {} ({})",
+            rta.rta_len,
+            rta.rta_type,
+            rta.label().unwrap_or("Unknown type")
         );
 
-        #[expect(clippy::match_same_arms, reason = "Comments have more of the story")]
-        match *rta {
-            address::AddressAttribute::Address(ip_addr) => {
-                if ip_addr.is_ipv6() {
-                    addr = Some(ip_addr);
-                } else {
-                    // event!(Level::ERROR, ?ip_addr, "IFA_ADDRESS");
-                }
-            },
-            address::AddressAttribute::Local(ip_addr) => {
-                // IFA_ADDRESS (`AddressAttribute::Address`) is prefix address, rather than local interface address.
-                // It makes no difference for normally configured broadcast interfaces,
-                // but for point-to-point IFA_ADDRESS (`AddressAttribute::Address`) is DESTINATION address,
-                // local address is supplied in IFA_LOCAL (`AddressAttribute::Local`) attribute.
-                // https://github.com/torvalds/linux/blob/e9a6fb0bcdd7609be6969112f3fbfcce3b1d4a7c/include/uapi/linux/if_addr.h#L16-L25
+        if rta.rta_type == IFA_ADDRESS && i32::from(ifa.ifa_family) == AF_INET6 {
+            // SAFETY: Combination of `rta.rta_type` and `ifa.ifa_family`
+            let ipv6_in_network_order = unsafe { &*RTA_DATA::<[u8; 16]>(raw_rta) };
 
-                if ip_addr.is_ipv4() {
-                    addr = Some(ip_addr);
-                } else {
-                    // event!(Level::ERROR, ?ip_addr, "IFA_LOCAL");
-                }
-            },
-            address::AddressAttribute::Label(_) => {
-                // unused, original codebase extracted
-                // the labels in here for ipv4, but ipv6 requires another way
-                // we do both the ipv6 way
-            },
-            address::AddressAttribute::Flags(_) => {
-                // https://github.com/torvalds/linux/blob/febbc555cf0fff895546ddb8ba2c9a523692fb55/include/uapi/linux/if_addr.h#L35
-                // unused
-                // original:
-                // _, ifa_flags = struct.unpack_from('HI', buf, i)
-            },
-            address::AddressAttribute::Broadcast(_)
-            | address::AddressAttribute::Anycast(_)
-            | address::AddressAttribute::CacheInfo(_)
-            | address::AddressAttribute::Multicast(_)
-            | address::AddressAttribute::Other(_)
-            | _ => {
-                // ...
-            },
+            addr = Some(Ipv6Addr::from_bits(u128::from_be_bytes(*ipv6_in_network_order)).into());
+        } else if rta.rta_type == IFA_LOCAL && i32::from(ifa.ifa_family) == AF_INET {
+            // IFA_ADDRESS (`AddressAttribute::Address`) is prefix address, rather than local interface address.
+            // It makes no difference for normally configured broadcast interfaces,
+            // but for point-to-point IFA_ADDRESS (`AddressAttribute::Address`) is DESTINATION address,
+            // local address is supplied in IFA_LOCAL (`AddressAttribute::Local`) attribute.
+            // https://github.com/torvalds/linux/blob/e9a6fb0bcdd7609be6969112f3fbfcce3b1d4a7c/include/uapi/linux/if_addr.h#L16-L25
+            // SAFETY: Combination of `rta.rta_type` and `ifa.ifa_family`
+            let ipv4_in_network_order = unsafe { &*RTA_DATA::<[u8; 4]>(raw_rta) };
+
+            addr = Some(Ipv4Addr::from_bits(u32::from_be_bytes(*ipv4_in_network_order)).into());
+        } else if rta.rta_type == IFA_LABEL {
+            // unused, original codebase extracted
+            // the labels in here for ipv4, but ipv6 requires another way
+            // we do both the ipv6 way
+        } else if rta.rta_type == IFA_FLAGS {
+            // https://github.com/torvalds/linux/blob/febbc555cf0fff895546ddb8ba2c9a523692fb55/include/uapi/linux/if_addr.h#L35
+            // unused
+            // original:
+            // _, ifa_flags = struct.unpack_from('HI', buf, i)
+        } else {
+            // other attributes are intentionally ignored
         }
+
+        raw_rta = RTA_NEXT(raw_rta, &mut ifa_payload);
     }
 
     let Some(addr) = addr else {
@@ -409,10 +390,10 @@ fn parse_address_message(address_message: &AddressMessage) -> Option<(IpNet, Add
     };
 
     Some((
-        IpNet::new(addr, address_message.header.prefix_len)
-            .expect("prefix_len must be valid for this address"),
-        address_message.header.scope,
-        address_message.header.index,
+        IpNet::new(addr, ifa.ifa_prefixlen)
+            .expect("`prefix_len` must be valid for this address, as this is kernel data"),
+        ifa.ifa_scope,
+        ifa.ifa_index,
     ))
 }
 
