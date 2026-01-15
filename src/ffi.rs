@@ -91,8 +91,8 @@ pub const fn IFA_PAYLOAD(n: *const nlmsghdr) -> usize {
 }
 
 // Macros to handle rtattributes
-/// Alignment of `rtattr`. `rtattr`'s `align_of()` is 2, but in a message received there's more because there's extra info in there
-/// not described in the header. Padding bytes will mess up `size_of`.
+/// Alignment boundary for `rtattr` structures. While `rtattr` has an alignment of 2,
+/// netlink messages use 4-byte alignment due to additional data following the header.
 pub const RTA_ALIGNTO: usize = 4;
 
 #[expect(non_snake_case, reason = "Mirror the macros")]
