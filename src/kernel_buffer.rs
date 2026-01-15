@@ -1,5 +1,6 @@
-#![cfg_attr(not(test), expect(unused, reason = "Not used"))]
 use std::mem::{MaybeUninit, size_of};
+use std::ops::{Deref, DerefMut};
+use std::slice::SliceIndex;
 
 mod private {
     pub(super) trait Private {}
@@ -22,6 +23,28 @@ where
     ConstToType<A>: MapConstToType,
 {
     buffer: Box<[MaybeUninit<<ConstToType<A> as MapConstToType>::Output>]>,
+}
+
+impl<const A: usize, const N: usize, I> std::ops::Index<I> for AlignedBuffer<A, N>
+where
+    ConstToType<A>: MapConstToType,
+    I: SliceIndex<[MaybeUninit<u8>]>,
+{
+    type Output = I::Output;
+
+    fn index(&self, index: I) -> &I::Output {
+        &AsRef::<[MaybeUninit<u8>]>::as_ref(&(**self))[index]
+    }
+}
+
+impl<const A: usize, const N: usize, I> std::ops::IndexMut<I> for AlignedBuffer<A, N>
+where
+    ConstToType<A>: MapConstToType,
+    I: SliceIndex<[MaybeUninit<u8>]>,
+{
+    fn index_mut(&mut self, index: I) -> &mut I::Output {
+        &mut AsMut::<[MaybeUninit<u8>]>::as_mut(&mut **self)[index]
+    }
 }
 
 struct ConstToType<const U: usize>;
@@ -76,11 +99,13 @@ where
     }
 }
 
-impl<const A: usize, const N: usize> AsRef<[MaybeUninit<u8>]> for AlignedBuffer<A, N>
+impl<const A: usize, const N: usize> Deref for AlignedBuffer<A, N>
 where
     ConstToType<A>: MapConstToType,
 {
-    fn as_ref(&self) -> &[MaybeUninit<u8>] {
+    type Target = [MaybeUninit<u8>];
+
+    fn deref(&self) -> &Self::Target {
         let ptr = self.buffer.as_ptr();
 
         // SAFETY: The underlying buffer is of `N / size_of::<A>()`, so the buffer is valid for a length of `N`
@@ -88,11 +113,11 @@ where
     }
 }
 
-impl<const A: usize, const N: usize> AsMut<[MaybeUninit<u8>]> for AlignedBuffer<A, N>
+impl<const A: usize, const N: usize> DerefMut for AlignedBuffer<A, N>
 where
     ConstToType<A>: MapConstToType,
 {
-    fn as_mut(&mut self) -> &mut [MaybeUninit<u8>] {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         let mut_ptr = self.buffer.as_mut_ptr();
 
         // SAFETY: The underlying buffer is of `N / size_of::<A>()`, so the buffer is valid for a length of `N`
