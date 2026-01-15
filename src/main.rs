@@ -7,6 +7,7 @@ mod constants;
 mod dns;
 mod ffi;
 mod helpers;
+mod kernel_buffer;
 mod max_size_deque;
 mod multicast_handler;
 mod network_address;
