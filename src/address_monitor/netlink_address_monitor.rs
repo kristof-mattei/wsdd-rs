@@ -1,4 +1,3 @@
-use std::mem::MaybeUninit;
 use std::sync::Arc;
 
 use color_eyre::eyre;
@@ -19,6 +18,7 @@ use zerocopy::IntoBytes as _;
 
 use crate::config::{BindTo, Config};
 use crate::ffi::{NetlinkRequest, ifaddrmsg, nlmsghdr};
+use crate::kernel_buffer::AlignedBuffer;
 use crate::network_handler::Command;
 use crate::utils::task::spawn_with_name;
 
@@ -139,15 +139,7 @@ impl NetlinkAddressMonitor {
         // sine we only read that portion we don't need to worry about the leftovers
         // Notice the buffer is u32 because all of our structs written here by the kernel
         // are aligned to 4 bytes
-        let mut buffer = vec![MaybeUninit::<u32>::uninit(); 1024];
-
-        // SAFETY: created from a valid vector, so all the slice guarantees are upheld
-        let buffer = unsafe {
-            std::slice::from_raw_parts_mut(
-                buffer.as_mut_ptr().cast::<MaybeUninit<u8>>(),
-                buffer.len() * std::mem::size_of::<MaybeUninit<u32>>(),
-            )
-        };
+        let mut buffer = AlignedBuffer::<4, 4096>::new();
 
         loop {
             let bytes_read = {
