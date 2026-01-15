@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use color_eyre::eyre;
 use ipnet::IpNet;
-use libc::{NETLINK_ROUTE, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK};
-use netlink_packet_core::{
-    Emitable as _, NLM_F_DUMP, NLM_F_REQUEST, NetlinkHeader, NetlinkMessage, NetlinkPayload,
-    Nla as _,
+use libc::{
+    AF_INET, AF_INET6, AF_UNSPEC, NETLINK_ROUTE, NLM_F_DUMP, NLM_F_REQUEST, RTM_GETADDR,
+    RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK,
 };
+use netlink_packet_core::{Emitable as _, NetlinkMessage, NetlinkPayload, Nla as _};
 use netlink_packet_route::address::{AddressHeaderFlags, AddressMessage, AddressScope};
 use netlink_packet_route::{RouteNetlinkMessage, address};
 use socket2::SockAddrStorage;
@@ -15,8 +15,10 @@ use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 use wsdd_rs::define_typed_size;
+use zerocopy::IntoBytes as _;
 
 use crate::config::{BindTo, Config};
+use crate::ffi::{NetlinkRequest, ifaddrmsg, nlmsghdr};
 use crate::network_handler::Command;
 use crate::utils::task::spawn_with_name;
 
@@ -189,39 +191,28 @@ fn request_current_state(
     config: &Config,
     socket: &tokio::net::UdpSocket,
 ) -> Result<(), std::io::Error> {
-    let address_message = {
-        let mut address_message = AddressMessage::default();
-
-        match config.bind_to {
-            BindTo::IPv4 => {
-                address_message.header.family = netlink_packet_route::AddressFamily::Inet;
-            },
-            BindTo::IPv6 => {
-                address_message.header.family = netlink_packet_route::AddressFamily::Inet6;
-            },
-            BindTo::DualStack => {
-                address_message.header.family = netlink_packet_route::AddressFamily::Unspec;
-            },
-        }
-
-        address_message
+    let family = match config.bind_to {
+        BindTo::IPv4 => AF_INET,
+        BindTo::IPv6 => AF_INET6,
+        BindTo::DualStack => AF_UNSPEC,
     };
 
-    let packet = {
-        let mut packet = NetlinkMessage::new(
-            NetlinkHeader::default(),
-            NetlinkPayload::from(RouteNetlinkMessage::GetAddress(address_message)),
-        );
-        packet.header.flags = NLM_F_DUMP | NLM_F_REQUEST;
-        packet.header.sequence_number = 1;
-        packet.finalize();
-
-        packet
+    let request = NetlinkRequest {
+        nh: nlmsghdr {
+            nlmsg_len: size_of::<NetlinkRequest>().try_into().unwrap(),
+            nlmsg_type: RTM_GETADDR,
+            nlmsg_flags: u16::try_from(NLM_F_REQUEST | NLM_F_DUMP).unwrap(),
+            nlmsg_seq: 1,
+            nlmsg_pid: 0,
+        },
+        ifa: ifaddrmsg {
+            ifa_family: family.try_into().unwrap(),
+            ifa_prefixlen: 0,
+            ifa_flags: 0,
+            ifa_scope: 0,
+            ifa_index: 0,
+        },
     };
-
-    let mut buffer = vec![0; packet.header.length as usize];
-
-    packet.serialize(&mut buffer);
 
     #[expect(
         clippy::multiple_unsafe_ops_per_block,
@@ -251,7 +242,7 @@ fn request_current_state(
         })
     }?;
 
-    socket2::SockRef::from(&socket).send_to(&buffer, &socket_addr)?;
+    socket2::SockRef::from(&socket).send_to(request.as_bytes(), &socket_addr)?;
 
     Ok(())
 }
