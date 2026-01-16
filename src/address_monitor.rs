@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use color_eyre::eyre;
 use tokio::sync::mpsc::Sender;
+use tokio::sync::watch::Receiver;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
@@ -31,7 +32,7 @@ type Monitor = !;
 pub fn create_address_monitor(
     cancellation_token: CancellationToken,
     new_address_tx: Sender<Command>,
-    start_rx: tokio::sync::watch::Receiver<()>,
+    start_rx: Receiver<()>,
     config: Arc<Config>,
 ) -> Result<Monitor, eyre::Report> {
     Monitor::new(cancellation_token, new_address_tx, start_rx, config).map_err(|error| {

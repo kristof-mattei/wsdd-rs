@@ -14,7 +14,8 @@ use hashbrown::hash_map::Entry;
 use ipnet::IpNet;
 use thiserror::Error;
 use tokio::sync::RwLock;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::watch::Sender as StartSender;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
@@ -70,8 +71,8 @@ pub struct NetworkHandler {
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
     multicast_handlers: Vec<MulticastHandler>,
-    command_rx: tokio::sync::mpsc::Receiver<Command>,
-    start_tx: tokio::sync::watch::Sender<()>,
+    command_rx: Receiver<Command>,
+    start_tx: StartSender<()>,
 }
 
 #[derive(Error, Debug)]
@@ -84,8 +85,8 @@ impl NetworkHandler {
     pub fn new(
         cancellation_token: CancellationToken,
         config: &Arc<Config>,
-        command_rx: tokio::sync::mpsc::Receiver<Command>,
-        start_tx: tokio::sync::watch::Sender<()>,
+        command_rx: Receiver<Command>,
+        start_tx: StartSender<()>,
     ) -> Self {
         Self {
             active: AtomicBool::new(false),
