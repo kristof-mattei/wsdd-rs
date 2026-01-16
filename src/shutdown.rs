@@ -1,24 +1,36 @@
 use std::process::{ExitCode, Termination};
 
 use color_eyre::eyre;
-use thiserror::Error;
 use tracing::{Level, event};
+
 /// Represents all ways the application can terminate.
-///
-/// - `Success`: Clean shutdown
-/// - `OperationalFailure`: Expected failure (e.g., chroot denied, bad config)
-/// - `UnexpectedError`: Programmer error or system failure we didn't anticipate
-#[derive(Error, Debug)]
 pub enum Shutdown {
-    #[error("Exited normally")]
     Success,
-    #[error("Operational Failure")]
     OperationalFailure {
         code: ExitCode,
         message: &'static str,
     },
-    #[error("Unexpected Error")]
-    UnexpectedError(#[from] eyre::Report),
+    UnexpectedError(eyre::Report),
+}
+
+impl std::fmt::Display for Shutdown {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Shutdown::Success => write!(f, "Clean shutdown"),
+            Shutdown::OperationalFailure { code, message } => {
+                write!(
+                    f,
+                    "Expected failure (e.g., chroot denied, bad config). Code {:?} ({})",
+                    code, message
+                )
+            },
+            Shutdown::UnexpectedError(ref report) => write!(
+                f,
+                "Bug or system failure we didn't or can't (reasonably) anticipate {}",
+                report
+            ),
+        }
+    }
 }
 
 impl Termination for Shutdown {
@@ -26,7 +38,7 @@ impl Termination for Shutdown {
         match self {
             Shutdown::Success => ExitCode::SUCCESS,
             Shutdown::OperationalFailure { code, message } => {
-                event!(Level::ERROR, "{}", message);
+                event!(Level::ERROR, ?code, ?message);
 
                 code
             },
@@ -34,5 +46,11 @@ impl Termination for Shutdown {
                 Err::<std::convert::Infallible, _>(report).report()
             },
         }
+    }
+}
+
+impl<E: Into<eyre::Report>> From<E> for Shutdown {
+    fn from(error: E) -> Self {
+        Shutdown::UnexpectedError(error.into())
     }
 }

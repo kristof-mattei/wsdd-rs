@@ -251,7 +251,7 @@ async fn start_tasks() -> Shutdown {
 
     if !config.no_autostart {
         if let Err(error) = network_handler.set_active() {
-            return Shutdown::UnexpectedError(error);
+            return error.into();
         }
     }
 
