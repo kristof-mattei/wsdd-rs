@@ -11,6 +11,7 @@ use time::format_description::well_known::Iso8601;
 use time::format_description::well_known::iso8601::{Config as Iso8601Config, TimePrecision};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt};
 use tokio::net::UnixListener;
+use tokio::sync::mpsc::Sender;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
@@ -37,7 +38,7 @@ const ISO8601_SECOND_PRECISION: Iso8601<
 
 pub struct ApiServer {
     cancellation_token: CancellationToken,
-    command_tx: tokio::sync::mpsc::Sender<Command>,
+    command_tx: Sender<Command>,
     listener: GenericListener,
 }
 
@@ -45,7 +46,7 @@ impl ApiServer {
     pub fn new(
         cancellation_token: CancellationToken,
         listen_on: &PortOrSocket,
-        command_tx: tokio::sync::mpsc::Sender<Command>,
+        command_tx: Sender<Command>,
     ) -> Result<ApiServer, std::io::Error> {
         let listener: GenericListener = match *listen_on {
             PortOrSocket::Port(port) => {
@@ -168,7 +169,7 @@ impl ApiServer {
 
 async fn handle_single_connection(
     cancellation_token: CancellationToken,
-    command_tx: tokio::sync::mpsc::Sender<Command>,
+    command_tx: Sender<Command>,
     stream: GenericStream,
     _permit: OwnedSemaphorePermit,
 ) {
@@ -225,7 +226,7 @@ async fn handle_single_connection(
 /// `raw_command` is newline terminated
 async fn process_command<W>(
     raw_command: &[u8],
-    command_tx: &tokio::sync::mpsc::Sender<Command>,
+    command_tx: &Sender<Command>,
     writer: &mut W,
 ) -> Result<bool, std::io::Error>
 where

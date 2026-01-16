@@ -35,6 +35,7 @@ use std::time::Duration;
 use color_eyre::config::HookBuilder;
 use color_eyre::eyre;
 use dotenvy::dotenv;
+use tokio::sync::mpsc::Sender;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
@@ -45,8 +46,8 @@ use tracing_subscriber::{EnvFilter, Layer as _};
 use crate::address_monitor::create_address_monitor;
 use crate::build_env::get_build_env;
 use crate::cli::parse_cli;
-use crate::config::Config;
-use crate::network_handler::NetworkHandler;
+use crate::config::{Config, PortOrSocket};
+use crate::network_handler::{Command, NetworkHandler};
 use crate::security::{chroot, drop_privileges};
 use crate::utils::flatten_handle;
 
@@ -153,16 +154,7 @@ fn get_config() -> Result<Arc<Config>, eyre::Report> {
     Ok(config)
 }
 
-/// starts all the tasks, such as the web server, the key refresh, ...
-/// ensures all tasks are gracefully shutdown in case of error, `CTRL+c` or `SIGTERM`
-#[expect(clippy::too_many_lines, reason = "WIP")]
-async fn start_tasks() -> Result<ExitCode, eyre::Report> {
-    let config = get_config()?;
-
-    print_header();
-
-    config.log();
-
+fn try_chroot(config: &Config) -> Option<ExitCode> {
     if let &Some(ref chroot_path) = &config.chroot {
         if let Err(error) = chroot(chroot_path) {
             event!(
@@ -172,7 +164,7 @@ async fn start_tasks() -> Result<ExitCode, eyre::Report> {
                 chroot_path.display()
             );
 
-            return Ok(ExitCode::from(2));
+            return Some(ExitCode::from(2));
         } else {
             event!(
                 Level::INFO,
@@ -187,7 +179,7 @@ async fn start_tasks() -> Result<ExitCode, eyre::Report> {
     {
         event!(Level::ERROR, ?uid, ?gid, reason, "Drop privileges failed");
 
-        return Ok(ExitCode::from(3));
+        return Some(ExitCode::from(3));
     }
 
     if config.chroot.is_some()
@@ -201,6 +193,22 @@ async fn start_tasks() -> Result<ExitCode, eyre::Report> {
             Level::WARN,
             "chrooted but running as root, consider -u option"
         );
+    }
+
+    None
+}
+
+/// starts all the tasks, such as the web server, the key refresh, ...
+/// ensures all tasks are gracefully shutdown in case of error, `CTRL+c` or `SIGTERM`
+async fn start_tasks() -> Result<ExitCode, eyre::Report> {
+    let config = get_config()?;
+
+    print_header();
+
+    config.log();
+
+    if let Some(exit_code) = try_chroot(&config) {
+        return Ok(exit_code);
     }
 
     // this channel is used to communicate between
@@ -221,31 +229,12 @@ async fn start_tasks() -> Result<ExitCode, eyre::Report> {
         let config = Arc::clone(&config);
         let command_tx = command_tx.clone();
 
-        tasks.spawn(async move {
-            let _guard = cancellation_token.clone().drop_guard();
-
-            let address_monitor = match create_address_monitor(
-                cancellation_token.child_token(),
-                command_tx,
-                start_rx,
-                Arc::clone(&config),
-            ) {
-                Ok(address_monitor) => address_monitor,
-                Err(error) => {
-                    event!(Level::ERROR, ?error, "Failed to create address monitor");
-                    return;
-                },
-            };
-
-            match address_monitor.process_changes().await {
-                Ok(()) => event!(Level::INFO, "Address Monitor stopped listening"),
-                Err(error) => {
-                    event!(Level::ERROR, ?error, "Address Monitor stopped unexpectedly");
-                },
-            }
-
-            address_monitor.teardown().await;
-        });
+        tasks.spawn(launch_address_monitor(
+            cancellation_token,
+            command_tx,
+            start_rx,
+            config,
+        ));
     }
 
     if !config.no_autostart {
@@ -255,48 +244,17 @@ async fn start_tasks() -> Result<ExitCode, eyre::Report> {
     {
         let cancellation_token = cancellation_token.clone();
 
-        tasks.spawn(async move {
-            let _guard = cancellation_token.drop_guard();
-
-            match network_handler.process_commands().await {
-                Ok(()) => event!(Level::INFO, "Network Handler stopped listening"),
-                Err(error) => {
-                    event!(Level::ERROR, ?error, "Network Handler stopped unexpectedly");
-                },
-            }
-
-            network_handler.teardown().await;
-        });
+        tasks.spawn(launch_network_handler_task(
+            cancellation_token,
+            network_handler,
+        ));
     }
 
     if let Some(listen_on) = config.listen.clone() {
         let cancellation_token = cancellation_token.clone();
         let command_tx = command_tx.clone();
 
-        tasks.spawn(async move {
-            let _guard = cancellation_token.clone().drop_guard();
-
-            let api_server = match api_server::ApiServer::new(
-                cancellation_token.child_token(),
-                &listen_on,
-                command_tx,
-            ) {
-                Ok(api_server) => api_server,
-                Err(error) => {
-                    event!(Level::ERROR, ?error, "Failed to start API Server");
-                    return;
-                },
-            };
-
-            match api_server.handle_connections().await {
-                Ok(()) => event!(Level::INFO, "API Server stopped listening"),
-                Err(error) => {
-                    event!(Level::ERROR, ?error, "API Server stopped unexpectedly");
-                },
-            }
-
-            api_server.teardown();
-        });
+        tasks.spawn(launch_api_server(cancellation_token, command_tx, listen_on));
     }
 
     // now we wait forever for either
@@ -341,4 +299,80 @@ async fn start_tasks() -> Result<ExitCode, eyre::Report> {
     event!(Level::INFO, "Done");
 
     Ok(ExitCode::SUCCESS)
+}
+
+async fn launch_address_monitor(
+    cancellation_token: CancellationToken,
+    command_tx: Sender<Command>,
+    start_rx: tokio::sync::watch::Receiver<()>,
+    config: Arc<Config>,
+) {
+    let _guard = cancellation_token.clone().drop_guard();
+
+    let address_monitor = match create_address_monitor(
+        cancellation_token.child_token(),
+        command_tx,
+        start_rx,
+        Arc::clone(&config),
+    ) {
+        Ok(address_monitor) => address_monitor,
+        Err(error) => {
+            event!(Level::ERROR, ?error, "Failed to create address monitor");
+            return;
+        },
+    };
+
+    match address_monitor.process_changes().await {
+        Ok(()) => event!(Level::INFO, "Address Monitor stopped listening"),
+        Err(error) => {
+            event!(Level::ERROR, ?error, "Address Monitor stopped unexpectedly");
+        },
+    }
+
+    address_monitor.teardown().await;
+}
+
+async fn launch_api_server(
+    cancellation_token: CancellationToken,
+    command_tx: Sender<Command>,
+    listen_on: PortOrSocket,
+) {
+    let _guard = cancellation_token.clone().drop_guard();
+
+    let api_server = match api_server::ApiServer::new(
+        cancellation_token.child_token(),
+        &listen_on,
+        command_tx,
+    ) {
+        Ok(api_server) => api_server,
+        Err(error) => {
+            event!(Level::ERROR, ?error, "Failed to start API Server");
+            return;
+        },
+    };
+
+    match api_server.handle_connections().await {
+        Ok(()) => event!(Level::INFO, "API Server stopped listening"),
+        Err(error) => {
+            event!(Level::ERROR, ?error, "API Server stopped unexpectedly");
+        },
+    }
+
+    api_server.teardown();
+}
+
+async fn launch_network_handler_task(
+    cancellation_token: CancellationToken,
+    mut network_handler: NetworkHandler,
+) {
+    let _guard = cancellation_token.drop_guard();
+
+    match network_handler.process_commands().await {
+        Ok(()) => event!(Level::INFO, "Network Handler stopped listening"),
+        Err(error) => {
+            event!(Level::ERROR, ?error, "Network Handler stopped unexpectedly");
+        },
+    }
+
+    network_handler.teardown().await;
 }
