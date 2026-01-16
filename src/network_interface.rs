@@ -83,7 +83,7 @@ pub fn if_indextoname(index: u32) -> Result<Box<str>, std::io::Error> {
     let ifname = CStr::from_bytes_until_nul(&buffer)
         .expect("We used oversized buffer, so not finding a null is impossible")
         .to_str()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
 
     Ok(String::from(ifname).into_boxed_str())
 }
