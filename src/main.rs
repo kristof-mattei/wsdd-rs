@@ -1,3 +1,5 @@
+use std::process::{ExitCode, Termination as _};
+
 mod address_monitor;
 mod api_server;
 mod build_env;
@@ -15,6 +17,7 @@ mod network_handler;
 mod network_interface;
 mod parsers;
 mod security;
+mod shutdown;
 mod signal_handlers;
 mod soap;
 mod socket;
@@ -28,7 +31,6 @@ mod xml;
 
 use std::convert::Infallible;
 use std::env::{self, VarError};
-use std::process::{ExitCode, Termination as _};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -49,7 +51,8 @@ use crate::cli::parse_cli;
 use crate::config::{Config, PortOrSocket};
 use crate::network_handler::{Command, NetworkHandler};
 use crate::security::{chroot, drop_privileges};
-use crate::utils::flatten_handle;
+use crate::shutdown::Shutdown;
+use crate::utils::flatten_shutdown_handle;
 
 #[cfg_attr(not(miri), global_allocator)]
 #[cfg_attr(miri, expect(unused, reason = "Not supported in Miri"))]
@@ -108,7 +111,7 @@ fn main() -> ExitCode {
     }
 
     // initialize the runtime
-    let result: Result<ExitCode, eyre::Report> = tokio::runtime::Builder::new_multi_thread()
+    let shutdown: Shutdown = tokio::runtime::Builder::new_multi_thread()
         .enable_io()
         .enable_time()
         .build()
@@ -118,10 +121,10 @@ fn main() -> ExitCode {
             // see https://docs.rs/tokio/latest/tokio/attr.main.html#non-worker-async-function
             let handle = tokio::task::spawn(start_tasks());
 
-            flatten_handle(handle).await
+            flatten_shutdown_handle(handle).await
         });
 
-    result.report()
+    shutdown.report()
 }
 
 fn print_header() {
@@ -154,7 +157,7 @@ fn get_config() -> Result<Arc<Config>, eyre::Report> {
     Ok(config)
 }
 
-fn try_chroot(config: &Config) -> Option<ExitCode> {
+fn try_chroot(config: &Config) -> Option<Shutdown> {
     if let &Some(ref chroot_path) = &config.chroot {
         if let Err(error) = chroot(chroot_path) {
             event!(
@@ -164,7 +167,10 @@ fn try_chroot(config: &Config) -> Option<ExitCode> {
                 chroot_path.display()
             );
 
-            return Some(ExitCode::from(2));
+            return Some(Shutdown::OperationalFailure {
+                code: ExitCode::from(2),
+                message: "chroot failed",
+            });
         } else {
             event!(
                 Level::INFO,
@@ -179,7 +185,10 @@ fn try_chroot(config: &Config) -> Option<ExitCode> {
     {
         event!(Level::ERROR, ?uid, ?gid, reason, "Drop privileges failed");
 
-        return Some(ExitCode::from(3));
+        return Some(Shutdown::OperationalFailure {
+            code: ExitCode::from(3),
+            message: "drop privileges failed",
+        });
     }
 
     if config.chroot.is_some()
@@ -200,15 +209,18 @@ fn try_chroot(config: &Config) -> Option<ExitCode> {
 
 /// starts all the tasks, such as the web server, the key refresh, ...
 /// ensures all tasks are gracefully shutdown in case of error, `CTRL+c` or `SIGTERM`
-async fn start_tasks() -> Result<ExitCode, eyre::Report> {
-    let config = get_config()?;
+async fn start_tasks() -> Shutdown {
+    let config = match get_config() {
+        Ok(config) => config,
+        Err(error) => return Shutdown::from(error),
+    };
 
     print_header();
 
     config.log();
 
-    if let Some(exit_code) = try_chroot(&config) {
-        return Ok(exit_code);
+    if let Some(shutdown) = try_chroot(&config) {
+        return shutdown;
     }
 
     // this channel is used to communicate between
@@ -238,7 +250,9 @@ async fn start_tasks() -> Result<ExitCode, eyre::Report> {
     }
 
     if !config.no_autostart {
-        network_handler.set_active()?;
+        if let Err(error) = network_handler.set_active() {
+            return Shutdown::UnexpectedError(error);
+        }
     }
 
     {
@@ -298,7 +312,7 @@ async fn start_tasks() -> Result<ExitCode, eyre::Report> {
 
     event!(Level::INFO, "Done");
 
-    Ok(ExitCode::SUCCESS)
+    Shutdown::Success
 }
 
 async fn launch_address_monitor(
