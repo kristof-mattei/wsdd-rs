@@ -1,5 +1,7 @@
+use std::mem::MaybeUninit;
 use std::sync::Arc;
 
+use bytes::BufMut;
 use color_eyre::eyre;
 use ipnet::IpNet;
 use libc::{
@@ -29,6 +31,16 @@ pub struct NetlinkAddressMonitor {
     command_tx: Sender<Command>,
     socket: Arc<tokio::net::UdpSocket>,
     start_handler: tokio::task::JoinHandle<()>,
+}
+
+trait RecvBuf<B: BufMut> {
+    async fn recv_buf(&self, buf: &mut B) -> std::io::Result<usize>;
+}
+
+impl<B: BufMut> RecvBuf<B> for &tokio::net::UdpSocket {
+    async fn recv_buf(&self, buf: &mut B) -> std::io::Result<usize> {
+        tokio::net::UdpSocket::recv_buf::<B>(self, buf).await
+    }
 }
 
 impl NetlinkAddressMonitor {
@@ -133,50 +145,68 @@ impl NetlinkAddressMonitor {
     }
 
     pub async fn process_changes(&self) -> Result<(), eyre::Report> {
-        // we originally had this on the stack (array) but tokio then moves the whole task to the heap because of size
-
-        // we don't need to zero out the buffer between runs as `recv_buf` starts at 0 and returns `bytes_read`
-        // sine we only read that portion we don't need to worry about the leftovers
-        // Notice the buffer is u32 because all of our structs written here by the kernel
-        // are aligned to 4 bytes
-        let mut buffer = AlignedBuffer::<4, 4096>::new();
-
-        loop {
-            let bytes_read = {
-                let mut buffer_byte_cursor = &mut *buffer;
-
-                tokio::select! {
-                    () = self.cancellation_token.cancelled() => {
-                        break;
-                    },
-                    result = self.socket.recv_buf(&mut buffer_byte_cursor) => {
-                        result?
-                    },
-                }
-            };
-
-            event!(
-                Level::DEBUG,
-                length = bytes_read,
-                "netlink message received"
-            );
-
-            // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
-            let buffer = unsafe { &*(&raw const buffer[..bytes_read] as *const [u8]) };
-
-            if let Err(error) =
-                parse_netlink_response(buffer, &self.cancellation_token, &self.command_tx).await
-            {
-                event!(
-                    Level::ERROR,
-                    ?error,
-                    "Error parsing response as a netlink response"
-                );
-            }
-        }
-
-        Ok(())
+        process_changes::<&tokio::net::UdpSocket>(
+            &self.cancellation_token,
+            &*self.socket,
+            self.command_tx.clone(),
+        )
+        .await
     }
+}
+
+async fn process_changes<R>(
+    cancellation_token: &CancellationToken,
+    recv_buf: R,
+    command_tx: Sender<Command>,
+) -> Result<(), eyre::Report>
+where
+    R: for<'a> RecvBuf<&'a mut [MaybeUninit<u8>]>,
+{
+    // we originally had this on the stack (array) but tokio then moves the whole task to the heap because of size
+
+    // we don't need to zero out the buffer between runs as `recv_buf` starts at 0 and returns `bytes_read`
+    // since we only read that portion we don't need to worry about the leftovers
+    // Notice the buffer's alignment being equal to the alignment of `nlmsghdr`.
+    // This is because we will be reading structs from this buffer who have, at max, that alignment.
+    let mut buffer = AlignedBuffer::<{ align_of::<nlmsghdr>() }, 4096>::new();
+
+    loop {
+        let bytes_read = {
+            let mut buffer_byte_cursor = &mut *buffer;
+
+            tokio::select! {
+                () = cancellation_token.cancelled() => {
+                    break;
+                },
+                result = recv_buf.recv_buf(&mut buffer_byte_cursor) => {
+                    result?
+                },
+            }
+        };
+
+        event!(
+            Level::DEBUG,
+            length = bytes_read,
+            "netlink message received"
+        );
+
+        let buffer = {
+            let raw_buffer = buffer.as_ref().as_ptr().cast::<u8>();
+
+            // SAFETY: we are only initializing the parts of the buffer `recv_buf` has written to
+            unsafe { std::slice::from_raw_parts(raw_buffer, bytes_read) }
+        };
+
+        if let Err(error) = parse_netlink_response(buffer, cancellation_token, &command_tx).await {
+            event!(
+                Level::ERROR,
+                ?error,
+                "Error parsing response as a netlink response"
+            );
+        }
+    }
+
+    Ok(())
 }
 
 fn request_current_state(
