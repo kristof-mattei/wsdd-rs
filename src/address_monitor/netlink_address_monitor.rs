@@ -168,7 +168,7 @@ where
     // since we only read that portion we don't need to worry about the leftovers
     // Notice the buffer's alignment being equal to the alignment of `nlmsghdr`.
     // This is because we will be reading structs from this buffer who have, at max, that alignment.
-    let mut buffer = AlignedBuffer::<{ align_of::<nlmsghdr>() }, 4096>::new();
+    let mut buffer = AlignedBuffer::<nlmsghdr, 4096>::new();
 
     loop {
         let bytes_read = {

@@ -2,32 +2,12 @@ use std::mem::{MaybeUninit, size_of};
 use std::ops::{Deref, DerefMut};
 use std::slice::SliceIndex;
 
-mod private {
-    pub(super) trait Private {}
+pub struct AlignedBuffer<T, const N: usize> {
+    buffer: Box<[MaybeUninit<T>]>,
 }
 
-#[expect(
-    private_bounds,
-    reason = "Arbitrary implementations don't make sense and are not supported"
-)]
-pub trait MapConstToType: private::Private {
-    type Output;
-}
-
-#[expect(
-    private_bounds,
-    reason = "Arbitrary implementations don't make sense and are not supported"
-)]
-pub struct AlignedBuffer<const A: usize, const N: usize>
+impl<T, const N: usize, I> std::ops::Index<I> for AlignedBuffer<T, N>
 where
-    ConstToType<A>: MapConstToType,
-{
-    buffer: Box<[MaybeUninit<<ConstToType<A> as MapConstToType>::Output>]>,
-}
-
-impl<const A: usize, const N: usize, I> std::ops::Index<I> for AlignedBuffer<A, N>
-where
-    ConstToType<A>: MapConstToType,
     I: SliceIndex<[MaybeUninit<u8>]>,
 {
     type Output = I::Output;
@@ -37,9 +17,8 @@ where
     }
 }
 
-impl<const A: usize, const N: usize, I> std::ops::IndexMut<I> for AlignedBuffer<A, N>
+impl<T, const N: usize, I> std::ops::IndexMut<I> for AlignedBuffer<T, N>
 where
-    ConstToType<A>: MapConstToType,
     I: SliceIndex<[MaybeUninit<u8>]>,
 {
     fn index_mut(&mut self, index: I) -> &mut I::Output {
@@ -47,42 +26,8 @@ where
     }
 }
 
-struct ConstToType<const U: usize>;
-
-impl private::Private for ConstToType<1> {}
-impl MapConstToType for ConstToType<1> {
-    type Output = u8;
-}
-
-impl private::Private for ConstToType<2> {}
-impl MapConstToType for ConstToType<2> {
-    type Output = u16;
-}
-
-impl private::Private for ConstToType<4> {}
-impl MapConstToType for ConstToType<4> {
-    type Output = u32;
-}
-
-impl private::Private for ConstToType<8> {}
-impl MapConstToType for ConstToType<8> {
-    type Output = u64;
-}
-
-impl private::Private for ConstToType<16> {}
-impl MapConstToType for ConstToType<16> {
-    type Output = u128;
-}
-
-#[expect(
-    private_bounds,
-    reason = "Arbitrary implementations don't make sense and are not supported"
-)]
-impl<const A: usize, const N: usize> AlignedBuffer<A, N>
-where
-    ConstToType<A>: MapConstToType,
-{
-    const MAPPED_TYPE_SIZE: usize = size_of::<<ConstToType<A> as MapConstToType>::Output>();
+impl<T, const N: usize> AlignedBuffer<T, N> {
+    const MAPPED_TYPE_SIZE: usize = size_of::<T>();
 
     pub fn new() -> Self {
         // TODO move this to generics once we have support doing this kind of validation in const generics
@@ -99,10 +44,7 @@ where
     }
 }
 
-impl<const A: usize, const N: usize> Deref for AlignedBuffer<A, N>
-where
-    ConstToType<A>: MapConstToType,
-{
+impl<T, const N: usize> Deref for AlignedBuffer<T, N> {
     type Target = [MaybeUninit<u8>];
 
     fn deref(&self) -> &Self::Target {
@@ -113,10 +55,7 @@ where
     }
 }
 
-impl<const A: usize, const N: usize> DerefMut for AlignedBuffer<A, N>
-where
-    ConstToType<A>: MapConstToType,
-{
+impl<T, const N: usize> DerefMut for AlignedBuffer<T, N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         let mut_ptr = self.buffer.as_mut_ptr();
 
@@ -132,6 +71,6 @@ mod tests {
     #[test]
     #[should_panic(expected = "N must be a multiple of the mapped type size")]
     fn fail_when_not_multiple_of_alignment() {
-        let _buffer = AlignedBuffer::<4, 5>::new();
+        let _buffer = AlignedBuffer::<u32, 5>::new();
     }
 }
