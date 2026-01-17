@@ -166,7 +166,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn handles_probe_wsdp_device() {
         let client_message_id = Uuid::now_v7();
         let probe = format!(
@@ -177,7 +178,8 @@ mod tests {
         handles_probe_generic(client_message_id, &probe).await;
     }
 
-    #[tokio::test]
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn handles_probe_pub_computer() {
         // client
         let client_message_id = Uuid::now_v7();
@@ -189,7 +191,8 @@ mod tests {
         handles_probe_generic(client_message_id, &probe).await;
     }
 
-    #[tokio::test]
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn handles_probe_no_types() {
         let client_message_id = Uuid::now_v7();
         let probe = format!(
@@ -253,7 +256,8 @@ mod tests {
         assert_eq!(expected, response);
     }
 
-    #[tokio::test]
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn handles_probe_non_matching_type() {
         let client_message_id = Uuid::now_v7();
         let probe = format!(

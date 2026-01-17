@@ -595,7 +595,8 @@ mod tests {
         (client_config, client_devices)
     }
 
-    #[tokio::test]
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn handles_hello_without_xaddr() {
         let (message_handler, client_network_address) = build_message_handler_with_network_address(
             IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
@@ -934,7 +935,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn sends_probe() {
         let cancellation_token = CancellationToken::new();
 
@@ -1152,7 +1154,8 @@ mod tests {
         assert_eq!(expected_props, device_props);
     }
 
-    #[tokio::test]
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn handles_probe_matches_without_xaddrs() {
         let (message_handler, client_network_address) = build_message_handler_with_network_address(
             IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
@@ -1221,7 +1224,8 @@ mod tests {
         assert_eq!(expected, response);
     }
 
-    #[tokio::test]
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn handles_probe_matches_with_xaddrs() {
         let (message_handler, client_network_address) = build_message_handler_with_network_address(
             IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
@@ -1322,7 +1326,8 @@ mod tests {
         assert_matches!(client_devices.get(&host_config.uuid_as_device_uri), Some(_));
     }
 
-    #[tokio::test]
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn handles_resolve_matches() {
         let (message_handler, client_network_address) = build_message_handler_with_network_address(
             IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),

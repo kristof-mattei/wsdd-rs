@@ -327,7 +327,8 @@ const fn u32_to_usize(from: u32) -> usize {
 
 #[cfg(test)]
 mod tests {
-    #[test]
+    #[cfg_attr(not(miri), test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     fn ui() {
         let t = trybuild::TestCases::new();
         t.compile_fail("tests/ui/*.rs");
