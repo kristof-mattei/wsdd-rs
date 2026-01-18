@@ -9,7 +9,7 @@ use ipnet::IpNet;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::CancellationToken;
-use tracing::{Level, event};
+use tracing::{Instrument as _, Level, event, span};
 use url::Host;
 use uuid::fmt::Urn;
 
@@ -398,10 +398,13 @@ async fn perform_metadata_exchange(
             .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
             .header("User-Agent", "wsdd-rs");
 
+        let span = span!(Level::ERROR, "http request", url = %xaddr);
+
         let response = builder
             .body(body.clone())
             .timeout(config.metadata_timeout)
             .send()
+            .instrument(span)
             .await;
 
         let response = match response {
