@@ -572,7 +572,6 @@ mod tests {
     use tokio::sync::RwLock;
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio_util::sync::CancellationToken;
-    use tracing_test::traced_test;
     use uuid::Uuid;
 
     use crate::network_interface::NetworkInterface;
@@ -1412,7 +1411,6 @@ mod tests {
     }
 
     #[test]
-    #[traced_test]
     fn filters_invalid_and_non_http_https() {
         let bound = IpNet::V4(Ipv4Net::new(Ipv4Addr::new(192, 168, 1, 10), 24).unwrap());
 
@@ -1433,7 +1431,6 @@ mod tests {
     }
 
     #[test]
-    #[traced_test]
     fn rejects_missing_host() {
         let bound = IpNet::V4(Ipv4Net::new(Ipv4Addr::new(10, 0, 0, 1), 24).unwrap());
 
@@ -1451,7 +1448,6 @@ mod tests {
     }
 
     #[test]
-    #[traced_test]
     fn prefers_link_local_ipv6_first() {
         let bound =
             IpNet::V6(Ipv6Net::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1), 64).unwrap());
