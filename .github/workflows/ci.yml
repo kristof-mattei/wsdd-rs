@@ -324,6 +324,97 @@ jobs:
           disable_search: true
           disable_telem: true
           fail_ci_if_error: true
+          flags: "Tests"
+          files: reports/results.xml
+          plugins: ""
+          report_type: "test_results"
+          use_oidc: true
+
+      - name: Fail if tests failed
+        shell: bash
+        if: |
+          steps.tests.outcome != 'success'
+        run: |
+          # the test reporter we use (or any for that matter)
+          # all show a report. But we cannot depend on that report because
+          # we don't know which subsection it belongs in GitHub
+          # so we explicitly fail this one
+          # which will fail All Done
+          exit 1
+
+  cargo-test-and-report-miri:
+    name: Cargo test (and report) with Miri
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
+      id-token: write
+      pull-requests: write
+    env:
+      CARGO_FEATURES: ""
+    steps:
+      - *checkout
+
+      - *cache_cargo
+
+      - *set_up_mold
+
+      - name: Set up toolchain
+        shell: bash
+        run: |
+          rm ${HOME}/.cargo/bin/cargo-fmt
+          rm ${HOME}/.cargo/bin/rust-analyzer
+          rm ${HOME}/.cargo/bin/rustfmt
+
+          rustup self update
+          rustup update
+          rustup toolchain install nightly
+          rustup show
+
+          cargo --version
+
+      - name: Install miri & rust-src
+        shell: bash
+        run: |
+          rustup component add --toolchain nightly miri rust-src
+
+          # restore symlinks
+          rustup update
+
+      # we purposfully don't install libsystemd because
+      # we don't compile the feature, as it doesn't run with Miri
+      # - *set_up_libsystemd_dev
+
+      - name: Install nextest, custom test runner, with native support for junit
+        uses: taiki-e/install-action@30eab0fabba9ea3f522099957e668b21876aa39e # v2.66.6
+        with:
+          tool: cargo-nextest
+
+      - name: Run nextest with miri
+        shell: bash
+        id: tests
+        env:
+          MIRIFLAGS: "-Zmiri-backtrace=full -Zmiri-disable-isolation -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check"
+          RUSTFLAGS: "${{ env.RUSTFLAGS }} --allow=warnings"
+        run: |
+          cargo +nightly miri nextest run --profile ci --no-fail-fast ${{ env.CARGO_FEATURES }} --all-targets --workspace
+        continue-on-error: true
+
+      - name: Upload test results
+        uses: EnricoMi/publish-unit-test-result-action@27d65e188ec43221b20d26de30f4892fad91df2f # v2.22.0
+        with:
+          check_name: Test results Miri
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            reports/results.xml
+
+      - name: Upload test results (to Codecov.io)
+        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
+        with:
+          disable_search: true
+          disable_telem: true
+          fail_ci_if_error: true
+          flags: Miri
           files: reports/results.xml
           plugins: ""
           report_type: "test_results"
@@ -773,6 +864,7 @@ jobs:
       - cargo-clippy-and-report
       - cargo-fmt
       - cargo-test-and-report
+      - cargo-test-and-report-miri
       - pre-build-cargo-edit
       - docker-build
       - docker-publish
