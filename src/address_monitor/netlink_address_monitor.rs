@@ -448,12 +448,138 @@ fn parse_address_message(address_message: &AddressMessage) -> Option<(IpNet, Add
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_eq;
+    use std::mem::MaybeUninit;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
-    use crate::address_monitor::netlink_address_monitor::SIZE_OF_SOCKADDR_NL;
+    use bytes::BufMut as _;
+    use pretty_assertions::{assert_eq, assert_matches};
+    use tokio_util::sync::CancellationToken;
+
+    use crate::address_monitor::netlink_address_monitor::{
+        RecvBuf, SIZE_OF_SOCKADDR_NL, process_changes,
+    };
+    use crate::network_handler::Command;
 
     #[test]
     fn size_of_sockaddr_nl() {
         assert_eq!(size_of::<libc::sockaddr_nl>(), SIZE_OF_SOCKADDR_NL as usize);
+    }
+
+    struct MockNetlinkSocket {
+        done: AtomicBool,
+    }
+
+    impl RecvBuf<&mut [MaybeUninit<u8>]> for MockNetlinkSocket {
+        #[expect(clippy::mut_mut, reason = "Mandated by the trait")]
+        async fn recv_buf(&self, buf: &mut &mut [MaybeUninit<u8>]) -> std::io::Result<usize> {
+            if self.done.fetch_or(true, Ordering::Relaxed) {
+                tokio::task::yield_now().await;
+
+                return Ok(0);
+            }
+
+            let bytes = include_bytes!("fixtures/commands.bin");
+
+            buf.put_slice(bytes);
+
+            Ok(bytes.len())
+        }
+    }
+
+    #[tokio::test]
+    async fn parse_response() {
+        let expected: [(&'static str, u8, u32); 47] = [
+            ("127.0.0.1/8", 254, 1),
+            ("192.168.1.5/24", 0, 2),
+            ("192.168.40.5/24", 0, 4),
+            ("192.168.20.5/24", 0, 5),
+            ("100.111.79.121/32", 0, 6),
+            ("172.19.0.1/23", 0, 7),
+            ("172.17.0.1/16", 0, 8),
+            ("::1/128", 254, 1),
+            ("2600:1900:52cc:4c00:1312:a3ff:fe24:8c4/64", 0, 2),
+            ("fe80::1312:a3ff:fe24:8c4/64", 253, 2),
+            ("fe80::1312:a3ff:fe24:8c4/64", 253, 4),
+            ("fe80::1312:a3ff:fe24:8c4/64", 253, 5),
+            ("fd75:115e:9e18::6b01:4f79/128", 0, 6),
+            ("fe80::c8e2:fe16:117d:3254/64", 253, 6),
+            ("fe80::e05b:9cff:fe5d:8a1a/64", 253, 7),
+            ("fda8:4ae1:7755::1/48", 0, 8),
+            ("2600:1900:52cc:4c10::1/64", 0, 9),
+            ("fe80::c85c:89ff:fedc:89f5/64", 253, 9),
+            ("fe80::909e:93ff:fee6:c7b7/64", 253, 10),
+            ("fe80::10b2:8ff:fe56:7a18/64", 253, 11),
+            ("fe80::d02b:7cff:fe99:6e41/64", 253, 13),
+            ("fe80::1c17:faff:feb8:725c/64", 253, 15),
+            ("fe80::a81f:d9ff:fef0:de6f/64", 253, 16),
+            ("fe80::8433:3bff:fe70:b44b/64", 253, 17),
+            ("fe80::f4d6:c8ff:fe2d:a45a/64", 253, 20),
+            ("fe80::e469:1eff:fe81:4350/64", 253, 21),
+            ("fe80::7409:51ff:fe18:6b04/64", 253, 22),
+            ("fe80::2c24:b5ff:fed5:6f2d/64", 253, 23),
+            ("fe80::d4db:e2ff:fe16:8531/64", 253, 24),
+            ("fe80::9825:71ff:fea2:8898/64", 253, 25),
+            ("fe80::1411:f6ff:fe4e:8fa8/64", 253, 26),
+            ("fe80::703e:1aff:fe27:cabf/64", 253, 27),
+            ("fe80::403a:68ff:fe48:c630/64", 253, 30),
+            ("fe80::c41e:b7ff:fed3:6090/64", 253, 31),
+            ("fe80::7850:8aff:fec5:fccd/64", 253, 32),
+            ("fe80::9cb6:35ff:feb8:22fc/64", 253, 33),
+            ("fe80::783a:16ff:fe04:9bca/64", 253, 34),
+            ("fe80::d8dd:39ff:fefd:7fe5/64", 253, 35),
+            ("fe80::b4ed:4cff:fe10:a2d1/64", 253, 37),
+            ("fe80::e85d:cbff:fe97:f2c0/64", 253, 39),
+            ("fe80::ec5e:acff:fe37:acc3/64", 253, 41),
+            ("fe80::b893:edff:fe7b:57c5/64", 253, 42),
+            ("fe80::3480:bff:fece:6773/64", 253, 43),
+            ("fe80::9c92:34ff:fe1b:1cca/64", 253, 45),
+            ("fe80::58bc:7dff:fe21:e5da/64", 253, 46),
+            ("fe80::40df:abff:fe84:47bf/64", 253, 47),
+            ("fe80::b475:97ff:fe15:fc6c/64", 253, 48),
+        ];
+
+        let cancellation_token = CancellationToken::new();
+
+        let (command_tx, mut command_rx) = tokio::sync::mpsc::channel::<Command>(100);
+
+        {
+            let cancellation_token = cancellation_token.clone();
+
+            tokio::task::spawn(async move {
+                let _guard = cancellation_token.clone().drop_guard();
+
+                for (expected_address, expected_scope, expected_index) in expected {
+                    let command = command_rx.recv().await;
+
+                    let Command::NewAddress {
+                        address,
+                        scope,
+                        index,
+                    } = command.unwrap()
+                    else {
+                        panic!("Invalid command type");
+                    };
+
+                    assert_eq!(address, expected_address.parse().unwrap());
+                    assert_eq!(scope, expected_scope);
+                    assert_eq!(index, expected_index);
+                }
+
+                cancellation_token.cancel();
+
+                assert_matches!(command_rx.recv().await, None);
+            });
+        }
+
+        let result = process_changes(
+            &cancellation_token,
+            MockNetlinkSocket {
+                done: AtomicBool::new(false),
+            },
+            command_tx,
+        )
+        .await;
+
+        assert_matches!(result, Ok(()));
     }
 }
