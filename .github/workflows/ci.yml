@@ -324,7 +324,7 @@ jobs:
           disable_search: true
           disable_telem: true
           fail_ci_if_error: true
-          flags: "Tests"
+          flags: tests
           files: reports/results.xml
           plugins: ""
           report_type: "test_results"
@@ -345,6 +345,8 @@ jobs:
   cargo-test-and-report-miri:
     name: Cargo test (and report) with Miri
     runs-on: ubuntu-latest
+    needs:
+      - changes
     permissions:
       checks: write
       contents: read
@@ -414,7 +416,7 @@ jobs:
           disable_search: true
           disable_telem: true
           fail_ci_if_error: true
-          flags: Miri
+          flags: tests-with-miri
           files: reports/results.xml
           plugins: ""
           report_type: "test_results"
@@ -685,6 +687,7 @@ jobs:
       - cargo-clippy-and-report
       - cargo-fmt
       - cargo-test-and-report
+      - cargo-test-and-report-miri
       - docker-build
     # Check if the event is not triggered by a fork
     if: |
