@@ -2,11 +2,19 @@ use std::mem::{MaybeUninit, size_of};
 use std::ops::{Deref, DerefMut};
 use std::slice::SliceIndex;
 
-pub struct AlignedBuffer<T, const N: usize> {
+pub struct AlignedBuffer<T> {
     buffer: Box<[MaybeUninit<T>]>,
 }
 
-impl<T, const N: usize, I> std::ops::Index<I> for AlignedBuffer<T, N>
+impl<T> std::fmt::Debug for AlignedBuffer<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AlignedBuffer")
+            .field("buffer_len", &self.buffer.len())
+            .finish()
+    }
+}
+
+impl<T, I> std::ops::Index<I> for AlignedBuffer<T>
 where
     I: SliceIndex<[MaybeUninit<u8>]>,
 {
@@ -17,7 +25,7 @@ where
     }
 }
 
-impl<T, const N: usize, I> std::ops::IndexMut<I> for AlignedBuffer<T, N>
+impl<T, I> std::ops::IndexMut<I> for AlignedBuffer<T>
 where
     I: SliceIndex<[MaybeUninit<u8>]>,
 {
@@ -26,51 +34,65 @@ where
     }
 }
 
-impl<T, const N: usize> AlignedBuffer<T, N> {
+impl<T> AlignedBuffer<T> {
     const MAPPED_TYPE_SIZE: usize = size_of::<T>();
 
-    pub fn new() -> Self {
-        // TODO move this to generics once we have support doing this kind of validation in const generics
-        assert!(
-            N.is_multiple_of(Self::MAPPED_TYPE_SIZE),
-            "N must be a multiple of the mapped type size"
-        );
-
-        let len = N / Self::MAPPED_TYPE_SIZE;
-
-        Self {
-            buffer: Box::new_uninit_slice(len),
+    pub fn new(len: usize) -> Result<Self, &'static str> {
+        if !len.is_multiple_of(Self::MAPPED_TYPE_SIZE) {
+            return Err("len must be a multiple of the mapped type size");
         }
+
+        let len = len / Self::MAPPED_TYPE_SIZE;
+
+        Ok(Self {
+            buffer: Box::new_uninit_slice(len),
+        })
     }
 }
 
-impl<T, const N: usize> Deref for AlignedBuffer<T, N> {
+impl<T> Deref for AlignedBuffer<T> {
     type Target = [MaybeUninit<u8>];
 
     fn deref(&self) -> &Self::Target {
         let ptr = self.buffer.as_ptr();
 
         // SAFETY: The underlying buffer is of `N / size_of::<A>()`, so the buffer is valid for a length of `N`
-        unsafe { std::slice::from_raw_parts(ptr.cast::<MaybeUninit<u8>>(), N) }
+        unsafe {
+            std::slice::from_raw_parts(
+                ptr.cast::<MaybeUninit<u8>>(),
+                self.buffer.len() * Self::MAPPED_TYPE_SIZE,
+            )
+        }
     }
 }
 
-impl<T, const N: usize> DerefMut for AlignedBuffer<T, N> {
+impl<T> DerefMut for AlignedBuffer<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         let mut_ptr = self.buffer.as_mut_ptr();
 
         // SAFETY: The underlying buffer is of `N / size_of::<A>()`, so the buffer is valid for a length of `N`
-        unsafe { std::slice::from_raw_parts_mut(mut_ptr.cast::<MaybeUninit<u8>>(), N) }
+        unsafe {
+            std::slice::from_raw_parts_mut(
+                mut_ptr.cast::<MaybeUninit<u8>>(),
+                self.buffer.len() * Self::MAPPED_TYPE_SIZE,
+            )
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_matches;
+
     use crate::kernel_buffer::AlignedBuffer;
 
     #[test]
-    #[should_panic(expected = "N must be a multiple of the mapped type size")]
     fn fail_when_not_multiple_of_alignment() {
-        let _buffer = AlignedBuffer::<u32, 5>::new();
+        let buffer = AlignedBuffer::<u32>::new(5);
+
+        assert_matches!(
+            buffer,
+            Err("len must be a multiple of the mapped type size")
+        );
     }
 }

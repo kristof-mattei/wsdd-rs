@@ -19,7 +19,7 @@ use wsdd_rs::define_typed_size;
 use zerocopy::IntoBytes as _;
 
 use crate::config::{BindTo, Config};
-use crate::ffi::{NetlinkRequest, ifaddrmsg, nlmsghdr};
+use crate::ffi::{NetlinkRequest, getpagesize, ifaddrmsg, nlmsghdr};
 use crate::kernel_buffer::AlignedBuffer;
 use crate::network_handler::Command;
 use crate::utils::task::spawn_with_name;
@@ -154,6 +154,18 @@ impl NetlinkAddressMonitor {
     }
 }
 
+fn build_buffer() -> Result<AlignedBuffer<nlmsghdr>, eyre::Report> {
+    // Can't have smaller than this on x86
+    const MIN_PAGE_SIZE: usize = 4096;
+    // Large enough for the kernel's max packet (see `NLMSG_GOODSIZE`)
+    // https://github.com/torvalds/linux/blob/24d479d26b25bce5faea3ddd9fa8f3a6c3129ea7/include/linux/netlink.h#L272-L276
+    const MAX_PAGE_SIZE: usize = 8192;
+
+    let page_size = getpagesize().clamp(MIN_PAGE_SIZE, MAX_PAGE_SIZE);
+
+    AlignedBuffer::<nlmsghdr>::new(page_size).map_err(eyre::Report::msg)
+}
+
 async fn process_changes<R>(
     cancellation_token: &CancellationToken,
     recv_buf: R,
@@ -168,7 +180,8 @@ where
     // since we only read that portion we don't need to worry about the leftovers
     // Notice the buffer's alignment being equal to the alignment of `nlmsghdr`.
     // This is because we will be reading structs from this buffer who have, at max, that alignment.
-    let mut buffer = AlignedBuffer::<nlmsghdr, 4096>::new();
+
+    let mut buffer = build_buffer().map_err(eyre::Report::msg)?;
 
     loop {
         let bytes_read = {
