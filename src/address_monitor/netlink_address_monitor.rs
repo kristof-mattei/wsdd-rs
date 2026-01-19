@@ -276,6 +276,8 @@ async fn parse_netlink_response(
 ) -> Result<(), eyre::Report> {
     let mut message_offset = 0;
 
+    let mut batch = vec![];
+
     loop {
         let message: NetlinkMessage<RouteNetlinkMessage> =
             match NetlinkMessage::deserialize(&buffer[message_offset..]) {
@@ -288,13 +290,16 @@ async fn parse_netlink_response(
                         "Failed to deserialize netlink message, abandoning the rest in the buffer"
                     );
 
-                    break Err(eyre::Report::msg("Invalid netlink message"));
+                    return Err(eyre::Report::msg("Invalid netlink message"));
                 },
             };
 
+        let m = message.clone();
+        batch.push(m);
+
         let command = match message.payload {
             NetlinkPayload::Done(_) => {
-                break Ok(());
+                break;
             },
             NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewAddress(new_address_message)) => {
                 parse_address_message(&new_address_message).map(|(new_address, scope, index)| {
@@ -337,7 +342,7 @@ async fn parse_netlink_response(
                     event!(Level::ERROR, command = ?error.0, "Failed to announce command");
                 }
 
-                break Err(eyre::Report::msg(
+                return Err(eyre::Report::msg(
                     "Command receiver gone, nothing left to do but abandon buffer",
                 ));
             }
@@ -346,9 +351,14 @@ async fn parse_netlink_response(
         message_offset += message.header.length as usize;
 
         if message_offset == buffer.len() || message.header.length == 0 {
-            break Ok(());
+            break;
         }
     }
+
+    event!(Level::ERROR, "BATCH DONE");
+    dbg!(&batch);
+
+    Ok(())
 }
 
 fn parse_address_message(address_message: &AddressMessage) -> Option<(IpNet, AddressScope, u32)> {
