@@ -9,7 +9,7 @@ use ipnet::IpNet;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::CancellationToken;
-use tracing::{Level, event};
+use tracing::{Instrument as _, Level, event, span};
 use url::Host;
 use uuid::fmt::Urn;
 
@@ -402,6 +402,7 @@ async fn perform_metadata_exchange(
             .body(body.clone())
             .timeout(config.metadata_timeout)
             .send()
+            .instrument(span!(Level::DEBUG, "http", host = %xaddr.host_str()))
             .await;
 
         let response = match response {
