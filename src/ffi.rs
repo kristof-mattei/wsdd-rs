@@ -341,6 +341,23 @@ const fn u32_to_usize(from: u32) -> usize {
     from as usize
 }
 
+#[cfg(not(miri))]
+pub fn getpagesize() -> usize {
+    unsafe extern "C" {
+        fn getpagesize() -> i32;
+    }
+
+    // SAFETY: libc call
+    let page_size: u32 = unsafe { getpagesize() }.unsigned_abs();
+
+    u32_to_usize(page_size)
+}
+
+#[cfg(miri)]
+pub fn getpagesize() -> usize {
+    const { 1024 * 8 }
+}
+
 #[cfg(test)]
 mod tests {
     #[cfg_attr(not(miri), test)]
