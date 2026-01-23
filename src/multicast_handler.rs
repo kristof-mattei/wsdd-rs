@@ -36,33 +36,33 @@ use crate::wsd::udp::client::WSDClient;
 use crate::wsd::udp::host::WSDHost;
 
 /// A class for handling multicast traffic on a given interface for a
-/// given address family. It provides multicast sender and receiver sockets
+/// given address family. It provides multicast sender and receiver sockets.
 pub struct MulticastHandler {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
 
-    /// Shared reference to all discovered devices
+    /// Shared reference to all discovered devices.
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
 
-    /// Shared reference for global message counter
+    /// Shared reference for global message counter.
     messages_built: Arc<AtomicU64>,
-    /// The address and interface we're bound on
+    /// The address and interface we're bound on.
     network_address: NetworkAddress,
 
-    /// The multicast group on which we broadcast our messages
+    /// The multicast group on which we broadcast our messages.
     #[expect(unused, reason = "WIP")]
     multicast_address: UdpAddress,
     http_listen_address: SocketAddr,
     wsd_host: OnceCell<WSDHost>,
     wsd_client: OnceCell<WSDClient>,
     http_server: OnceCell<WSDHttpServer>,
-    /// receiving multicast traffic on the WSD Port
+    /// receiving multicast traffic on the WSD Port.
     mc_wsd_port_rx: MessageReceiver,
-    /// broadcast (sending multicast) from a socket bound to random / user provided port
+    /// broadcast (sending multicast) from a socket bound to random / user provided port.
     mc_local_port_tx: MessageSender<MulticastMessageSplitter>,
-    /// receiving unicast traffic on the random / user provided port
+    /// receiving unicast traffic on the random / user provided port.
     mc_local_port_rx: MessageReceiver,
-    /// sending unicast messages from the WSD Port
+    /// sending unicast messages from the WSD Port.
     uc_wsd_port_tx: MessageSender<UnicastMessageSplitter>,
 }
 

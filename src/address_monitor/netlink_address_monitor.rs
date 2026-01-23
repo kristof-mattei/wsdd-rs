@@ -44,7 +44,7 @@ impl<B: BufMut> RecvBuf<B> for &tokio::net::UdpSocket {
 }
 
 impl NetlinkAddressMonitor {
-    /// Implementation for Netlink sockets, i.e. Linux
+    /// Implementation for Netlink sockets, i.e. Linux.
     pub fn new(
         cancellation_token: CancellationToken,
         command_tx: Sender<Command>,
