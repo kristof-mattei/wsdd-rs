@@ -16,7 +16,7 @@ pub struct Resolve {
 /// This takes in a reader that is stopped at the body tag.
 ///
 /// This function makes NO claims about the position of the reader
-/// should the structure XML be invalid (e.g. missing `Address`)
+/// should the structure XML be invalid (e.g. missing `Address`).
 pub fn parse_resolve<R>(reader: &mut Wrapper<R>) -> ParsedResolveResult
 where
     R: Read,

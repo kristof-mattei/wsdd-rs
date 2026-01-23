@@ -111,7 +111,7 @@ impl WSDHost {
         });
     }
 
-    /// WS-Discovery, Section 4.2, Bye message
+    /// WS-Discovery, Section 4.2, Bye message.
     async fn send_bye(&self, messages_built: &AtomicU64) -> Result<(), eyre::Report> {
         let bye = Builder::build_bye(&self.config, messages_built)?;
 

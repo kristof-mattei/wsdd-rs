@@ -307,7 +307,7 @@ fn parse_message_body(
     Ok(response)
 }
 
-/// Handle a WSD message
+/// Handle a WSD message.
 pub fn deconstruct_http_message(raw: &[u8]) -> Result<(Header, WSDMessage), MessageHandlerError> {
     let (header, has_body, reader) = deconstruct_raw(raw)?;
 
@@ -329,7 +329,7 @@ impl MessageHandler {
         }
     }
 
-    /// Handle a WSD message
+    /// Handle a WSD message.
     pub async fn deconstruct_message(
         &self,
         raw: &[u8],

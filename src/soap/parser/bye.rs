@@ -14,7 +14,7 @@ pub struct Bye {
 /// This takes in a reader that is stopped at the body tag.
 ///
 /// This function makes NO claims about the position of the reader
-/// should the structure XML be invalid (e.g. missing `Address`)
+/// should the structure XML be invalid (e.g. missing `Address`).
 pub fn parse_bye<R>(reader: &mut Wrapper<R>) -> ParsedByeResult
 where
     R: Read,

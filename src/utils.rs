@@ -12,7 +12,7 @@ pub async fn flatten_shutdown_handle(handle: JoinHandle<Shutdown>) -> Shutdown {
     }
 }
 
-/// Utility struct to format the elements using the Display trait instead of the Debug trait
+/// Utility struct to format the elements using the Display trait instead of the Debug trait.
 #[repr(transparent)]
 pub struct SliceDisplay<'s, T>(pub &'s [T]);
 

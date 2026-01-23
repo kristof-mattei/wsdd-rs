@@ -15,8 +15,10 @@ pub struct Probe {
 
 /// This takes in a reader that is stopped at the body tag.
 /// This function makes NO claims about the position of the reader
-/// should the structure XML be invalid (e.g. missing `Address`)
-/// Returns
+/// should the structure XML be invalid (e.g. missing `Address`).
+///
+/// # Returns
+///
 /// * `Ok(Probe {})`: when we were able to successfully decode the XML as a `Probe`
 /// * `Err(_)`: Anything went wrong trying to parse the XML
 pub fn parse_probe<R>(reader: &mut Wrapper<R>) -> ParsedProbeResult
