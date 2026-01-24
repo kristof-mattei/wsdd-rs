@@ -398,13 +398,11 @@ async fn perform_metadata_exchange(
             .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
             .header("User-Agent", "wsdd-rs");
 
-        let span = span!(Level::ERROR, "http request", url = %xaddr);
-
         let response = builder
             .body(body.clone())
             .timeout(config.metadata_timeout)
             .send()
-            .instrument(span)
+            .instrument(span!(Level::DEBUG, "http", host = %xaddr.host_str()))
             .await;
 
         let response = match response {

@@ -6,7 +6,7 @@ use uuid::Uuid;
 // Copied from https://github.com/tower-rs/tower-http/blob/35740decc663f4921b85b234ae33580f40fcbb31/tower-http/src/trace/mod.rs#L472
 const DEFAULT_MESSAGE_LEVEL: Level = Level::DEBUG;
 
-/// Creates a [`Span`] like [`DefaultMakeSpan`], with an added `id` so that individual requests can be traced all the way
+/// Creates a [`Span`] like [`DefaultMakeSpan`], with an added `id` so that individual requests can be traced all the way.
 ///
 /// [`Span`]: tracing::Span
 /// [`DefaultMakeSpan`]: tower_http::trace::DefaultMakeSpan

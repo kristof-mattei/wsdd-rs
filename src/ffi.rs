@@ -7,7 +7,7 @@ use tracing::{Level, event};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[cfg(feature = "systemd")]
-/// Wrapper around <https://www.man7.org/linux/man-pages/man3/sd_listen_fds.3.html>
+/// Wrapper around <https://www.man7.org/linux/man-pages/man3/sd_listen_fds.3.html>.
 ///
 /// # Errors
 /// See the underlying `sd_listen_fds(3)` systemd function.
@@ -175,7 +175,7 @@ pub const fn RTA_PAYLOAD(rta: &rtattr) -> usize {
 pub const NLMSG_ALIGNTO: usize = 4;
 
 #[expect(non_snake_case, reason = "Mirror the macros")]
-/// Aligns a netlink message length
+/// Aligns a netlink message length.
 pub const fn NLMSG_ALIGN(len: usize) -> usize {
     (len + NLMSG_ALIGNTO - 1) & !(NLMSG_ALIGNTO - 1)
 }
@@ -249,20 +249,20 @@ pub const fn NLMSG_PAYLOAD(nlh: *const nlmsghdr, len: usize) -> usize {
 #[derive(IntoBytes, Immutable)]
 #[repr(C)]
 /// Netlink messages consist of a byte stream with one or multiple `nlmsghdr` headers and associated payload.
-/// Note: This is how we send data to the kernel, but it doesn't mirror a pre-defined struct
+/// Note: This is how we send data to the kernel, but it doesn't mirror a pre-defined struct.
 pub struct NetlinkRequest {
-    /// Header
+    /// Header.
     pub nh: nlmsghdr,
-    /// Payload
+    /// Payload.
     pub ifa: ifaddrmsg,
 }
 
 #[repr(C)]
 #[derive(KnownLayout, FromBytes, Immutable)]
 pub struct rtattr {
-    /// Length of option
+    /// Length of option.
     pub rta_len: u16,
-    /// Type of option
+    /// Type of option.
     pub rta_type: u16,
     // Data follows
 }
@@ -288,17 +288,17 @@ impl rtattr {
 #[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 #[expect(clippy::struct_field_names, reason = "Mirror the libc struct names")]
-/// Copy from `libc::nlmsghdr`, but we need zerocopy
+/// Copy from `libc::nlmsghdr`, but we need zerocopy.
 pub struct nlmsghdr {
-    /// Size of message including header
+    /// Size of message including header.
     pub nlmsg_len: u32,
-    /// Type of message content
+    /// Type of message content.
     pub nlmsg_type: u16,
-    /// Additional flags
+    /// Additional flags.
     pub nlmsg_flags: u16,
-    /// Sequence number
+    /// Sequence number.
     pub nlmsg_seq: u32,
-    /// Sender port ID
+    /// Sender port ID.
     pub nlmsg_pid: u32,
 }
 
@@ -306,15 +306,15 @@ pub struct nlmsghdr {
 #[repr(C)]
 #[expect(clippy::struct_field_names, reason = "Mirror the libc struct names")]
 pub struct ifaddrmsg {
-    /// Address type
+    /// Address type.
     pub ifa_family: u8,
-    /// Prefix length of address
+    /// Prefix length of address.
     pub ifa_prefixlen: u8,
-    /// Address flags
+    /// Address flags.
     pub ifa_flags: u8,
-    /// Address scope
+    /// Address scope.
     pub ifa_scope: u8,
-    /// Interface index
+    /// Interface index.
     pub ifa_index: u32,
 }
 
@@ -338,6 +338,23 @@ const fn u32_to_usize(from: u32) -> usize {
     );
 
     from as usize
+}
+
+#[cfg(not(miri))]
+pub fn getpagesize() -> usize {
+    unsafe extern "C" {
+        fn getpagesize() -> i32;
+    }
+
+    // SAFETY: libc call
+    let page_size: u32 = unsafe { getpagesize() }.unsigned_abs();
+
+    u32_to_usize(page_size)
+}
+
+#[cfg(miri)]
+pub fn getpagesize() -> usize {
+    const { 1024 * 8 }
 }
 
 #[cfg(test)]

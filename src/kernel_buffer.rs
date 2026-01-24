@@ -18,14 +18,25 @@ pub trait MapConstToType: private::Private {
     private_bounds,
     reason = "Arbitrary implementations don't make sense and are not supported"
 )]
-pub struct AlignedBuffer<const A: usize, const N: usize>
+pub struct AlignedBuffer<const A: usize>
 where
     ConstToType<A>: MapConstToType,
 {
     buffer: Box<[MaybeUninit<<ConstToType<A> as MapConstToType>::Output>]>,
 }
 
-impl<const A: usize, const N: usize, I> std::ops::Index<I> for AlignedBuffer<A, N>
+impl<const A: usize> std::fmt::Debug for AlignedBuffer<A>
+where
+    ConstToType<A>: MapConstToType,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AlignedBuffer")
+            .field("buffer_len", &self.buffer.len())
+            .finish()
+    }
+}
+
+impl<const A: usize, I> std::ops::Index<I> for AlignedBuffer<A>
 where
     ConstToType<A>: MapConstToType,
     I: SliceIndex<[MaybeUninit<u8>]>,
@@ -37,7 +48,7 @@ where
     }
 }
 
-impl<const A: usize, const N: usize, I> std::ops::IndexMut<I> for AlignedBuffer<A, N>
+impl<const A: usize, I> std::ops::IndexMut<I> for AlignedBuffer<A>
 where
     ConstToType<A>: MapConstToType,
     I: SliceIndex<[MaybeUninit<u8>]>,
@@ -78,28 +89,26 @@ impl MapConstToType for ConstToType<16> {
     private_bounds,
     reason = "Arbitrary implementations don't make sense and are not supported"
 )]
-impl<const A: usize, const N: usize> AlignedBuffer<A, N>
+impl<const A: usize> AlignedBuffer<A>
 where
     ConstToType<A>: MapConstToType,
 {
     const MAPPED_TYPE_SIZE: usize = size_of::<<ConstToType<A> as MapConstToType>::Output>();
 
-    pub fn new() -> Self {
-        // TODO move this to generics once we have support doing this kind of validation in const generics
-        assert!(
-            N.is_multiple_of(Self::MAPPED_TYPE_SIZE),
-            "N must be a multiple of the mapped type size"
-        );
-
-        let len = N / Self::MAPPED_TYPE_SIZE;
-
-        Self {
-            buffer: Box::new_uninit_slice(len),
+    pub fn new(len: usize) -> Result<Self, &'static str> {
+        if !len.is_multiple_of(Self::MAPPED_TYPE_SIZE) {
+            return Err("len must be a multiple of the mapped type size");
         }
+
+        let len = len / Self::MAPPED_TYPE_SIZE;
+
+        Ok(Self {
+            buffer: Box::new_uninit_slice(len),
+        })
     }
 }
 
-impl<const A: usize, const N: usize> Deref for AlignedBuffer<A, N>
+impl<const A: usize> Deref for AlignedBuffer<A>
 where
     ConstToType<A>: MapConstToType,
 {
@@ -109,11 +118,16 @@ where
         let ptr = self.buffer.as_ptr();
 
         // SAFETY: The underlying buffer is of `N / size_of::<A>()`, so the buffer is valid for a length of `N`
-        unsafe { std::slice::from_raw_parts(ptr.cast::<MaybeUninit<u8>>(), N) }
+        unsafe {
+            std::slice::from_raw_parts(
+                ptr.cast::<MaybeUninit<u8>>(),
+                self.buffer.len() * Self::MAPPED_TYPE_SIZE,
+            )
+        }
     }
 }
 
-impl<const A: usize, const N: usize> DerefMut for AlignedBuffer<A, N>
+impl<const A: usize> DerefMut for AlignedBuffer<A>
 where
     ConstToType<A>: MapConstToType,
 {
@@ -121,17 +135,26 @@ where
         let mut_ptr = self.buffer.as_mut_ptr();
 
         // SAFETY: The underlying buffer is of `N / size_of::<A>()`, so the buffer is valid for a length of `N`
-        unsafe { std::slice::from_raw_parts_mut(mut_ptr.cast::<MaybeUninit<u8>>(), N) }
+        unsafe {
+            std::slice::from_raw_parts_mut(
+                mut_ptr.cast::<MaybeUninit<u8>>(),
+                self.buffer.len() * Self::MAPPED_TYPE_SIZE,
+            )
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use pretty_assertions::assert_matches;
+
     use crate::kernel_buffer::AlignedBuffer;
 
     #[test]
-    #[should_panic(expected = "N must be a multiple of the mapped type size")]
     fn fail_when_not_multiple_of_alignment() {
-        let _buffer = AlignedBuffer::<4, 5>::new();
+        assert_matches!(
+            AlignedBuffer::<4>::new(5),
+            Err("len must be a multiple of the mapped type size")
+        );
     }
 }

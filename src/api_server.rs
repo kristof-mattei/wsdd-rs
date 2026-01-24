@@ -25,7 +25,7 @@ use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 const MAX_CONNECTION_BACKLOG: u32 = 100;
 const MAX_CONCURRENT_CONNECTIONS: usize = 10;
 
-/// `Iso8601`, like `2026-01-14T17:37:29Z`, rounded on seconds (ergo no milliseconds / nanoseconds)
+/// `Iso8601`, like `2026-01-14T17:37:29Z`, rounded on seconds (ergo no milliseconds / nanoseconds).
 const ISO8601_SECOND_PRECISION: Iso8601<
     {
         Iso8601Config::DEFAULT
@@ -223,7 +223,9 @@ async fn handle_single_connection(
     // `_permit` is released here
 }
 
-/// `raw_command` is newline terminated
+/// Process commands.
+///
+/// Remember, `raw_command` is newline terminated.
 async fn process_command<W>(
     raw_command: &[u8],
     command_tx: &Sender<Command>,

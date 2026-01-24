@@ -2,7 +2,7 @@
 name = "wsdd-rs"
 version = "0.0.0-development"
 edition = "2024"
-rust-version = "1.92.0"
+rust-version = "1.93.0"
 authors = ["Kristof Mattei"]
 description = "A Web Service Discovery host daemon."
 license = "MIT"
@@ -47,9 +47,9 @@ reqwest = { version = "0.13.1", default-features = false, features = [
     "native-tls",
 ] }
 ringmap = "0.2.3"
-socket2 = { version = "0.6.1", features = ["all"] }
+socket2 = { version = "0.6.2", features = ["all"] }
 thiserror = "2.0.18"
-time = "0.3.45"
+time = "0.3.46"
 tokio = { version = "1.49.0", features = [
     "io-util",
     "macros",
@@ -138,6 +138,7 @@ deref_by_slicing = { level = "deny", priority = 127 }
 # No, we already have `non_ascii_idents` which is even bette
 # disallowed_script_idents = { level = "deny", priority = 127 }
 doc_include_without_cfg = { level = "deny", priority = 127 }
+doc_paragraphs_missing_punctuation = { level = "deny", priority = 127 }
 else_if_without_else = { level = "deny", priority = 127 }
 empty_drop = { level = "deny", priority = 127 }
 # Lib only

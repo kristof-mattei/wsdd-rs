@@ -95,7 +95,7 @@ impl<'config> Builder<'config> {
     ///
     /// The message can be constructed based on a response to another
     /// message (given by its header) and with a optional response that
-    /// serves as the message's body
+    /// serves as the message's body.
     fn build_message_tree<D, H, B, W>(
         &mut self,
         to_addr: &D,
@@ -175,7 +175,7 @@ impl<'config> Builder<'config> {
         Ok((header_and_body.into_inner(), message_id))
     }
 
-    /// WS-Discovery, Section 4.1, Hello message
+    /// WS-Discovery, Section 4.1, Hello message.
     pub fn build_hello(
         config: &Config,
         messages_built: &AtomicU64,
@@ -198,7 +198,7 @@ impl<'config> Builder<'config> {
         Ok(MulticastMessage::Hello(message.into_boxed_slice()))
     }
 
-    /// WS-Discovery, Section 4.2, Bye message
+    /// WS-Discovery, Section 4.2, Bye message.
     pub fn build_bye(
         config: &Config,
         messages_built: &AtomicU64,

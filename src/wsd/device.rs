@@ -16,7 +16,7 @@ use crate::xml::{GenericParsingError, Wrapper, find_descendant, read_text};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[repr(transparent)]
-/// Represents an opaque Device URI
+/// Represents an opaque Device URI.
 pub struct DeviceUri(Box<str>);
 
 impl DeviceUri {

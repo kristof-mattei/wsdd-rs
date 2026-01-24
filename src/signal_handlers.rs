@@ -11,7 +11,7 @@ use tracing::Level;
 
 use crate::wrap_and_report;
 
-/// Waits forever for a `SIGTERM`
+/// Waits forever for a `SIGTERM`.
 pub async fn wait_for_sigterm() -> Result<(), std::io::Error> {
     #[cfg(not(any(target_os = "windows", miri)))]
     {
@@ -24,7 +24,7 @@ pub async fn wait_for_sigterm() -> Result<(), std::io::Error> {
     Ok(())
 }
 
-/// Waits forever for a `SIGINT`
+/// Waits forever for a `SIGINT`.
 pub async fn wait_for_sigint() -> Result<(), std::io::Error> {
     #[cfg(not(any(target_os = "windows", miri)))]
     {

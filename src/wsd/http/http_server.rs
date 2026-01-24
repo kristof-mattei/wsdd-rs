@@ -65,7 +65,7 @@ impl WSDHttpServer {
     }
 }
 
-/// Set up server on a bound listener, with a router, and a cancellation token for graceful shutdown
+/// Set up server on a bound listener, with a router, and a cancellation token for graceful shutdown.
 ///
 /// # Errors
 /// * Server failure

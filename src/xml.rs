@@ -47,7 +47,7 @@ where
     }
 }
 
-/// Reads all text from current position in `reader` until closing tag of the current element
+/// Reads all text from current position in `reader` until closing tag of the current element.
 ///
 /// Expects that reader has just read an opening tag and nothing further.
 ///
