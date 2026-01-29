@@ -1,0 +1,22 @@
+[package]
+name = "ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description.workspace = true
+license.workspace = true
+categories.workspace = true
+keywords.workspace = true
+repository.workspace = true
+include.workspace = true
+
+[dependencies]
+zerocopy = { workspace = true, features = ["derive"] }
+
+[lints]
+workspace = true
+
+# [lints.rust]
+# until zerocopy has removed the non_ascii stuff
+# non_ascii_idents = { level = "allow", priority = 127 }

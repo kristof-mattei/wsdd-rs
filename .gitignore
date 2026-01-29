@@ -3,6 +3,8 @@
 /profiling
 /reports
 /target
+/crates/ffi/target
+/crates/service/target
 
 # samply output
 /profile.json
