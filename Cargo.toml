@@ -25,7 +25,7 @@ axum = { version = "0.8.8", default-features = false, features = [
     "tracing",
 ] }
 bytes = "1.11.0"
-clap = { version = "4.5.55", features = ["cargo", "string", "derive"] }
+clap = { version = "4.5.56", features = ["cargo", "string", "derive"] }
 color-eyre = "0.6.5"
 console-subscriber = { version = "0.5.0", optional = true }
 const_format = { version = "0.2.35", features = ["fmt"] }
