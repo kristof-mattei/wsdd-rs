@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use bytes::BufMut;
 use color_eyre::eyre;
+use ffi::{NetlinkRequest, ifaddrmsg, nlmsghdr};
 use ipnet::IpNet;
 use libc::{
     AF_INET, AF_INET6, AF_UNSPEC, NETLINK_ROUTE, NLM_F_DUMP, NLM_F_REQUEST, RTM_GETADDR,
@@ -19,7 +20,7 @@ use wsdd_rs::define_typed_size;
 use zerocopy::IntoBytes as _;
 
 use crate::config::{BindTo, Config};
-use crate::ffi::{NetlinkRequest, getpagesize, ifaddrmsg, nlmsghdr};
+use crate::ffi::getpagesize;
 use crate::kernel_buffer::AlignedBuffer;
 use crate::network_handler::Command;
 use crate::utils::task::spawn_with_name;
