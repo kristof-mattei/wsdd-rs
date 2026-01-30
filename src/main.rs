@@ -6,6 +6,7 @@ mod config;
 mod constants;
 mod dns;
 mod ffi;
+mod ffi2;
 mod helpers;
 mod kernel_buffer;
 mod max_size_deque;

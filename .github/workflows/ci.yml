@@ -136,7 +136,7 @@ jobs:
 
       - &cache_cargo
         name: Cache cargo
-        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         env:
           CACHE_NAME: cargo
         with:
@@ -154,7 +154,7 @@ jobs:
 
       - &cache_target
         name: Cache target
-        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         env:
           CACHE_NAME: target
         with:
@@ -507,7 +507,7 @@ jobs:
       - *checkout
 
       - name: Cache cargo
-        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         env:
           CACHE_NAME: cargo
         with:
@@ -668,7 +668,13 @@ jobs:
     runs-on: ubuntu-latest
     services:
       registry:
+<<<<<<< HEAD
         image: registry:3@sha256:650406796a6a7c0c45d098cdcc4d6c5f5ae47c62e9fec489d287e2bfde38fe63
+||||||| 12b79ae7
+        image: registry:3@sha256:cd92709b4191c5779cd7215ccd695db6c54652e7a62843197e367427efb84d0e
+=======
+        image: registry:3@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e
+>>>>>>> upstream/main
         ports:
           - 5000:5000
     outputs:
