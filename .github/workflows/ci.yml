@@ -669,12 +669,18 @@ jobs:
     services:
       registry:
 <<<<<<< HEAD
+<<<<<<< HEAD
         image: registry:3@sha256:650406796a6a7c0c45d098cdcc4d6c5f5ae47c62e9fec489d287e2bfde38fe63
 ||||||| 12b79ae7
         image: registry:3@sha256:cd92709b4191c5779cd7215ccd695db6c54652e7a62843197e367427efb84d0e
 =======
         image: registry:3@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e
 >>>>>>> upstream/main
+||||||| 3154e0ff
+        image: registry:3@sha256:650406796a6a7c0c45d098cdcc4d6c5f5ae47c62e9fec489d287e2bfde38fe63
+=======
+        image: registry:3@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e
+>>>>>>> 7777e0dbd75e41314f2d734c46e84d02c96a2f5f
         ports:
           - 5000:5000
     outputs:
