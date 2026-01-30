@@ -89,7 +89,7 @@ reqwest = { version = "0.13.1", default-features = false, features = [
 [dev-dependencies]
 mockito = "=1.7.1"
 pretty_assertions = { version = "=1.4.1", features = ["unstable"] }
-trybuild = "=1.0.114"
+trybuild = "=1.0.115"
 
 # In case we want to check `event!` in tests
 # conflicts with Miri
