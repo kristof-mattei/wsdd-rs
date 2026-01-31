@@ -1,4 +1,3 @@
-#![expect(unused, reason = "Not used")]
 use std::marker::PhantomData;
 
 #[cfg(feature = "systemd")]
