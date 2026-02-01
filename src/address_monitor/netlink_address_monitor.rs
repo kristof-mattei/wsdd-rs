@@ -1,6 +1,7 @@
 use std::mem::MaybeUninit;
 use std::sync::Arc;
 
+use bytemuck::bytes_of;
 use bytes::BufMut;
 use color_eyre::eyre;
 use ipnet::IpNet;
@@ -16,7 +17,6 @@ use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 use wsdd_rs::define_typed_size;
-use zerocopy::IntoBytes as _;
 
 use crate::config::{BindTo, Config};
 use crate::ffi::getpagesize;
@@ -278,7 +278,7 @@ fn request_current_state(
         })
     }?;
 
-    socket2::SockRef::from(&socket).send_to(request.as_bytes(), &socket_addr)?;
+    socket2::SockRef::from(&socket).send_to(bytes_of(&request), &socket_addr)?;
 
     Ok(())
 }
