@@ -1,7 +1,7 @@
 #![expect(unused, reason = "Not used")]
 use std::marker::PhantomData;
 
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use bytemuck::NoUninit;
 
 use crate::utils::{u16_to_usize, u32_to_usize};
 
@@ -165,7 +165,7 @@ pub const fn NLMSG_PAYLOAD(nlh: *const nlmsghdr, len: usize) -> usize {
     u32_to_usize(nlh.nlmsg_len) - NLMSG_SPACE(len)
 }
 
-#[derive(IntoBytes, Immutable)]
+#[derive(NoUninit, Copy, Clone)]
 #[repr(C)]
 /// Netlink messages consist of a byte stream with one or multiple `nlmsghdr` headers and associated payload.
 /// Note: This is how we send data to the kernel, but it doesn't mirror a pre-defined struct.
@@ -177,7 +177,6 @@ pub struct NetlinkRequest {
 }
 
 #[repr(C)]
-#[derive(KnownLayout, FromBytes, Immutable)]
 pub struct rtattr {
     /// Length of option.
     pub rta_len: u16,
@@ -204,7 +203,7 @@ impl rtattr {
     }
 }
 
-#[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
+#[derive(NoUninit, Copy, Clone)]
 #[repr(C)]
 #[expect(clippy::struct_field_names, reason = "Mirror the libc struct names")]
 /// Copy from `libc::nlmsghdr`, but we need zerocopy.
@@ -221,7 +220,7 @@ pub struct nlmsghdr {
     pub nlmsg_pid: u32,
 }
 
-#[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
+#[derive(NoUninit, Copy, Clone)]
 #[repr(C)]
 #[expect(clippy::struct_field_names, reason = "Mirror the libc struct names")]
 pub struct ifaddrmsg {
