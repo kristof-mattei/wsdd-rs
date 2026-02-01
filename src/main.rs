@@ -10,6 +10,7 @@ mod helpers;
 mod kernel_buffer;
 mod max_size_deque;
 mod multicast_handler;
+mod netlink;
 mod network_address;
 mod network_handler;
 mod network_interface;

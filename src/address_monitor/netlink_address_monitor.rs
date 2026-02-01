@@ -19,8 +19,9 @@ use wsdd_rs::define_typed_size;
 use zerocopy::IntoBytes as _;
 
 use crate::config::{BindTo, Config};
-use crate::ffi::{NetlinkRequest, getpagesize, ifaddrmsg, nlmsghdr};
+use crate::ffi::getpagesize;
 use crate::kernel_buffer::AlignedBuffer;
+use crate::netlink::{NetlinkRequest, ifaddrmsg, nlmsghdr};
 use crate::network_handler::Command;
 use crate::utils::task::spawn_with_name;
 

@@ -35,3 +35,25 @@ impl<T: std::fmt::Display> std::fmt::Display for SliceDisplay<'_, T> {
         Ok(())
     }
 }
+
+// because `From::from` cannot be called in `const` yet
+pub const fn u16_to_usize(from: u16) -> usize {
+    const _: () = assert!(
+        usize::BITS >= u16::BITS,
+        "We only support 32-bit/64-bit platforms so this should not fail"
+    );
+
+    from as usize
+}
+
+// because `From::from` cannot be called in `const` yet
+// having raw `as usize` is dangerous, as copy-pasting might
+// do it on a `value_u64 as usize` on a 32-bit platform which truncates
+pub const fn u32_to_usize(from: u32) -> usize {
+    const _: () = assert!(
+        usize::BITS >= 32,
+        "rtnetlink doesn't support 16-bit, so we don't either"
+    );
+
+    from as usize
+}
