@@ -47,6 +47,11 @@ RUN cargo init --name ${APPLICATION_NAME}
 COPY ./crates/${APPLICATION_NAME}/Cargo.toml ./
 RUN echo "fn main() {}" > ./src/build.rs
 
+# repeat this for each crate
+WORKDIR /build/crates/shared
+RUN cargo init --name shared
+COPY ./crates/shared/Cargo.toml ./
+
 WORKDIR /build
 COPY ./.cargo ./Cargo.toml ./Cargo.lock ./
 

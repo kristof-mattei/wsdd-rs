@@ -96,6 +96,9 @@ trybuild = "=1.0.115"
 # conflicts with Miri
 # tracing-test = "=0.2.5"
 
+[package.metadata.cargo-machete]
+ignored = ["shared"]
+
 [package.metadata.spellcheck]
 config = "spellcheck.toml"
 
