@@ -24,7 +24,6 @@ axum = { version = "0.8.8", default-features = false, features = [
     "tokio",
     "tracing",
 ] }
-bytemuck = { version = "1.25.0", features = ["derive"] }
 bytes = "1.11.0"
 clap = { version = "4.5.56", features = ["cargo", "string", "derive"] }
 color-eyre = "0.6.5"
@@ -81,6 +80,7 @@ uuid = { version = "1.20.0", default-features = false, features = [
     "v7",
 ] }
 xml = "1.2.1"
+zerocopy = { version = "=0.8.31", features = ["derive"] }
 
 [target.'cfg(all(any(target_arch = "x86_64", target_arch = "aarch64"), target_os="linux", target_env="musl"))'.dependencies]
 reqwest = { version = "0.13.1", default-features = false, features = [

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/service", "crates/shared"]
+members = ["crates/shared", "crates/wsdd-rs"]
 
 [workspace.package]
 version = "0.0.0-development"

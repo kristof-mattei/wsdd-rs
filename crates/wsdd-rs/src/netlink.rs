@@ -1,9 +1,9 @@
 #![expect(unused, reason = "Not used")]
 use std::marker::PhantomData;
 
-#[cfg(feature = "systemd")]
-use libc::c_int;
-use tracing::{Level, event};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+
+use crate::utils::{u16_to_usize, u32_to_usize};
 
 const SIZE_OF_IFADDRMSG: usize = size_of::<ifaddrmsg>();
 const SIZE_OF_RTATTR: usize = size_of::<rtattr>();
@@ -165,11 +165,7 @@ pub const fn NLMSG_PAYLOAD(nlh: *const nlmsghdr, len: usize) -> usize {
     u32_to_usize(nlh.nlmsg_len) - NLMSG_SPACE(len)
 }
 
-use bytemuck::NoUninit;
-
-use crate::utils::{u16_to_usize, u32_to_usize};
-
-#[derive(NoUninit, Copy, Clone)]
+#[derive(IntoBytes, Immutable)]
 #[repr(C)]
 /// Netlink messages consist of a byte stream with one or multiple `nlmsghdr` headers and associated payload.
 /// Note: This is how we send data to the kernel, but it doesn't mirror a pre-defined struct.
@@ -181,6 +177,7 @@ pub struct NetlinkRequest {
 }
 
 #[repr(C)]
+#[derive(KnownLayout, FromBytes, Immutable)]
 pub struct rtattr {
     /// Length of option.
     pub rta_len: u16,
@@ -190,7 +187,6 @@ pub struct rtattr {
 }
 
 impl rtattr {
-    #[must_use]
     pub fn label(&self) -> Option<&'static str> {
         const RTA_TYPES: [&str; 9] = [
             "IFA_UNSPEC",
@@ -208,9 +204,9 @@ impl rtattr {
     }
 }
 
-#[derive(NoUninit, Copy, Clone)]
-#[expect(clippy::struct_field_names, reason = "Copy from netlink.h")]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
+#[expect(clippy::struct_field_names, reason = "Mirror the libc struct names")]
 /// Copy from `libc::nlmsghdr`, but we need zerocopy.
 pub struct nlmsghdr {
     /// Size of message including header.
@@ -225,9 +221,9 @@ pub struct nlmsghdr {
     pub nlmsg_pid: u32,
 }
 
-#[derive(NoUninit, Copy, Clone)]
-#[expect(clippy::struct_field_names, reason = "Copy from netlink.h")]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
+#[expect(clippy::struct_field_names, reason = "Mirror the libc struct names")]
 pub struct ifaddrmsg {
     /// Address type.
     pub ifa_family: u8,
@@ -239,4 +235,14 @@ pub struct ifaddrmsg {
     pub ifa_scope: u8,
     /// Interface index.
     pub ifa_index: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg_attr(not(miri), test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    fn ui() {
+        let t = trybuild::TestCases::new();
+        t.compile_fail("tests/ui/*.rs");
+    }
 }
