@@ -1,7 +1,4 @@
-#![expect(unused, reason = "Not used")]
-use std::marker::PhantomData;
-
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use zerocopy::{Immutable, IntoBytes};
 
 use crate::utils::{u16_to_usize, u32_to_usize};
 
@@ -40,7 +37,7 @@ pub const fn RTA_ALIGN(len: usize) -> usize {
 pub const fn RTA_OK(rta: *const rtattr, len: usize) -> bool {
     len >= SIZE_OF_RTATTR && {
         // SAFETY: This is how the macros work
-        let rta_len = unsafe { (*rta).rta_len } as usize;
+        let rta_len: usize = u16_to_usize(unsafe { (*rta).rta_len });
 
         rta_len >= SIZE_OF_RTATTR && rta_len <= len
     }
@@ -132,9 +129,9 @@ pub const fn NLMSG_DATA<T>(nlh: *const nlmsghdr) -> *const T {
 pub const fn NLMSG_NEXT(nlh: *const nlmsghdr, len: &mut usize) -> *const nlmsghdr {
     let aligned_len = {
         // SAFETY: This is how the macros work
-        let nlh_len = unsafe { &*nlh }.nlmsg_len;
+        let nlmsg_len = u32_to_usize(unsafe { (*nlh).nlmsg_len });
 
-        NLMSG_ALIGN(u32_to_usize(nlh_len))
+        NLMSG_ALIGN(nlmsg_len)
     };
 
     *len -= aligned_len;
@@ -160,9 +157,9 @@ pub const fn NLMSG_OK(nlh: *const nlmsghdr, len: usize) -> bool {
 /// Returns the number of payload bytes that follow the given `nlmsghdr`.
 pub const fn NLMSG_PAYLOAD(nlh: *const nlmsghdr, len: usize) -> usize {
     // SAFETY: This is how the macros work
-    let nlh = unsafe { &*nlh };
+    let nlmsg_len = u32_to_usize(unsafe { (*nlh).nlmsg_len });
 
-    u32_to_usize(nlh.nlmsg_len) - NLMSG_SPACE(len)
+    nlmsg_len - NLMSG_SPACE(len)
 }
 
 #[derive(IntoBytes, Immutable)]
@@ -176,8 +173,40 @@ pub struct NetlinkRequest {
     pub ifa: ifaddrmsg,
 }
 
+#[derive(IntoBytes, Immutable)]
 #[repr(C)]
-#[derive(KnownLayout, FromBytes, Immutable)]
+#[expect(clippy::struct_field_names, reason = "Mirror the libc struct names")]
+/// Copy from `libc::nlmsghdr`, but we need zerocopy.
+pub struct nlmsghdr {
+    /// Size of message including header.
+    pub nlmsg_len: u32,
+    /// Type of message content.
+    pub nlmsg_type: u16,
+    /// Additional flags.
+    pub nlmsg_flags: u16,
+    /// Sequence number.
+    pub nlmsg_seq: u32,
+    /// Sender port ID.
+    pub nlmsg_pid: u32,
+}
+
+#[derive(IntoBytes, Immutable)]
+#[repr(C)]
+#[expect(clippy::struct_field_names, reason = "Mirror the libc struct names")]
+pub struct ifaddrmsg {
+    /// Address type.
+    pub ifa_family: u8,
+    /// Prefix length of address.
+    pub ifa_prefixlen: u8,
+    /// Address flags.
+    pub ifa_flags: u8,
+    /// Address scope.
+    pub ifa_scope: u8,
+    /// Interface index.
+    pub ifa_index: u32,
+}
+
+#[repr(C)]
 pub struct rtattr {
     /// Length of option.
     pub rta_len: u16,
@@ -202,37 +231,4 @@ impl rtattr {
 
         RTA_TYPES.get(usize::from(self.rta_type)).copied()
     }
-}
-
-#[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
-#[repr(C)]
-#[expect(clippy::struct_field_names, reason = "Mirror the libc struct names")]
-/// Copy from `libc::nlmsghdr`, but we need zerocopy.
-pub struct nlmsghdr {
-    /// Size of message including header.
-    pub nlmsg_len: u32,
-    /// Type of message content.
-    pub nlmsg_type: u16,
-    /// Additional flags.
-    pub nlmsg_flags: u16,
-    /// Sequence number.
-    pub nlmsg_seq: u32,
-    /// Sender port ID.
-    pub nlmsg_pid: u32,
-}
-
-#[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
-#[repr(C)]
-#[expect(clippy::struct_field_names, reason = "Mirror the libc struct names")]
-pub struct ifaddrmsg {
-    /// Address type.
-    pub ifa_family: u8,
-    /// Prefix length of address.
-    pub ifa_prefixlen: u8,
-    /// Address flags.
-    pub ifa_flags: u8,
-    /// Address scope.
-    pub ifa_scope: u8,
-    /// Interface index.
-    pub ifa_index: u32,
 }
