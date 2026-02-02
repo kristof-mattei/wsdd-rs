@@ -9,7 +9,7 @@ use libc::{
     AF_INET, AF_INET6, AF_UNSPEC, IFA_ADDRESS, IFA_F_DADFAILED, IFA_F_DEPRECATED,
     IFA_F_HOMEADDRESS, IFA_F_TENTATIVE, IFA_FLAGS, IFA_LABEL, IFA_LOCAL, NETLINK_ROUTE, NLM_F_ACK,
     NLM_F_DUMP, NLM_F_REQUEST, NLMSG_DONE, NLMSG_ERROR, NLMSG_NOOP, RTM_DELADDR, RTM_GETADDR,
-    RTM_NEWADDR, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK, nlmsgerr,
+    RTM_NEWADDR, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK,
 };
 use socket2::SockAddrStorage;
 use tokio::sync::mpsc::Sender;
@@ -23,7 +23,7 @@ use crate::ffi::{SendPtr, getpagesize};
 use crate::kernel_buffer::AlignedBuffer;
 use crate::netlink::{
     IFA_PAYLOAD, IFA_RTA, NLMSG_DATA, NLMSG_NEXT, NLMSG_OK, NetlinkRequest, RTA_DATA, RTA_NEXT,
-    RTA_OK, ifaddrmsg, nlmsghdr,
+    RTA_OK, ifaddrmsg, nlmsgerr, nlmsghdr,
 };
 use crate::network_handler::Command;
 use crate::utils::task::spawn_with_name;
@@ -415,11 +415,15 @@ fn parse_address_message(raw_nlh: *const nlmsghdr) -> Option<(IpNet, u8, u32)> {
         );
 
         if rta.rta_type == IFA_ADDRESS && i32::from(ifa.ifa_family) == AF_INET6 {
+            // assert!(RTA_PAYLOAD(rta) == 16, "Expected an IPv6 address");
+
             // SAFETY: Combination of `rta.rta_type` and `ifa.ifa_family`
             let ipv6_in_network_order = unsafe { &*RTA_DATA::<[u8; 16]>(raw_rta) };
 
             addr = Some(Ipv6Addr::from_bits(u128::from_be_bytes(*ipv6_in_network_order)).into());
         } else if rta.rta_type == IFA_LOCAL && i32::from(ifa.ifa_family) == AF_INET {
+            // assert!(RTA_PAYLOAD(rta) == 4, "Expected an IPv4 address");
+
             // `libc::IFA_ADDRESS` is prefix address, rather than local interface address.
             // It makes no difference for normally configured broadcast interfaces,
             // but for point-to-point `libc::IFA_ADDRESS` is DESTINATION address,

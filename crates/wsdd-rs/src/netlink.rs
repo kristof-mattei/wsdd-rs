@@ -1,4 +1,4 @@
-use zerocopy::{Immutable, IntoBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::utils::{u16_to_usize, u32_to_usize};
 
@@ -173,7 +173,7 @@ pub struct NetlinkRequest {
     pub ifa: ifaddrmsg,
 }
 
-#[derive(IntoBytes, Immutable)]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 #[expect(clippy::struct_field_names, reason = "Mirror the libc struct names")]
 /// Copy from `libc::nlmsghdr`, but we need zerocopy.
@@ -190,7 +190,14 @@ pub struct nlmsghdr {
     pub nlmsg_pid: u32,
 }
 
-#[derive(IntoBytes, Immutable)]
+#[derive(KnownLayout, FromBytes, Immutable)]
+#[repr(C)]
+pub struct nlmsgerr {
+    pub error: libc::c_int,
+    pub msg: nlmsghdr,
+}
+
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 #[expect(clippy::struct_field_names, reason = "Mirror the libc struct names")]
 pub struct ifaddrmsg {
@@ -206,6 +213,7 @@ pub struct ifaddrmsg {
     pub ifa_index: u32,
 }
 
+#[derive(KnownLayout, FromBytes, Immutable)]
 #[repr(C)]
 pub struct rtattr {
     /// Length of option.
