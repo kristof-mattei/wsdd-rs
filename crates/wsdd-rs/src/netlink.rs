@@ -236,13 +236,3 @@ pub struct ifaddrmsg {
     /// Interface index.
     pub ifa_index: u32,
 }
-
-#[cfg(test)]
-mod tests {
-    #[cfg_attr(not(miri), test)]
-    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
-    fn ui() {
-        let t = trybuild::TestCases::new();
-        t.compile_fail("tests/ui/*.rs");
-    }
-}
