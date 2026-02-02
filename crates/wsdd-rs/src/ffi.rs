@@ -45,12 +45,12 @@ where
     _marker: PhantomData<&'a T>,
 }
 
-impl<'a, T, U> SendPtr<'a, T, U>
+impl<T, U> SendPtr<'_, T, U>
 where
     T: ?Sized,
 {
     /// Creates a new `SendPtr` from a buffer, starting at the buffer's base address.
-    pub fn from_start(anchor: &'a T) -> Self
+    pub fn from_start(anchor: &T) -> Self
     where
         T: AsRef<[u8]>,
     {
@@ -62,7 +62,7 @@ where
 
     /// Creates a new `SendPtr` from an existing pointer, anchored to a buffer's lifetime.
     #[expect(unused, reason = "Not used")]
-    pub fn from_ptr(_anchor: &'a T, ptr: *const U) -> Self {
+    pub fn from_ptr(_anchor: &T, ptr: *const U) -> Self {
         Self {
             ptr,
             _marker: PhantomData,
