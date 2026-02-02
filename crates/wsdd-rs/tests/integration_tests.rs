@@ -15,4 +15,11 @@ fn assert_world_ok2() {
     assert_eq!(cls1(), cls2());
 }
 
+#[cfg_attr(not(miri), test)]
+#[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+fn ui() {
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui/*.rs");
+}
+
 // TODO test that tests http server and client at the same time
