@@ -24,7 +24,7 @@ axum = { version = "0.8.8", default-features = false, features = [
     "tokio",
     "tracing",
 ] }
-bytes = "1.11.0"
+bytes = "1.11.1"
 clap = { version = "4.5.56", features = ["cargo", "string", "derive"] }
 color-eyre = "0.6.5"
 console-subscriber = { version = "0.5.0", optional = true }
