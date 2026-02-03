@@ -337,6 +337,7 @@ async fn launch_address_monitor(
         Ok(address_monitor) => address_monitor,
         Err(error) => {
             event!(Level::ERROR, ?error, "Failed to create address monitor");
+
             return;
         },
     };
