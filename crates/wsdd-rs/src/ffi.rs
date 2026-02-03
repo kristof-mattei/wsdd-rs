@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::ops::Deref;
 
 #[cfg(feature = "systemd")]
 use libc::c_int;
@@ -45,6 +46,17 @@ where
     _marker: PhantomData<&'a T>,
 }
 
+impl<T, U> Deref for SendPtr<'_, T, U>
+where
+    T: ?Sized,
+{
+    type Target = *const U;
+
+    fn deref(&self) -> &Self::Target {
+        &self.ptr
+    }
+}
+
 impl<T, U> SendPtr<'_, T, U>
 where
     T: ?Sized,
@@ -67,10 +79,6 @@ where
             ptr,
             _marker: PhantomData,
         }
-    }
-
-    pub fn get_ptr(&self) -> *const U {
-        self.ptr
     }
 
     /// Mutate the pointer using the given function, preserving the lifetime.
