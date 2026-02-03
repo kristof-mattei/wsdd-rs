@@ -9,6 +9,7 @@ mod ffi;
 mod helpers;
 mod kernel_buffer;
 mod max_size_deque;
+mod message_receiver;
 mod multicast_handler;
 mod netlink;
 mod network_address;
