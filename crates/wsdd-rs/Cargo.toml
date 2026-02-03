@@ -13,7 +13,7 @@ include.workspace = true
 build = "src/build.rs"
 
 [features]
-default = []
+default = ["tokio-console"]
 systemd = []
 tokio-console = ["dep:console-subscriber"]
 
