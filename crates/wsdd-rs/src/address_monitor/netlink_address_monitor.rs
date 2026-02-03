@@ -295,15 +295,15 @@ async fn parse_netlink_response(
 
     let mut nlh_wrapper = SendPtr::from_start(buffer);
 
-    while NLMSG_OK(nlh_wrapper.get_ptr(), remaining_len) {
+    while NLMSG_OK(*nlh_wrapper, remaining_len) {
         // SAFETY: `NLMSG_OK`
-        let nlh = unsafe { &*nlh_wrapper.get_ptr() };
+        let nlh = unsafe { &**nlh_wrapper };
 
         let command = if Into::<i32>::into(nlh.nlmsg_type) == NLMSG_DONE {
             break;
         } else if i32::from(nlh.nlmsg_type) == NLMSG_ERROR {
             // SAFETY: `nlh.nlmsg_type` guarantees
-            let error = unsafe { &*NLMSG_DATA::<nlmsgerr>(nlh_wrapper.get_ptr()) };
+            let error = unsafe { &*NLMSG_DATA::<nlmsgerr>(*nlh_wrapper) };
 
             event!(Level::ERROR, "NLMSG_ERROR");
 
@@ -319,15 +319,13 @@ async fn parse_netlink_response(
 
             None
         } else if nlh.nlmsg_type == RTM_NEWADDR {
-            parse_address_message(nlh_wrapper.get_ptr()).map(|(ip_net, scope, index)| {
-                Command::NewAddress {
-                    address: ip_net,
-                    scope,
-                    index,
-                }
+            parse_address_message(*nlh_wrapper).map(|(ip_net, scope, index)| Command::NewAddress {
+                address: ip_net,
+                scope,
+                index,
             })
         } else if nlh.nlmsg_type == RTM_DELADDR {
-            parse_address_message(nlh_wrapper.get_ptr()).map(|(ip_net, scope, index)| {
+            parse_address_message(*nlh_wrapper).map(|(ip_net, scope, index)| {
                 Command::DeleteAddress {
                     address: ip_net,
                     scope,
