@@ -12,6 +12,8 @@ repository.workspace = true
 include.workspace = true
 
 [dependencies]
+libc.workspace = true
+zerocopy = { features = ["derive"], workspace = true }
 
 [lints]
 workspace = true
