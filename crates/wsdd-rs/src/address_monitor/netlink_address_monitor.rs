@@ -114,7 +114,7 @@ impl NetlinkAddressMonitor {
             let socket = Arc::clone(&socket);
             let mut start_rx = start_rx;
 
-            spawn_with_name("start processing task", async move {
+            spawn_with_name("request current state", async move {
                 loop {
                     tokio::select! {
                         () = cancellation_token.cancelled() => {
