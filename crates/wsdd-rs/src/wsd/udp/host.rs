@@ -105,8 +105,15 @@ impl WSDHost {
             )
             .await
             {
-                // TODO is this fatal? What should we do?
-                event!(Level::ERROR, ?error, "Failed to send hello");
+                if cancellation_token.is_cancelled() {
+                    // we're being cancelled, no need to pollute the shutdown log
+                } else {
+                    event!(
+                        Level::TRACE,
+                        ?error,
+                        "Failed to send hello, receiver gone. WSDHost being torn down (network address gone) or application shutting down."
+                    );
+                }
             }
         });
     }

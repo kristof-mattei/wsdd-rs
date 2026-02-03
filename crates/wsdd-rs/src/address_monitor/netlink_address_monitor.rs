@@ -114,7 +114,7 @@ impl NetlinkAddressMonitor {
             let socket = Arc::clone(&socket);
             let mut start_rx = start_rx;
 
-            spawn_with_name("request current state", async move {
+            spawn_with_name("request current network state", async move {
                 loop {
                     tokio::select! {
                         () = cancellation_token.cancelled() => {
@@ -126,6 +126,8 @@ impl NetlinkAddressMonitor {
                             }
                         },
                     };
+
+                    event!(Level::INFO, "Requesting current network state");
 
                     if let Err(error) = request_current_state(&config, &socket) {
                         event!(Level::ERROR, ?error, "Failed to send start packet");
