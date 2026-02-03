@@ -13,6 +13,7 @@ use crate::multicast_handler::{IncomingClientMessage, IncomingHostMessage};
 use crate::network_address::NetworkAddress;
 use crate::soap::WSDMessage;
 use crate::soap::parser::MessageHandler;
+use crate::utils::SocketAddrDisplay;
 use crate::utils::task::spawn_with_name;
 use crate::wsd::HANDLED_MESSAGES;
 
@@ -41,15 +42,7 @@ impl MessageReceiver {
             let listeners = Arc::clone(&listeners);
 
             spawn_with_name(
-                format!(
-                    "socket rx ({})",
-                    socket
-                        .local_addr()
-                        .map(|addr| addr.to_string())
-                        .as_deref()
-                        .unwrap_or("Failed to get socket's local addr")
-                )
-                .as_str(),
+                format!("socket rx ({})", SocketAddrDisplay(&socket)).as_str(),
                 socket_rx_forever(
                     cancellation_token.clone(),
                     network_address,
@@ -128,15 +121,10 @@ async fn socket_rx_forever(
         let (bytes_read, from) = match result {
             Ok(read) => read,
             Err(error) => {
-                let local_addr = socket.local_addr().map_or_else(
-                    |error| format!("Failed to get local socket address: {:?}", error),
-                    |addr| addr.to_string(),
-                );
-
                 event!(
                     Level::ERROR,
                     ?error,
-                    local_addr,
+                    socket = %SocketAddrDisplay(&socket),
                     "Failed to read from socket"
                 );
 
@@ -172,7 +160,7 @@ async fn socket_rx_forever(
                         })
                         .await
                     {
-                        event!(Level::ERROR, ?error, socket = ?socket.local_addr(), "Failed to send data to channel");
+                        event!(Level::ERROR, ?error, socket = %SocketAddrDisplay(&socket), "Failed to send data to channel");
                     }
                 }
             },
@@ -186,7 +174,7 @@ async fn socket_rx_forever(
                         })
                         .await
                     {
-                        event!(Level::ERROR, ?error, socket = ?socket.local_addr(), "Failed to send data to channel");
+                        event!(Level::ERROR, ?error, socket = %SocketAddrDisplay(&socket), "Failed to send data to channel");
                     }
                 }
             },
