@@ -11,6 +11,7 @@ use libc::{
     NLM_F_DUMP, NLM_F_REQUEST, NLMSG_DONE, NLMSG_ERROR, NLMSG_NOOP, RTM_DELADDR, RTM_GETADDR,
     RTM_NEWADDR, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK,
 };
+use shared::netlink::{NetlinkRequest, ifaddrmsg, nlmsgerr, nlmsghdr};
 use socket2::SockAddrStorage;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
@@ -22,8 +23,7 @@ use crate::config::{BindTo, Config};
 use crate::ffi::{SendPtr, getpagesize};
 use crate::kernel_buffer::AlignedBuffer;
 use crate::netlink::{
-    IFA_PAYLOAD, IFA_RTA, NLMSG_DATA, NLMSG_NEXT, NLMSG_OK, NetlinkRequest, RTA_DATA, RTA_NEXT,
-    RTA_OK, ifaddrmsg, nlmsgerr, nlmsghdr,
+    IFA_PAYLOAD, IFA_RTA, NLMSG_DATA, NLMSG_NEXT, NLMSG_OK, RTA_DATA, RTA_NEXT, RTA_OK,
 };
 use crate::network_handler::Command;
 use crate::utils::task::spawn_with_name;
