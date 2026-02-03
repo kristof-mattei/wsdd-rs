@@ -342,18 +342,18 @@ async fn parse_netlink_response(
             None
         };
 
-        if let Some(command) = command {
-            if let Err(error) = command_tx.send(command).await {
-                if cancellation_token.is_cancelled() {
-                    event!(Level::INFO, command = ?error.0, "Could not announce command due to shutting down");
-                } else {
-                    event!(Level::ERROR, command = ?error.0, "Failed to announce command");
-                }
-
-                return Err(eyre::Report::msg(
-                    "Command receiver gone, nothing left to do but abandon buffer",
-                ));
+        if let Some(command) = command
+            && let Err(error) = command_tx.send(command).await
+        {
+            if cancellation_token.is_cancelled() {
+                event!(Level::INFO, command = ?error.0, "Could not announce command due to shutting down");
+            } else {
+                event!(Level::ERROR, command = ?error.0, "Failed to announce command");
             }
+
+            return Err(eyre::Report::msg(
+                "Command receiver gone, nothing left to do but abandon buffer",
+            ));
         }
 
         nlh_wrapper.mutate(|p| NLMSG_NEXT(p, &mut remaining_len));
