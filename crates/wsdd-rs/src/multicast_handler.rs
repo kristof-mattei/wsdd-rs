@@ -26,6 +26,7 @@ use crate::soap::parser::Header;
 use crate::soap::{ClientMessage, HostMessage, MessageType, MulticastMessage, UnicastMessage};
 use crate::udp_address::UdpAddress;
 use crate::url_ip_addr::UrlIpAddr;
+use crate::utils::SocketAddrDisplay;
 use crate::utils::task::spawn_with_name;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 use crate::wsd::http::http_server::WSDHttpServer;
@@ -593,44 +594,43 @@ where
     fn new(socket: Arc<UdpSocket>, message_splitter: T, network_address: NetworkAddress) -> Self {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<T::ChannelMessage>(10);
 
-        let handler = spawn_with_name("sender", async move {
-            let tracker = TaskTracker::new();
+        let handler = spawn_with_name(
+            format!("socket tx ({})", SocketAddrDisplay(&socket)).as_str(),
+            async move {
+                let tracker = TaskTracker::new();
 
-            loop {
-                let Some(buffer) = rx.recv().await else {
-                    event!(
-                        Level::INFO,
-                        socket = %socket
-                            .local_addr()
-                            .map(|addr| addr.to_string())
-                            .as_deref()
-                            .unwrap_or("Failed to get socket's local addr"),
-                        splitter = %T::NAME,
-                        "All senders gone, stopping sender"
-                    );
+                loop {
+                    let Some(buffer) = rx.recv().await else {
+                        event!(
+                            Level::INFO,
+                            socket = %SocketAddrDisplay(&socket),
+                            splitter = %T::NAME,
+                            "All senders gone, stopping sender"
+                        );
 
-                    break;
-                };
+                        break;
+                    };
 
-                let (to, message) = message_splitter.split_message(buffer);
+                    let (to, message) = message_splitter.split_message(buffer);
 
-                {
-                    let socket = Arc::clone(&socket);
-                    let network_address = network_address.clone();
+                    {
+                        let socket = Arc::clone(&socket);
+                        let network_address = network_address.clone();
 
-                    spawn_with_name(
-                        "message sender",
-                        tracker.track_future(async move {
-                            repeatedly_send_buffer::<T>(socket, message, &network_address, to)
-                                .await;
-                        }),
-                    );
+                        spawn_with_name(
+                            "message sender",
+                            tracker.track_future(async move {
+                                repeatedly_send_buffer::<T>(socket, message, &network_address, to)
+                                    .await;
+                            }),
+                        );
+                    }
                 }
-            }
 
-            tracker.close();
-            tracker.wait().await;
-        });
+                tracker.close();
+                tracker.wait().await;
+            },
+        );
 
         Self { handler, tx }
     }
