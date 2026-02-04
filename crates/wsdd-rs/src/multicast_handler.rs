@@ -1,4 +1,3 @@
-use std::mem::MaybeUninit;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
@@ -10,7 +9,7 @@ use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use rand::Rng as _;
 use socket2::{Domain, InterfaceIndexOrAddress, Socket, Type};
 use tokio::net::UdpSocket;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::Sender;
 use tokio::sync::{OnceCell, RwLock};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
@@ -20,16 +19,15 @@ use tracing::{Level, event};
 
 use crate::config::Config;
 use crate::constants;
+use crate::message_receiver::MessageReceiver;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
-use crate::soap::parser::{Header, MessageHandler};
-use crate::soap::{
-    ClientMessage, HostMessage, MessageType, MulticastMessage, UnicastMessage, WSDMessage,
-};
+use crate::soap::parser::Header;
+use crate::soap::{ClientMessage, HostMessage, MessageType, MulticastMessage, UnicastMessage};
 use crate::udp_address::UdpAddress;
 use crate::url_ip_addr::UrlIpAddr;
+use crate::utils::SocketAddrDisplay;
 use crate::utils::task::spawn_with_name;
-use crate::wsd::HANDLED_MESSAGES;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 use crate::wsd::http::http_server::WSDHttpServer;
 use crate::wsd::udp::client::WSDClient;
@@ -439,6 +437,7 @@ impl MulticastHandler {
                     .get_client_rx()
                     .await
                     .expect("Can't get client_rx twice");
+
                 let mc_local_port_rx = self
                     .mc_local_port_rx
                     .get_client_rx()
@@ -488,185 +487,6 @@ impl MulticastHandler {
 
     pub fn get_network_address(&self) -> &NetworkAddress {
         &self.network_address
-    }
-}
-
-struct ClientHostListener {
-    host_tx: Option<Sender<IncomingHostMessage>>,
-    client_tx: Option<Sender<IncomingClientMessage>>,
-}
-
-struct MessageReceiver {
-    cancellation_token: CancellationToken,
-    handle: JoinHandle<()>,
-    listeners: Arc<RwLock<ClientHostListener>>,
-}
-
-async fn socket_rx_forever(
-    cancellation_token: CancellationToken,
-    network_address: NetworkAddress,
-    listeners: Arc<RwLock<ClientHostListener>>,
-    socket: Arc<UdpSocket>,
-) {
-    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_address);
-
-    loop {
-        let mut buffer = vec![MaybeUninit::<u8>::uninit(); constants::WSD_MAX_LEN];
-
-        let result = {
-            let mut buffer_byte_cursor = &mut *buffer;
-
-            tokio::select! {
-                () = cancellation_token.cancelled() => {
-                    break;
-                },
-                result = socket.recv_buf_from(&mut buffer_byte_cursor) => {
-                    result
-                },
-            }
-        };
-
-        let (bytes_read, from) = match result {
-            Ok(read) => read,
-            Err(error) => {
-                let local_addr = socket.local_addr().map_or_else(
-                    |error| format!("Failed to get local socket address: {:?}", error),
-                    |addr| addr.to_string(),
-                );
-
-                event!(
-                    Level::ERROR,
-                    ?error,
-                    local_addr,
-                    "Failed to read from socket"
-                );
-
-                continue;
-            },
-        };
-
-        // `recv_buf` tells us that `bytes_read` were read from the socket into our `buffer`, so they're initialized
-        buffer.truncate(bytes_read);
-
-        // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
-        let buffer = unsafe { &*(&raw const *buffer as *const [u8]) };
-
-        let (header, message) = match message_handler.deconstruct_message(buffer, from).await {
-            Ok(decoded) => decoded,
-            Err(error) => {
-                error.log(buffer);
-
-                continue;
-            },
-        };
-
-        let lock = listeners.read().await;
-
-        match message {
-            WSDMessage::ClientMessage(message) => {
-                if let &Some(ref client_tx) = &lock.client_tx {
-                    if let Err(error) = client_tx
-                        .send(IncomingClientMessage {
-                            from,
-                            header,
-                            message,
-                        })
-                        .await
-                    {
-                        event!(Level::ERROR, ?error, socket = ?socket.local_addr(), "Failed to send data to channel");
-                    }
-                }
-            },
-            WSDMessage::HostMessage(message) => {
-                if let &Some(ref host_tx) = &lock.host_tx {
-                    if let Err(error) = host_tx
-                        .send(IncomingHostMessage {
-                            from,
-                            header,
-                            message,
-                        })
-                        .await
-                    {
-                        event!(Level::ERROR, ?error, socket = ?socket.local_addr(), "Failed to send data to channel");
-                    }
-                }
-            },
-        }
-    }
-}
-
-impl MessageReceiver {
-    fn new(
-        cancellation_token: CancellationToken,
-        network_address: NetworkAddress,
-        socket: Arc<UdpSocket>,
-    ) -> Self {
-        let listeners = Arc::new(RwLock::const_new(ClientHostListener {
-            host_tx: None,
-            client_tx: None,
-        }));
-
-        let handle = {
-            let listeners = Arc::clone(&listeners);
-
-            spawn_with_name(
-                format!(
-                    "socket rx ({})",
-                    socket
-                        .local_addr()
-                        .map(|addr| addr.to_string())
-                        .as_deref()
-                        .unwrap_or("Failed to get socket's local addr")
-                )
-                .as_str(),
-                socket_rx_forever(
-                    cancellation_token.clone(),
-                    network_address,
-                    listeners,
-                    socket,
-                ),
-            )
-        };
-
-        Self {
-            cancellation_token,
-            handle,
-            listeners,
-        }
-    }
-
-    async fn get_host_rx(&mut self) -> Result<Receiver<IncomingHostMessage>, ()> {
-        let mut writer = self.listeners.write().await;
-
-        if writer.host_tx.is_some() {
-            return Err(());
-        }
-
-        let (tx, rx) = tokio::sync::mpsc::channel(10);
-
-        writer.host_tx = Some(tx);
-
-        Ok(rx)
-    }
-
-    async fn get_client_rx(&mut self) -> Result<Receiver<IncomingClientMessage>, ()> {
-        let mut writer = self.listeners.write().await;
-
-        if writer.client_tx.is_some() {
-            return Err(());
-        }
-
-        let (tx, rx) = tokio::sync::mpsc::channel(10);
-
-        writer.client_tx = Some(tx);
-
-        Ok(rx)
-    }
-
-    async fn teardown(self) {
-        self.cancellation_token.cancel();
-
-        let _r = self.handle.await;
     }
 }
 
@@ -774,44 +594,43 @@ where
     fn new(socket: Arc<UdpSocket>, message_splitter: T, network_address: NetworkAddress) -> Self {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<T::ChannelMessage>(10);
 
-        let handler = spawn_with_name("sender", async move {
-            let tracker = TaskTracker::new();
+        let handler = spawn_with_name(
+            format!("socket tx ({})", SocketAddrDisplay(&socket)).as_str(),
+            async move {
+                let tracker = TaskTracker::new();
 
-            loop {
-                let Some(buffer) = rx.recv().await else {
-                    event!(
-                        Level::INFO,
-                        socket = %socket
-                            .local_addr()
-                            .map(|addr| addr.to_string())
-                            .as_deref()
-                            .unwrap_or("Failed to get socket's local addr"),
-                        splitter = %T::NAME,
-                        "All senders gone, stopping sender"
-                    );
+                loop {
+                    let Some(buffer) = rx.recv().await else {
+                        event!(
+                            Level::INFO,
+                            socket = %SocketAddrDisplay(&socket),
+                            splitter = %T::NAME,
+                            "All senders gone, stopping sender"
+                        );
 
-                    break;
-                };
+                        break;
+                    };
 
-                let (to, message) = message_splitter.split_message(buffer);
+                    let (to, message) = message_splitter.split_message(buffer);
 
-                {
-                    let socket = Arc::clone(&socket);
-                    let network_address = network_address.clone();
+                    {
+                        let socket = Arc::clone(&socket);
+                        let network_address = network_address.clone();
 
-                    spawn_with_name(
-                        "message sender",
-                        tracker.track_future(async move {
-                            repeatedly_send_buffer::<T>(socket, message, &network_address, to)
-                                .await;
-                        }),
-                    );
+                        spawn_with_name(
+                            "message sender",
+                            tracker.track_future(async move {
+                                repeatedly_send_buffer::<T>(socket, message, &network_address, to)
+                                    .await;
+                            }),
+                        );
+                    }
                 }
-            }
 
-            tracker.close();
-            tracker.wait().await;
-        });
+                tracker.close();
+                tracker.wait().await;
+            },
+        );
 
         Self { handler, tx }
     }

@@ -9,6 +9,7 @@ mod ffi;
 mod helpers;
 mod kernel_buffer;
 mod max_size_deque;
+mod message_receiver;
 mod multicast_handler;
 mod netlink;
 mod network_address;
@@ -21,6 +22,7 @@ mod signal_handlers;
 mod soap;
 mod socket;
 mod span;
+mod task_tracker_ext;
 mod test_utils;
 mod udp_address;
 mod url_ip_addr;
@@ -37,6 +39,7 @@ use std::time::Duration;
 use color_eyre::config::HookBuilder;
 use color_eyre::eyre;
 use dotenvy::dotenv;
+use task_tracker_ext::TaskTrackerExt as _;
 use tokio::sync::mpsc::Sender;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
@@ -53,6 +56,7 @@ use crate::network_handler::{Command, NetworkHandler};
 use crate::security::{chroot, drop_privileges};
 use crate::shutdown::Shutdown;
 use crate::utils::flatten_shutdown_handle;
+use crate::utils::task::spawn_with_name;
 
 #[cfg_attr(not(miri), global_allocator)]
 #[cfg_attr(miri, expect(unused, reason = "Not supported in Miri"))]
@@ -119,7 +123,7 @@ fn main() -> ExitCode {
         .block_on(async {
             // explicitly launch everything in a spawned task
             // see https://docs.rs/tokio/latest/tokio/attr.main.html#non-worker-async-function
-            let handle = tokio::task::spawn(start_tasks());
+            let handle = spawn_with_name("main task runner", start_tasks());
 
             flatten_shutdown_handle(handle).await
         });
@@ -241,12 +245,10 @@ async fn start_tasks() -> Shutdown {
         let config = Arc::clone(&config);
         let command_tx = command_tx.clone();
 
-        tasks.spawn(launch_address_monitor(
-            cancellation_token,
-            command_tx,
-            start_rx,
-            config,
-        ));
+        tasks.spawn_with_name(
+            "address monitor",
+            launch_address_monitor(cancellation_token, command_tx, start_rx, config),
+        );
     }
 
     if !config.no_autostart {
@@ -258,17 +260,20 @@ async fn start_tasks() -> Shutdown {
     {
         let cancellation_token = cancellation_token.clone();
 
-        tasks.spawn(launch_network_handler_task(
-            cancellation_token,
-            network_handler,
-        ));
+        tasks.spawn_with_name(
+            "network handler",
+            launch_network_handler(cancellation_token, network_handler),
+        );
     }
 
     if let Some(listen_on) = config.listen.clone() {
         let cancellation_token = cancellation_token.clone();
         let command_tx = command_tx.clone();
 
-        tasks.spawn(launch_api_server(cancellation_token, command_tx, listen_on));
+        tasks.spawn_with_name(
+            "api server",
+            launch_api_server(cancellation_token, command_tx, listen_on),
+        );
     }
 
     // now we wait forever for either
@@ -332,6 +337,7 @@ async fn launch_address_monitor(
         Ok(address_monitor) => address_monitor,
         Err(error) => {
             event!(Level::ERROR, ?error, "Failed to create address monitor");
+
             return;
         },
     };
@@ -375,7 +381,7 @@ async fn launch_api_server(
     api_server.teardown();
 }
 
-async fn launch_network_handler_task(
+async fn launch_network_handler(
     cancellation_token: CancellationToken,
     mut network_handler: NetworkHandler,
 ) {

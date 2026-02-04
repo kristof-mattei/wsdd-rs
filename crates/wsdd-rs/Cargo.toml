@@ -13,7 +13,7 @@ include.workspace = true
 build = "src/build.rs"
 
 [features]
-default = []
+default = ["tokio-console"]
 systemd = []
 tokio-console = ["dep:console-subscriber"]
 
@@ -24,8 +24,8 @@ axum = { version = "0.8.8", default-features = false, features = [
     "tokio",
     "tracing",
 ] }
-bytes = "1.11.0"
-clap = { version = "4.5.56", features = ["cargo", "string", "derive"] }
+bytes = "1.11.1"
+clap = { version = "4.5.57", features = ["cargo", "string", "derive"] }
 color-eyre = "0.6.5"
 console-subscriber = { version = "0.5.0", optional = true }
 const_format = { version = "0.2.35", features = ["fmt"] }
@@ -37,9 +37,9 @@ hashbrown = { version = "0.16.1", default-features = false, features = [
     "equivalent",
 ] }
 http = "1.4.0"
-hyper-util = { version = "0.1.19", features = ["tracing"] }
+hyper-util = { version = "0.1.20", features = ["tracing"] }
 ipnet = "2.11.0"
-libc = "0.2.180"
+libc.workspace = true
 mimalloc = { version = "0.1.48", features = ["v3"] }
 pin-project = "1.1.10"
 rand = "0.9.2"
@@ -78,7 +78,7 @@ uuid = { version = "1.20.0", default-features = false, features = [
     "v7",
 ] }
 xml = "1.2.1"
-zerocopy = { version = "=0.8.31", features = ["derive"] }
+zerocopy.workspace = true
 
 [target.'cfg(all(any(target_arch = "x86_64", target_arch = "aarch64"), target_os="linux", target_env="musl"))'.dependencies]
 reqwest = { version = "0.13.1", default-features = false, features = [
@@ -86,7 +86,7 @@ reqwest = { version = "0.13.1", default-features = false, features = [
 ] }
 
 [dev-dependencies]
-mockito = "=1.7.1"
+mockito = "=1.7.2"
 pretty_assertions = { version = "=1.4.1", features = ["unstable"] }
 trybuild = "=1.0.115"
 

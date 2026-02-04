@@ -4,13 +4,13 @@ mod netlink_address_monitor;
 #[cfg(any(target_os = "freebsd", target_os = "macos", target_os = "openbsd"))]
 mod route_socket_address_monitor;
 
+use std::convert::Into;
 use std::sync::Arc;
 
 use color_eyre::eyre;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::watch::Receiver;
 use tokio_util::sync::CancellationToken;
-use tracing::{Level, event};
 
 use crate::config::Config;
 use crate::network_handler::Command;
@@ -35,8 +35,5 @@ pub fn create_address_monitor(
     start_rx: Receiver<()>,
     config: Arc<Config>,
 ) -> Result<Monitor, eyre::Report> {
-    Monitor::new(cancellation_token, new_address_tx, start_rx, config).map_err(|error| {
-        event!(Level::ERROR, ?error);
-        error.into()
-    })
+    Monitor::new(cancellation_token, new_address_tx, start_rx, config).map_err(Into::into)
 }

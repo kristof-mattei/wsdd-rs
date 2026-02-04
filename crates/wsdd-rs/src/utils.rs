@@ -36,6 +36,18 @@ impl<T: std::fmt::Display> std::fmt::Display for SliceDisplay<'_, T> {
     }
 }
 
+#[repr(transparent)]
+pub struct SocketAddrDisplay<'s, T: AsRef<tokio::net::UdpSocket>>(pub &'s T);
+
+impl<T: AsRef<tokio::net::UdpSocket>> std::fmt::Display for SocketAddrDisplay<'_, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0.as_ref().local_addr() {
+            Ok(addr) => write!(f, "{}", addr),
+            Err(error) => write!(f, "Failed to get local socket address: {:?}", error),
+        }
+    }
+}
+
 // because `From::from` cannot be called in `const` yet
 pub const fn u16_to_usize(from: u16) -> usize {
     const _: () = assert!(

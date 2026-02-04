@@ -11,6 +11,7 @@ use libc::{
     NLM_F_DUMP, NLM_F_REQUEST, NLMSG_DONE, NLMSG_ERROR, NLMSG_NOOP, RTM_DELADDR, RTM_GETADDR,
     RTM_NEWADDR, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK,
 };
+use shared::netlink::{NetlinkRequest, ifaddrmsg, nlmsgerr, nlmsghdr};
 use socket2::SockAddrStorage;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
@@ -22,8 +23,7 @@ use crate::config::{BindTo, Config};
 use crate::ffi::{SendPtr, getpagesize};
 use crate::kernel_buffer::AlignedBuffer;
 use crate::netlink::{
-    IFA_PAYLOAD, IFA_RTA, NLMSG_DATA, NLMSG_NEXT, NLMSG_OK, NetlinkRequest, RTA_DATA, RTA_NEXT,
-    RTA_OK, ifaddrmsg, nlmsgerr, nlmsghdr,
+    IFA_PAYLOAD, IFA_RTA, NLMSG_DATA, NLMSG_NEXT, NLMSG_OK, RTA_DATA, RTA_NEXT, RTA_OK,
 };
 use crate::network_handler::Command;
 use crate::utils::task::spawn_with_name;
@@ -114,7 +114,7 @@ impl NetlinkAddressMonitor {
             let socket = Arc::clone(&socket);
             let mut start_rx = start_rx;
 
-            spawn_with_name("start processing task", async move {
+            spawn_with_name("request current network state", async move {
                 loop {
                     tokio::select! {
                         () = cancellation_token.cancelled() => {
@@ -126,6 +126,8 @@ impl NetlinkAddressMonitor {
                             }
                         },
                     };
+
+                    event!(Level::INFO, "Requesting current network state");
 
                     if let Err(error) = request_current_state(&config, &socket) {
                         event!(Level::ERROR, ?error, "Failed to send start packet");
@@ -295,15 +297,15 @@ async fn parse_netlink_response(
 
     let mut nlh_wrapper = SendPtr::from_start(buffer);
 
-    while NLMSG_OK(nlh_wrapper.get_ptr(), remaining_len) {
+    while NLMSG_OK(*nlh_wrapper, remaining_len) {
         // SAFETY: `NLMSG_OK`
-        let nlh = unsafe { &*nlh_wrapper.get_ptr() };
+        let nlh = unsafe { &**nlh_wrapper };
 
         let command = if Into::<i32>::into(nlh.nlmsg_type) == NLMSG_DONE {
             break;
         } else if i32::from(nlh.nlmsg_type) == NLMSG_ERROR {
             // SAFETY: `nlh.nlmsg_type` guarantees
-            let error = unsafe { &*NLMSG_DATA::<nlmsgerr>(nlh_wrapper.get_ptr()) };
+            let error = unsafe { &*NLMSG_DATA::<nlmsgerr>(*nlh_wrapper) };
 
             event!(Level::ERROR, "NLMSG_ERROR");
 
@@ -319,15 +321,13 @@ async fn parse_netlink_response(
 
             None
         } else if nlh.nlmsg_type == RTM_NEWADDR {
-            parse_address_message(nlh_wrapper.get_ptr()).map(|(ip_net, scope, index)| {
-                Command::NewAddress {
-                    address: ip_net,
-                    scope,
-                    index,
-                }
+            parse_address_message(*nlh_wrapper).map(|(ip_net, scope, index)| Command::NewAddress {
+                address: ip_net,
+                scope,
+                index,
             })
         } else if nlh.nlmsg_type == RTM_DELADDR {
-            parse_address_message(nlh_wrapper.get_ptr()).map(|(ip_net, scope, index)| {
+            parse_address_message(*nlh_wrapper).map(|(ip_net, scope, index)| {
                 Command::DeleteAddress {
                     address: ip_net,
                     scope,
@@ -344,18 +344,18 @@ async fn parse_netlink_response(
             None
         };
 
-        if let Some(command) = command {
-            if let Err(error) = command_tx.send(command).await {
-                if cancellation_token.is_cancelled() {
-                    event!(Level::INFO, command = ?error.0, "Could not announce command due to shutting down");
-                } else {
-                    event!(Level::ERROR, command = ?error.0, "Failed to announce command");
-                }
-
-                return Err(eyre::Report::msg(
-                    "Command receiver gone, nothing left to do but abandon buffer",
-                ));
+        if let Some(command) = command
+            && let Err(error) = command_tx.send(command).await
+        {
+            if cancellation_token.is_cancelled() {
+                event!(Level::INFO, command = ?error.0, "Could not announce command due to shutting down");
+            } else {
+                event!(Level::ERROR, command = ?error.0, "Failed to announce command");
             }
+
+            return Err(eyre::Report::msg(
+                "Command receiver gone, nothing left to do but abandon buffer",
+            ));
         }
 
         nlh_wrapper.mutate(|p| NLMSG_NEXT(p, &mut remaining_len));
