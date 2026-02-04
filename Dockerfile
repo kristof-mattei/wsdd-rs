@@ -53,7 +53,8 @@ RUN cargo init --name shared
 COPY ./crates/shared/Cargo.toml ./
 
 WORKDIR /build
-COPY ./.cargo ./Cargo.toml ./Cargo.lock ./
+COPY ./.cargo ./.cargo
+COPY ./Cargo.toml ./Cargo.lock ./
 
 # We use `fetch` to pre-download the files to the cache
 # Notice we do this in the target arch specific branch
