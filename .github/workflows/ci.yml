@@ -35,7 +35,7 @@ env:
 jobs:
   architectures:
     name: Build matrix
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     outputs:
       architectures: ${{ steps.matrix.outputs.architectures }}
     steps:
@@ -52,7 +52,7 @@ jobs:
 
   repo-has-container:
     name: Repo has container?
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     outputs:
       has_container: ${{ steps.determine.outputs.has_container }}
     steps:
@@ -65,7 +65,7 @@ jobs:
 
   changes:
     name: Detect changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     permissions:
       contents: read
       pull-requests: read
@@ -74,7 +74,7 @@ jobs:
     steps:
       - &checkout
         name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           show-progress: false
 
@@ -87,7 +87,7 @@ jobs:
 
   calculate-version:
     name: Calculate version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     permissions:
       contents: read
     needs:
@@ -101,51 +101,13 @@ jobs:
       fromJSON(needs.changes.outputs.code) == true
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           show-progress: false
           fetch-depth: 0
 
-      # when updating this, ensure you update the `Cache cargo` step in the `docker-build` job
-      - &cache_cargo
-        name: Cache cargo
-        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
-        env:
-          CACHE_NAME: cargo
-        with:
-          path: |
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-${{ github.job }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-
-            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-
-
-      - &set_up_mold
-        name: Set up mold
-        uses: rui314/setup-mold@725a8794d15fc7563f59595bd9556495c0564878 # v1
-
-      - &set_up_toolchain
-        name: Set up toolchain
-        shell: bash
-        run: |
-          rm ${HOME}/.cargo/bin/cargo-fmt
-          rm ${HOME}/.cargo/bin/rust-analyzer
-          rm ${HOME}/.cargo/bin/rustfmt
-
-          rustup self update
-          rustup update
-          rustup show active-toolchain || rustup toolchain install
-          rustup show
-
-          cargo --version
-
       - name: Install git-cliff to generate changelog & next version number
-        uses: taiki-e/install-action@30eab0fabba9ea3f522099957e668b21876aa39e # v2.66.6
+        uses: taiki-e/install-action@650c5ca14212efbbf3e580844b04bdccf68dac31 # v2.67.18
         with:
           tool: git-cliff
 
@@ -172,11 +134,27 @@ jobs:
     steps:
       - *checkout
 
-      - *cache_cargo
+      - &cache_cargo
+        name: Cache cargo
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        env:
+          CACHE_NAME: cargo
+        with:
+          path: |
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-${{ github.job }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-
+            ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-
 
       - &cache_target
         name: Cache target
-        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         env:
           CACHE_NAME: target
         with:
@@ -187,9 +165,24 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-${{ hashFiles('Cargo.lock') }}-
             ${{ runner.os }}-${{ runner.arch }}-build-${{ env.CACHE_NAME }}-
 
-      - *set_up_mold
+      - &set_up_mold
+        name: Set up mold
+        uses: rui314/setup-mold@725a8794d15fc7563f59595bd9556495c0564878 # v1
 
-      - *set_up_toolchain
+      - &set_up_toolchain
+        name: Set up toolchain
+        shell: bash
+        run: |
+          rm ${HOME}/.cargo/bin/cargo-fmt
+          rm ${HOME}/.cargo/bin/rust-analyzer
+          rm ${HOME}/.cargo/bin/rustfmt
+
+          rustup self update
+          rustup update
+          rustup show active-toolchain || rustup toolchain install
+          rustup show
+
+          cargo --version
 
       - &set_up_libsystemd_dev
         name: Set up libsystemd-dev
@@ -263,7 +256,7 @@ jobs:
           rustup update
 
       - name: Install nextest, custom test runner, with native support for junit and grcov
-        uses: taiki-e/install-action@30eab0fabba9ea3f522099957e668b21876aa39e # v2.66.6
+        uses: taiki-e/install-action@650c5ca14212efbbf3e580844b04bdccf68dac31 # v2.67.18
         with:
           tool: cargo-nextest, grcov
 
@@ -301,7 +294,7 @@ jobs:
             --binary-path ./target/debug/ \
             --branch \
             --ignore-not-existing \
-            --keep-only "src/**" \
+            --keep-only "crates/**/src/**" \
             --llvm \
             --output-path ./reports/lcov.info \
             --output-type lcov \
@@ -388,7 +381,7 @@ jobs:
       # - *set_up_libsystemd_dev
 
       - name: Install nextest, custom test runner, with native support for junit
-        uses: taiki-e/install-action@30eab0fabba9ea3f522099957e668b21876aa39e # v2.66.6
+        uses: taiki-e/install-action@650c5ca14212efbbf3e580844b04bdccf68dac31 # v2.67.18
         with:
           tool: cargo-nextest
 
@@ -479,7 +472,7 @@ jobs:
       - *set_up_toolchain
 
       - name: Install cargo-edit to do set-version
-        uses: taiki-e/install-action@30eab0fabba9ea3f522099957e668b21876aa39e # v2.66.6
+        uses: taiki-e/install-action@650c5ca14212efbbf3e580844b04bdccf68dac31 # v2.67.18
         with:
           tool: cargo-edit
 
@@ -514,7 +507,7 @@ jobs:
       - *checkout
 
       - name: Cache cargo
-        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         env:
           CACHE_NAME: cargo
         with:
@@ -538,7 +531,7 @@ jobs:
       - *set_up_toolchain
 
       - name: Install cargo-edit to do set-version
-        uses: taiki-e/install-action@30eab0fabba9ea3f522099957e668b21876aa39e # v2.66.6
+        uses: taiki-e/install-action@650c5ca14212efbbf3e580844b04bdccf68dac31 # v2.67.18
         with:
           tool: cargo-edit
 
@@ -608,7 +601,7 @@ jobs:
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Log into registry ${{ steps.variables.outputs.registry }}
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           password: ${{ secrets.GITHUB_TOKEN }}
           registry: ${{ steps.variables.outputs.registry }}
@@ -675,7 +668,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       registry:
-        image: registry:3@sha256:cd92709b4191c5779cd7215ccd695db6c54652e7a62843197e367427efb84d0e
+        image: registry:3@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e
         ports:
           - 5000:5000
     outputs:
@@ -708,7 +701,7 @@ jobs:
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Log into registry ${{ needs.docker-build.outputs.registry }}
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ${{ needs.docker-build.outputs.registry }}
           username: ${{ github.actor }}
@@ -836,7 +829,7 @@ jobs:
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Log into registry ${{ needs.docker-build.outputs.registry }}
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ${{ needs.docker-build.outputs.registry }}
           username: ${{ github.actor }}
@@ -846,7 +839,7 @@ jobs:
       # since we deal with tags (mutable), and the way to get a digest is to use the tag, I prefer
       # sourcing the digest from the local registry we just spun up (trusted)
       - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         id: attestation
         with:
           subject-name: ${{ needs.docker-build.outputs.full_image_name_remote_registry }}
@@ -860,7 +853,7 @@ jobs:
     # when all upstream skips: pass
     # when all upstream success: success
     # combination of upstream skip and success: success
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     needs:
       - calculate-version
       - cargo-build
