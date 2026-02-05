@@ -44,7 +44,18 @@ RUN rustup target add ${TARGET}
 # That means that if our dependencies don't change rebuilding is much faster
 WORKDIR /build/crates/${APPLICATION_NAME}
 RUN cargo init --name ${APPLICATION_NAME}
+<<<<<<< HEAD
 COPY ./crates/${APPLICATION_NAME}/Cargo.toml ./
+||||||| 12b79ae7
+
+COPY ./.cargo ./Cargo.toml ./Cargo.lock ./
+
+=======
+
+COPY ./.cargo ./.cargo
+COPY ./Cargo.toml ./Cargo.lock ./
+
+>>>>>>> upstream/main
 RUN echo "fn main() {}" > ./src/build.rs
 
 # repeat this for each crate
