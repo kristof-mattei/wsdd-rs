@@ -11,9 +11,14 @@ keywords.workspace = true
 repository.workspace = true
 include.workspace = true
 
+[features]
+default = []
+
 [dependencies]
 libc.workspace = true
 zerocopy = { features = ["derive"], workspace = true }
+
+[dev-dependencies]
 
 [lints]
 workspace = true
