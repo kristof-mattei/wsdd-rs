@@ -50,7 +50,7 @@ ringmap = "0.2.3"
 shared = { path = "../shared" }
 socket2 = { version = "0.6.2", features = ["all"] }
 thiserror = "2.0.18"
-time = "0.3.46"
+time = "0.3.47"
 tokio = { version = "1.49.0", features = [
     "io-util",
     "macros",
