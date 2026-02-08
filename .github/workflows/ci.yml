@@ -581,12 +581,13 @@ jobs:
       - docker-publish
       - docker-attest
     if: |
-      always()
+      !cancelled()
     steps:
       - name: Fail!
         shell: bash
         if: |
-          contains(needs.*.result, 'failure')
+          contains(needs.*.result, 'failure') ||
+          contains(needs.*.result, 'cancelled')
         run: |
           echo "One / more upstream failed or was cancelled. Failing job..."
 
