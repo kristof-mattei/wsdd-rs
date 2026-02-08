@@ -122,7 +122,7 @@ jobs:
         run: |
           sudo apt-get update
 
-          sudo apt-get install libsystemd-dev
+          sudo apt-get install --no-install-recommends --yes libsystemd-dev
 
       - name: Build
         shell: bash
