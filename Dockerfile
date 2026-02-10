@@ -1,3 +1,6 @@
+# syntax=docker/dockerfile:1@sha256:b6afd42430b15f2d2a4c5a02b919e98a525b785b1aaff16747d2f623364e39b6
+# check=skip=SecretsUsedInArgOrEnv,error=true
+
 # Rust toolchain setup
 FROM --platform=${BUILDPLATFORM} rust:1.93.0-slim-trixie@sha256:760ad1d638d70ebbd0c61e06210e1289cbe45ff6425e3ea6e01241de3e14d08e AS rust-base
 
@@ -26,9 +29,15 @@ ARG TARGET=aarch64-unknown-linux-musl
 
 FROM rust-linux-${TARGETARCH} AS rust-cargo-build
 
-ARG DEBIAN_FRONTEND=noninteractive
-# expose into `build.sh`
+# amd64 or arm64
+ARG TARGETARCH
+# linux or ...
+ARG TARGETOS
+# used by `build.sh`, v2, v3 or empty
 ARG TARGETVARIANT
+# like TARGETPLATFORM, but with dashes
+ARG TARGETPLATFORMDASH="${TARGETOS}-${TARGETARCH}-${TARGETVARIANT:-base}"
+ARG CARGO_TARGET_DIR=/build/target/${TARGETPLATFORMDASH}
 
 COPY ./build-scripts /build-scripts
 
@@ -60,28 +69,33 @@ COPY ./crates/shared/Cargo.toml ./shared/Cargo.toml
 WORKDIR /build
 
 # We use `fetch` to pre-download the files to the cache
-# Notice we do this in the target arch specific branch
-# We do this because we want to do it after `setup-env.sh`,
-# as the env is less likely to change than the code
-# We do lock the cache, to avoid corruption when building it for
-# both target platforms. It doesn't matter, as after unlocking the other one
-# just validates, but doesn't need to download anything
-RUN --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git/db,sharing=locked \
-    --mount=type=cache,id=cargo-registry-index,target=/usr/local/cargo/registry/index,sharing=locked \
-    --mount=type=cache,id=cargo-registry-cache,target=/usr/local/cargo/registry/cache,sharing=locked \
-    cargo fetch
+# 1. Notice `sharing=locked` to avoid 2 processes concurrently writing and corrupting the cache, as `cp` is non-atomic
+# 2. We do the copy back-and-forth, as we do need the files in the image for the next layer.
+# 3.
+RUN --mount=type=cache,id=cargo-git,target=/tmp/cache/git/db,sharing=locked \
+    --mount=type=cache,id=cargo-registry-index,target=/tmp/cache/registry/index,sharing=locked \
+    --mount=type=cache,id=cargo-registry-cache,target=/tmp/cache/registry/cache,sharing=locked \
+    \
+    # Copy in from cache
+    mkdir -p /usr/local/cargo/git/db \
+             /usr/local/cargo/registry/index \
+             /usr/local/cargo/registry/cache && \
+    cp -rp /tmp/cache/git/db/. /usr/local/cargo/git/db/ || true && \
+    cp -rp /tmp/cache/registry/index/. /usr/local/cargo/registry/index/ || true && \
+    cp -rp /tmp/cache/registry/cache/. /usr/local/cargo/registry/cache/ || true && \
+    \
+    cargo fetch --locked && \
+    \
+    # copy out
+    cp -rp /usr/local/cargo/git/db/. /tmp/cache/git/db/ && \
+    cp -rp /usr/local/cargo/registry/index/. /tmp/cache/registry/index/ && \
+    cp -rp /usr/local/cargo/registry/cache/. /tmp/cache/registry/cache/
 
-RUN --mount=type=cache,target=/build/target/${TARGET},sharing=locked \
-    --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git/db \
-    --mount=type=cache,id=cargo-registry-index,target=/usr/local/cargo/registry/index \
-    --mount=type=cache,id=cargo-registry-cache,target=/usr/local/cargo/registry/cache \
-    /build-scripts/build.sh build --release --target-dir ./target/${TARGET}
+RUN --mount=type=cache,id=target-${TARGETPLATFORMDASH},target=${CARGO_TARGET_DIR},sharing=locked \
+    /build-scripts/build.sh build --frozen --release
 
 # Rust full build
 FROM rust-cargo-build AS rust-build
-
-# to expose into `build.sh`
-ARG TARGETVARIANT
 
 WORKDIR /build
 
@@ -94,11 +108,8 @@ RUN find ./crates -type f -name '*.rs' -exec touch {} +
 ENV PATH="/output/bin:$PATH"
 
 # --release not needed, it is implied with install
-RUN --mount=type=cache,target=/build/target/${TARGET},sharing=locked \
-    --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git/db \
-    --mount=type=cache,id=cargo-registry-index,target=/usr/local/cargo/registry/index \
-    --mount=type=cache,id=cargo-registry-cache,target=/usr/local/cargo/registry/cache \
-    /build-scripts/build.sh install --path ./crates/${APPLICATION_NAME}/ --locked --target-dir ./target/${TARGET} --root /output
+RUN --mount=type=cache,id=target-${TARGETPLATFORMDASH},target=${CARGO_TARGET_DIR},sharing=locked \
+    /build-scripts/build.sh install --frozen --path "./crates/${APPLICATION_NAME}/" --root /output
 
 # Container user setup
 FROM --platform=${BUILDPLATFORM} alpine:3.23.3@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659 AS passwd-build
