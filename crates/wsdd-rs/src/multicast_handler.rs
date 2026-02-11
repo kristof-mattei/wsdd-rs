@@ -6,7 +6,7 @@ use std::time::Duration;
 use color_eyre::eyre::{self, Context as _};
 use hashbrown::HashMap;
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
-use rand::Rng as _;
+use rand::RngExt as _;
 use socket2::{Domain, InterfaceIndexOrAddress, Socket, Type};
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::Sender;
