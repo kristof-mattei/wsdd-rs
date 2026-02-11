@@ -258,7 +258,7 @@ jobs:
           disable_telem: true
           env_vars: OS,RUST
           fail_ci_if_error: true
-          # flags: tests
+          flags: tests
           files: reports/lcov.info
           name: code-coverage
           plugins: ""
@@ -272,7 +272,7 @@ jobs:
           disable_telem: true
           env_vars: OS,RUST
           fail_ci_if_error: true
-          # flags: tests
+          flags: tests
           files: reports/results.xml
           name: test-results
           plugins: ""
@@ -370,14 +370,21 @@ jobs:
           files: |
             reports/results.xml
 
+      - name: Record Rust version
+        shell: bash
+        run: |
+          echo "RUST=$(rustc --version)" >> "$GITHUB_ENV"
+
       - name: Upload test results (to Codecov.io)
         uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
         with:
           disable_search: true
           disable_telem: true
+          env_vars: OS,RUST
           fail_ci_if_error: true
-          flags: ${{ github.job }}-miri
+          flags: tests-with-miri
           files: reports/results.xml
+          name: test-results
           plugins: ""
           report_type: "test_results"
           use_oidc: true
