@@ -242,10 +242,9 @@ impl WSDDiscoveredDevice {
             // Close out on the `wsx:MetadataSection`
             let mut depth: usize = 0;
 
+            #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
             loop {
-                let event = reader.next()?;
-
-                match event {
+                match reader.next()? {
                     XmlEvent::StartElement { name, .. } if name.borrow() == scope.borrow() => {
                         depth += 1;
                     },
@@ -256,19 +255,11 @@ impl WSDDiscoveredDevice {
 
                         depth -= 1;
                     },
-                    XmlEvent::CData(_)
-                    | XmlEvent::Characters(_)
-                    | XmlEvent::Comment(_)
-                    | XmlEvent::Doctype { .. }
-                    | XmlEvent::EndElement { .. }
-                    | XmlEvent::ProcessingInstruction { .. }
-                    | XmlEvent::StartDocument { .. }
-                    | XmlEvent::StartElement { .. }
-                    | XmlEvent::Whitespace(_) => {},
                     XmlEvent::EndDocument => {
                         event!(Level::ERROR, "Unexpected `EndDocument` found");
                         break;
                     },
+                    _ => {},
                 }
             }
         }
@@ -290,6 +281,7 @@ where
     let mut bag = HashMap::<Box<str>, Box<str>>::new();
 
     loop {
+        #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
                 depth += 1;
@@ -317,13 +309,7 @@ where
             XmlEvent::EndDocument => {
                 return Err(GenericParsingError::InvalidDocumentPosition);
             },
-            XmlEvent::CData(_)
-            | XmlEvent::Characters(_)
-            | XmlEvent::Comment(_)
-            | XmlEvent::Doctype { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::StartDocument { .. }
-            | XmlEvent::Whitespace(_) => {
+            _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
                 // or they just won't occur
             },
@@ -418,6 +404,7 @@ where
     let mut depth = 0_usize;
 
     loop {
+        #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
                 depth += 1;
@@ -454,14 +441,7 @@ where
 
                 depth -= 1;
             },
-            XmlEvent::CData(_)
-            | XmlEvent::Characters(_)
-            | XmlEvent::Comment(_)
-            | XmlEvent::Doctype { .. }
-            | XmlEvent::EndDocument
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::StartDocument { .. }
-            | XmlEvent::Whitespace(_) => {
+            _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
                 // or they just won't occur
             },

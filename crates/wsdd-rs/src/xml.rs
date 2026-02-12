@@ -60,6 +60,7 @@ where
     let mut text: String = String::with_capacity(constants::STRING_DEFAULT_CAPACITY);
 
     loop {
+        #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
             XmlEvent::CData(s) | XmlEvent::Characters(s) | XmlEvent::Whitespace(s) => {
                 if !text.is_empty() || !s.trim().is_empty() {
@@ -88,11 +89,7 @@ where
                 // no start elements allowed in our text nodes
                 return Err(TextReadError::NonTextContents(element));
             },
-            XmlEvent::Comment(_)
-            | XmlEvent::Doctype { .. }
-            | XmlEvent::EndDocument
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::StartDocument { .. } => {
+            _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
                 // or they just won't occur
             },
@@ -129,6 +126,7 @@ where
     let mut depth: usize = 0;
 
     loop {
+        #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
             XmlEvent::StartElement {
                 name, attributes, ..
@@ -164,13 +162,7 @@ where
             XmlEvent::EndDocument => {
                 break;
             },
-            XmlEvent::CData(_)
-            | XmlEvent::Characters(_)
-            | XmlEvent::Comment(_)
-            | XmlEvent::Doctype { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::StartDocument { .. }
-            | XmlEvent::Whitespace(_) => {
+            _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
                 // or they just won't occur
             },

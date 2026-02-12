@@ -194,6 +194,7 @@ where
     let mut has_body = false;
 
     // as per https://www.w3.org/TR/soap12/#soapenvelope, the Header, Body order is fixed. We don't need to code for Body, Header
+    #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
     loop {
         // this is the only loop that should hit `XmlEvent::StartDocument` and `XmlEvent::Doctype`
         // in all other parsing functions we could theoretically mark them as `unreachable!()`
@@ -213,14 +214,7 @@ where
             XmlEvent::EndDocument => {
                 break;
             },
-            XmlEvent::CData(_)
-            | XmlEvent::Comment(_)
-            | XmlEvent::Characters(_)
-            | XmlEvent::Doctype { .. }
-            | XmlEvent::EndElement { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::StartDocument { .. }
-            | XmlEvent::Whitespace(_) => {
+            _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
                 // or they just won't occur
             },
@@ -405,6 +399,7 @@ where
     let mut depth = 0_usize;
 
     loop {
+        #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
                 depth += 1;
@@ -460,14 +455,7 @@ where
 
                 depth -= 1;
             },
-            XmlEvent::CData(_)
-            | XmlEvent::Characters(_)
-            | XmlEvent::Comment(_)
-            | XmlEvent::Doctype { .. }
-            | XmlEvent::EndDocument
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::StartDocument { .. }
-            | XmlEvent::Whitespace(_) => {
+            _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
                 // or they just won't occur
             },
