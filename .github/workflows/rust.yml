@@ -304,6 +304,7 @@ jobs:
     env:
       # most features don't work with miri
       CARGO_FEATURES: ""
+      TOOLCHAIN: "nightly-2026-01-26"
     steps:
       - *checkout
 
@@ -322,7 +323,7 @@ jobs:
 
           rustup self update
           rustup update
-          rustup toolchain install nightly
+          rustup toolchain install ${TOOLCHAIN}
           rustup show
 
           cargo --version
@@ -330,7 +331,7 @@ jobs:
       - name: Install miri & rust-src
         shell: bash
         run: |
-          rustup component add --toolchain nightly miri rust-src
+          rustup component add --toolchain ${TOOLCHAIN} miri rust-src
 
           # restore symlinks
           rustup update
@@ -359,7 +360,7 @@ jobs:
           MIRIFLAGS: "-Zmiri-backtrace=full -Zmiri-disable-isolation -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check"
           RUSTFLAGS: "${{ env.RUSTFLAGS }} --allow=warnings"
         run: |
-          cargo +nightly miri nextest run --profile ci --no-fail-fast ${{ env.CARGO_FEATURES }} --all-targets --workspace
+          cargo +${TOOLCHAIN} miri nextest run --profile ci --no-fail-fast ${{ env.CARGO_FEATURES }} --all-targets --workspace
         continue-on-error: true
 
       - name: Upload test results
