@@ -31,6 +31,7 @@ where
 
     let mut depth = 0_usize;
     loop {
+        #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
             XmlEvent::StartElement {
                 name, namespace, ..
@@ -73,13 +74,7 @@ where
             XmlEvent::EndDocument => {
                 break;
             },
-            XmlEvent::CData(_)
-            | XmlEvent::Characters(_)
-            | XmlEvent::Comment(_)
-            | XmlEvent::Doctype { .. }
-            | XmlEvent::ProcessingInstruction { .. }
-            | XmlEvent::StartDocument { .. }
-            | XmlEvent::Whitespace(_) => {
+            _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
                 // or they just won't occur
             },
