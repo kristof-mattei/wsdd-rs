@@ -3,7 +3,7 @@ use std::io::Read;
 use crate::constants;
 use crate::soap::parser::generic::extract_endpoint_metadata;
 use crate::wsd::device::DeviceUri;
-use crate::xml::{GenericParsingError, Wrapper, find_descendant};
+use crate::xml::{GenericParsingError, Wrapper, find_child};
 
 type ParsedResolveMatchResult = Result<ResolveMatch, GenericParsingError>;
 
@@ -20,8 +20,8 @@ pub fn parse_resolve_match<R>(reader: &mut Wrapper<R>) -> ParsedResolveMatchResu
 where
     R: Read,
 {
-    find_descendant(reader, Some(constants::XML_WSD_NAMESPACE), "ResolveMatches")?;
-    find_descendant(reader, Some(constants::XML_WSD_NAMESPACE), "ResolveMatch")?;
+    find_child(reader, Some(constants::XML_WSD_NAMESPACE), "ResolveMatches")?;
+    find_child(reader, Some(constants::XML_WSD_NAMESPACE), "ResolveMatch")?;
 
     let (endpoint, raw_xaddrs) = extract_endpoint_metadata(reader)?;
 

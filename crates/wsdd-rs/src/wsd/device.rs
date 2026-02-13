@@ -12,7 +12,7 @@ use crate::constants;
 use crate::network_address::NetworkAddress;
 use crate::soap::parser;
 use crate::soap::parser::xaddrs::XAddr;
-use crate::xml::{GenericParsingError, Wrapper, find_descendant, read_text};
+use crate::xml::{GenericParsingError, Wrapper, find_child, read_text};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[repr(transparent)]
@@ -170,13 +170,13 @@ impl WSDDiscoveredDevice {
         let (_header, _has_body, mut reader) = parser::deconstruct_raw(meta)?;
 
         let (_name, _attributes) =
-            find_descendant(&mut reader, Some(constants::XML_WSX_NAMESPACE), "Metadata")?;
+            find_child(&mut reader, Some(constants::XML_WSX_NAMESPACE), "Metadata")?;
 
         // we're now in metadata
 
         // loop though the reader for each wsx:MetadataSection at depth 1 from where we are now
         loop {
-            let (scope, attributes) = match find_descendant(
+            let (scope, attributes) = match find_child(
                 &mut reader,
                 Some(constants::XML_WSX_NAMESPACE),
                 "MetadataSection",
@@ -195,7 +195,7 @@ impl WSDDiscoveredDevice {
                 {
                     if attribute.value == constants::WSDP_THIS_DEVICE_DIALECT {
                         // open ThisDevice
-                        find_descendant(
+                        find_child(
                             &mut reader,
                             Some(constants::XML_WSDP_NAMESPACE),
                             constants::WSDP_THIS_DEVICE,
@@ -207,7 +207,7 @@ impl WSDDiscoveredDevice {
                         self.props.extend(new_props);
                     } else if attribute.value == constants::WSDP_THIS_MODEL_DIALECT {
                         // open ThisModel
-                        find_descendant(
+                        find_child(
                             &mut reader,
                             Some(constants::XML_WSDP_NAMESPACE),
                             constants::WSDP_THIS_MODEL,
@@ -327,7 +327,7 @@ where
     // we are inside of the relationship metadata section, which contains ... RELATIONSHIPS
     // for each relationship, we find the one with Type=Host
     loop {
-        let (_element, attributes) = match find_descendant(
+        let (_element, attributes) = match find_child(
             reader,
             Some(constants::XML_WSDP_NAMESPACE),
             constants::WSDP_RELATIONSHIP,
@@ -346,7 +346,7 @@ where
         for attribute in attributes {
             if attribute.name.namespace_ref().is_none() && attribute.name.local_name == "Type" {
                 if attribute.value == constants::WSDP_RELATIONSHIP_TYPE_HOST {
-                    match find_descendant(reader, Some(constants::XML_WSDP_NAMESPACE), "Host") {
+                    match find_child(reader, Some(constants::XML_WSDP_NAMESPACE), "Host") {
                         Ok((_name, _attributes)) => {
                             let (types, display_name_belongs_to) =
                                 read_types_and_pub_computer(reader)?;
@@ -486,7 +486,7 @@ mod tests {
 
     use crate::constants;
     use crate::wsd::device::extract_wsdp_props;
-    use crate::xml::{GenericParsingError, Wrapper, find_descendant};
+    use crate::xml::{GenericParsingError, Wrapper, find_child};
 
     #[test]
     fn extract_wsdp_props_reads_namespaced_children() -> Result<(), GenericParsingError> {
@@ -500,7 +500,7 @@ mod tests {
 
         let mut reader = Wrapper::new(EventReader::new(xml.as_bytes()));
 
-        find_descendant(
+        find_child(
             &mut reader,
             Some(constants::XML_WSDP_NAMESPACE),
             constants::WSDP_THIS_DEVICE,

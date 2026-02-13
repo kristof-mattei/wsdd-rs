@@ -3,7 +3,7 @@ use std::io::Read;
 use crate::constants;
 use crate::soap::parser::generic::extract_endpoint_metadata;
 use crate::wsd::device::DeviceUri;
-use crate::xml::{GenericParsingError, Wrapper, find_descendant};
+use crate::xml::{GenericParsingError, Wrapper, find_child};
 
 type ParsedByeResult = Result<Bye, GenericParsingError>;
 
@@ -19,7 +19,7 @@ pub fn parse_bye<R>(reader: &mut Wrapper<R>) -> ParsedByeResult
 where
     R: Read,
 {
-    find_descendant(reader, Some(constants::XML_WSD_NAMESPACE), "Bye")?;
+    find_child(reader, Some(constants::XML_WSD_NAMESPACE), "Bye")?;
 
     let (endpoint, _) = extract_endpoint_metadata(reader)?;
 

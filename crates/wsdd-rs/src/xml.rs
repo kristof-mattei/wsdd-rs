@@ -138,7 +138,7 @@ pub enum GenericParsingError {
 
 type FindDescendantResult = Result<(OwnedName, Vec<OwnedAttribute>), GenericParsingError>;
 
-pub fn find_descendant<R>(
+pub fn find_child<R>(
     reader: &mut Wrapper<R>,
     namespace: Option<&str>,
     path: &str,
@@ -209,7 +209,7 @@ mod tests {
     use xml::attribute::OwnedAttribute;
     use xml::name::OwnedName;
 
-    use crate::xml::{GenericParsingError, Wrapper, find_descendant};
+    use crate::xml::{GenericParsingError, Wrapper, find_child};
 
     #[test]
     fn parse_generic_body_missing_element() {
@@ -226,9 +226,9 @@ mod tests {
             Wrapper::new(reader)
         };
 
-        let _result = find_descendant(&mut reader, None, "Level1").unwrap();
-        let _result = find_descendant(&mut reader, None, "Level2").unwrap();
-        let result = find_descendant(&mut reader, Some("urn:level3_ns"), "Level3");
+        let _result = find_child(&mut reader, None, "Level1").unwrap();
+        let _result = find_child(&mut reader, None, "Level2").unwrap();
+        let result = find_child(&mut reader, Some("urn:level3_ns"), "Level3");
 
         assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "{urn:level3_ns}Level3");
     }
@@ -254,9 +254,9 @@ mod tests {
             let _unused: Result<xml::reader::XmlEvent, xml::reader::Error> = reader.next();
         }
 
-        let _result = find_descendant(&mut reader, Some("urn:level3_ns"), "Level3");
-        let _result = find_descendant(&mut reader, None, "Level4");
-        let result = find_descendant(&mut reader, Some("urn:level5_ns"), "Level5");
+        let _result = find_child(&mut reader, Some("urn:level3_ns"), "Level3");
+        let _result = find_child(&mut reader, None, "Level4");
+        let result = find_child(&mut reader, Some("urn:level5_ns"), "Level5");
 
         assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "{urn:level5_ns}Level5");
     }
@@ -276,8 +276,8 @@ mod tests {
             Wrapper::new(reader)
         };
 
-        let _result = find_descendant(&mut reader, Some("urn:first"), "Envelope");
-        let result = find_descendant(&mut reader, Some("urn:first"), "Body");
+        let _result = find_child(&mut reader, Some("urn:first"), "Envelope");
+        let result = find_child(&mut reader, Some("urn:first"), "Body");
 
         let attribute = OwnedAttribute::new(OwnedName::local("attribute"), "this-one");
         assert_matches!(result, Ok((_, attributes)) if attributes.contains(&attribute));
@@ -298,8 +298,8 @@ mod tests {
             Wrapper::new(reader)
         };
 
-        let _result = find_descendant(&mut reader, Some("urn:first"), "Envelope");
-        let result = find_descendant(&mut reader, Some("urn:first"), "Body");
+        let _result = find_child(&mut reader, Some("urn:first"), "Envelope");
+        let result = find_child(&mut reader, Some("urn:first"), "Body");
 
         assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "{urn:first}Body");
     }
@@ -319,8 +319,8 @@ mod tests {
             Wrapper::new(reader)
         };
 
-        let _result = find_descendant(&mut reader, Some("urn:first"), "Envelope");
-        let result = find_descendant(&mut reader, Some("urn:first"), "Body");
+        let _result = find_child(&mut reader, Some("urn:first"), "Envelope");
+        let result = find_child(&mut reader, Some("urn:first"), "Body");
 
         let attribute = OwnedAttribute::new(OwnedName::local("attribute"), "this-one");
         assert_matches!(result, Ok((_, attributes)) if attributes.contains(&attribute));
@@ -350,7 +350,7 @@ mod tests {
             let _unused = reader.next();
         }
 
-        let result = find_descendant(&mut reader, None, "NotFound");
+        let result = find_child(&mut reader, None, "NotFound");
 
         assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "NotFound");
     }

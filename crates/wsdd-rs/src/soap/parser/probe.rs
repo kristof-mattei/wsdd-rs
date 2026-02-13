@@ -5,7 +5,7 @@ use tracing::{Level, event};
 use xml::reader::XmlEvent;
 
 use crate::constants;
-use crate::xml::{GenericParsingError, Wrapper, find_descendant, read_text};
+use crate::xml::{GenericParsingError, Wrapper, find_child, read_text};
 
 type ParsedProbeResult = Result<Probe, GenericParsingError>;
 
@@ -25,7 +25,7 @@ pub fn parse_probe<R>(reader: &mut Wrapper<R>) -> ParsedProbeResult
 where
     R: Read,
 {
-    find_descendant(reader, Some(constants::XML_WSD_NAMESPACE), "Probe")?;
+    find_child(reader, Some(constants::XML_WSD_NAMESPACE), "Probe")?;
 
     let mut raw_types_and_namespaces = None;
 

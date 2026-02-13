@@ -5,7 +5,7 @@ use uuid::fmt::Urn;
 
 use crate::constants;
 use crate::soap::parser::generic::extract_endpoint_reference_address;
-use crate::xml::{GenericParsingError, Wrapper, find_descendant};
+use crate::xml::{GenericParsingError, Wrapper, find_child};
 
 type ParsedResolveResult = Result<Resolve, GenericParsingError>;
 
@@ -21,8 +21,8 @@ pub fn parse_resolve<R>(reader: &mut Wrapper<R>) -> ParsedResolveResult
 where
     R: Read,
 {
-    find_descendant(reader, Some(constants::XML_WSD_NAMESPACE), "Resolve")?;
-    find_descendant(
+    find_child(reader, Some(constants::XML_WSD_NAMESPACE), "Resolve")?;
+    find_child(
         reader,
         Some(constants::XML_WSA_NAMESPACE),
         "EndpointReference",
