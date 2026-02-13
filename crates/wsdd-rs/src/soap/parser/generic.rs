@@ -84,9 +84,6 @@ where
                             }
 
                             xaddrs = read_text(reader)?;
-
-                            // stop for another function to continue reading
-                            break;
                         },
                         _ => {
                             // Ignore
