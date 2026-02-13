@@ -132,8 +132,8 @@ pub enum GenericParsingError {
     InvalidElementOrder,
     #[error("Invalid UUID")]
     InvalidUrnUuid(#[from] uuid::Error),
-    #[error("Unspected event")]
-    UnspectedEvent(Box<XmlEvent>),
+    #[error("Unexpected event")]
+    UnexpectedEvent(Box<XmlEvent>),
 }
 
 type FindDescendantResult = Result<(OwnedName, Vec<OwnedAttribute>), GenericParsingError>;

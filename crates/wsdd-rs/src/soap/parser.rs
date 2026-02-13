@@ -146,10 +146,10 @@ impl MessageHandlerError {
                     "Error while decoding XML",
                 );
             },
-            &MessageHandlerError::GenericParsingError(GenericParsingError::UnspectedEvent(
+            &MessageHandlerError::GenericParsingError(GenericParsingError::UnexpectedEvent(
                 ref event,
             ))
-            | &MessageHandlerError::HeaderError(HeaderError::UnspectedEvent(ref event)) => {
+            | &MessageHandlerError::HeaderError(HeaderError::UnexpectedEvent(ref event)) => {
                 event!(
                     Level::ERROR,
                     ?event,
@@ -176,7 +176,7 @@ pub enum HeaderError {
     #[error("Error parsing XML")]
     XmlError(#[from] xml::reader::Error),
     #[error("Unexpected event")]
-    UnspectedEvent(Box<XmlEvent>),
+    UnexpectedEvent(Box<XmlEvent>),
 }
 
 type RawMessageResult<R> = Result<(Header, bool, Wrapper<R>), MessageHandlerError>;
@@ -447,7 +447,7 @@ where
                 }
             },
             element @ XmlEvent::EndDocument => {
-                return Err(HeaderError::UnspectedEvent(Box::new(element)));
+                return Err(HeaderError::UnexpectedEvent(Box::new(element)));
             },
             _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
