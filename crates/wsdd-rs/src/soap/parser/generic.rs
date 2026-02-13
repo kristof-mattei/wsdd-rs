@@ -15,31 +15,24 @@ where
 {
     let mut address = None;
 
-    let mut depth = 0_usize;
+    let entry_depth = reader.depth();
 
     loop {
         #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
-                depth += 1;
-
-                if depth == 1
+                if reader.depth() == entry_depth + 1
                     && name.namespace_ref() == Some(constants::XML_WSA_NAMESPACE)
                     && name.local_name == "Address"
                 {
                     address = read_text(reader)?;
-
-                    // read_text closes the element
-                    depth -= 1;
                 }
             },
             XmlEvent::EndElement { .. } => {
-                if depth == 0 {
+                if reader.depth() < entry_depth {
                     // we've exited the element that we entered on
                     break;
                 }
-
-                depth -= 1;
             },
             _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
@@ -71,24 +64,19 @@ where
     let mut endpoint = None;
     let mut xaddrs = None;
 
-    let mut depth = 0_usize;
+    let entry_depth = reader.depth();
 
     loop {
         #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
-                depth += 1;
-
-                if depth == 1 {
+                if reader.depth() == entry_depth + 1 {
                     match (name.namespace_ref(), &*name.local_name) {
                         (Some(constants::XML_WSA_NAMESPACE), "EndpointReference") => {
                             if endpoint.is_some() || xaddrs.is_some() {
                                 return Err(GenericParsingError::InvalidElementOrder);
                             }
                             endpoint = Some(extract_endpoint_reference_address(reader)?);
-
-                            // `extract_endpoint_reference_address` stops when it has consumed the closing tag
-                            depth -= 1;
                         },
                         (Some(constants::XML_WSD_NAMESPACE), "XAddrs") => {
                             if endpoint.is_none() || xaddrs.is_some() {
@@ -107,12 +95,10 @@ where
                 }
             },
             XmlEvent::EndElement { .. } => {
-                if depth == 0 {
+                if reader.depth() < entry_depth {
                     // we've exited the element that we entered on
                     break;
                 }
-
-                depth -= 1;
             },
             XmlEvent::EndDocument => {
                 break;
