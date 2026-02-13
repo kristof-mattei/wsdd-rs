@@ -396,26 +396,22 @@ where
     // TODO?
     // <wsd:AppSequence InstanceId="1742000334" SequenceId="urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9" MessageNumber="1" />
 
-    let mut depth = 0_usize;
+    let entry_depth = reader.depth();
 
     loop {
         #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
             XmlEvent::StartElement { name, .. } => {
-                depth += 1;
-
-                if depth == 1 && name.namespace_ref() == Some(constants::WSA_URI) {
+                if reader.depth() == entry_depth + 1
+                    && name.namespace_ref() == Some(constants::WSA_URI)
+                {
                     // header items can be in any order, as per SOAP 1.1 and 1.2
                     match &*name.local_name {
                         "To" => {
                             to = read_text(reader)?.map(|to| DeviceUri::new(to.into_boxed_str()));
-
-                            depth -= 1;
                         },
                         "Action" => {
                             action = read_text(reader)?.map(String::into_boxed_str);
-
-                            depth -= 1;
                         },
                         "MessageID" => {
                             let m_id = read_text(reader)?
@@ -425,8 +421,6 @@ where
                                 .transpose()?;
 
                             message_id = m_id;
-
-                            depth -= 1;
                         },
                         "RelatesTo" => {
                             let r_to = read_text(reader)?
@@ -436,8 +430,6 @@ where
                                 .transpose()?;
 
                             relates_to = r_to;
-
-                            depth -= 1;
                         },
                         _ => {
                             // Not a match, continue
@@ -445,15 +437,10 @@ where
                     }
                 }
             },
-            XmlEvent::EndElement { name, .. } => {
-                if depth == 0
-                    && name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE)
-                    && name.local_name == "Header"
-                {
+            XmlEvent::EndElement { .. } => {
+                if reader.depth() < entry_depth {
                     break;
                 }
-
-                depth -= 1;
             },
             _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them

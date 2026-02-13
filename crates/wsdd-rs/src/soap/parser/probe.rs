@@ -29,16 +29,17 @@ where
 
     let mut raw_types_and_namespaces = None;
 
-    let mut depth = 0_usize;
+    let entry_depth = reader.depth();
+
     loop {
         #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
             XmlEvent::StartElement {
                 name, namespace, ..
             } => {
-                depth += 1;
-
-                if depth == 1 && name.namespace_ref() == Some(constants::XML_WSD_NAMESPACE) {
+                if reader.depth() == entry_depth + 1
+                    && name.namespace_ref() == Some(constants::XML_WSD_NAMESPACE)
+                {
                     match &*name.local_name {
                         "Scopes" => {
                             let text = read_text(reader)?;
@@ -49,9 +50,6 @@ where
                                 scopes = %raw_scopes,
                                 "Ignoring unsupported scopes in probe request"
                             );
-
-                            // read_text consumed the closing `Scopes`
-                            depth -= 1;
                         },
                         "Types" => {
                             raw_types_and_namespaces =
@@ -64,12 +62,10 @@ where
                 }
             },
             XmlEvent::EndElement { .. } => {
-                if depth == 0 {
+                if reader.depth() < entry_depth {
                     // we've exited the Probe
                     break;
                 }
-
-                depth -= 1;
             },
             XmlEvent::EndDocument => {
                 break;

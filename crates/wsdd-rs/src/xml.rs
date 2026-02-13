@@ -21,6 +21,7 @@ pub struct Wrapper<R>
 where
     R: Read,
 {
+    depth: usize,
     next: Option<std::result::Result<XmlEvent, xml::reader::Error>>,
     reader: EventReader<R>,
 }
@@ -30,15 +31,37 @@ where
     R: Read,
 {
     pub fn new(reader: EventReader<R>) -> Wrapper<R> {
-        Self { next: None, reader }
+        Self {
+            depth: 0,
+            next: None,
+            reader,
+        }
+    }
+
+    pub fn depth(&self) -> usize {
+        self.depth
     }
 
     pub fn next(&mut self) -> std::result::Result<XmlEvent, xml::reader::Error> {
-        if let Some(next) = self.next.take() {
-            next
-        } else {
-            self.reader.next()
+        let event = match self.next.take() {
+            Some(next) => next,
+            None => self.reader.next(),
+        };
+
+        if let Ok(ref event) = event {
+            #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
+            match *event {
+                XmlEvent::StartElement { .. } => {
+                    self.depth += 1;
+                },
+                XmlEvent::EndElement { .. } => {
+                    self.depth -= 1;
+                },
+                _ => {},
+            }
         }
+
+        event
     }
 
     #[expect(unused, reason = "WIP")]
@@ -123,7 +146,7 @@ pub fn find_descendant<R>(
 where
     R: Read,
 {
-    let mut depth: usize = 0;
+    let entry_depth = reader.depth();
 
     loop {
         #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
@@ -131,14 +154,15 @@ where
             XmlEvent::StartElement {
                 name, attributes, ..
             } => {
-                depth += 1;
-
-                if depth == 1 && name.namespace_ref() == namespace && name.local_name == path {
+                if reader.depth() == entry_depth + 1
+                    && name.namespace_ref() == namespace
+                    && name.local_name == path
+                {
                     return Ok((name, attributes));
                 }
             },
             XmlEvent::EndElement { name } => {
-                if depth == 0 {
+                if reader.depth() < entry_depth {
                     let missing_element = Name {
                         local_name: path,
                         namespace,
@@ -156,8 +180,6 @@ where
                         missing_element.to_string().into_boxed_str(),
                     ));
                 }
-
-                depth -= 1;
             },
             XmlEvent::EndDocument => {
                 break;
