@@ -25,9 +25,9 @@ impl std::fmt::Display for XAddr {
 
 #[derive(Error, Debug)]
 pub enum XAddrError<'s> {
-    #[error("Failed to parse XAddr as URL")]
+    #[error("Failed to parse XAddr as URL: {0}")]
     UrlParseError(#[from] url::ParseError),
-    #[error("XAddr must be an HTTP/HTTPS URL with a host")]
+    #[error("XAddr must be an HTTP/HTTPS URL with a host: {0}")]
     InvalidXAddrError(&'s str),
 }
 

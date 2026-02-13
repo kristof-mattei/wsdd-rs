@@ -1,11 +1,12 @@
 use std::io::Read;
 
 use crate::constants;
+use crate::soap::parser::BodyParsingError;
 use crate::soap::parser::generic::extract_endpoint_metadata;
 use crate::wsd::device::DeviceUri;
-use crate::xml::{GenericParsingError, Wrapper, find_child};
+use crate::xml::{Wrapper, find_child};
 
-type ParsedHelloResult = Result<Hello, GenericParsingError>;
+type ParsedHelloResult = Result<Hello, BodyParsingError>;
 
 pub struct Hello {
     pub endpoint: DeviceUri,

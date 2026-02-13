@@ -12,7 +12,7 @@ use crate::constants;
 use crate::network_address::NetworkAddress;
 use crate::soap::parser;
 use crate::soap::parser::xaddrs::XAddr;
-use crate::xml::{GenericParsingError, Wrapper, find_child, read_text};
+use crate::xml::{Wrapper, XmlError, find_child, read_text};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[repr(transparent)]
@@ -182,7 +182,7 @@ impl WSDDiscoveredDevice {
                 "MetadataSection",
             ) {
                 Ok((name, attributes)) => (name, attributes),
-                Err(GenericParsingError::MissingElement(_)) => {
+                Err(XmlError::MissingElement(_)) => {
                     // no more `MetadataSections to be found`
                     break;
                 },
@@ -271,7 +271,7 @@ impl WSDDiscoveredDevice {
 fn extract_wsdp_props<R>(
     reader: &mut Wrapper<R>,
     namespace: &str,
-) -> Result<HashMap<Box<str>, Box<str>>, GenericParsingError>
+) -> Result<HashMap<Box<str>, Box<str>>, XmlError>
 where
     R: Read,
 {
@@ -307,7 +307,7 @@ where
                 }
             },
             element @ XmlEvent::EndDocument => {
-                return Err(GenericParsingError::UnexpectedEvent(Box::new(element)));
+                return Err(XmlError::UnexpectedEvent(Box::new(element)));
             },
             _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
@@ -317,8 +317,7 @@ where
     }
 }
 
-type ExtractHostPropsResult =
-    Result<(HashSet<Box<str>>, Option<(Box<str>, Box<str>)>), GenericParsingError>;
+type ExtractHostPropsResult = Result<(HashSet<Box<str>>, Option<(Box<str>, Box<str>)>), XmlError>;
 
 fn extract_host_props<R>(reader: &mut Wrapper<R>) -> ExtractHostPropsResult
 where
@@ -336,7 +335,7 @@ where
                 // we'll need to ensure that the depth is always the same
                 (name, attributes)
             },
-            Err(GenericParsingError::MissingElement(_)) => {
+            Err(XmlError::MissingElement(_)) => {
                 // no `wsdp:Relationship` to be found`
                 return Ok((HashSet::new(), None));
             },
@@ -371,7 +370,7 @@ where
                             return Ok((types, display_name_belongs_to));
                         },
 
-                        Err(GenericParsingError::MissingElement(_)) => {
+                        Err(XmlError::MissingElement(_)) => {
                             // no `Host` to be found, so we have just closed the `WSDP_RELATIONSHIP`
                             // we are now in `<wsx:MetadataSection>`
 
@@ -486,10 +485,10 @@ mod tests {
 
     use crate::constants;
     use crate::wsd::device::extract_wsdp_props;
-    use crate::xml::{GenericParsingError, Wrapper, find_child};
+    use crate::xml::{Wrapper, XmlError, find_child};
 
     #[test]
-    fn extract_wsdp_props_reads_namespaced_children() -> Result<(), GenericParsingError> {
+    fn extract_wsdp_props_reads_namespaced_children() -> Result<(), XmlError> {
         let xml = format!(
             r#"<wsdp:ThisDevice xmlns:wsdp="{}">
                    <wsdp:FriendlyName>Printer</wsdp:FriendlyName>
@@ -530,6 +529,6 @@ mod tests {
 
         let bag = extract_wsdp_props(&mut reader, constants::XML_WSDP_NAMESPACE);
 
-        assert_matches!(bag, Err(GenericParsingError::UnexpectedEvent(_)));
+        assert_matches!(bag, Err(XmlError::UnexpectedEvent(_)));
     }
 }

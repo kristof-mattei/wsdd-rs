@@ -11,9 +11,9 @@ use crate::constants;
 
 #[derive(Debug, Error)]
 pub enum TextReadError {
-    #[error("Found non-text-contents: `{0:?}`")]
+    #[error("Found non-text-contents: {0:?}")]
     NonTextContents(Box<XmlEvent>),
-    #[error("Error parsing XML")]
+    #[error("Error parsing XML: {0}")]
     XmlError(#[from] xml::reader::Error),
 }
 
@@ -120,23 +120,19 @@ where
     }
 }
 
-#[derive(Error, Debug)]
-pub enum GenericParsingError {
-    #[error("Error parsing XML")]
-    XmlError(#[from] xml::reader::Error),
-    #[error("Error reading text")]
+#[derive(Debug, Error)]
+pub enum XmlError {
+    #[error("Error parsing XML: {0}")]
+    ReaderError(#[from] xml::reader::Error),
+    #[error("Error reading text: {0}")]
     TextReadError(#[from] TextReadError),
-    #[error("Missing `{0}`")]
-    MissingElement(Box<str>),
-    #[error("Invalid element order")]
-    InvalidElementOrder,
-    #[error("Invalid UUID")]
-    InvalidUrnUuid(#[from] uuid::Error),
-    #[error("Unexpected event")]
+    #[error("Unexpected event: {0:?}")]
     UnexpectedEvent(Box<XmlEvent>),
+    #[error("Missing element: {0}")]
+    MissingElement(Box<str>),
 }
 
-type FindDescendantResult = Result<(OwnedName, Vec<OwnedAttribute>), GenericParsingError>;
+type FindDescendantResult = Result<(OwnedName, Vec<OwnedAttribute>), XmlError>;
 
 pub fn find_child<R>(
     reader: &mut Wrapper<R>,
@@ -176,7 +172,7 @@ where
                         "Could not find element"
                     );
 
-                    return Err(GenericParsingError::MissingElement(
+                    return Err(XmlError::MissingElement(
                         missing_element.to_string().into_boxed_str(),
                     ));
                 }
@@ -197,9 +193,7 @@ where
         prefix: None,
     };
 
-    Err(GenericParsingError::MissingElement(
-        name.to_string().into_boxed_str(),
-    ))
+    Err(XmlError::MissingElement(name.to_string().into_boxed_str()))
 }
 
 #[cfg(test)]
@@ -209,7 +203,7 @@ mod tests {
     use xml::attribute::OwnedAttribute;
     use xml::name::OwnedName;
 
-    use crate::xml::{GenericParsingError, Wrapper, find_child};
+    use crate::xml::{Wrapper, XmlError, find_child};
 
     #[test]
     fn parse_generic_body_missing_element() {
@@ -230,7 +224,7 @@ mod tests {
         let _result = find_child(&mut reader, None, "Level2").unwrap();
         let result = find_child(&mut reader, Some("urn:level3_ns"), "Level3");
 
-        assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "{urn:level3_ns}Level3");
+        assert_matches!(result, Err(XmlError::MissingElement(name)) if &*name == "{urn:level3_ns}Level3");
     }
 
     #[test]
@@ -258,7 +252,7 @@ mod tests {
         let _result = find_child(&mut reader, None, "Level4");
         let result = find_child(&mut reader, Some("urn:level5_ns"), "Level5");
 
-        assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "{urn:level5_ns}Level5");
+        assert_matches!(result, Err(XmlError::MissingElement(name)) if &*name == "{urn:level5_ns}Level5");
     }
 
     #[test]
@@ -301,7 +295,7 @@ mod tests {
         let _result = find_child(&mut reader, Some("urn:first"), "Envelope");
         let result = find_child(&mut reader, Some("urn:first"), "Body");
 
-        assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "{urn:first}Body");
+        assert_matches!(result, Err(XmlError::MissingElement(name)) if &*name == "{urn:first}Body");
     }
 
     #[test]
@@ -352,6 +346,6 @@ mod tests {
 
         let result = find_child(&mut reader, None, "NotFound");
 
-        assert_matches!(result, Err(GenericParsingError::MissingElement(name)) if &*name == "NotFound");
+        assert_matches!(result, Err(XmlError::MissingElement(name)) if &*name == "NotFound");
     }
 }
