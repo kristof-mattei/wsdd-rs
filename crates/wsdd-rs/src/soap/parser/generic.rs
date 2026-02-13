@@ -35,7 +35,7 @@ where
                 }
             },
             element @ XmlEvent::EndDocument => {
-                return Err(GenericParsingError::UnspectedEvent(Box::new(element)));
+                return Err(GenericParsingError::UnexpectedEvent(Box::new(element)));
             },
             _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
@@ -101,7 +101,7 @@ where
                 }
             },
             element @ XmlEvent::EndDocument => {
-                return Err(GenericParsingError::UnspectedEvent(Box::new(element)));
+                return Err(GenericParsingError::UnexpectedEvent(Box::new(element)));
             },
             _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
