@@ -108,21 +108,74 @@ where
 
 impl Probe {
     pub fn requested_type_match(&self) -> bool {
-        let mut requested_type_match = false;
-
-        for &(ref namespace, ref name) in &self.types {
-            match (&**namespace, &**name) {
+        self.types.iter().any(|&(ref namespace, ref name)| {
+            matches!(
+                (&**namespace, &**name),
                 (constants::XML_WSDP_NAMESPACE, "Device")
-                | (constants::XML_PUB_NAMESPACE, "Computer") => {
-                    requested_type_match = true;
-                    break;
-                },
-                _ => {
-                    continue;
-                },
-            }
-        }
+                    | (constants::XML_PUB_NAMESPACE, "Computer")
+            )
+        })
+    }
+}
 
-        requested_type_match
+#[cfg(test)]
+mod tests {
+    use hashbrown::HashSet;
+
+    use crate::constants;
+    use crate::soap::parser::probe::Probe;
+
+    fn build_probe(types: &[(&str, &str)]) -> Probe {
+        Probe {
+            types: types
+                .iter()
+                .map(|&(namespace, name)| (Box::from(namespace), Box::from(name)))
+                .collect::<HashSet<_>>(),
+        }
+    }
+
+    #[test]
+    fn both_types_matches() {
+        let probe = build_probe(&[
+            (constants::XML_WSDP_NAMESPACE, "Device"),
+            (constants::XML_PUB_NAMESPACE, "Computer"),
+        ]);
+
+        assert!(probe.requested_type_match());
+    }
+
+    #[test]
+    fn wsdp_device_alone_matches() {
+        let probe = build_probe(&[(constants::XML_WSDP_NAMESPACE, "Device")]);
+
+        assert!(probe.requested_type_match());
+    }
+
+    #[test]
+    fn pub_computer_alone_matches() {
+        let probe = build_probe(&[(constants::XML_PUB_NAMESPACE, "Computer")]);
+
+        assert!(probe.requested_type_match());
+    }
+
+    #[test]
+    fn right_namespace_wrong_name_does_not_match() {
+        let probe = build_probe(&[(constants::XML_WSDP_NAMESPACE, "Printer")]);
+
+        assert!(!probe.requested_type_match());
+    }
+
+    #[test]
+    fn right_name_wrong_namespace_does_not_match() {
+        let probe = build_probe(&[("urn:wrong", "Device")]);
+
+        assert!(!probe.requested_type_match());
+    }
+
+    #[test]
+    fn all_wrong_does_not_match() {
+        let probe = build_probe(&[("urn:wrong", "Wrong")]);
+
+        assert!(!probe.requested_type_match());
     }
 }
