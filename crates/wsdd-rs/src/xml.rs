@@ -12,7 +12,7 @@ use crate::constants;
 #[derive(Debug, Error)]
 pub enum TextReadError {
     #[error("Found non-text-contents: `{0:?}`")]
-    NonTextContents(XmlEvent),
+    NonTextContents(Box<XmlEvent>),
     #[error("Error parsing XML")]
     XmlError(#[from] xml::reader::Error),
 }
@@ -108,9 +108,9 @@ where
                     return Ok(Some(trimmed.to_owned()));
                 }
             },
-            element @ XmlEvent::StartElement { .. } => {
-                // no start elements allowed in our text nodes
-                return Err(TextReadError::NonTextContents(element));
+            element @ (XmlEvent::StartElement { .. } | XmlEvent::EndDocument) => {
+                // no start elements or premature end-of-document allowed in our text nodes
+                return Err(TextReadError::NonTextContents(Box::new(element)));
             },
             _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
@@ -132,8 +132,8 @@ pub enum GenericParsingError {
     InvalidElementOrder,
     #[error("Invalid UUID")]
     InvalidUrnUuid(#[from] uuid::Error),
-    #[error("Invalid starting position")]
-    InvalidDocumentPosition,
+    #[error("Unspected event")]
+    UnspectedEvent(Box<XmlEvent>),
 }
 
 type FindDescendantResult = Result<(OwnedName, Vec<OwnedAttribute>), GenericParsingError>;

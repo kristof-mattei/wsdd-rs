@@ -146,13 +146,15 @@ impl MessageHandlerError {
                     "Error while decoding XML",
                 );
             },
-            &MessageHandlerError::GenericParsingError(
-                GenericParsingError::InvalidDocumentPosition,
-            ) => {
+            &MessageHandlerError::GenericParsingError(GenericParsingError::UnspectedEvent(
+                ref event,
+            ))
+            | &MessageHandlerError::HeaderError(HeaderError::UnspectedEvent(ref event)) => {
                 event!(
                     Level::ERROR,
+                    ?event,
                     wsd_message = %String::from_utf8_lossy(buffer),
-                    "XML parsing function called at incorrect document position"
+                    "XML parsing hit unexpected XmlEvent"
                 );
             },
         }
@@ -173,6 +175,8 @@ pub enum HeaderError {
     TextReadError(#[from] TextReadError),
     #[error("Error parsing XML")]
     XmlError(#[from] xml::reader::Error),
+    #[error("Unexpected event")]
+    UnspectedEvent(Box<XmlEvent>),
 }
 
 type RawMessageResult<R> = Result<(Header, bool, Wrapper<R>), MessageHandlerError>;
@@ -441,6 +445,9 @@ where
                 if reader.depth() < entry_depth {
                     break;
                 }
+            },
+            element @ XmlEvent::EndDocument => {
+                return Err(HeaderError::UnspectedEvent(Box::new(element)));
             },
             _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
