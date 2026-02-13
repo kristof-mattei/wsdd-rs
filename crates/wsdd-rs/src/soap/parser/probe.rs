@@ -108,21 +108,14 @@ where
 
 impl Probe {
     pub fn requested_type_match(&self) -> bool {
-        let mut requested_type_match = false;
-
-        for &(ref namespace, ref name) in &self.types {
-            match (&**namespace, &**name) {
+        self.types.iter().any(|&(ref namespace, ref name)| {
+            matches!(
+                (&**namespace, &**name),
                 (constants::XML_WSDP_NAMESPACE, "Device")
-                | (constants::XML_PUB_NAMESPACE, "Computer") => {
-                    requested_type_match = true;
-                    break;
-                },
-                _ => {
-                    continue;
-                },
-            }
-        }
+                    | (constants::XML_PUB_NAMESPACE, "Computer")
+            )
+        });
 
-        requested_type_match
+        false
     }
 }
