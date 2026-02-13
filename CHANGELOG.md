@@ -1,5 +1,5 @@
 <!-- header goes here -->
-## [0.0.1] - 2026-02-08
+## [0.0.1] - 2026-02-13
 
 ### 🚀 Features
 
@@ -114,6 +114,8 @@
 - Back to manual parsing for efficiency - ([e939418](https://github.com/kristof-mattei/wsdd-rs/commit/e939418528aca0897cc1a205d23be85b29a81646))
 - Move to crates - ([51ff0f0](https://github.com/kristof-mattei/wsdd-rs/commit/51ff0f0005f659b594dca4a7e007e7b11e00dc9a))
 - Modernize build - ([80a409e](https://github.com/kristof-mattei/wsdd-rs/commit/80a409e515740565941b92c6694d7ef4470f6ba9))
+- Use `CARGO_TARGET_DIR` to separate caches - ([d6a7766](https://github.com/kristof-mattei/wsdd-rs/commit/d6a776643631728c2ca8e02fd87eaf46328f6d45))
+- Move depth tracking to reader - ([bb70cf7](https://github.com/kristof-mattei/wsdd-rs/commit/bb70cf76a54f0455924181f0625a250fe11837af))
 
 ### 🐛 Bug Fixes
 
@@ -267,6 +269,8 @@
 - *(deps)* Update rust crate clap to 4.5.57 - ([baa1896](https://github.com/kristof-mattei/wsdd-rs/commit/baa18961aa56af23526a7a327a9d0d266c1c8b66))
 - *(deps)* Update rust crate time to 0.3.47 - ([e689993](https://github.com/kristof-mattei/wsdd-rs/commit/e6899937ca7931cbd5ebd2a9dec2de463bcd4155))
 - *(deps)* Update rust crate reqwest to 0.13.2 - ([c8a2b92](https://github.com/kristof-mattei/wsdd-rs/commit/c8a2b920068738f6d800d135dbc8885d4345a2f1))
+- *(deps)* Update rust crate rand to 0.10.0 - ([41d3bb2](https://github.com/kristof-mattei/wsdd-rs/commit/41d3bb25ae1b575d2f820a97ce7b94e8f9d480d3))
+- *(deps)* Update rust crate clap to 4.5.58 - ([44dd287](https://github.com/kristof-mattei/wsdd-rs/commit/44dd287912091724773f2df12ad227609efc4dd6))
 - *(upstream)* Devices are stored based on an opaque urn, not a UUID urn - ([8622dc1](https://github.com/kristof-mattei/wsdd-rs/commit/8622dc1857b1561d8503a329d4499a780796d96a))
 - Enabled codecov - ([70a7b60](https://github.com/kristof-mattei/wsdd-rs/commit/70a7b60de32c66a3c0315f67d0f8278d91fc797a))
 - Codecov - ([1f6458f](https://github.com/kristof-mattei/wsdd-rs/commit/1f6458f7eeb0ba5dd85d02ebcd67734c4dbd5623))
@@ -795,6 +799,26 @@
 - Don't hang should there be a question - ([61daade](https://github.com/kristof-mattei/wsdd-rs/commit/61daade12a64cdfd76ff4455a70e85be94204ef1))
 - Fix touch not relying on /bin/bash - ([ca5f315](https://github.com/kristof-mattei/wsdd-rs/commit/ca5f3154fa175d6f179cb60d7c225db0a0014925))
 - Use cancel instead of always - ([c9baab4](https://github.com/kristof-mattei/wsdd-rs/commit/c9baab421df6d6cbfab5fc1e898dd97f135edde0))
+- Success cannot be cancelled - ([ff32f1f](https://github.com/kristof-mattei/wsdd-rs/commit/ff32f1f2a5249a9fd1fa9f4c99d8edef8127f737))
+- Re-enable container cleanup - ([3681a0b](https://github.com/kristof-mattei/wsdd-rs/commit/3681a0bca2c2ad0057c77917856e91c1ade74587))
+- Use frozen - ([b83181e](https://github.com/kristof-mattei/wsdd-rs/commit/b83181e3a58ca79f8ffd24d1de3361d4325b27e9))
+- Quotes & reorder - ([4d3399d](https://github.com/kristof-mattei/wsdd-rs/commit/4d3399dfbaec8bcf300acca43fdd72e9ad27dbd8))
+- Name - ([dc479a1](https://github.com/kristof-mattei/wsdd-rs/commit/dc479a1ba61a84416c7e6c31c6ff297b474c9f68))
+- Copy into cache - ([3de174a](https://github.com/kristof-mattei/wsdd-rs/commit/3de174a45d3275b82def24db1eecc8d2d36ac52a))
+- The subsequent rust builds need to come from the warmed up cache, and nothing else - ([2236525](https://github.com/kristof-mattei/wsdd-rs/commit/2236525cd347dfd60455884374e0781256aab014))
+- More caches - ([df84e19](https://github.com/kristof-mattei/wsdd-rs/commit/df84e1901142303569f4360152934c207ea90bfc))
+- Trait name - ([897c988](https://github.com/kristof-mattei/wsdd-rs/commit/897c988dba6134dfa334adc1241207406e7dcd8d))
+- Ensure the build fails when the detect changes task fails - ([6a6d4c9](https://github.com/kristof-mattei/wsdd-rs/commit/6a6d4c959d983c819c2d75037b57e70da3ac6c7f))
+- Also depend on calculate-version - ([1e633b6](https://github.com/kristof-mattei/wsdd-rs/commit/1e633b6795d6f4f5ce99d6de5c146151ddaf9d63))
+- Add `env_vars`, set name - ([712dfd2](https://github.com/kristof-mattei/wsdd-rs/commit/712dfd2bbc1b0d0c9ffd613a6a9174e05b590c46))
+- Disable flags when not needed - ([6d2faf0](https://github.com/kristof-mattei/wsdd-rs/commit/6d2faf0a5ce7dddc927dcf37d26b1935e6e8e297))
+- Formatting - ([62ee9cf](https://github.com/kristof-mattei/wsdd-rs/commit/62ee9cf47b5b4754efa0bf6b6fca92c0e6b5ca9f))
+- Only check for the ones we want - ([97cb207](https://github.com/kristof-mattei/wsdd-rs/commit/97cb2077a83e6aa7abaf791fb1e66a78762be754))
+- Remove target caching in the miri build - ([784f1f6](https://github.com/kristof-mattei/wsdd-rs/commit/784f1f6d4797d7e1ea4b12e8837b9cdf0388f8f3))
+- Remove semgrep, it's useless - ([ab83edc](https://github.com/kristof-mattei/wsdd-rs/commit/ab83edcd3f5b0ed0aaa87a74c863ca4f45bfb2cc))
+- Don't leave the reader in the current element - ([117b0ba](https://github.com/kristof-mattei/wsdd-rs/commit/117b0ba3e1c08dc72f10f4e544415998a1b34f9a))
+- Handle `XmlEvent::EndDocument` - ([03bf8bb](https://github.com/kristof-mattei/wsdd-rs/commit/03bf8bb3ce805eabb4a510ff3b4e18d51cc57f3d))
+- Versions have v-prefix - ([75f32fe](https://github.com/kristof-mattei/wsdd-rs/commit/75f32fef1fc511587187c93475915de1266351a4))
 
 ### 🧪 Testing
 
@@ -832,7 +856,8 @@
 - *(fmt)* Fmt - ([3127622](https://github.com/kristof-mattei/wsdd-rs/commit/3127622bd617796592f739475df3ef1a4dab7beb))
 - *(release)* Release v1.5.0 - ([5504d10](https://github.com/kristof-mattei/wsdd-rs/commit/5504d10df91b765fac320a1ae903bc761017728c))
 - *(release)* Release 0.0.1 - ([a075d2d](https://github.com/kristof-mattei/wsdd-rs/commit/a075d2d69cd0202de3d42c8a888ca14b49e0051f))
-- *(release)* Release 0.0.1 - ([](https://github.com/kristof-mattei/wsdd-rs/commit/))
+- *(release)* Release 0.0.1 - ([447feac](https://github.com/kristof-mattei/wsdd-rs/commit/447feac9fc5ec3db231e7aa0973559e424eac5da))
+- *(release)* Release v0.0.1 - ([](https://github.com/kristof-mattei/wsdd-rs/commit/))
 - *(test)* We expect this to be the second message (0 indexed) - ([6a28f7f](https://github.com/kristof-mattei/wsdd-rs/commit/6a28f7fbc2ccba1f26d8c693c6299fb718325801))
 - *(test)* Set actual scope on interface - ([b9904db](https://github.com/kristof-mattei/wsdd-rs/commit/b9904dba5fe2d0dda9f50570cca842b82996320a))
 - *(version)* V1.2.0 - ([1dbbec6](https://github.com/kristof-mattei/wsdd-rs/commit/1dbbec608864c5cb559a90d8904996011daef52c))
@@ -1249,4 +1274,8 @@
 - Separate into different files - ([e3fed36](https://github.com/kristof-mattei/wsdd-rs/commit/e3fed36d9e96df2f905573a953d311ead26bb689))
 - Remove debug line - ([6a52ed9](https://github.com/kristof-mattei/wsdd-rs/commit/6a52ed9a45931dd5e4f7b8222607cdcdd2a20596))
 - Bump packages - ([b089e05](https://github.com/kristof-mattei/wsdd-rs/commit/b089e05d082876a08ebaeba1c16d50d5ccf249e5))
+- Bump packages - ([399dea8](https://github.com/kristof-mattei/wsdd-rs/commit/399dea81b4cbe59d73e3b7accc22895f63886674))
+- Rename - ([f4e3b17](https://github.com/kristof-mattei/wsdd-rs/commit/f4e3b17d41ad65c42cbc549eef09a12d80ce1fcb))
+- Simplify fn - ([a993c30](https://github.com/kristof-mattei/wsdd-rs/commit/a993c306e3dc1c7991303ee1b4870cfd2a6be92f))
+- Simplify requested_type_match check - ([7f2033b](https://github.com/kristof-mattei/wsdd-rs/commit/7f2033bdee8d802b579161d86256b628b1a60cc0))
 <!-- generated by git-cliff -->
