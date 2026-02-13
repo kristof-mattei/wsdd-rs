@@ -3,7 +3,7 @@ use std::io::Read;
 use crate::constants;
 use crate::soap::parser::generic::extract_endpoint_metadata;
 use crate::wsd::device::DeviceUri;
-use crate::xml::{GenericParsingError, Wrapper, find_descendant};
+use crate::xml::{GenericParsingError, Wrapper, find_child};
 
 type ParsedHelloResult = Result<Hello, GenericParsingError>;
 
@@ -20,7 +20,7 @@ pub fn parse_hello<R>(reader: &mut Wrapper<R>) -> ParsedHelloResult
 where
     R: Read,
 {
-    find_descendant(reader, Some(constants::XML_WSD_NAMESPACE), "Hello")?;
+    find_child(reader, Some(constants::XML_WSD_NAMESPACE), "Hello")?;
 
     let (endpoint, raw_xaddrs) = extract_endpoint_metadata(reader)?;
 
