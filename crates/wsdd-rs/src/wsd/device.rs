@@ -306,8 +306,8 @@ where
                     return Ok(bag);
                 }
             },
-            XmlEvent::EndDocument => {
-                return Err(GenericParsingError::InvalidDocumentPosition);
+            element @ XmlEvent::EndDocument => {
+                return Err(GenericParsingError::UnspectedEvent(Box::new(element)));
             },
             _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
@@ -530,6 +530,6 @@ mod tests {
 
         let bag = extract_wsdp_props(&mut reader, constants::XML_WSDP_NAMESPACE);
 
-        assert_matches!(bag, Err(GenericParsingError::InvalidDocumentPosition));
+        assert_matches!(bag, Err(GenericParsingError::UnspectedEvent(_)));
     }
 }
