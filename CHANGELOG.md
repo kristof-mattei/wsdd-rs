@@ -1,4 +1,15 @@
 <!-- header goes here -->
+## [0.0.2](https://github.com/kristof-mattei/wsdd-rs/compare/v0.0.1..v0.0.2) - 2026-02-14
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update rust crate uuid to 1.21.0 - ([306f84b](https://github.com/kristof-mattei/wsdd-rs/commit/306f84ba24834c1856e182f28b01acc395da2eaf))
+- Typo - ([4e9bdfb](https://github.com/kristof-mattei/wsdd-rs/commit/4e9bdfb8d6f0539e979a57c3ad16911f9da9f57b))
+- Simplify error structure - ([b311519](https://github.com/kristof-mattei/wsdd-rs/commit/b311519a05d5074ec970b792d1e950f9a46a5cb7))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Release v0.0.2 - ([](https://github.com/kristof-mattei/wsdd-rs/commit/))
 ## [0.0.1] - 2026-02-13
 
 ### 🚀 Features
@@ -857,7 +868,7 @@
 - *(release)* Release v1.5.0 - ([5504d10](https://github.com/kristof-mattei/wsdd-rs/commit/5504d10df91b765fac320a1ae903bc761017728c))
 - *(release)* Release 0.0.1 - ([a075d2d](https://github.com/kristof-mattei/wsdd-rs/commit/a075d2d69cd0202de3d42c8a888ca14b49e0051f))
 - *(release)* Release 0.0.1 - ([447feac](https://github.com/kristof-mattei/wsdd-rs/commit/447feac9fc5ec3db231e7aa0973559e424eac5da))
-- *(release)* Release v0.0.1 - ([](https://github.com/kristof-mattei/wsdd-rs/commit/))
+- *(release)* Release v0.0.1 - ([05e9425](https://github.com/kristof-mattei/wsdd-rs/commit/05e94258c8daca4550b38a71f1610fe089bfb439))
 - *(test)* We expect this to be the second message (0 indexed) - ([6a28f7f](https://github.com/kristof-mattei/wsdd-rs/commit/6a28f7fbc2ccba1f26d8c693c6299fb718325801))
 - *(test)* Set actual scope on interface - ([b9904db](https://github.com/kristof-mattei/wsdd-rs/commit/b9904dba5fe2d0dda9f50570cca842b82996320a))
 - *(version)* V1.2.0 - ([1dbbec6](https://github.com/kristof-mattei/wsdd-rs/commit/1dbbec608864c5cb559a90d8904996011daef52c))
