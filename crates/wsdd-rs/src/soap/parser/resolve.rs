@@ -4,10 +4,11 @@ use tracing::{Level, event};
 use uuid::fmt::Urn;
 
 use crate::constants;
+use crate::soap::parser::BodyParsingError;
 use crate::soap::parser::generic::extract_endpoint_reference_address;
-use crate::xml::{GenericParsingError, Wrapper, find_child};
+use crate::xml::{Wrapper, find_child};
 
-type ParsedResolveResult = Result<Resolve, GenericParsingError>;
+type ParsedResolveResult = Result<Resolve, BodyParsingError>;
 
 pub struct Resolve {
     pub addr_urn: Urn,
@@ -39,7 +40,7 @@ where
                 "invalid resolve request: address is not a valid urn"
             );
 
-            Err(GenericParsingError::InvalidUrnUuid(error))
+            Err(BodyParsingError::InvalidUrnUuid(error))
         },
     }
 }

@@ -4,12 +4,13 @@ use tracing::{Level, event};
 use xml::reader::XmlEvent;
 
 use crate::constants;
+use crate::soap::parser::BodyParsingError;
 use crate::wsd::device::DeviceUri;
-use crate::xml::{GenericParsingError, Wrapper, read_text};
+use crate::xml::{Wrapper, XmlError, read_text};
 
 pub fn extract_endpoint_reference_address<R>(
     reader: &mut Wrapper<R>,
-) -> Result<Box<str>, GenericParsingError>
+) -> Result<Box<str>, BodyParsingError>
 where
     R: Read,
 {
@@ -35,7 +36,7 @@ where
                 }
             },
             element @ XmlEvent::EndDocument => {
-                return Err(GenericParsingError::UnexpectedEvent(Box::new(element)));
+                return Err(XmlError::UnexpectedEvent(Box::new(element)).into());
             },
             _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
@@ -50,9 +51,7 @@ where
             "Missing wsa:EndpointReference/wsa:Address element. Ignored."
         );
 
-        return Err(GenericParsingError::MissingElement(
-            "wsa:EndpointReference/wsa:Address".into(),
-        ));
+        return Err(XmlError::MissingElement("wsa:EndpointReference/wsa:Address".into()).into());
     };
 
     Ok(address.into_boxed_str())
@@ -60,7 +59,7 @@ where
 
 pub fn extract_endpoint_metadata<R>(
     reader: &mut Wrapper<R>,
-) -> Result<(DeviceUri, Option<Box<str>>), GenericParsingError>
+) -> Result<(DeviceUri, Option<Box<str>>), BodyParsingError>
 where
     R: Read,
 {
@@ -77,13 +76,13 @@ where
                     match (name.namespace_ref(), &*name.local_name) {
                         (Some(constants::XML_WSA_NAMESPACE), "EndpointReference") => {
                             if endpoint.is_some() || xaddrs.is_some() {
-                                return Err(GenericParsingError::InvalidElementOrder);
+                                return Err(BodyParsingError::InvalidElementOrder);
                             }
                             endpoint = Some(extract_endpoint_reference_address(reader)?);
                         },
                         (Some(constants::XML_WSD_NAMESPACE), "XAddrs") => {
                             if endpoint.is_none() || xaddrs.is_some() {
-                                return Err(GenericParsingError::InvalidElementOrder);
+                                return Err(BodyParsingError::InvalidElementOrder);
                             }
 
                             xaddrs = read_text(reader)?;
@@ -101,7 +100,7 @@ where
                 }
             },
             element @ XmlEvent::EndDocument => {
-                return Err(GenericParsingError::UnexpectedEvent(Box::new(element)));
+                return Err(XmlError::UnexpectedEvent(Box::new(element)).into());
             },
             _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
@@ -116,9 +115,7 @@ where
             "Missing wsa:EndpointReference element. Ignored."
         );
 
-        return Err(GenericParsingError::MissingElement(
-            "wsa:EndpointReference".into(),
-        ));
+        return Err(XmlError::MissingElement("wsa:EndpointReference".into()).into());
     };
 
     Ok((DeviceUri::new(endpoint), xaddrs.map(String::into_boxed_str)))

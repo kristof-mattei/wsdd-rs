@@ -26,7 +26,7 @@ use crate::network_interface::NetworkInterface;
 use crate::soap::parser::get::Get;
 use crate::soap::{self, WSDMessage};
 use crate::wsd::device::DeviceUri;
-use crate::xml::{GenericParsingError, TextReadError, Wrapper, read_text};
+use crate::xml::{TextReadError, Wrapper, XmlError, read_text};
 
 pub struct MessageHandler {
     handled_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
@@ -40,143 +40,111 @@ pub struct Header {
     pub relates_to: Option<Urn>,
 }
 
-type ParsedHeaderResult = Result<Header, HeaderError>;
+#[derive(Error, Debug)]
+pub enum HeaderParsingError {
+    #[error("Error parsing XML: {0}")]
+    Xml(#[from] XmlError),
+    #[error("Missing Message Id")]
+    MissingMessageId,
+    #[error("Missing Action")]
+    MissingAction,
+    #[error("Invalid Message Id: {0}")]
+    InvalidMessageId(uuid::Error),
+    #[error("Invalid Relates To: {0}")]
+    InvalidRelatesTo(uuid::Error),
+}
+
+impl From<xml::reader::Error> for HeaderParsingError {
+    fn from(value: xml::reader::Error) -> Self {
+        Self::Xml(XmlError::from(value))
+    }
+}
+
+impl From<TextReadError> for HeaderParsingError {
+    fn from(value: TextReadError) -> Self {
+        Self::Xml(XmlError::from(value))
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum BodyParsingError {
+    #[error("Error parsing XML: {0}")]
+    Xml(#[from] XmlError),
+    #[error("Invalid element order")]
+    InvalidElementOrder,
+    #[error("Invalid UUID: {0}")]
+    InvalidUrnUuid(uuid::Error),
+}
+
+impl From<xml::reader::Error> for BodyParsingError {
+    fn from(value: xml::reader::Error) -> Self {
+        Self::Xml(XmlError::from(value))
+    }
+}
+
+impl From<TextReadError> for BodyParsingError {
+    fn from(value: TextReadError) -> Self {
+        Self::Xml(XmlError::from(value))
+    }
+}
+
+type ParsedHeaderResult = Result<Header, HeaderParsingError>;
 
 #[derive(Error, Debug)]
 pub enum MessageHandlerError {
     #[error("Message already processed")]
     DuplicateMessage,
-    #[error("Header Error")]
-    HeaderError(#[from] HeaderError),
-    #[error("Generic Parsing Error")]
-    GenericParsingError(#[from] GenericParsingError),
-    #[error("Invalid action")]
-    InvalidAction(Box<str>),
-    #[error("Error parsing XML")]
-    XmlError(#[from] xml::reader::Error),
+    #[error("Header parsing error: {0}")]
+    HeaderError(#[from] HeaderParsingError),
+    #[error("Body parsing error: {0}")]
+    BodyError(#[from] BodyParsingError),
+    #[error("Malformed action: {0}")]
+    MalformedAction(Box<str>),
+    #[error("Unsupported action: {0}")]
+    UnsupportedAction(Box<str>),
 }
+
 impl MessageHandlerError {
     #[track_caller]
     pub(crate) fn log(&self, buffer: &[u8]) {
-        match self {
-            &MessageHandlerError::DuplicateMessage => {
+        match *self {
+            MessageHandlerError::DuplicateMessage => {
                 // nothing
             },
-            &MessageHandlerError::GenericParsingError(GenericParsingError::InvalidElementOrder) => {
+            MessageHandlerError::HeaderError(ref error) => {
                 event!(
                     Level::TRACE,
-                    wsd_message = %String::from_utf8_lossy(buffer),
-                    "XML Message has elements in invalid order"
-                );
-            },
-            &MessageHandlerError::GenericParsingError(GenericParsingError::MissingElement(
-                ref element,
-            )) => {
-                event!(
-                    Level::TRACE,
-                    ?element,
-                    wsd_message = %String::from_utf8_lossy(buffer),
-                    "XML Message did not have required elements",
-                );
-            },
-            &MessageHandlerError::GenericParsingError(GenericParsingError::TextReadError(
-                ref error,
-            )) => {
-                event!(
-                    Level::TRACE,
-                    %error,
-                    wsd_message = %String::from_utf8_lossy(buffer),
-                    "XML Message text read error",
-                );
-            },
-            &MessageHandlerError::InvalidAction(ref malformed_action) => {
-                event!(
-                    Level::TRACE,
-                    malformed_action,
-                    wsd_message = %String::from_utf8_lossy(buffer),
-                    "XML Message Action was malformed",
-                );
-            },
-            &MessageHandlerError::HeaderError(
-                HeaderError::InvalidMessageId(ref uuid_error)
-                | HeaderError::InvalidRelatesTo(ref uuid_error),
-            )
-            | &MessageHandlerError::GenericParsingError(GenericParsingError::InvalidUrnUuid(
-                ref uuid_error,
-            )) => {
-                event!(
-                    Level::TRACE,
-                    ?uuid_error,
-                    wsd_message = %String::from_utf8_lossy(buffer),
-                    "XML Message Header was malformed",
-                );
-            },
-            &MessageHandlerError::HeaderError(
-                ref error @ (HeaderError::MissingAction | HeaderError::MissingMessageId),
-            ) => {
-                event!(
-                    Level::TRACE,
-                    %error,
-                    wsd_message = %String::from_utf8_lossy(buffer),
-                    "XML Message Header is missing pieces",
-                );
-            },
-            &MessageHandlerError::HeaderError(HeaderError::TextReadError(
-                ref error @ TextReadError::NonTextContents(ref content),
-            )) => {
-                event!(
-                    Level::ERROR,
-                    ?error,
-                    ?content,
-                    wsd_message = %String::from_utf8_lossy(buffer),
-                    "Invalid contents in text element",
-                );
-            },
-            &MessageHandlerError::HeaderError(HeaderError::TextReadError(
-                TextReadError::XmlError(ref error),
-            ))
-            | &MessageHandlerError::HeaderError(HeaderError::XmlError(ref error))
-            | &MessageHandlerError::XmlError(ref error)
-            | &MessageHandlerError::GenericParsingError(GenericParsingError::XmlError(ref error)) =>
-            {
-                event!(
-                    Level::ERROR,
                     ?error,
                     wsd_message = %String::from_utf8_lossy(buffer),
-                    "Error while decoding XML",
+                    "Header parsing error",
                 );
             },
-            &MessageHandlerError::GenericParsingError(GenericParsingError::UnexpectedEvent(
-                ref event,
-            ))
-            | &MessageHandlerError::HeaderError(HeaderError::UnexpectedEvent(ref event)) => {
+            MessageHandlerError::BodyError(ref error) => {
                 event!(
-                    Level::ERROR,
-                    ?event,
+                    Level::TRACE,
+                    ?error,
                     wsd_message = %String::from_utf8_lossy(buffer),
-                    "XML parsing hit unexpected XmlEvent"
+                    "Body parsing error",
+                );
+            },
+            MessageHandlerError::MalformedAction(ref action) => {
+                event!(
+                    Level::TRACE,
+                    %action,
+                    wsd_message = %String::from_utf8_lossy(buffer),
+                    "Malformed action",
+                );
+            },
+            MessageHandlerError::UnsupportedAction(ref action) => {
+                event!(
+                    Level::TRACE,
+                    %action,
+                    wsd_message = %String::from_utf8_lossy(buffer),
+                    "Unsupported action",
                 );
             },
         }
     }
-}
-
-#[derive(Error, Debug)]
-pub enum HeaderError {
-    #[error("Missing Message Id")]
-    MissingMessageId,
-    #[error("Missing Action")]
-    MissingAction,
-    #[error("Invalid Message Id")]
-    InvalidMessageId(uuid::Error),
-    #[error("Invalid Relates To")]
-    InvalidRelatesTo(uuid::Error),
-    #[error("Error reading text")]
-    TextReadError(#[from] TextReadError),
-    #[error("Error parsing XML")]
-    XmlError(#[from] xml::reader::Error),
-    #[error("Unexpected event")]
-    UnexpectedEvent(Box<XmlEvent>),
 }
 
 type RawMessageResult<R> = Result<(Header, bool, Wrapper<R>), MessageHandlerError>;
@@ -202,7 +170,7 @@ where
     loop {
         // this is the only loop that should hit `XmlEvent::StartDocument` and `XmlEvent::Doctype`
         // in all other parsing functions we could theoretically mark them as `unreachable!()`
-        match reader.next()? {
+        match reader.next().map_err(HeaderParsingError::from)? {
             XmlEvent::StartElement { name, .. } => {
                 if name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE) {
                     if name.local_name == "Header" {
@@ -226,7 +194,9 @@ where
     }
 
     let Some(header) = header else {
-        return Err(GenericParsingError::MissingElement(Box::from("soap:Header")).into());
+        return Err(
+            HeaderParsingError::from(XmlError::MissingElement(Box::from("soap:Header"))).into(),
+        );
     };
 
     Ok((header, has_body, reader))
@@ -245,7 +215,7 @@ fn validate_action_body(
     );
 
     let Some((_, action_method)) = header.action.rsplit_once('/') else {
-        return Err(MessageHandlerError::InvalidAction(header.action));
+        return Err(MessageHandlerError::MalformedAction(header.action));
     };
 
     if let Some((src, network_interface)) = source_info {
@@ -268,7 +238,9 @@ fn validate_action_body(
     }
 
     if !has_body {
-        return Err(GenericParsingError::MissingElement(Box::from("soap:Body")).into());
+        return Err(
+            BodyParsingError::from(XmlError::MissingElement(Box::from("soap:Body"))).into(),
+        );
     }
 
     Ok(header)
@@ -290,16 +262,7 @@ fn parse_message_body(
         },
         constants::WSD_PROBE => Ok(soap::parser::probe::parse_probe(&mut reader)?.into()),
         constants::WSD_RESOLVE => Ok(soap::parser::resolve::parse_resolve(&mut reader)?.into()),
-        action => {
-            event!(
-                Level::DEBUG,
-                ?action,
-                ?header.message_id,
-                "Unhandled action",
-            );
-
-            Err(MessageHandlerError::InvalidAction(Box::from(action)))
-        },
+        action => Err(MessageHandlerError::UnsupportedAction(Box::from(action))),
     }?;
 
     Ok(response)
@@ -420,7 +383,8 @@ where
                         "MessageID" => {
                             let m_id = read_text(reader)?
                                 .map(|m_id| {
-                                    m_id.parse::<Urn>().map_err(HeaderError::InvalidMessageId)
+                                    m_id.parse::<Urn>()
+                                        .map_err(HeaderParsingError::InvalidMessageId)
                                 })
                                 .transpose()?;
 
@@ -429,7 +393,8 @@ where
                         "RelatesTo" => {
                             let r_to = read_text(reader)?
                                 .map(|r_to| {
-                                    r_to.parse::<Urn>().map_err(HeaderError::InvalidRelatesTo)
+                                    r_to.parse::<Urn>()
+                                        .map_err(HeaderParsingError::InvalidRelatesTo)
                                 })
                                 .transpose()?;
 
@@ -447,7 +412,7 @@ where
                 }
             },
             element @ XmlEvent::EndDocument => {
-                return Err(HeaderError::UnexpectedEvent(Box::new(element)));
+                return Err(XmlError::UnexpectedEvent(Box::new(element)).into());
             },
             _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
@@ -457,11 +422,11 @@ where
     }
 
     let Some(message_id) = message_id else {
-        return Err(HeaderError::MissingMessageId);
+        return Err(HeaderParsingError::MissingMessageId);
     };
 
     let Some(action) = action else {
-        return Err(HeaderError::MissingAction);
+        return Err(HeaderParsingError::MissingAction);
     };
 
     Ok(Header {

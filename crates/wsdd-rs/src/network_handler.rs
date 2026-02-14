@@ -75,9 +75,9 @@ pub struct NetworkHandler {
     start_tx: StartSender<()>,
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug, Error)]
 pub enum NetworkHandlerError {
-    #[error("Interface Detection Failed")]
+    #[error("Interface Detection Failed: {0}")]
     InterfaceDetectionFailed(std::io::Error),
 }
 

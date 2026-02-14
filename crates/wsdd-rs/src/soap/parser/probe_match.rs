@@ -1,11 +1,12 @@
 use std::io::Read;
 
 use crate::constants;
+use crate::soap::parser::BodyParsingError;
 use crate::soap::parser::generic::extract_endpoint_metadata;
 use crate::wsd::device::DeviceUri;
-use crate::xml::{GenericParsingError, Wrapper, find_child};
+use crate::xml::{Wrapper, find_child};
 
-type ParsedProbeMatchResult = Result<ProbeMatch, GenericParsingError>;
+type ParsedProbeMatchResult = Result<ProbeMatch, BodyParsingError>;
 
 pub struct ProbeMatch {
     pub endpoint: DeviceUri,

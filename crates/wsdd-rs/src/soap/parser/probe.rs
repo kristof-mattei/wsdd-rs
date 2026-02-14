@@ -5,9 +5,10 @@ use tracing::{Level, event};
 use xml::reader::XmlEvent;
 
 use crate::constants;
-use crate::xml::{GenericParsingError, Wrapper, find_child, read_text};
+use crate::soap::parser::BodyParsingError;
+use crate::xml::{Wrapper, XmlError, find_child, read_text};
 
-type ParsedProbeResult = Result<Probe, GenericParsingError>;
+type ParsedProbeResult = Result<Probe, BodyParsingError>;
 
 pub struct Probe {
     pub types: HashSet<(Box<str>, Box<str>)>,
@@ -68,7 +69,7 @@ where
                 }
             },
             element @ XmlEvent::EndDocument => {
-                return Err(GenericParsingError::UnexpectedEvent(Box::new(element)));
+                return Err(XmlError::UnexpectedEvent(Box::new(element)).into());
             },
             _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
