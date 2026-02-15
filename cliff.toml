@@ -126,7 +126,7 @@ sort_commits = "oldest"
 # Process submodules commits
 recurse_submodules = false
 
-tag_pattern = "v[0-9].*"
+tag_pattern = "v[0-9]+\\.[0-9]+\\.[0-9]+$"
 
 [bump]
 breaking_always_bump_major = false
