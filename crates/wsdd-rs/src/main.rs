@@ -276,6 +276,9 @@ async fn start_tasks() -> Shutdown {
         );
     }
 
+    // done enrolling tasks in this tracker
+    tasks.close();
+
     // now we wait forever for either
     // * SIGTERM
     // * CTRL+c (SIGINT)
@@ -305,8 +308,6 @@ async fn start_tasks() -> Shutdown {
 
     // backup, in case we forgot a dropguard somewhere
     cancellation_token.cancel();
-
-    tasks.close();
 
     if timeout(Duration::from_secs(10), tasks.wait())
         .await
