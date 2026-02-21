@@ -214,12 +214,12 @@ fn try_chroot(config: &Config) -> Option<Shutdown> {
 /// starts all the tasks, such as the web server, the key refresh, ...
 /// ensures all tasks are gracefully shutdown in case of error, `CTRL+c` or `SIGTERM`.
 async fn start_tasks() -> Shutdown {
+    print_header();
+
     let config = match get_config() {
         Ok(config) => config,
         Err(error) => return Shutdown::from(error),
     };
-
-    print_header();
 
     config.log();
 
