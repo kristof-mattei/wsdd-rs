@@ -308,7 +308,7 @@ jobs:
     env:
       # most features don't work with miri
       CARGO_FEATURES: ""
-      TOOLCHAIN: "nightly-2026-01-26"
+      TOOLCHAIN: "nightly"
     steps:
       - *checkout
 
