@@ -41,7 +41,7 @@ hyper-util = { version = "0.1.20", features = ["tracing"] }
 ipnet = "2.11.0"
 libc.workspace = true
 mimalloc = { version = "0.1.48", features = ["v3"] }
-pin-project = "1.1.10"
+pin-project = "1.1.11"
 rand = "0.10.0"
 reqwest = { version = "0.13.2", default-features = false, features = [
     "native-tls",
