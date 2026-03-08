@@ -15,7 +15,7 @@ repository = "https://github.com/kristof-mattei/wsdd-rs"
 include = ["crates/**", "/LICENSE", "/LICENSE-*"]
 
 [workspace.dependencies]
-libc = "0.2.182"
+libc = "0.2.183"
 zerocopy = "0.8.40"
 
 [workspace.metadata.spellcheck]
