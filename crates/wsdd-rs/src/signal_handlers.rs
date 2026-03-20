@@ -49,7 +49,7 @@ pub fn set_up_handler(
     let sig_handler_ptr = sig_handler as usize;
     #[cfg(not(target_os = "macos"))]
     // SAFETY: all zeroes are valid for `sigset_t`
-    let sa_mask = unsafe { std::mem::MaybeUninit::<libc::sigset_t>::zeroed().assume_init() };
+    let sa_mask = unsafe { std::mem::zeroed::<libc::sigset_t>() };
 
     #[cfg(target_os = "macos")]
     let sa_mask = 0;
