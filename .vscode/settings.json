@@ -11,10 +11,10 @@
         // "systemd",
         // "tokio-console"
     ],
-    "rust-analyzer.server.extraEnv": {},
     "rust-analyzer.runnables.extraEnv": {
         // "RUSTC_BOOTSTRAP": "1",
         "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
     },
-    "rust-analyzer.rustfmt.extraArgs": ["+nightly"]
+    "rust-analyzer.rustfmt.extraArgs": ["+nightly"],
+    "rust-analyzer.server.extraEnv": {}
 }
