@@ -231,8 +231,9 @@
             "type": "lldb",
             "request": "launch",
             "cargo": {
-                "args": ["test", "--bin=wsdd-rs"]
+                "args": ["test", "--no-run", "--bin=wsdd-rs"]
             },
+            "args": [],
             "env": {
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
@@ -245,8 +246,9 @@
             "type": "lldb",
             "request": "launch",
             "cargo": {
-                "args": ["test", "--test=integration_tests"]
+                "args": ["test", "--no-run", "--test=integration_tests"]
             },
+            "args": [],
             "env": {
                 "RUST_BACKTRACE": "1",
                 "RUST_LOG": "DEBUG,wsdd_rs=TRACE"
