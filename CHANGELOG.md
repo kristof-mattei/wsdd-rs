@@ -1,4 +1,48 @@
 <!-- header goes here -->
+## [0.2.1](https://github.com/kristof-mattei/wsdd-rs/compare/v0.2.0..v0.2.1) - 2026-03-29
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update rust crate clap to 4.5.61 by @renovate[bot] ([`56bd113`](https://github.com/kristof-mattei/wsdd-rs/commit/56bd113fb2b599f113411e8aee23974510d8c37c))
+- *(deps)* Update rust crate clap to 4.6.0 by @renovate[bot] ([`e80a89d`](https://github.com/kristof-mattei/wsdd-rs/commit/e80a89de8a514b648eff17c1f1e408ee246ddd29))
+- *(deps)* Update rust crate tracing-subscriber to 0.3.23 by @renovate[bot] ([`78f2c57`](https://github.com/kristof-mattei/wsdd-rs/commit/78f2c57fd331f1ec3ea9c4870a4707316b5b2839))
+- *(deps)* Update rust crate uuid to 1.23.0 by @renovate[bot] ([`b49d7c4`](https://github.com/kristof-mattei/wsdd-rs/commit/b49d7c49ce7e3042582be9f103d0809883342267))
+- Embed the calculated version in the image label, not the PR it came from by @kristof-mattei ([`654a96c`](https://github.com/kristof-mattei/wsdd-rs/commit/654a96c34a4b33e89f2b6eecc443d8097b5cd1c2))
+- `std::mem::zeroed()` asserts that all zeroes is valid for the struct by @kristof-mattei ([`6a712fb`](https://github.com/kristof-mattei/wsdd-rs/commit/6a712fb01808144363d6696ac9dc712c5ca4a183))
+- Use skopeo to copy the image, as buildx wrapped the image in an OCI image index by @kristof-mattei ([`7c179a2`](https://github.com/kristof-mattei/wsdd-rs/commit/7c179a2ac1aeda46e08cb54383d904aed5dc5c8b))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(build)* Switch to annotations by @kristof-mattei ([`c041c69`](https://github.com/kristof-mattei/wsdd-rs/commit/c041c6948bd7f7318ad320659d8233d416bcbd6a))
+- *(release)* Release v0.2.1
+- Skip more when releasing by @kristof-mattei ([`762a3bc`](https://github.com/kristof-mattei/wsdd-rs/commit/762a3bcfe9b2c625e41b5020939e9bcdb3fb8815))
+- Lowercase variables by @kristof-mattei ([`dff26ac`](https://github.com/kristof-mattei/wsdd-rs/commit/dff26ac37a1826cf3b57c9c848aba1a9de9e5d67))
+- Lowercase variables & path hygiene by @kristof-mattei ([`668015d`](https://github.com/kristof-mattei/wsdd-rs/commit/668015dbabaf3cf2f2480896ed7737e4b8f7490c))
+- Disable formatting on push to main, different array syntax by @kristof-mattei ([`c1d61b0`](https://github.com/kristof-mattei/wsdd-rs/commit/c1d61b06948c3bde697272a21bd27c66d0cb5fd8))
+- Use same [] syntax everywhere for yaml by @kristof-mattei ([`a90eeff`](https://github.com/kristof-mattei/wsdd-rs/commit/a90eefffd10960f09c14efb2200161ef2663f6d2))
+- Move / add mold by @kristof-mattei ([`639f3a5`](https://github.com/kristof-mattei/wsdd-rs/commit/639f3a50a697763fc25b8e0c4934a16ad8e83cd6))
+- Improve caching by @kristof-mattei ([`6841817`](https://github.com/kristof-mattei/wsdd-rs/commit/6841817ca0e5927b21745c8608c9e2a972ea92fc))
+- Test by @kristof-mattei ([`222103f`](https://github.com/kristof-mattei/wsdd-rs/commit/222103f074c48ae8645cb5ae37c4fed4fcea447d))
+- Remove test by @kristof-mattei ([`c73b6d6`](https://github.com/kristof-mattei/wsdd-rs/commit/c73b6d6d7181b52e65b4e94f37bbde8ddeabac74))
+- Not needed by @kristof-mattei ([`e92df85`](https://github.com/kristof-mattei/wsdd-rs/commit/e92df85de4a37e42e9774e6f983c27ebdf09b3c2))
+- Remove suprious newline by @kristof-mattei ([`be7faa7`](https://github.com/kristof-mattei/wsdd-rs/commit/be7faa7228268d8f0b97fdb7348ac2a552e3c6c6))
+- Sort by @kristof-mattei ([`a8b16ab`](https://github.com/kristof-mattei/wsdd-rs/commit/a8b16abc3b307557d1728ff6a5d6f8f217498382))
+- Move build cache by @kristof-mattei ([`0ab1328`](https://github.com/kristof-mattei/wsdd-rs/commit/0ab1328687c12bf15ae3e21bb031a2d38632c4c8))
+- Rename by @kristof-mattei ([`6544b67`](https://github.com/kristof-mattei/wsdd-rs/commit/6544b67f89b757a1a86986291fd1efef42f07445))
+- Stop skopeo from trying to infer type by @kristof-mattei ([`66ca282`](https://github.com/kristof-mattei/wsdd-rs/commit/66ca282f0a4adcd2a4ee63f8ad69c9c822ac88ac))
+- Ensure we copy all layers by @kristof-mattei ([`6428eb8`](https://github.com/kristof-mattei/wsdd-rs/commit/6428eb84930a25d7c8d4fda31d0f32dc4ad55f9f))
+- Also run build & spellcheck once merged, this warms up the cache for subsequent builds by @kristof-mattei ([`e6db1ca`](https://github.com/kristof-mattei/wsdd-rs/commit/e6db1ca9fa9b6353c81e9c3870a31fdde32303ce))
+- Speed up spellcheck compilation with sccache by @kristof-mattei ([`5e53dcd`](https://github.com/kristof-mattei/wsdd-rs/commit/5e53dcd877309fafb5cf123c5a39697ccd2f47d7))
+- Enable sccache for spellcheck by @kristof-mattei ([`d99fa01`](https://github.com/kristof-mattei/wsdd-rs/commit/d99fa01ce7d28befefea7882be13557a9d9ffc24))
+- Remove cache cargo for spellcheck, as it doesn't do anything by @kristof-mattei ([`565017e`](https://github.com/kristof-mattei/wsdd-rs/commit/565017e04b68ad7de0efad32f98ba111041d773a))
+- Use a spellcheck fork for quicker installation by @kristof-mattei ([`93bfd69`](https://github.com/kristof-mattei/wsdd-rs/commit/93bfd695bd0a871fbdb10a269b4d266194303729))
+- No need to do spellcheck on push anymore, as we use pre-built binaries by @kristof-mattei ([`afa2005`](https://github.com/kristof-mattei/wsdd-rs/commit/afa2005227a8ac9fb078efe5abf6f9cad8f52c37))
+- Convert manifest to index annotations by @kristof-mattei ([`affcb0a`](https://github.com/kristof-mattei/wsdd-rs/commit/affcb0a26c6f809ad3d355a997a62075ed22b827))
+- Don't run machete on push by @kristof-mattei ([`f6bdbd8`](https://github.com/kristof-mattei/wsdd-rs/commit/f6bdbd887606edbc9ed3a52615afe69de39ed220))
+- If no component bumps, bump patch by @kristof-mattei ([`fd4eca7`](https://github.com/kristof-mattei/wsdd-rs/commit/fd4eca7deceb7d644a16cb69879411090ed9e599))
+- Add labels to the image too by @kristof-mattei ([`ba1cd05`](https://github.com/kristof-mattei/wsdd-rs/commit/ba1cd0507337529bdf19dbd8da2bd78014f79ced))
+- Ability to publish to docker hub as well by @kristof-mattei ([`99103ff`](https://github.com/kristof-mattei/wsdd-rs/commit/99103ffedc5d4a2322609d3ce9f7e11af58bb1cd))
+- Clarify name by @kristof-mattei ([`4ea320e`](https://github.com/kristof-mattei/wsdd-rs/commit/4ea320e830a0c69560e9ebc67fcdcca0f4687605))
 ## [0.2.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.1.0..v0.2.0) - 2026-03-12
 
 ### 🚀 Features
@@ -31,7 +75,7 @@
 
 - *(ci)* Allow empty by @kristof-mattei ([`e6ce7fb`](https://github.com/kristof-mattei/wsdd-rs/commit/e6ce7fbb2a3ceb423c1c822dca92049f70f43ea2))
 - *(ci)* Comment cleanup by @kristof-mattei ([`4fa99d9`](https://github.com/kristof-mattei/wsdd-rs/commit/4fa99d9cace57656b0c725fa995cbf85cedd07b4))
-- *(release)* Release v0.2.0
+- *(release)* Release v0.2.0 by @github-actions[bot] ([`654bec4`](https://github.com/kristof-mattei/wsdd-rs/commit/654bec493224d94034d343f18fa4cfe467752aa0))
 - Remove colon by @kristof-mattei ([`635bd83`](https://github.com/kristof-mattei/wsdd-rs/commit/635bd8386a4c2e47f7cace63f54341234c80218f))
 - Decrease verbosity by @kristof-mattei ([`64c0473`](https://github.com/kristof-mattei/wsdd-rs/commit/64c04739ca3f7bb5711c2adc38a690f6413f48e7))
 - Print header before trying to parse config by @kristof-mattei ([`ffcdbc0`](https://github.com/kristof-mattei/wsdd-rs/commit/ffcdbc0cee15c434faac5b74060ef9e33b5d468b))
