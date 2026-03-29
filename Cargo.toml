@@ -16,7 +16,7 @@ include = ["crates/**", "/LICENSE", "/LICENSE-*"]
 
 [workspace.dependencies]
 libc = "0.2.183"
-zerocopy = "0.8.47"
+zerocopy = "0.8.48"
 
 [workspace.metadata.spellcheck]
 config = "spellcheck.toml"
