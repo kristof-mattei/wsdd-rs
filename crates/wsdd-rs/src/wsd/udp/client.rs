@@ -412,7 +412,7 @@ async fn perform_metadata_exchange(
 
         match response {
             Ok(response) => {
-                return handle_metadata(devices, &response, endpoint, xaddr, bound_to).await;
+                return handle_metadata(devices, &response, endpoint, &xaddr, bound_to).await;
             },
             Err(error) => {
                 let url = error.url().map(ToString::to_string);
@@ -443,18 +443,16 @@ async fn handle_metadata(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     meta: &[u8],
     device_uri: DeviceUri,
-    xaddr: XAddr,
+    xaddr: &XAddr,
     bound_to: &NetworkAddress,
 ) -> Result<(), eyre::Report> {
-    match devices.write().await.entry(device_uri) {
-        hashbrown::hash_map::Entry::Occupied(mut occupied_entry) => {
-            occupied_entry.get_mut().update(meta, &xaddr, bound_to)?;
-        },
-        hashbrown::hash_map::Entry::Vacant(vacant_entry) => {
-            let key = vacant_entry.key().clone();
+    let mut guard = devices.write().await;
 
-            vacant_entry.insert(WSDDiscoveredDevice::new(key, meta, &xaddr, bound_to)?);
-        },
+    if let Some(device) = guard.get_mut(&device_uri) {
+        device.update(&device_uri, meta, xaddr, bound_to)?;
+    } else {
+        let device = WSDDiscoveredDevice::new(&device_uri, meta, xaddr, bound_to)?;
+        guard.insert(device_uri, device);
     }
 
     Ok(())
@@ -998,7 +996,7 @@ mod tests {
             Arc::clone(&client_devices),
             metadata.as_bytes(),
             device_uri.clone(),
-            XAddr::try_from("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721")
+            &XAddr::try_from("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721")
                 .unwrap(),
             &client_network_address,
         )
@@ -1058,7 +1056,7 @@ mod tests {
             Arc::clone(&client_devices),
             metadata.as_bytes(),
             device_uri.clone(),
-            XAddr::try_from("http://192.168.100.50:8018/wsd").unwrap(),
+            &XAddr::try_from("http://192.168.100.50:8018/wsd").unwrap(),
             &client_network_address,
         )
         .await;
@@ -1115,7 +1113,7 @@ mod tests {
             Arc::clone(&client_devices),
             metadata.as_bytes(),
             device_uri.clone(),
-            XAddr::try_from("http://192.168.100.71:5357/18de7c97-6277-43fe-9552-cac98a7610f5/")
+            &XAddr::try_from("http://192.168.100.71:5357/18de7c97-6277-43fe-9552-cac98a7610f5/")
                 .unwrap(),
             &client_network_address,
         )
