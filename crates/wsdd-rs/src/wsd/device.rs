@@ -47,7 +47,6 @@ impl std::fmt::Display for DeviceUri {
 
 #[derive(Clone, Debug)]
 pub struct WSDDiscoveredDevice {
-    device_uri: DeviceUri,
     addresses: HashMap<Box<str>, HashSet<Box<str>>>,
     props: HashMap<Box<str>, Box<str>>,
     display_name: Option<Box<str>>,
@@ -57,13 +56,12 @@ pub struct WSDDiscoveredDevice {
 
 impl WSDDiscoveredDevice {
     pub fn new(
-        device_uri: DeviceUri,
+        device_uri: &DeviceUri,
         meta: &[u8],
         xaddr: &XAddr,
         network_address: &NetworkAddress,
     ) -> Result<Self, eyre::Report> {
         let mut device = Self {
-            device_uri,
             addresses: HashMap::new(),
             props: HashMap::new(),
             display_name: None,
@@ -71,7 +69,7 @@ impl WSDDiscoveredDevice {
             types: HashSet::new(),
         };
 
-        device.update(meta, xaddr, network_address)?;
+        device.update(device_uri, meta, xaddr, network_address)?;
 
         Ok(device)
     }
@@ -98,6 +96,7 @@ impl WSDDiscoveredDevice {
 
     pub fn update(
         &mut self,
+        device_uri: &DeviceUri,
         meta: &[u8],
         xaddr: &XAddr,
         network_address: &NetworkAddress,
@@ -130,7 +129,7 @@ impl WSDDiscoveredDevice {
             if first_time {
                 event!(
                     Level::INFO,
-                    device_uri = %self.device_uri,
+                    device_uri = %device_uri,
                     %display_name,
                     %belongs_to,
                     addr = %xaddr,
@@ -143,7 +142,7 @@ impl WSDDiscoveredDevice {
             if first_time {
                 event!(
                     Level::INFO,
-                    device_uri = %self.device_uri,
+                    device_uri = %device_uri,
                     display_name = %friendly_name,
                     addr = %xaddr,
                     "Discovered device"
@@ -155,7 +154,7 @@ impl WSDDiscoveredDevice {
 
         event!(
             Level::DEBUG,
-            device_uri = %self.device_uri,
+            device_uri = %device_uri,
             addresses = ?self.addresses,
             types = ?self.types,
             props = ?self.props,
