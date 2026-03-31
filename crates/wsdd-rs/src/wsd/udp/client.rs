@@ -5,6 +5,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use color_eyre::eyre;
 use hashbrown::HashMap;
+use hashbrown::hash_map::RawEntryMut;
 use ipnet::IpNet;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -412,7 +413,7 @@ async fn perform_metadata_exchange(
 
         match response {
             Ok(response) => {
-                return handle_metadata(devices, &response, endpoint, xaddr, bound_to).await;
+                return handle_metadata(devices, &response, endpoint, &xaddr, bound_to).await;
             },
             Err(error) => {
                 let url = error.url().map(ToString::to_string);
@@ -443,17 +444,21 @@ async fn handle_metadata(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     meta: &[u8],
     device_uri: DeviceUri,
-    xaddr: XAddr,
+    xaddr: &XAddr,
     bound_to: &NetworkAddress,
 ) -> Result<(), eyre::Report> {
-    match devices.write().await.entry(device_uri) {
-        hashbrown::hash_map::Entry::Occupied(mut occupied_entry) => {
-            occupied_entry.get_mut().update(meta, &xaddr, bound_to)?;
-        },
-        hashbrown::hash_map::Entry::Vacant(vacant_entry) => {
-            let key = vacant_entry.key().clone();
+    match devices.write().await.raw_entry_mut().from_key(&device_uri) {
+        RawEntryMut::Occupied(mut raw_occupied_entry_mut) => {
+            // I really hate that the normal entry api doesn't have a way to get a (&key, &mut value).
+            // now I have to play with fire (&mut key) just to get a &key.
+            let (key, value) = raw_occupied_entry_mut.get_key_value_mut();
 
-            vacant_entry.insert(WSDDiscoveredDevice::new(key, meta, &xaddr, bound_to)?);
+            value.update(&*key, meta, xaddr, bound_to)?;
+        },
+        RawEntryMut::Vacant(raw_vacant_entry_mut) => {
+            let new = WSDDiscoveredDevice::new(&device_uri, meta, xaddr, bound_to)?;
+
+            raw_vacant_entry_mut.insert(device_uri, new);
         },
     }
 
@@ -998,7 +1003,7 @@ mod tests {
             Arc::clone(&client_devices),
             metadata.as_bytes(),
             device_uri.clone(),
-            XAddr::try_from("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721")
+            &XAddr::try_from("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721")
                 .unwrap(),
             &client_network_address,
         )
@@ -1058,7 +1063,7 @@ mod tests {
             Arc::clone(&client_devices),
             metadata.as_bytes(),
             device_uri.clone(),
-            XAddr::try_from("http://192.168.100.50:8018/wsd").unwrap(),
+            &XAddr::try_from("http://192.168.100.50:8018/wsd").unwrap(),
             &client_network_address,
         )
         .await;
@@ -1115,7 +1120,7 @@ mod tests {
             Arc::clone(&client_devices),
             metadata.as_bytes(),
             device_uri.clone(),
-            XAddr::try_from("http://192.168.100.71:5357/18de7c97-6277-43fe-9552-cac98a7610f5/")
+            &XAddr::try_from("http://192.168.100.71:5357/18de7c97-6277-43fe-9552-cac98a7610f5/")
                 .unwrap(),
             &client_network_address,
         )
