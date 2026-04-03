@@ -47,7 +47,7 @@ rand = "0.10.0"
 reqwest = { version = "0.13.2", default-features = false, features = [
     "native-tls",
 ] }
-ringmap = "0.2.3"
+ringmap = "0.2.4"
 shared = { path = "../shared" }
 socket2 = { version = "0.6.3", features = ["all"] }
 thiserror = "2.0.18"
