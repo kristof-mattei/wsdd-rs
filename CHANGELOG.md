@@ -1,4 +1,22 @@
 <!-- header goes here -->
+## [0.2.3](https://github.com/kristof-mattei/wsdd-rs/compare/v0.2.2..v0.2.3) - 2026-04-05
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update rust crate ringmap to 0.2.4 by [@renovate[bot]](https://github.com/renovate[bot]) ([`e694b62`](https://github.com/kristof-mattei/wsdd-rs/commit/e694b626883ad66cd4c77277230b868c13c2d8c8))
+- *(deps)* Update rust crate tokio to 1.51.0 by [@renovate[bot]](https://github.com/renovate[bot]) ([`99eeeae`](https://github.com/kristof-mattei/wsdd-rs/commit/99eeeae3b2a5080d1be84ce8b125f096925e9894))
+- We can now release without having ANY tags on the repo by [@kristof-mattei](https://github.com/kristof-mattei) ([`80cbc44`](https://github.com/kristof-mattei/wsdd-rs/commit/80cbc44189bf721637640dbf7257f852ca82f877))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* Upload edge to docker.io by [@kristof-mattei](https://github.com/kristof-mattei) ([`f235bac`](https://github.com/kristof-mattei/wsdd-rs/commit/f235bac7e7bf720a4c42711f12fa57cb361c6adf))
+- *(ci)* Reattest every stage by [@kristof-mattei](https://github.com/kristof-mattei) ([`19c7f04`](https://github.com/kristof-mattei/wsdd-rs/commit/19c7f048fad6474f798c9d810dbe1d2278731d6d))
+- *(ci)* Use skopeo wherever possible by [@kristof-mattei](https://github.com/kristof-mattei) ([`50a6786`](https://github.com/kristof-mattei/wsdd-rs/commit/50a678665fd200021293e938c0b493891077a5ef))
+- *(ci)* Scout for visualizing cves etc by [@kristof-mattei](https://github.com/kristof-mattei) ([`2fe6e06`](https://github.com/kristof-mattei/wsdd-rs/commit/2fe6e06ada42423eeacec95be6a29ccbd3806068))
+- *(ci)* Username is not secret by [@kristof-mattei](https://github.com/kristof-mattei) ([`7d168f4`](https://github.com/kristof-mattei/wsdd-rs/commit/7d168f446d7bbdabaf2bd58c2818af2a65b07c41))
+- *(release)* Release v0.2.3
+- Sort tags by creation time by [@kristof-mattei](https://github.com/kristof-mattei) ([`39ce04b`](https://github.com/kristof-mattei/wsdd-rs/commit/39ce04bd2b02ef17d869c2828bf3e641854a25b1))
+- Fix fmt by [@kristof-mattei](https://github.com/kristof-mattei) ([`1c63af5`](https://github.com/kristof-mattei/wsdd-rs/commit/1c63af585079ee98e0b241fc6683c31982159106))
 ## [0.2.2](https://github.com/kristof-mattei/wsdd-rs/compare/v0.2.1..v0.2.2) - 2026-04-01
 
 ### 🐛 Bug Fixes
@@ -8,7 +26,7 @@
 
 ### ⚙️ Miscellaneous Tasks
 
-- *(release)* Release v0.2.2
+- *(release)* Release v0.2.2 by [@github-actions[bot]](https://github.com/github-actions[bot]) ([`8033b52`](https://github.com/kristof-mattei/wsdd-rs/commit/8033b5224863375c7df75931079e40e86147d8ca))
 - Prepare doesn't need the cache & toolchain by [@kristof-mattei](https://github.com/kristof-mattei) ([`a255daf`](https://github.com/kristof-mattei/wsdd-rs/commit/a255daf9066d8a79c834e73fee97a89c7d32b1a2))
 - Render username link by [@kristof-mattei](https://github.com/kristof-mattei) ([`19debe7`](https://github.com/kristof-mattei/wsdd-rs/commit/19debe713ec00dc8f6534a65bab8f1f9ef5dccec))
 ## [0.2.1](https://github.com/kristof-mattei/wsdd-rs/compare/v0.2.0..v0.2.1) - 2026-03-29
