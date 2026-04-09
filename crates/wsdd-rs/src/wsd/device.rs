@@ -105,11 +105,14 @@ impl WSDDiscoveredDevice {
 
         let host = xaddr.host_str().to_owned().into_boxed_str();
 
+        let key = network_address.interface.name();
+
         // is this the first time we see this device with this name on this interface?
-        let first_time = match self.addresses.entry_ref(network_address.interface.name()) {
+        let first_time = match self.addresses.entry_ref(key) {
             EntryRef::Occupied(mut occupied_entry) => occupied_entry.get_mut().insert(host),
             EntryRef::Vacant(vacant_entry_ref) => {
-                vacant_entry_ref.insert(HashSet::from_iter([host]));
+                vacant_entry_ref
+                    .insert_with_key(key.to_owned().into_boxed_str(), HashSet::from_iter([host]));
 
                 // A vacant entry means this interface was not tracked before, so inserting
                 // the initial set of addresses always represents a new insertion.
