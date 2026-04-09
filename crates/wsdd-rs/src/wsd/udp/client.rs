@@ -5,7 +5,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use color_eyre::eyre;
 use hashbrown::HashMap;
-use hashbrown::hash_map::RawEntryMut;
+use hashbrown::hash_map::Entry;
 use ipnet::IpNet;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -447,18 +447,16 @@ async fn handle_metadata(
     xaddr: &XAddr,
     bound_to: &NetworkAddress,
 ) -> Result<(), eyre::Report> {
-    match devices.write().await.raw_entry_mut().from_key(&device_uri) {
-        RawEntryMut::Occupied(mut raw_occupied_entry_mut) => {
-            // I really hate that the normal entry api doesn't have a way to get a (&key, &mut value).
-            // now I have to play with fire (&mut key) just to get a &key.
-            let (key, value) = raw_occupied_entry_mut.get_key_value_mut();
+    match devices.write().await.entry(device_uri) {
+        Entry::Occupied(occupied_entry) => {
+            let (key, value) = occupied_entry.into_entry();
 
-            value.update(&*key, meta, xaddr, bound_to)?;
+            value.update(key, meta, xaddr, bound_to)?;
         },
-        RawEntryMut::Vacant(raw_vacant_entry_mut) => {
-            let new = WSDDiscoveredDevice::new(&device_uri, meta, xaddr, bound_to)?;
+        Entry::Vacant(vacant_entry) => {
+            let new = WSDDiscoveredDevice::new(vacant_entry.key(), meta, xaddr, bound_to)?;
 
-            raw_vacant_entry_mut.insert(device_uri, new);
+            vacant_entry.insert(new);
         },
     }
 
