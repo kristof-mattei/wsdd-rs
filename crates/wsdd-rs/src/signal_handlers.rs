@@ -7,34 +7,69 @@ use libc::{c_int, sigaction};
 use tokio::signal::unix::SignalKind;
 #[cfg(not(any(target_os = "windows", miri)))]
 use tokio::signal::unix::signal;
-use tracing::Level;
+use tracing::{Level, event};
 
+use crate::shutdown::Shutdown;
 use crate::wrap_and_report;
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Waiting for `try_into()` to be come const"
+)]
+const SIGINT: u8 = libc::SIGINT as u8;
+
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Waiting for `try_into()` to be come const"
+)]
+const SIGTERM: u8 = libc::SIGTERM as u8;
+
 /// Waits forever for a `SIGTERM`.
-pub async fn wait_for_sigterm() -> Result<(), std::io::Error> {
-    #[cfg(not(any(target_os = "windows", miri)))]
-    {
+pub async fn wait_for_sigterm() -> Shutdown {
+    async fn wait_for_sigterm() -> Result<(), std::io::Error> {
+        #[cfg(not(any(target_os = "windows", miri)))]
         signal(SignalKind::terminate())?.recv().await;
-    };
 
-    #[cfg(any(target_os = "windows", miri))]
-    let _r = std::future::pending::<Result<(), std::io::Error>>().await;
+        #[cfg(any(target_os = "windows", miri))]
+        let _r = std::future::pending::<Result<(), std::io::Error>>().await;
 
-    Ok(())
+        Ok(())
+    }
+
+    if let Err(error) = wait_for_sigterm().await {
+        const MESSAGE: &str = "Failed to register SIGTERM handler";
+
+        Shutdown::UnexpectedError(eyre::Report::from(error).wrap_err(MESSAGE))
+    } else {
+        // we completed because ...
+        event!(Level::WARN, "SIGTERM detected, stopping all tasks");
+
+        Shutdown::Signal(SIGTERM)
+    }
 }
 
 /// Waits forever for a `SIGINT`.
-pub async fn wait_for_sigint() -> Result<(), std::io::Error> {
-    #[cfg(not(any(target_os = "windows", miri)))]
-    {
+pub async fn wait_for_sigint() -> Shutdown {
+    async fn wait_for_sigint() -> Result<(), std::io::Error> {
+        #[cfg(not(any(target_os = "windows", miri)))]
         tokio::signal::ctrl_c().await?;
-    };
 
-    #[cfg(any(target_os = "windows", miri))]
-    let _r = std::future::pending::<Result<(), std::io::Error>>().await;
+        #[cfg(any(target_os = "windows", miri))]
+        let _r = std::future::pending::<Result<(), std::io::Error>>().await;
 
-    Ok(())
+        Ok(())
+    }
+
+    if let Err(error) = wait_for_sigint().await {
+        const MESSAGE: &str = "Failed to register CTRL+c handler";
+
+        Shutdown::UnexpectedError(eyre::Report::from(error).wrap_err(MESSAGE))
+    } else {
+        // we completed because ...
+        event!(Level::WARN, "CTRL+c detected, stopping all tasks");
+
+        Shutdown::Signal(SIGINT)
+    }
 }
 
 #[expect(unused, reason = "WIP")]

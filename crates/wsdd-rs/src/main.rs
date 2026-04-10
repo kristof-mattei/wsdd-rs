@@ -284,27 +284,19 @@ async fn start_tasks() -> Shutdown {
     // * CTRL+c (SIGINT)
     // * a message on the shutdown channel, sent either by the server task or
     // another task when they complete (which means they failed)
-    tokio::select! {
+    let shutdown_reason = tokio::select! {
         result = signal_handlers::wait_for_sigterm() => {
-            if let Err(error) = result {
-                event!(Level::ERROR, ?error, "Failed to register SIGERM handler, aborting");
-            } else {
-                // we completed because ...
-                event!(Level::WARN, "Sigterm detected, stopping all tasks");
-            }
+            result
         },
         result = signal_handlers::wait_for_sigint() => {
-            if let Err(error) = result {
-                event!(Level::ERROR, ?error, "Failed to register CTRL+c handler, aborting");
-            } else {
-                // we completed because ...
-                event!(Level::WARN, "CTRL+c detected, stopping all tasks");
-            }
+            result
         },
         () = cancellation_token.cancelled() => {
             event!(Level::WARN, "Underlying task stopped, stopping all others tasks");
+
+            Shutdown::OperationalFailure { code: ExitCode::FAILURE, message: "Some task unexpectedly failed which triggered a shutdown." }
         },
-    }
+    };
 
     // backup, in case we forgot a dropguard somewhere
     cancellation_token.cancel();
@@ -316,9 +308,9 @@ async fn start_tasks() -> Shutdown {
         event!(Level::ERROR, "Tasks didn't stop within allotted time!");
     }
 
-    event!(Level::INFO, "Done");
+    event!(Level::INFO, "Shutdown completed");
 
-    Shutdown::Success
+    shutdown_reason
 }
 
 async fn launch_address_monitor(
