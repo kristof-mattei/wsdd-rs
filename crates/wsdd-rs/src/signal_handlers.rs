@@ -24,19 +24,19 @@ const SIGINT: u8 = libc::SIGINT as u8;
 )]
 const SIGTERM: u8 = libc::SIGTERM as u8;
 
+async fn register_sigterm_handler() -> Result<(), std::io::Error> {
+    #[cfg(not(any(target_os = "windows", miri)))]
+    signal(SignalKind::terminate())?.recv().await;
+
+    #[cfg(any(target_os = "windows", miri))]
+    let _r = std::future::pending::<Result<(), std::io::Error>>().await;
+
+    Ok(())
+}
+
 /// Waits forever for a `SIGTERM`.
 pub async fn wait_for_sigterm() -> Shutdown {
-    async fn wait_for_sigterm() -> Result<(), std::io::Error> {
-        #[cfg(not(any(target_os = "windows", miri)))]
-        signal(SignalKind::terminate())?.recv().await;
-
-        #[cfg(any(target_os = "windows", miri))]
-        let _r = std::future::pending::<Result<(), std::io::Error>>().await;
-
-        Ok(())
-    }
-
-    if let Err(error) = wait_for_sigterm().await {
+    if let Err(error) = register_sigterm_handler().await {
         const MESSAGE: &str = "Failed to register SIGTERM handler";
 
         Shutdown::UnexpectedError(eyre::Report::from(error).wrap_err(MESSAGE))
@@ -48,24 +48,23 @@ pub async fn wait_for_sigterm() -> Shutdown {
     }
 }
 
+async fn register_sigint_handler() -> Result<(), std::io::Error> {
+    #[cfg(not(any(target_os = "windows", miri)))]
+    tokio::signal::ctrl_c().await?;
+
+    #[cfg(any(target_os = "windows", miri))]
+    let _r = std::future::pending::<Result<(), std::io::Error>>().await;
+
+    Ok(())
+}
+
 /// Waits forever for a `SIGINT`.
 pub async fn wait_for_sigint() -> Shutdown {
-    async fn wait_for_sigint() -> Result<(), std::io::Error> {
-        #[cfg(not(any(target_os = "windows", miri)))]
-        tokio::signal::ctrl_c().await?;
-
-        #[cfg(any(target_os = "windows", miri))]
-        let _r = std::future::pending::<Result<(), std::io::Error>>().await;
-
-        Ok(())
-    }
-
-    if let Err(error) = wait_for_sigint().await {
+    if let Err(error) = register_sigint_handler().await {
         const MESSAGE: &str = "Failed to register CTRL+c handler";
 
         Shutdown::UnexpectedError(eyre::Report::from(error).wrap_err(MESSAGE))
     } else {
-        // we completed because ...
         event!(Level::WARN, "CTRL+c detected, stopping all tasks");
 
         Shutdown::Signal(SIGINT)
