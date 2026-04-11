@@ -14,13 +14,13 @@ use crate::wrap_and_report;
 
 #[expect(
     clippy::cast_possible_truncation,
-    reason = "Waiting for `try_into()` to be come const"
+    reason = "Waiting for `try_into()` to become const"
 )]
 const SIGINT: u8 = libc::SIGINT as u8;
 
 #[expect(
     clippy::cast_possible_truncation,
-    reason = "Waiting for `try_into()` to be come const"
+    reason = "Waiting for `try_into()` to become const"
 )]
 const SIGTERM: u8 = libc::SIGTERM as u8;
 
