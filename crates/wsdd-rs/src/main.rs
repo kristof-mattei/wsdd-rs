@@ -282,8 +282,8 @@ async fn start_tasks() -> Shutdown {
     // now we wait forever for either
     // * SIGTERM
     // * CTRL+c (SIGINT)
-    // * a message on the shutdown channel, sent either by the server task or
-    // another task when they complete (which means they failed)
+    // * cancellation of the shutdown token, triggered by another task when it
+    //   completes unexpectedly (which means it failed)
     let shutdown_reason = tokio::select! {
         result = signal_handlers::wait_for_sigterm() => {
             result
