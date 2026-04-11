@@ -5,7 +5,9 @@ use tracing::{Level, event};
 
 /// Represents all ways the application can terminate.
 pub enum Shutdown {
+    #[expect(unused, reason = "Application is a daemon")]
     Success,
+    Signal(u8),
     OperationalFailure {
         code: ExitCode,
         message: &'static str,
@@ -17,6 +19,7 @@ impl std::fmt::Display for Shutdown {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
             Shutdown::Success => write!(f, "Clean shutdown"),
+            Shutdown::Signal(s) => write!(f, "Signal {}", s),
             Shutdown::OperationalFailure { code, message } => {
                 write!(
                     f,
@@ -37,8 +40,20 @@ impl Termination for Shutdown {
     fn report(self) -> ExitCode {
         match self {
             Shutdown::Success => ExitCode::SUCCESS,
+            Shutdown::Signal(signal) => {
+                let exit_code = ExitCode::from(signal + 128);
+
+                event!(
+                    Level::INFO,
+                    signal = signal,
+                    exit_code = ?exit_code,
+                    "Passing along exit signal"
+                );
+
+                exit_code
+            },
             Shutdown::OperationalFailure { code, message } => {
-                event!(Level::ERROR, ?code, ?message);
+                event!(Level::ERROR, ?code, message);
 
                 code
             },
