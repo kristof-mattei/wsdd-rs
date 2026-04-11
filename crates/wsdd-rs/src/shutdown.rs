@@ -41,14 +41,16 @@ impl Termination for Shutdown {
         match self {
             Shutdown::Success => ExitCode::SUCCESS,
             Shutdown::Signal(signal) => {
+                let exit_code = ExitCode::from(signal + 128);
+
                 event!(
                     Level::INFO,
-                    signal = %format!("{} + 128", signal),
-                    exit_code = ?ExitCode::from(signal + 128),
+                    signal = signal,
+                    exit_code = ?exit_code,
                     "Passing along exit signal"
                 );
 
-                ExitCode::from(signal + 128)
+                exit_code
             },
             Shutdown::OperationalFailure { code, message } => {
                 event!(Level::ERROR, ?code, message);
