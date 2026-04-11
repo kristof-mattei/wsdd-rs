@@ -41,7 +41,6 @@ pub async fn wait_for_sigterm() -> Shutdown {
 
         Shutdown::UnexpectedError(eyre::Report::from(error).wrap_err(MESSAGE))
     } else {
-        // we completed because ...
         event!(Level::WARN, "SIGTERM detected, stopping all tasks");
 
         Shutdown::Signal(SIGTERM)
