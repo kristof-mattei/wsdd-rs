@@ -294,7 +294,10 @@ async fn start_tasks() -> Shutdown {
         () = cancellation_token.cancelled() => {
             event!(Level::WARN, "Underlying task stopped, stopping all others tasks");
 
-            Shutdown::OperationalFailure { code: ExitCode::FAILURE, message: "Some task unexpectedly failed which triggered a shutdown." }
+            Shutdown::OperationalFailure {
+                code: ExitCode::FAILURE,
+                message: "Some task unexpectedly failed which triggered a shutdown."
+            }
         },
     };
 
