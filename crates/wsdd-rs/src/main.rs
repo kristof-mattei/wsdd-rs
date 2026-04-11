@@ -285,12 +285,7 @@ async fn start_tasks() -> Shutdown {
     // * cancellation of the shutdown token, triggered by another task when it
     //   completes unexpectedly (which means it failed)
     let shutdown_reason = tokio::select! {
-        result = signal_handlers::wait_for_sigterm() => {
-            result
-        },
-        result = signal_handlers::wait_for_sigint() => {
-            result
-        },
+        biased;
         () = cancellation_token.cancelled() => {
             event!(Level::WARN, "Underlying task stopped, stopping all others tasks");
 
@@ -298,6 +293,12 @@ async fn start_tasks() -> Shutdown {
                 code: ExitCode::FAILURE,
                 message: "Some task unexpectedly failed which triggered a shutdown."
             }
+        },
+        result = signal_handlers::wait_for_sigterm() => {
+            result
+        },
+        result = signal_handlers::wait_for_sigint() => {
+            result
         },
     };
 
