@@ -287,7 +287,7 @@ async fn start_tasks() -> Shutdown {
     let shutdown_reason = tokio::select! {
         biased;
         () = cancellation_token.cancelled() => {
-            event!(Level::WARN, "Underlying task stopped, stopping all others tasks");
+            event!(Level::WARN, "Underlying task stopped, stopping all other tasks");
 
             Shutdown::OperationalFailure {
                 code: ExitCode::FAILURE,
