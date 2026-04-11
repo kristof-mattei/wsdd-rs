@@ -48,10 +48,10 @@ pub async fn wait_for_sigterm() -> Shutdown {
 }
 
 async fn register_sigint_handler() -> Result<(), std::io::Error> {
-    #[cfg(not(any(target_os = "windows", miri)))]
+    #[cfg(not(miri))]
     tokio::signal::ctrl_c().await?;
 
-    #[cfg(any(target_os = "windows", miri))]
+    #[cfg(miri)]
     let _r = std::future::pending::<Result<(), std::io::Error>>().await;
 
     Ok(())
