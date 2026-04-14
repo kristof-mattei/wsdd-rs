@@ -18,7 +18,7 @@ systemd = []
 tokio-console = ["dep:console-subscriber"]
 
 [dependencies]
-axum = { version = "0.8.8", default-features = false, features = [
+axum = { version = "0.8.9", default-features = false, features = [
     "http1",
     "macros",
     "tokio",
