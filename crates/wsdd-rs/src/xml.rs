@@ -86,10 +86,11 @@ where
         #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
             XmlEvent::CData(s) | XmlEvent::Characters(s) | XmlEvent::Whitespace(s)
-                if (!text.is_empty() || !s.trim().is_empty()) => {
-                    // leading whitespace is ignored, might as well never store it
-                    text.push_str(&s);
-                },
+                if (!text.is_empty() || !s.trim().is_empty()) =>
+            {
+                // leading whitespace is ignored, might as well never store it
+                text.push_str(&s);
+            },
             XmlEvent::EndElement { .. } => {
                 // since we don't descend into other elements we don't need to worry here
                 // if this element is on 'our' level
@@ -148,32 +149,30 @@ where
         match reader.next()? {
             XmlEvent::StartElement {
                 name, attributes, ..
-            }
-                if reader.depth() == entry_depth + 1
-                    && name.namespace_ref() == namespace
-                    && name.local_name == path
-                => {
-                    return Ok((name, attributes));
-                },
-            XmlEvent::EndElement { name }
-                if reader.depth() < entry_depth => {
-                    let missing_element = Name {
-                        local_name: path,
-                        namespace,
-                        prefix: None,
-                    };
+            } if reader.depth() == entry_depth + 1
+                && name.namespace_ref() == namespace
+                && name.local_name == path =>
+            {
+                return Ok((name, attributes));
+            },
+            XmlEvent::EndElement { name } if reader.depth() < entry_depth => {
+                let missing_element = Name {
+                    local_name: path,
+                    namespace,
+                    prefix: None,
+                };
 
-                    event!(
-                        Level::TRACE,
-                        now_in = %name,
-                        missing_element = %missing_element,
-                        "Could not find element"
-                    );
+                event!(
+                    Level::TRACE,
+                    now_in = %name,
+                    missing_element = %missing_element,
+                    "Could not find element"
+                );
 
-                    return Err(XmlError::MissingElement(
-                        missing_element.to_string().into_boxed_str(),
-                    ));
-                },
+                return Err(XmlError::MissingElement(
+                    missing_element.to_string().into_boxed_str(),
+                ));
+            },
             XmlEvent::EndDocument => {
                 break;
             },

@@ -24,15 +24,14 @@ where
             XmlEvent::StartElement { name, .. }
                 if reader.depth() == entry_depth + 1
                     && name.namespace_ref() == Some(constants::XML_WSA_NAMESPACE)
-                    && name.local_name == "Address"
-                => {
-                    address = read_text(reader)?;
-                },
-            XmlEvent::EndElement { .. }
-                if reader.depth() < entry_depth => {
-                    // we've exited the element that we entered on
-                    break;
-                },
+                    && name.local_name == "Address" =>
+            {
+                address = read_text(reader)?;
+            },
+            XmlEvent::EndElement { .. } if reader.depth() < entry_depth => {
+                // we've exited the element that we entered on
+                break;
+            },
             element @ XmlEvent::EndDocument => {
                 return Err(XmlError::UnexpectedEvent(Box::new(element)).into());
             },
@@ -69,32 +68,30 @@ where
     loop {
         #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
-            XmlEvent::StartElement { name, .. }
-                if reader.depth() == entry_depth + 1 => {
-                    match (name.namespace_ref(), &*name.local_name) {
-                        (Some(constants::XML_WSA_NAMESPACE), "EndpointReference") => {
-                            if endpoint.is_some() || xaddrs.is_some() {
-                                return Err(BodyParsingError::InvalidElementOrder);
-                            }
-                            endpoint = Some(extract_endpoint_reference_address(reader)?);
-                        },
-                        (Some(constants::XML_WSD_NAMESPACE), "XAddrs") => {
-                            if endpoint.is_none() || xaddrs.is_some() {
-                                return Err(BodyParsingError::InvalidElementOrder);
-                            }
+            XmlEvent::StartElement { name, .. } if reader.depth() == entry_depth + 1 => {
+                match (name.namespace_ref(), &*name.local_name) {
+                    (Some(constants::XML_WSA_NAMESPACE), "EndpointReference") => {
+                        if endpoint.is_some() || xaddrs.is_some() {
+                            return Err(BodyParsingError::InvalidElementOrder);
+                        }
+                        endpoint = Some(extract_endpoint_reference_address(reader)?);
+                    },
+                    (Some(constants::XML_WSD_NAMESPACE), "XAddrs") => {
+                        if endpoint.is_none() || xaddrs.is_some() {
+                            return Err(BodyParsingError::InvalidElementOrder);
+                        }
 
-                            xaddrs = read_text(reader)?;
-                        },
-                        _ => {
-                            // Ignore
-                        },
-                    }
-                },
-            XmlEvent::EndElement { .. }
-                if reader.depth() < entry_depth => {
-                    // we've exited the element that we entered on
-                    break;
-                },
+                        xaddrs = read_text(reader)?;
+                    },
+                    _ => {
+                        // Ignore
+                    },
+                }
+            },
+            XmlEvent::EndElement { .. } if reader.depth() < entry_depth => {
+                // we've exited the element that we entered on
+                break;
+            },
             element @ XmlEvent::EndDocument => {
                 return Err(XmlError::UnexpectedEvent(Box::new(element)).into());
             },

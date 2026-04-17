@@ -172,16 +172,17 @@ where
         // in all other parsing functions we could theoretically mark them as `unreachable!()`
         match reader.next().map_err(HeaderParsingError::from)? {
             XmlEvent::StartElement { name, .. }
-                if name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE) => {
-                    if name.local_name == "Header" {
-                        header = Some(parse_header(&mut reader)?);
-                    } else if name.local_name == "Body" {
-                        has_body = true;
-                        break;
-                    } else {
-                        // ...
-                    }
-                },
+                if name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE) =>
+            {
+                if name.local_name == "Header" {
+                    header = Some(parse_header(&mut reader)?);
+                } else if name.local_name == "Body" {
+                    has_body = true;
+                    break;
+                } else {
+                    // ...
+                }
+            },
             XmlEvent::EndDocument => {
                 break;
             },
@@ -369,45 +370,44 @@ where
         match reader.next()? {
             XmlEvent::StartElement { name, .. }
                 if reader.depth() == entry_depth + 1
-                    && name.namespace_ref() == Some(constants::WSA_URI)
-                => {
-                    // header items can be in any order, as per SOAP 1.1 and 1.2
-                    match &*name.local_name {
-                        "To" => {
-                            to = read_text(reader)?.map(|to| DeviceUri::new(to.into_boxed_str()));
-                        },
-                        "Action" => {
-                            action = read_text(reader)?.map(String::into_boxed_str);
-                        },
-                        "MessageID" => {
-                            let m_id = read_text(reader)?
-                                .map(|m_id| {
-                                    m_id.parse::<Urn>()
-                                        .map_err(HeaderParsingError::InvalidMessageId)
-                                })
-                                .transpose()?;
+                    && name.namespace_ref() == Some(constants::WSA_URI) =>
+            {
+                // header items can be in any order, as per SOAP 1.1 and 1.2
+                match &*name.local_name {
+                    "To" => {
+                        to = read_text(reader)?.map(|to| DeviceUri::new(to.into_boxed_str()));
+                    },
+                    "Action" => {
+                        action = read_text(reader)?.map(String::into_boxed_str);
+                    },
+                    "MessageID" => {
+                        let m_id = read_text(reader)?
+                            .map(|m_id| {
+                                m_id.parse::<Urn>()
+                                    .map_err(HeaderParsingError::InvalidMessageId)
+                            })
+                            .transpose()?;
 
-                            message_id = m_id;
-                        },
-                        "RelatesTo" => {
-                            let r_to = read_text(reader)?
-                                .map(|r_to| {
-                                    r_to.parse::<Urn>()
-                                        .map_err(HeaderParsingError::InvalidRelatesTo)
-                                })
-                                .transpose()?;
+                        message_id = m_id;
+                    },
+                    "RelatesTo" => {
+                        let r_to = read_text(reader)?
+                            .map(|r_to| {
+                                r_to.parse::<Urn>()
+                                    .map_err(HeaderParsingError::InvalidRelatesTo)
+                            })
+                            .transpose()?;
 
-                            relates_to = r_to;
-                        },
-                        _ => {
-                            // Not a match, continue
-                        },
-                    }
-                },
-            XmlEvent::EndElement { .. }
-                if reader.depth() < entry_depth => {
-                    break;
-                },
+                        relates_to = r_to;
+                    },
+                    _ => {
+                        // Not a match, continue
+                    },
+                }
+            },
+            XmlEvent::EndElement { .. } if reader.depth() < entry_depth => {
+                break;
+            },
             element @ XmlEvent::EndDocument => {
                 return Err(XmlError::UnexpectedEvent(Box::new(element)).into());
             },
