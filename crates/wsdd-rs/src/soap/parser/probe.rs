@@ -37,10 +37,10 @@ where
         match reader.next()? {
             XmlEvent::StartElement {
                 name, namespace, ..
-            } => {
+            }
                 if reader.depth() == entry_depth + 1
                     && name.namespace_ref() == Some(constants::XML_WSD_NAMESPACE)
-                {
+                => {
                     match &*name.local_name {
                         "Scopes" => {
                             let text = read_text(reader)?;
@@ -60,14 +60,12 @@ where
                         },
                         _ => {},
                     }
-                }
-            },
-            XmlEvent::EndElement { .. } => {
-                if reader.depth() < entry_depth {
+                },
+            XmlEvent::EndElement { .. }
+                if reader.depth() < entry_depth => {
                     // we've exited the Probe
                     break;
-                }
-            },
+                },
             element @ XmlEvent::EndDocument => {
                 return Err(XmlError::UnexpectedEvent(Box::new(element)).into());
             },

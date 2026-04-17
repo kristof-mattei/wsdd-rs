@@ -171,8 +171,8 @@ where
         // this is the only loop that should hit `XmlEvent::StartDocument` and `XmlEvent::Doctype`
         // in all other parsing functions we could theoretically mark them as `unreachable!()`
         match reader.next().map_err(HeaderParsingError::from)? {
-            XmlEvent::StartElement { name, .. } => {
-                if name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE) {
+            XmlEvent::StartElement { name, .. }
+                if name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE) => {
                     if name.local_name == "Header" {
                         header = Some(parse_header(&mut reader)?);
                     } else if name.local_name == "Body" {
@@ -181,8 +181,7 @@ where
                     } else {
                         // ...
                     }
-                }
-            },
+                },
             XmlEvent::EndDocument => {
                 break;
             },
@@ -368,10 +367,10 @@ where
     loop {
         #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
-            XmlEvent::StartElement { name, .. } => {
+            XmlEvent::StartElement { name, .. }
                 if reader.depth() == entry_depth + 1
                     && name.namespace_ref() == Some(constants::WSA_URI)
-                {
+                => {
                     // header items can be in any order, as per SOAP 1.1 and 1.2
                     match &*name.local_name {
                         "To" => {
@@ -404,13 +403,11 @@ where
                             // Not a match, continue
                         },
                     }
-                }
-            },
-            XmlEvent::EndElement { .. } => {
-                if reader.depth() < entry_depth {
+                },
+            XmlEvent::EndElement { .. }
+                if reader.depth() < entry_depth => {
                     break;
-                }
-            },
+                },
             element @ XmlEvent::EndDocument => {
                 return Err(XmlError::UnexpectedEvent(Box::new(element)).into());
             },

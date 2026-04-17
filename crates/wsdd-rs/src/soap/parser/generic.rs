@@ -21,20 +21,18 @@ where
     loop {
         #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
-            XmlEvent::StartElement { name, .. } => {
+            XmlEvent::StartElement { name, .. }
                 if reader.depth() == entry_depth + 1
                     && name.namespace_ref() == Some(constants::XML_WSA_NAMESPACE)
                     && name.local_name == "Address"
-                {
+                => {
                     address = read_text(reader)?;
-                }
-            },
-            XmlEvent::EndElement { .. } => {
-                if reader.depth() < entry_depth {
+                },
+            XmlEvent::EndElement { .. }
+                if reader.depth() < entry_depth => {
                     // we've exited the element that we entered on
                     break;
-                }
-            },
+                },
             element @ XmlEvent::EndDocument => {
                 return Err(XmlError::UnexpectedEvent(Box::new(element)).into());
             },
@@ -71,8 +69,8 @@ where
     loop {
         #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
-            XmlEvent::StartElement { name, .. } => {
-                if reader.depth() == entry_depth + 1 {
+            XmlEvent::StartElement { name, .. }
+                if reader.depth() == entry_depth + 1 => {
                     match (name.namespace_ref(), &*name.local_name) {
                         (Some(constants::XML_WSA_NAMESPACE), "EndpointReference") => {
                             if endpoint.is_some() || xaddrs.is_some() {
@@ -91,14 +89,12 @@ where
                             // Ignore
                         },
                     }
-                }
-            },
-            XmlEvent::EndElement { .. } => {
-                if reader.depth() < entry_depth {
+                },
+            XmlEvent::EndElement { .. }
+                if reader.depth() < entry_depth => {
                     // we've exited the element that we entered on
                     break;
-                }
-            },
+                },
             element @ XmlEvent::EndDocument => {
                 return Err(XmlError::UnexpectedEvent(Box::new(element)).into());
             },
