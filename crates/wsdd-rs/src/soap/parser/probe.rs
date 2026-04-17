@@ -37,36 +37,31 @@ where
         match reader.next()? {
             XmlEvent::StartElement {
                 name, namespace, ..
-            } => {
-                if reader.depth() == entry_depth + 1
-                    && name.namespace_ref() == Some(constants::XML_WSD_NAMESPACE)
-                {
-                    match &*name.local_name {
-                        "Scopes" => {
-                            let text = read_text(reader)?;
-                            let raw_scopes = text.unwrap_or_default();
+            } if reader.depth() == entry_depth + 1
+                && name.namespace_ref() == Some(constants::XML_WSD_NAMESPACE) =>
+            {
+                match &*name.local_name {
+                    "Scopes" => {
+                        let text = read_text(reader)?;
+                        let raw_scopes = text.unwrap_or_default();
 
-                            event!(
-                                Level::DEBUG,
-                                scopes = %raw_scopes,
-                                "Ignoring unsupported scopes in probe request"
-                            );
-                        },
-                        "Types" => {
-                            raw_types_and_namespaces =
-                                read_text(reader)?.map(|text| (text, namespace));
+                        event!(
+                            Level::DEBUG,
+                            scopes = %raw_scopes,
+                            "Ignoring unsupported scopes in probe request"
+                        );
+                    },
+                    "Types" => {
+                        raw_types_and_namespaces = read_text(reader)?.map(|text| (text, namespace));
 
-                            break;
-                        },
-                        _ => {},
-                    }
+                        break;
+                    },
+                    _ => {},
                 }
             },
-            XmlEvent::EndElement { .. } => {
-                if reader.depth() < entry_depth {
-                    // we've exited the Probe
-                    break;
-                }
+            XmlEvent::EndElement { .. } if reader.depth() < entry_depth => {
+                // we've exited the Probe
+                break;
             },
             element @ XmlEvent::EndDocument => {
                 return Err(XmlError::UnexpectedEvent(Box::new(element)).into());
