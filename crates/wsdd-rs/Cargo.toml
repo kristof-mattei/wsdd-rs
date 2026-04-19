@@ -95,7 +95,7 @@ trybuild = "=1.0.116"
 # tracing-test = "=0.2.5"
 
 [package.metadata.cargo-machete]
-ignored = ["shared"]
+ignored = []
 
 [package.metadata.spellcheck]
 config = "spellcheck.toml"
