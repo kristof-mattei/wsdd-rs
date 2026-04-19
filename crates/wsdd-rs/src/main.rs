@@ -38,7 +38,6 @@ use std::time::Duration;
 
 use color_eyre::config::HookBuilder;
 use color_eyre::eyre;
-use dotenvy::dotenv;
 use task_tracker_ext::TaskTrackerExt as _;
 use tokio::sync::mpsc::Sender;
 use tokio::time::timeout;
@@ -96,9 +95,6 @@ fn init_tracing(filter: EnvFilter) -> Result<(), eyre::Report> {
 }
 
 fn main() -> ExitCode {
-    // set up .env, if it fails, user didn't provide any
-    let _r = dotenv();
-
     HookBuilder::default()
         .capture_span_trace_by_default(true)
         .display_env_section(false)
