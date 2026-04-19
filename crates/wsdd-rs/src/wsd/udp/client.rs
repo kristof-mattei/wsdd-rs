@@ -114,7 +114,7 @@ impl WSDClient {
             tokio::select! {
                 biased;
                 () = cancellation_token.cancelled() => { return; },
-                () = tokio::time::sleep(Duration::from_millis(rand::random_range(0..=constants::APP_MAX_DELAY))) => { }
+                () = tokio::time::sleep(rand::random_range(Duration::from_millis(0)..=constants::APP_MAX_DELAY)) => { }
             }
 
             if let Err(error) =
@@ -166,15 +166,12 @@ async fn send_probe(
 }
 
 async fn remove_outdated_probes(probes: &Arc<RwLock<HashMap<Urn, Duration>>>) {
-    const PROBE_TIMEOUT: Duration =
-        const { Duration::from_millis(constants::PROBE_TIMEOUT_MILLISECONDS) };
-
     let now = now();
 
     probes
         .write()
         .await
-        .retain(|_, value| *value + (PROBE_TIMEOUT * 2) > now);
+        .retain(|_, value| *value + (constants::PROBE_TIMEOUT * 2) > now);
 }
 
 fn now() -> Duration {

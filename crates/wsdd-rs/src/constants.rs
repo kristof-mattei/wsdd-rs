@@ -1,5 +1,6 @@
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::num::NonZeroU16;
+use std::time::Duration;
 
 use const_str::format as const_format;
 
@@ -99,16 +100,15 @@ pub const MULTICAST_UDP_REPEAT: usize = 4;
 // UNICAST_UDP_REPEAT: int = 2
 pub const UNICAST_UDP_REPEAT: usize = 2;
 // UDP_MIN_DELAY: int = 50
-pub const UDP_MIN_DELAY: u64 = 50;
+pub const UDP_MIN_DELAY: Duration = Duration::from_millis(250);
 // UDP_MAX_DELAY: int = 250
-pub const UDP_MAX_DELAY: u64 = 250;
+pub const UDP_MAX_DELAY: Duration = Duration::from_millis(250);
 // UDP_UPPER_DELAY: int = 500
-pub const UDP_UPPER_DELAY: u64 = 500;
-
-// # servers must respond in 4 seconds after probe arrives
-pub const PROBE_TIMEOUT_MILLISECONDS: u64 = 4000;
+pub const UDP_UPPER_DELAY: Duration = Duration::from_millis(500);
+// servers must respond in 4 seconds after probe arrives
+pub const PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 // MAX_STARTUP_PROBE_DELAY: int = 3
-pub const APP_MAX_DELAY: u64 = 500;
+pub const APP_MAX_DELAY: Duration = Duration::from_millis(500);
 
 // A sane default for the size of text inside an XML element
 pub const STRING_DEFAULT_CAPACITY: usize = 128;

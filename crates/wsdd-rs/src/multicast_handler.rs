@@ -1,7 +1,6 @@
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
-use std::time::Duration;
 
 use color_eyre::eyre::{self, Context as _};
 use hashbrown::HashMap;
@@ -569,7 +568,7 @@ async fn repeatedly_send_buffer<T: MessageSplitter>(
 
     for i in 0..T::REPEAT {
         if i != 0 {
-            sleep(Duration::from_millis(delta)).await;
+            sleep(delta).await;
             delta = constants::UDP_UPPER_DELAY.min(delta * 2);
         }
 
