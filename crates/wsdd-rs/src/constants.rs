@@ -31,6 +31,7 @@ pub const XML_PNPX_NAMESPACE: &str = "http://schemas.microsoft.com/windows/pnpx/
 pub const XML_PUB_NAMESPACE: &str = "http://schemas.microsoft.com/windows/pub/2005/07";
 
 // WSD_MAX_KNOWN_MESSAGES: int = 10
+pub const WSD_MAX_KNOWN_MESSAGES: usize = 10;
 
 // WSD_PROBE: str = WSD_URI + '/Probe'
 pub const WSD_PROBE: &str = const_format!("{}{}", WSD_URI, "/Probe");
@@ -81,33 +82,28 @@ pub const WSA_DISCOVERY: &str = "urn:schemas-xmlsoap-org:ws:2005:04:discovery";
 pub const MIME_TYPE_SOAP_XML: &str = "application/soap+xml";
 
 // # protocol assignments (WSD spec/Section 2.4)
-// WSD_UDP_PORT: int = 3702
 pub const WSD_UDP_PORT: NonZeroU16 = NonZeroU16::new(3702).unwrap();
-// WSD_HTTP_PORT: int = 5357
 pub const WSD_HTTP_PORT: NonZeroU16 = NonZeroU16::new(5357).unwrap();
-// WSD_MAX_LEN: int = 32767
+
 #[expect(
     clippy::decimal_literal_representation,
     reason = "Copied from original source code"
 )]
 pub const WSD_MAX_LEN: usize = 32767;
 
-// WSDD_LISTEN_PORT = 5359
-
-// # SOAP/UDP transmission constants
-// MULTICAST_UDP_REPEAT: int = 4
+// SOAP/UDP transmission constants
+// See Appendix I (non-normative) – Example retransmission in documentation/soap-over-udp.pdf
 pub const MULTICAST_UDP_REPEAT: usize = 4;
-// UNICAST_UDP_REPEAT: int = 2
 pub const UNICAST_UDP_REPEAT: usize = 2;
-// UDP_MIN_DELAY: int = 50
 pub const UDP_MIN_DELAY: Duration = Duration::from_millis(50);
-// UDP_MAX_DELAY: int = 250
 pub const UDP_MAX_DELAY: Duration = Duration::from_millis(250);
-// UDP_UPPER_DELAY: int = 500
 pub const UDP_UPPER_DELAY: Duration = Duration::from_millis(500);
-// servers must respond in 4 seconds after probe arrives
+
+// > ProbeMatches must arrive within 4 seconds of the Probe or the firewall drops them
+// See: documentation/windows-win32-wsdapi.pdf
 pub const PROBE_TIMEOUT: Duration = Duration::from_secs(4);
-// MAX_STARTUP_PROBE_DELAY: int = 3
+
+// See documentation/ws-discovery.pdf, 2.4 Protocol Assignments, Table 4
 pub const APP_MAX_DELAY: Duration = Duration::from_millis(500);
 
 // A sane default for the size of text inside an XML element
