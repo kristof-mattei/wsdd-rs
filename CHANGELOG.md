@@ -1,4 +1,53 @@
 <!-- header goes here -->
+## [0.3.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.2.3..v0.3.0) - 2026-04-25
+
+### 🚀 Features
+
+- Remove ignoring of shared by [@kristof-mattei](https://github.com/kristof-mattei) ([`9bbca61`](https://github.com/kristof-mattei/wsdd-rs/commit/9bbca616dc5527c18bbf3f5ed73c30a71191cdfe))
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update rust crate tokio to 1.51.1 by [@renovate[bot]](https://github.com/renovate[bot]) ([`78a9e86`](https://github.com/kristof-mattei/wsdd-rs/commit/78a9e86181ecc624b64e0e3bef06a528039b38ab))
+- *(deps)* Bump hashbrown, use into_key, no need to use the raw entry API anymore by [@kristof-mattei](https://github.com/kristof-mattei) ([`ba81aca`](https://github.com/kristof-mattei/wsdd-rs/commit/ba81aca71e379cfbc1213b5a0cc7d9219cbadf23))
+- *(deps)* Update rust crate ringmap to 0.2.5 by [@renovate[bot]](https://github.com/renovate[bot]) ([`400e452`](https://github.com/kristof-mattei/wsdd-rs/commit/400e452c4ec1dbbb1ee10d417d197841d990854d))
+- *(deps)* Update rust crate rand to 0.10.1 by [@renovate[bot]](https://github.com/renovate[bot]) ([`ce13949`](https://github.com/kristof-mattei/wsdd-rs/commit/ce139491875415890442df8b60dab2afac4f80d4))
+- *(deps)* Update rust crate axum to 0.8.9 by [@renovate[bot]](https://github.com/renovate[bot]) ([`e8fd0e5`](https://github.com/kristof-mattei/wsdd-rs/commit/e8fd0e51e5118a5d9d111dee4422c93ab75ae59c))
+- *(deps)* Update rust crate tokio to 1.52.0 by [@renovate[bot]](https://github.com/renovate[bot]) ([`b237a8a`](https://github.com/kristof-mattei/wsdd-rs/commit/b237a8a574281a359bead5a0cf590305ae059387))
+- *(deps)* Update rust crate tokio to 1.52.1 by [@renovate[bot]](https://github.com/renovate[bot]) ([`0578ca5`](https://github.com/kristof-mattei/wsdd-rs/commit/0578ca5254fcceba0016932d9dc500b854e587a1))
+- *(deps)* Update rust crate mimalloc to 0.1.49 by [@renovate[bot]](https://github.com/renovate[bot]) ([`a27a3ea`](https://github.com/kristof-mattei/wsdd-rs/commit/a27a3eaf897a9c30b9587c28997f5c181690fd25))
+- *(deps)* `mimalloc` by default now is v3, removing flag by [@kristof-mattei](https://github.com/kristof-mattei) ([`07ce805`](https://github.com/kristof-mattei/wsdd-rs/commit/07ce8054f0fd57cff23fe32d11cb1a7112d8e060))
+- *(deps)* `mimalloc` by default now is v3, removing flag by [@kristof-mattei](https://github.com/kristof-mattei) ([`c0fdb8a`](https://github.com/kristof-mattei/wsdd-rs/commit/c0fdb8aa5fae0dd08bcfb2441388bd458dd23a0c))
+- *(deps)* Update rust crate mimalloc to 0.1.50 by [@renovate[bot]](https://github.com/renovate[bot]) ([`7e26c07`](https://github.com/kristof-mattei/wsdd-rs/commit/7e26c0759f7ad9a2d97100ec123be66c8b357fa9))
+- *(deps)* Update rust crate mimalloc to 0.1.50 by [@renovate[bot]](https://github.com/renovate[bot]) ([`f488e9c`](https://github.com/kristof-mattei/wsdd-rs/commit/f488e9c023782304221631029603e77be7779648))
+- Hashbrown 0.17.0 changed trait restrictions, need to explicitly create key now, see https://github.com/rust-lang/hashbrown/issues/711 by [@kristof-mattei](https://github.com/kristof-mattei) ([`3793862`](https://github.com/kristof-mattei/wsdd-rs/commit/37938620b25d2993ff35a60f58fa57bc909cba99))
+- Properly signal exit reason by [@kristof-mattei](https://github.com/kristof-mattei) ([`1ad8679`](https://github.com/kristof-mattei/wsdd-rs/commit/1ad8679d18b6982594b2a67b011a7e11b1b6a4e0))
+- Race condition on task failure and CTRL+c, task failure now wins by [@kristof-mattei](https://github.com/kristof-mattei) ([`9ea5b44`](https://github.com/kristof-mattei/wsdd-rs/commit/9ea5b44e6f00836b4503bffbe9c0763727e9d8fc))
+- Ctrl_c works on Windows by [@kristof-mattei](https://github.com/kristof-mattei) ([`ef84df1`](https://github.com/kristof-mattei/wsdd-rs/commit/ef84df14ffb1626a4c8ee08b90897d8e10f39231))
+- Disable plugins by [@kristof-mattei](https://github.com/kristof-mattei) ([`3725751`](https://github.com/kristof-mattei/wsdd-rs/commit/37257510cce405e0426a57c6e76ec53d73454c91))
+- Wrong lower bound by [@kristof-mattei](https://github.com/kristof-mattei) ([`2840990`](https://github.com/kristof-mattei/wsdd-rs/commit/28409903a983ba77d51ce3ced8e908808a0078ad))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* Restore ability to do prerelease versions by [@kristof-mattei](https://github.com/kristof-mattei) ([`7c5b0ea`](https://github.com/kristof-mattei/wsdd-rs/commit/7c5b0ea895c5e92aa3c69fec62e3a7156f2ca183))
+- *(ci)* Allow re-release pre-release without having to add features by [@kristof-mattei](https://github.com/kristof-mattei) ([`657a7db`](https://github.com/kristof-mattei/wsdd-rs/commit/657a7db145169f1dd3cd17b587324fae32ec4d04))
+- *(comment)* Remove old comments by [@kristof-mattei](https://github.com/kristof-mattei) ([`6100bb2`](https://github.com/kristof-mattei/wsdd-rs/commit/6100bb2927b45dd1085840677099a13160ff6c4d))
+- *(docs)* Add more documentation to the constants by [@kristof-mattei](https://github.com/kristof-mattei) ([`2abcc53`](https://github.com/kristof-mattei/wsdd-rs/commit/2abcc53187fce89e86d3e2f5f9d559d294f41175))
+- *(release)* Link in release proposal now points to sha as tag doesn't exist yet by [@kristof-mattei](https://github.com/kristof-mattei) ([`f2bcfc8`](https://github.com/kristof-mattei/wsdd-rs/commit/f2bcfc8ed61488c9863b26533432becd6e7267df))
+- We don't use the raw-entry feature, and it's deprecated by [@kristof-mattei](https://github.com/kristof-mattei) ([`5e4afe8`](https://github.com/kristof-mattei/wsdd-rs/commit/5e4afe85ca3927a932de284552f0859dc7a0983f))
+- Typo by [@kristof-mattei](https://github.com/kristof-mattei) ([`c94be29`](https://github.com/kristof-mattei/wsdd-rs/commit/c94be29440ef378a483ff2ad5e105f15ff5372fd))
+- I want cargo fmt in tokio::select! by [@kristof-mattei](https://github.com/kristof-mattei) ([`dd5922f`](https://github.com/kristof-mattei/wsdd-rs/commit/dd5922ffaf5cb4cec5cb624d317c4541ef3026e8))
+- Rename and extract inner function by [@kristof-mattei](https://github.com/kristof-mattei) ([`877373c`](https://github.com/kristof-mattei/wsdd-rs/commit/877373c2f12c14070bf989ed68e6e0680948f3c1))
+- Update outdated comment by [@kristof-mattei](https://github.com/kristof-mattei) ([`b45dae4`](https://github.com/kristof-mattei/wsdd-rs/commit/b45dae4c3824dedce1bf7a89b47f7421b450a391))
+- Calculate once by [@kristof-mattei](https://github.com/kristof-mattei) ([`cfc9b36`](https://github.com/kristof-mattei/wsdd-rs/commit/cfc9b36f04a73ac40d72d46cdb7f9535f872df3d))
+- Remove comment by [@kristof-mattei](https://github.com/kristof-mattei) ([`2cc70e9`](https://github.com/kristof-mattei/wsdd-rs/commit/2cc70e9112c854aa9353ed8c762cbdcda7bf46fd))
+- Typo by [@kristof-mattei](https://github.com/kristof-mattei) ([`efab097`](https://github.com/kristof-mattei/wsdd-rs/commit/efab0975a74a76ee95e3d63d58c2e1949414db72))
+- Switch crate as const_format relies on outdated version of const by [@kristof-mattei](https://github.com/kristof-mattei) ([`4a41383`](https://github.com/kristof-mattei/wsdd-rs/commit/4a41383a4eb8dec34c47fdf1048fb280363c32b5))
+- Bump packages by [@kristof-mattei](https://github.com/kristof-mattei) ([`d9b553f`](https://github.com/kristof-mattei/wsdd-rs/commit/d9b553ff6f356df0fda41a771110d5f99a69d1a5))
+- Clippy 1.95.0 by [@kristof-mattei](https://github.com/kristof-mattei) ([`62646e3`](https://github.com/kristof-mattei/wsdd-rs/commit/62646e30941d0e8a35fa13a9dbdc6ed495ab1e01))
+- Fmt by [@kristof-mattei](https://github.com/kristof-mattei) ([`d5cff29`](https://github.com/kristof-mattei/wsdd-rs/commit/d5cff299856443c60343e7434e5da9235f71aa08))
+- Use const durations instead of numbers with no meaning by [@kristof-mattei](https://github.com/kristof-mattei) ([`d3f8669`](https://github.com/kristof-mattei/wsdd-rs/commit/d3f86691a6e744a3673adb93255155f25aa3c5d7))
+- Move to keep track by [@kristof-mattei](https://github.com/kristof-mattei) ([`ec6b22a`](https://github.com/kristof-mattei/wsdd-rs/commit/ec6b22afa84991970d7f38e1def3be67b4a00868))
+- Restore by [@kristof-mattei](https://github.com/kristof-mattei) ([`5c83a4f`](https://github.com/kristof-mattei/wsdd-rs/commit/5c83a4feb15b568adf5cb901b4343758689d8ee6))
 ## [0.2.3](https://github.com/kristof-mattei/wsdd-rs/compare/v0.2.2..v0.2.3) - 2026-04-05
 
 ### 🐛 Bug Fixes
@@ -14,7 +63,7 @@
 - *(ci)* Use skopeo wherever possible by [@kristof-mattei](https://github.com/kristof-mattei) ([`50a6786`](https://github.com/kristof-mattei/wsdd-rs/commit/50a678665fd200021293e938c0b493891077a5ef))
 - *(ci)* Scout for visualizing cves etc by [@kristof-mattei](https://github.com/kristof-mattei) ([`2fe6e06`](https://github.com/kristof-mattei/wsdd-rs/commit/2fe6e06ada42423eeacec95be6a29ccbd3806068))
 - *(ci)* Username is not secret by [@kristof-mattei](https://github.com/kristof-mattei) ([`7d168f4`](https://github.com/kristof-mattei/wsdd-rs/commit/7d168f446d7bbdabaf2bd58c2818af2a65b07c41))
-- *(release)* Release v0.2.3
+- *(release)* Release v0.2.3 by [@github-actions[bot]](https://github.com/github-actions[bot]) ([`98e3c62`](https://github.com/kristof-mattei/wsdd-rs/commit/98e3c622d134246ff7db129feb194bdb83313001))
 - Sort tags by creation time by [@kristof-mattei](https://github.com/kristof-mattei) ([`39ce04b`](https://github.com/kristof-mattei/wsdd-rs/commit/39ce04bd2b02ef17d869c2828bf3e641854a25b1))
 - Fix fmt by [@kristof-mattei](https://github.com/kristof-mattei) ([`1c63af5`](https://github.com/kristof-mattei/wsdd-rs/commit/1c63af585079ee98e0b241fc6683c31982159106))
 ## [0.2.2](https://github.com/kristof-mattei/wsdd-rs/compare/v0.2.1..v0.2.2) - 2026-04-01
