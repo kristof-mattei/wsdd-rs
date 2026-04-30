@@ -42,13 +42,13 @@ where
         self.depth
     }
 
-    pub fn next(&mut self) -> std::result::Result<XmlEvent, xml::reader::Error> {
+    pub fn next(&mut self) -> Result<XmlEvent, xml::reader::Error> {
         let event = match self.next.take() {
-            Some(next) => next,
+            Some(stashed) => stashed,
             None => self.inner.next(),
         };
 
-        if let Ok(ref event) = event {
+        if let &Ok(ref event) = &event {
             #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
             match *event {
                 XmlEvent::StartElement { .. } => {
@@ -64,8 +64,8 @@ where
         event
     }
 
-    #[expect(unused, reason = "WIP")]
-    pub fn peek(&mut self) -> std::result::Result<&XmlEvent, &xml::reader::Error> {
+    #[cfg_attr(not(test), expect(unused, reason = "API not consumed yet"))]
+    pub fn peek(&mut self) -> Result<&XmlEvent, &xml::reader::Error> {
         self.next.get_or_insert_with(|| self.inner.next()).as_ref()
     }
 }
@@ -187,10 +187,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_matches;
+    use pretty_assertions::{assert_eq, assert_matches};
     use xml::ParserConfig;
     use xml::attribute::OwnedAttribute;
     use xml::name::OwnedName;
+    use xml::reader::XmlEvent;
 
     use crate::xml::{XmlError, XmlReader, find_child};
 
@@ -273,6 +274,51 @@ mod tests {
 
         let attribute = OwnedAttribute::new(OwnedName::local("attribute"), "this-one");
         assert_matches!(result, Ok((_, attributes)) if attributes.contains(&attribute));
+    }
+
+    #[test]
+    fn peek_does_not_consume() {
+        let xml = include_str!("./test/xml/three-levels.xml");
+
+        let mut reader = make_reader(xml);
+
+        // peek twice — both calls must observe the same event
+        assert_matches!(reader.peek(), Ok(XmlEvent::StartDocument { .. }));
+        assert_matches!(reader.peek(), Ok(XmlEvent::StartDocument { .. }));
+
+        // next must return the previously peeked event
+        assert_matches!(reader.next(), Ok(XmlEvent::StartDocument { .. }));
+
+        // and peek now reflects the following event
+        assert_matches!(
+            reader.peek(),
+            Ok(XmlEvent::StartElement { name, .. }) if name.local_name == "Level1"
+        );
+    }
+
+    #[test]
+    fn peek_does_not_change_depth() {
+        let xml = include_str!("./test/xml/three-levels.xml");
+
+        let mut reader = make_reader(xml);
+
+        assert_eq!(reader.depth(), 0);
+
+        // StartDocument — no depth change
+        let _unused = reader.next();
+        assert_eq!(reader.depth(), 0);
+
+        // peek must NOT advance depth, even on a StartElement
+        assert_matches!(reader.peek(), Ok(XmlEvent::StartElement { .. }));
+        assert_eq!(reader.depth(), 0);
+
+        // peeking again is still observation-only
+        assert_matches!(reader.peek(), Ok(XmlEvent::StartElement { .. }));
+        assert_eq!(reader.depth(), 0);
+
+        // consuming the stashed event is what advances depth — exactly once
+        assert_matches!(reader.next(), Ok(XmlEvent::StartElement { .. }));
+        assert_eq!(reader.depth(), 1);
     }
 
     #[test]
