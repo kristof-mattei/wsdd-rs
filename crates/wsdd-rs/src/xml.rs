@@ -143,6 +143,11 @@ where
     R: Read,
 {
     let entry_depth = reader.depth();
+    let missing_element = Name {
+        local_name: path,
+        namespace,
+        prefix: None,
+    };
 
     loop {
         #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
@@ -156,12 +161,6 @@ where
                 return Ok((name, attributes));
             },
             XmlEvent::EndElement { name } if reader.depth() < entry_depth => {
-                let missing_element = Name {
-                    local_name: path,
-                    namespace,
-                    prefix: None,
-                };
-
                 event!(
                     Level::TRACE,
                     now_in = %name,
@@ -169,9 +168,7 @@ where
                     "Could not find element"
                 );
 
-                return Err(XmlError::MissingElement(
-                    missing_element.to_string().into_boxed_str(),
-                ));
+                break;
             },
             XmlEvent::EndDocument => {
                 break;
@@ -183,13 +180,9 @@ where
         }
     }
 
-    let name = Name {
-        local_name: path,
-        namespace,
-        prefix: None,
-    };
-
-    Err(XmlError::MissingElement(name.to_string().into_boxed_str()))
+    Err(XmlError::MissingElement(
+        missing_element.to_string().into_boxed_str(),
+    ))
 }
 
 #[cfg(test)]
