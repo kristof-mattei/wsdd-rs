@@ -108,8 +108,8 @@ where
                     return Ok(Some(trimmed.to_owned()));
                 }
             },
-            element @ (XmlEvent::StartElement { .. } | XmlEvent::EndDocument) => {
-                // no start elements or premature end-of-document allowed in our text nodes
+            element @ XmlEvent::StartElement { .. } => {
+                // no start elements allowed in our text nodes
                 return Err(TextReadError::NonTextContents(Box::new(element)));
             },
             _ => {
