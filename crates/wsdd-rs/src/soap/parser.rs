@@ -26,7 +26,7 @@ use crate::network_interface::NetworkInterface;
 use crate::soap::parser::get::Get;
 use crate::soap::{self, WSDMessage};
 use crate::wsd::device::DeviceUri;
-use crate::xml::{TextReadError, Wrapper, XmlError, read_text};
+use crate::xml::{TextReadError, XmlError, XmlReader, read_text};
 
 pub struct MessageHandler {
     handled_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
@@ -147,13 +147,13 @@ impl MessageHandlerError {
     }
 }
 
-type RawMessageResult<R> = Result<(Header, bool, Wrapper<R>), MessageHandlerError>;
+type RawMessageResult<R> = Result<(Header, bool, XmlReader<R>), MessageHandlerError>;
 
 pub fn deconstruct_raw<R>(raw: R) -> RawMessageResult<R>
 where
     R: Read,
 {
-    let mut reader = Wrapper::new(
+    let mut reader = XmlReader::new(
         ParserConfig::new()
             .cdata_to_characters(true)
             .ignore_comments(true)
@@ -248,7 +248,7 @@ fn validate_action_body(
 
 fn parse_message_body(
     header: &Header,
-    mut reader: Wrapper<&[u8]>,
+    mut reader: XmlReader<&[u8]>,
 ) -> Result<WSDMessage, MessageHandlerError> {
     let response = match &*header.action {
         constants::WSD_GET => Ok(Get {}.into()),
@@ -348,7 +348,7 @@ impl MessageHandler {
     }
 }
 
-fn parse_header<R>(reader: &mut Wrapper<R>) -> ParsedHeaderResult
+fn parse_header<R>(reader: &mut XmlReader<R>) -> ParsedHeaderResult
 where
     R: Read,
 {
