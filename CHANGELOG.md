@@ -1,4 +1,21 @@
 <!-- header goes here -->
+## [0.4.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.3.0..v0.4.0) - 2026-04-30
+
+### 🚀 Features
+
+- Checkbox to allow for auto-merging a release PR by [@kristof-mattei](https://github.com/kristof-mattei) ([`8b67c89`](https://github.com/kristof-mattei/wsdd-rs/commit/8b67c89b30a8d6b3d4822110734fa4497caabe28))
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update rust crate reqwest to 0.13.3 by [@renovate[bot]](https://github.com/renovate[bot]) ([`c9f79e8`](https://github.com/kristof-mattei/wsdd-rs/commit/c9f79e89d1a4592591d7585d8850146e78c751ce))
+
+### ⚙️ Miscellaneous Tasks
+
+- No inline by [@kristof-mattei](https://github.com/kristof-mattei) ([`da0c17f`](https://github.com/kristof-mattei/wsdd-rs/commit/da0c17f7dc7341d83dbb924514ea3f19ca61792a))
+- Rename for clarity by [@kristof-mattei](https://github.com/kristof-mattei) ([`3e700aa`](https://github.com/kristof-mattei/wsdd-rs/commit/3e700aa55acddbbf76db313e14fddde259e57ffd))
+- Extract common test setup in setup fn by [@kristof-mattei](https://github.com/kristof-mattei) ([`c16e171`](https://github.com/kristof-mattei/wsdd-rs/commit/c16e171079a941850190d4f5a47173b1c9b75493))
+- Merge exit paths by [@kristof-mattei](https://github.com/kristof-mattei) ([`d9dfd27`](https://github.com/kristof-mattei/wsdd-rs/commit/d9dfd27ea91a6f026ea4a78c2f92b17f3b91706a))
+- XmlEvent::EndDocument can't happen when we just started reading an element, if we'd reach EndDocument, it'd be an error by [@kristof-mattei](https://github.com/kristof-mattei) ([`61fc0a3`](https://github.com/kristof-mattei/wsdd-rs/commit/61fc0a34a958a6b5ac0a1e1309b3b63f68556a58))
 ## [0.3.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.2.3..v0.3.0) - 2026-04-25
 
 ### 🚀 Features
