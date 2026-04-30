@@ -11,9 +11,9 @@ use crate::constants;
 
 #[derive(Debug, Error)]
 pub enum TextReadError {
-    #[error("Found non-text-contents: {0:?}")]
+    #[error("Found non-text-contents: {:?}", .0)]
     NonTextContents(Box<XmlEvent>),
-    #[error("Error parsing XML: {0}")]
+    #[error("Error parsing XML: {}", .0)]
     XmlError(#[from] xml::reader::Error),
 }
 
@@ -122,13 +122,13 @@ where
 
 #[derive(Debug, Error)]
 pub enum XmlError {
-    #[error("Error parsing XML: {0}")]
+    #[error("Error parsing XML: {}", .0)]
     ReaderError(#[from] xml::reader::Error),
-    #[error("Error reading text: {0}")]
+    #[error("Error reading text: {}", .0)]
     TextReadError(#[from] TextReadError),
-    #[error("Unexpected event: {0:?}")]
+    #[error("Unexpected event: {:?}", .0)]
     UnexpectedEvent(Box<XmlEvent>),
-    #[error("Missing element: {0}")]
+    #[error("Missing element: {}", .0)]
     MissingElement(Box<str>),
 }
 

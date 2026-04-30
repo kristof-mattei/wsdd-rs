@@ -553,13 +553,12 @@ async fn repeatedly_send_buffer<T: MessageSplitter>(
 ) {
     let buffer = message.as_ref();
 
-    // logger.info('scheduling {0} message via {1} to {2}'.format(msg_type, address.interface, address))
     event!(
         Level::INFO,
-        "scheduling {} message via {} to {}",
-        message.message_type(),
-        network_address.interface.name(),
-        network_address
+        message_type = message.message_type(),
+        interface = network_address.interface.name(),
+        on = %network_address,
+        "scheduling message",
     );
 
     // Schedule to send the given message to the given address.

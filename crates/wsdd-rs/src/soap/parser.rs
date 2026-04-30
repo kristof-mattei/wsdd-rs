@@ -42,15 +42,15 @@ pub struct Header {
 
 #[derive(Error, Debug)]
 pub enum HeaderParsingError {
-    #[error("Error parsing XML: {0}")]
+    #[error("Error parsing XML: {}", .0)]
     Xml(#[from] XmlError),
     #[error("Missing Message Id")]
     MissingMessageId,
     #[error("Missing Action")]
     MissingAction,
-    #[error("Invalid Message Id: {0}")]
+    #[error("Invalid Message Id: {}", .0)]
     InvalidMessageId(uuid::Error),
-    #[error("Invalid Relates To: {0}")]
+    #[error("Invalid Relates To: {}", .0)]
     InvalidRelatesTo(uuid::Error),
 }
 
@@ -68,11 +68,11 @@ impl From<TextReadError> for HeaderParsingError {
 
 #[derive(Error, Debug)]
 pub enum BodyParsingError {
-    #[error("Error parsing XML: {0}")]
+    #[error("Error parsing XML: {}", .0)]
     Xml(#[from] XmlError),
     #[error("Invalid element order")]
     InvalidElementOrder,
-    #[error("Invalid UUID: {0}")]
+    #[error("Invalid UUID: {}", .0)]
     InvalidUrnUuid(uuid::Error),
 }
 
@@ -94,13 +94,13 @@ type ParsedHeaderResult = Result<Header, HeaderParsingError>;
 pub enum MessageHandlerError {
     #[error("Message already processed")]
     DuplicateMessage,
-    #[error("Header parsing error: {0}")]
+    #[error("Header parsing error: {}", .0)]
     HeaderError(#[from] HeaderParsingError),
-    #[error("Body parsing error: {0}")]
+    #[error("Body parsing error: {}", .0)]
     BodyError(#[from] BodyParsingError),
-    #[error("Malformed action: {0}")]
+    #[error("Malformed action: {}", .0)]
     MalformedAction(Box<str>),
-    #[error("Unsupported action: {0}")]
+    #[error("Unsupported action: {}", .0)]
     UnsupportedAction(Box<str>),
 }
 
