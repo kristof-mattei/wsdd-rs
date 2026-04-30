@@ -12,7 +12,7 @@ use crate::constants;
 use crate::network_address::NetworkAddress;
 use crate::soap::parser;
 use crate::soap::parser::xaddrs::XAddr;
-use crate::xml::{Wrapper, XmlError, find_child, read_text};
+use crate::xml::{XmlError, XmlReader, find_child, read_text};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[repr(transparent)]
@@ -271,7 +271,7 @@ impl WSDDiscoveredDevice {
 }
 
 fn extract_wsdp_props<R>(
-    reader: &mut Wrapper<R>,
+    reader: &mut XmlReader<R>,
     namespace: &str,
 ) -> Result<HashMap<Box<str>, Box<str>>, XmlError>
 where
@@ -321,7 +321,7 @@ where
 
 type ExtractHostPropsResult = Result<(HashSet<Box<str>>, Option<(Box<str>, Box<str>)>), XmlError>;
 
-fn extract_host_props<R>(reader: &mut Wrapper<R>) -> ExtractHostPropsResult
+fn extract_host_props<R>(reader: &mut XmlReader<R>) -> ExtractHostPropsResult
 where
     R: Read,
 {
@@ -394,7 +394,7 @@ where
     }
 }
 
-fn read_types_and_pub_computer<R>(reader: &mut Wrapper<R>) -> ExtractHostPropsResult
+fn read_types_and_pub_computer<R>(reader: &mut XmlReader<R>) -> ExtractHostPropsResult
 where
     R: Read,
 {
@@ -487,7 +487,7 @@ mod tests {
 
     use crate::constants;
     use crate::wsd::device::extract_wsdp_props;
-    use crate::xml::{Wrapper, XmlError, find_child};
+    use crate::xml::{XmlError, XmlReader, find_child};
 
     #[test]
     fn extract_wsdp_props_reads_namespaced_children() -> Result<(), XmlError> {
@@ -499,7 +499,7 @@ mod tests {
             constants::XML_WSDP_NAMESPACE
         );
 
-        let mut reader = Wrapper::new(EventReader::new(xml.as_bytes()));
+        let mut reader = XmlReader::new(EventReader::new(xml.as_bytes()));
 
         find_child(
             &mut reader,
@@ -527,7 +527,7 @@ mod tests {
             constants::XML_WSDP_NAMESPACE
         );
 
-        let mut reader = Wrapper::new(EventReader::new(xml.as_bytes()));
+        let mut reader = XmlReader::new(EventReader::new(xml.as_bytes()));
 
         let bag = extract_wsdp_props(&mut reader, constants::XML_WSDP_NAMESPACE);
 

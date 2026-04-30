@@ -6,10 +6,10 @@ use xml::reader::XmlEvent;
 use crate::constants;
 use crate::soap::parser::BodyParsingError;
 use crate::wsd::device::DeviceUri;
-use crate::xml::{Wrapper, XmlError, read_text};
+use crate::xml::{XmlError, XmlReader, read_text};
 
 pub fn extract_endpoint_reference_address<R>(
-    reader: &mut Wrapper<R>,
+    reader: &mut XmlReader<R>,
 ) -> Result<Box<str>, BodyParsingError>
 where
     R: Read,
@@ -55,7 +55,7 @@ where
 }
 
 pub fn extract_endpoint_metadata<R>(
-    reader: &mut Wrapper<R>,
+    reader: &mut XmlReader<R>,
 ) -> Result<(DeviceUri, Option<Box<str>>), BodyParsingError>
 where
     R: Read,

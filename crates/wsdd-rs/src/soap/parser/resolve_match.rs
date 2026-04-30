@@ -4,7 +4,7 @@ use crate::constants;
 use crate::soap::parser::BodyParsingError;
 use crate::soap::parser::generic::extract_endpoint_metadata;
 use crate::wsd::device::DeviceUri;
-use crate::xml::{Wrapper, find_child};
+use crate::xml::{XmlReader, find_child};
 
 type ParsedResolveMatchResult = Result<ResolveMatch, BodyParsingError>;
 
@@ -17,7 +17,7 @@ pub struct ResolveMatch {
 ///
 /// This function makes NO claims about the position of the reader
 /// should the structure XML be invalid (e.g. missing `Address`).
-pub fn parse_resolve_match<R>(reader: &mut Wrapper<R>) -> ParsedResolveMatchResult
+pub fn parse_resolve_match<R>(reader: &mut XmlReader<R>) -> ParsedResolveMatchResult
 where
     R: Read,
 {

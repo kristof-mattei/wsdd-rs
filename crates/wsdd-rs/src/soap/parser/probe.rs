@@ -6,7 +6,7 @@ use xml::reader::XmlEvent;
 
 use crate::constants;
 use crate::soap::parser::BodyParsingError;
-use crate::xml::{Wrapper, XmlError, find_child, read_text};
+use crate::xml::{XmlError, XmlReader, find_child, read_text};
 
 type ParsedProbeResult = Result<Probe, BodyParsingError>;
 
@@ -22,7 +22,7 @@ pub struct Probe {
 ///
 /// * `Ok(Probe {})`: when we were able to successfully decode the XML as a `Probe`
 /// * `Err(_)`: Anything went wrong trying to parse the XML
-pub fn parse_probe<R>(reader: &mut Wrapper<R>) -> ParsedProbeResult
+pub fn parse_probe<R>(reader: &mut XmlReader<R>) -> ParsedProbeResult
 where
     R: Read,
 {

@@ -17,24 +17,24 @@ pub enum TextReadError {
     XmlError(#[from] xml::reader::Error),
 }
 
-pub struct Wrapper<R>
+pub struct XmlReader<R>
 where
     R: Read,
 {
     depth: usize,
-    next: Option<std::result::Result<XmlEvent, xml::reader::Error>>,
-    reader: EventReader<R>,
+    next: Option<Result<XmlEvent, xml::reader::Error>>,
+    inner: EventReader<R>,
 }
 
-impl<R> Wrapper<R>
+impl<R> XmlReader<R>
 where
     R: Read,
 {
-    pub fn new(reader: EventReader<R>) -> Wrapper<R> {
+    pub fn new(inner: EventReader<R>) -> XmlReader<R> {
         Self {
             depth: 0,
             next: None,
-            reader,
+            inner,
         }
     }
 
@@ -45,7 +45,7 @@ where
     pub fn next(&mut self) -> std::result::Result<XmlEvent, xml::reader::Error> {
         let event = match self.next.take() {
             Some(next) => next,
-            None => self.reader.next(),
+            None => self.inner.next(),
         };
 
         if let Ok(ref event) = event {
@@ -66,7 +66,7 @@ where
 
     #[expect(unused, reason = "WIP")]
     pub fn peek(&mut self) -> std::result::Result<&XmlEvent, &xml::reader::Error> {
-        self.next.get_or_insert_with(|| self.reader.next()).as_ref()
+        self.next.get_or_insert_with(|| self.inner.next()).as_ref()
     }
 }
 
@@ -76,7 +76,7 @@ where
 ///
 /// Errors:
 /// * When it encounters anything other than character data (including normalized white space and CDATA)
-pub fn read_text<R>(reader: &mut Wrapper<R>) -> Result<Option<String>, TextReadError>
+pub fn read_text<R>(reader: &mut XmlReader<R>) -> Result<Option<String>, TextReadError>
 where
     R: Read,
 {
@@ -135,7 +135,7 @@ pub enum XmlError {
 type FindDescendantResult = Result<(OwnedName, Vec<OwnedAttribute>), XmlError>;
 
 pub fn find_child<R>(
-    reader: &mut Wrapper<R>,
+    reader: &mut XmlReader<R>,
     namespace: Option<&str>,
     path: &str,
 ) -> FindDescendantResult
@@ -199,7 +199,7 @@ mod tests {
     use xml::attribute::OwnedAttribute;
     use xml::name::OwnedName;
 
-    use crate::xml::{Wrapper, XmlError, find_child};
+    use crate::xml::{XmlError, XmlReader, find_child};
 
     #[test]
     fn parse_generic_body_missing_element() {
@@ -213,7 +213,7 @@ mod tests {
                 .whitespace_to_characters(true)
                 .create_reader(xml.as_bytes());
 
-            Wrapper::new(reader)
+            XmlReader::new(reader)
         };
 
         let _result = find_child(&mut reader, None, "Level1").unwrap();
@@ -235,7 +235,7 @@ mod tests {
                 .whitespace_to_characters(true)
                 .create_reader(xml.as_bytes());
 
-            Wrapper::new(reader)
+            XmlReader::new(reader)
         };
 
         {
@@ -263,7 +263,7 @@ mod tests {
                 .whitespace_to_characters(true)
                 .create_reader(xml.as_bytes());
 
-            Wrapper::new(reader)
+            XmlReader::new(reader)
         };
 
         let _result = find_child(&mut reader, Some("urn:first"), "Envelope");
@@ -285,7 +285,7 @@ mod tests {
                 .whitespace_to_characters(true)
                 .create_reader(xml.as_bytes());
 
-            Wrapper::new(reader)
+            XmlReader::new(reader)
         };
 
         let _result = find_child(&mut reader, Some("urn:first"), "Envelope");
@@ -306,7 +306,7 @@ mod tests {
                 .whitespace_to_characters(true)
                 .create_reader(xml.as_bytes());
 
-            Wrapper::new(reader)
+            XmlReader::new(reader)
         };
 
         let _result = find_child(&mut reader, Some("urn:first"), "Envelope");
@@ -328,7 +328,7 @@ mod tests {
                 .whitespace_to_characters(true)
                 .create_reader(xml.as_bytes());
 
-            Wrapper::new(reader)
+            XmlReader::new(reader)
         };
 
         // descent into the reader
