@@ -201,20 +201,22 @@ mod tests {
 
     use crate::xml::{XmlError, XmlReader, find_child};
 
+    fn make_reader(xml: &str) -> XmlReader<&[u8]> {
+        let reader = ParserConfig::new()
+            .cdata_to_characters(true)
+            .ignore_comments(true)
+            .trim_whitespace(true)
+            .whitespace_to_characters(true)
+            .create_reader(xml.as_bytes());
+
+        XmlReader::new(reader)
+    }
+
     #[test]
     fn parse_generic_body_missing_element() {
         let xml = include_str!("./test/xml/three-levels.xml");
 
-        let mut reader = {
-            let reader = ParserConfig::new()
-                .cdata_to_characters(true)
-                .ignore_comments(true)
-                .trim_whitespace(true)
-                .whitespace_to_characters(true)
-                .create_reader(xml.as_bytes());
-
-            XmlReader::new(reader)
-        };
+        let mut reader = make_reader(xml);
 
         let _result = find_child(&mut reader, None, "Level1").unwrap();
         let _result = find_child(&mut reader, None, "Level2").unwrap();
@@ -227,16 +229,7 @@ mod tests {
     fn parse_generic_body_depth_mismatch_returns_missing_element() {
         let xml = include_str!("./test/xml/four-levels.xml");
 
-        let mut reader = {
-            let reader = ParserConfig::new()
-                .cdata_to_characters(true)
-                .ignore_comments(true)
-                .trim_whitespace(true)
-                .whitespace_to_characters(true)
-                .create_reader(xml.as_bytes());
-
-            XmlReader::new(reader)
-        };
+        let mut reader = make_reader(xml);
 
         {
             let _unused: Result<xml::reader::XmlEvent, xml::reader::Error> = reader.next();
@@ -255,16 +248,7 @@ mod tests {
     fn parse_generic_body_paths_nested_non_matching_elements() {
         let xml = include_str!("./test/xml/nested-non-matching-elements.xml");
 
-        let mut reader = {
-            let reader = ParserConfig::new()
-                .cdata_to_characters(true)
-                .ignore_comments(true)
-                .trim_whitespace(true)
-                .whitespace_to_characters(true)
-                .create_reader(xml.as_bytes());
-
-            XmlReader::new(reader)
-        };
+        let mut reader = make_reader(xml);
 
         let _result = find_child(&mut reader, Some("urn:first"), "Envelope");
         let result = find_child(&mut reader, Some("urn:first"), "Body");
@@ -277,16 +261,7 @@ mod tests {
     fn parse_generic_body_paths_requires_direct_child_match() {
         let xml = include_str!("./test/xml/requires-direct-child-match.xml");
 
-        let mut reader = {
-            let reader = ParserConfig::new()
-                .cdata_to_characters(true)
-                .ignore_comments(true)
-                .trim_whitespace(true)
-                .whitespace_to_characters(true)
-                .create_reader(xml.as_bytes());
-
-            XmlReader::new(reader)
-        };
+        let mut reader = make_reader(xml);
 
         let _result = find_child(&mut reader, Some("urn:first"), "Envelope");
         let result = find_child(&mut reader, Some("urn:first"), "Body");
@@ -298,16 +273,7 @@ mod tests {
     fn parse_generic_body_paths_siblings() {
         let xml = include_str!("./test/xml/siblings.xml");
 
-        let mut reader = {
-            let reader = ParserConfig::new()
-                .cdata_to_characters(true)
-                .ignore_comments(true)
-                .trim_whitespace(true)
-                .whitespace_to_characters(true)
-                .create_reader(xml.as_bytes());
-
-            XmlReader::new(reader)
-        };
+        let mut reader = make_reader(xml);
 
         let _result = find_child(&mut reader, Some("urn:first"), "Envelope");
         let result = find_child(&mut reader, Some("urn:first"), "Body");
@@ -320,16 +286,7 @@ mod tests {
     fn repro_depth_underflow() {
         let xml = include_str!("./test/xml/depth-underflow.xml");
 
-        let mut reader = {
-            let reader = ParserConfig::new()
-                .cdata_to_characters(true)
-                .ignore_comments(true)
-                .trim_whitespace(true)
-                .whitespace_to_characters(true)
-                .create_reader(xml.as_bytes());
-
-            XmlReader::new(reader)
-        };
+        let mut reader = make_reader(xml);
 
         // descent into the reader
         // before this bugfix, when starting at a certain depth
