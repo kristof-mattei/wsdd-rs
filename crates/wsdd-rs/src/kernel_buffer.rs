@@ -1,6 +1,5 @@
 use std::mem::{MaybeUninit, size_of};
 use std::ops::{Deref, DerefMut};
-use std::slice::SliceIndex;
 
 mod private {
     pub(super) trait Private {}
@@ -33,28 +32,6 @@ where
         f.debug_struct("AlignedBuffer")
             .field("buffer_len", &self.buffer.len())
             .finish()
-    }
-}
-
-impl<const A: usize, I> std::ops::Index<I> for AlignedBuffer<A>
-where
-    ConstToType<A>: MapConstToType,
-    I: SliceIndex<[MaybeUninit<u8>]>,
-{
-    type Output = I::Output;
-
-    fn index(&self, index: I) -> &I::Output {
-        &AsRef::<[MaybeUninit<u8>]>::as_ref(&(**self))[index]
-    }
-}
-
-impl<const A: usize, I> std::ops::IndexMut<I> for AlignedBuffer<A>
-where
-    ConstToType<A>: MapConstToType,
-    I: SliceIndex<[MaybeUninit<u8>]>,
-{
-    fn index_mut(&mut self, index: I) -> &mut I::Output {
-        &mut AsMut::<[MaybeUninit<u8>]>::as_mut(&mut **self)[index]
     }
 }
 
