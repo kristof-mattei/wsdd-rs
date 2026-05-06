@@ -15,9 +15,11 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
+use uuid::fmt::Urn;
 
 use crate::config::Config;
 use crate::constants;
+use crate::max_size_deque::MaxSizeDeque;
 use crate::message_receiver::MessageReceiver;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
@@ -40,6 +42,8 @@ pub struct MulticastHandler {
 
     /// Shared reference to all discovered devices.
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+
+    recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
 
     /// Shared reference for global message counter.
     messages_built: Arc<AtomicU64>,
@@ -95,6 +99,7 @@ impl MulticastHandler {
         cancellation_token: CancellationToken,
         config: Arc<Config>,
         devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+        recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
     ) -> Result<Self, eyre::Report> {
         let domain = match network_address.address {
             IpNet::V4(_) => Domain::IPV4,
@@ -140,6 +145,7 @@ impl MulticastHandler {
         let mc_wsd_port_rx = MessageReceiver::new(
             cancellation_token.clone(),
             network_address.clone(),
+            Arc::clone(&recent_messages),
             Arc::clone(&mc_wsd_port_socket),
         );
 
@@ -156,6 +162,7 @@ impl MulticastHandler {
         let mc_local_port_rx = MessageReceiver::new(
             cancellation_token.clone(),
             network_address.clone(),
+            Arc::clone(&recent_messages),
             Arc::clone(&mc_local_port_socket),
         );
 
@@ -172,6 +179,7 @@ impl MulticastHandler {
             cancellation_token,
             network_address,
             devices,
+            recent_messages,
             messages_built: Arc::new(AtomicU64::new(0)),
             multicast_address,
             http_listen_address,
@@ -468,6 +476,7 @@ impl MulticastHandler {
                     Arc::clone(&self.config),
                     Arc::clone(&self.messages_built),
                     self.http_listen_address,
+                    Arc::clone(&self.recent_messages),
                 )
                 .await;
 

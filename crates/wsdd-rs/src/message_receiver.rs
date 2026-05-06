@@ -7,15 +7,16 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
+use uuid::fmt::Urn;
 
 use crate::constants;
+use crate::max_size_deque::MaxSizeDeque;
 use crate::multicast_handler::{IncomingClientMessage, IncomingHostMessage};
 use crate::network_address::NetworkAddress;
 use crate::soap::WSDMessage;
 use crate::soap::parser::MessageHandler;
 use crate::utils::SocketAddrDisplay;
 use crate::utils::task::spawn_with_name;
-use crate::wsd::HANDLED_MESSAGES;
 
 struct ClientHostListener {
     host_tx: Option<Sender<IncomingHostMessage>>,
@@ -31,6 +32,7 @@ impl MessageReceiver {
     pub fn new(
         cancellation_token: CancellationToken,
         network_address: NetworkAddress,
+        recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
         socket: Arc<UdpSocket>,
     ) -> Self {
         let listeners = Arc::new(RwLock::const_new(ClientHostListener {
@@ -47,6 +49,7 @@ impl MessageReceiver {
                     cancellation_token.clone(),
                     network_address,
                     listeners,
+                    recent_messages,
                     socket,
                 ),
             )
@@ -98,9 +101,10 @@ async fn socket_rx_forever(
     cancellation_token: CancellationToken,
     network_address: NetworkAddress,
     listeners: Arc<RwLock<ClientHostListener>>,
+    recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
     socket: Arc<UdpSocket>,
 ) {
-    let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), network_address);
+    let message_handler = MessageHandler::new(network_address, recent_messages);
 
     loop {
         let mut buffer = vec![MaybeUninit::<u8>::uninit(); constants::WSD_MAX_LEN];
