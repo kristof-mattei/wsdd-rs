@@ -1,4 +1,4 @@
-use std::mem::{MaybeUninit, size_of};
+use std::mem::{MaybeUninit, align_of, size_of};
 use std::ops::{Deref, DerefMut};
 
 mod private {
@@ -37,29 +37,64 @@ where
 
 struct ConstToType<const U: usize>;
 
+#[expect(
+    dead_code,
+    reason = "field exists only to give the struct its size; alignment comes from repr(align)"
+)]
+#[repr(align(1))]
+struct Align1([u8; 1]);
+
+#[expect(
+    dead_code,
+    reason = "field exists only to give the struct its size; alignment comes from repr(align)"
+)]
+#[repr(align(2))]
+struct Align2([u8; 2]);
+
+#[expect(
+    dead_code,
+    reason = "field exists only to give the struct its size; alignment comes from repr(align)"
+)]
+#[repr(align(4))]
+struct Align4([u8; 4]);
+
+#[expect(
+    dead_code,
+    reason = "field exists only to give the struct its size; alignment comes from repr(align)"
+)]
+#[repr(align(8))]
+struct Align8([u8; 8]);
+
+#[expect(
+    dead_code,
+    reason = "field exists only to give the struct its size; alignment comes from repr(align)"
+)]
+#[repr(align(16))]
+struct Align16([u8; 16]);
+
 impl private::Private for ConstToType<1> {}
 impl MapConstToType for ConstToType<1> {
-    type Output = u8;
+    type Output = Align1;
 }
 
 impl private::Private for ConstToType<2> {}
 impl MapConstToType for ConstToType<2> {
-    type Output = u16;
+    type Output = Align2;
 }
 
 impl private::Private for ConstToType<4> {}
 impl MapConstToType for ConstToType<4> {
-    type Output = u32;
+    type Output = Align4;
 }
 
 impl private::Private for ConstToType<8> {}
 impl MapConstToType for ConstToType<8> {
-    type Output = u64;
+    type Output = Align8;
 }
 
 impl private::Private for ConstToType<16> {}
 impl MapConstToType for ConstToType<16> {
-    type Output = u128;
+    type Output = Align16;
 }
 
 #[expect(
@@ -73,6 +108,13 @@ where
     const MAPPED_TYPE_SIZE: usize = size_of::<<ConstToType<A> as MapConstToType>::Output>();
 
     pub fn new(len: usize) -> Result<Self, &'static str> {
+        const {
+            assert!(
+                align_of::<<ConstToType<A> as MapConstToType>::Output>() >= A,
+                "backing type alignment is smaller than requested A",
+            );
+        }
+
         if !len.is_multiple_of(Self::MAPPED_TYPE_SIZE) {
             return Err("len must be a multiple of the mapped type size");
         }
