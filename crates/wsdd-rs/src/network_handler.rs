@@ -19,8 +19,10 @@ use tokio::sync::watch::Sender as StartSender;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
+use uuid::fmt::Urn;
 
 use crate::config::Config;
+use crate::max_size_deque::MaxSizeDeque;
 use crate::multicast_handler::MulticastHandler;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::{self, NetworkInterface};
@@ -73,6 +75,7 @@ pub struct NetworkHandler {
     multicast_handlers: Vec<MulticastHandler>,
     command_rx: Receiver<Command>,
     start_tx: StartSender<()>,
+    recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
 }
 
 #[derive(Debug, Error)]
@@ -87,6 +90,7 @@ impl NetworkHandler {
         config: &Arc<Config>,
         command_rx: Receiver<Command>,
         start_tx: StartSender<()>,
+        recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
     ) -> Self {
         Self {
             active: AtomicBool::new(false),
@@ -97,6 +101,7 @@ impl NetworkHandler {
             multicast_handlers: vec![],
             command_rx,
             start_tx,
+            recent_messages,
         }
     }
 
@@ -355,6 +360,7 @@ impl NetworkHandler {
             self.cancellation_token.child_token(),
             Arc::clone(&self.config),
             Arc::clone(&self.devices),
+            Arc::clone(&self.recent_messages),
         ) {
             Ok(handler) => handler,
             Err(error) => {

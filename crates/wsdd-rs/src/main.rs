@@ -40,6 +40,7 @@ use color_eyre::config::HookBuilder;
 use color_eyre::eyre;
 use dotenvy::dotenv;
 use task_tracker_ext::TaskTrackerExt as _;
+use tokio::sync::RwLock;
 use tokio::sync::mpsc::Sender;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
@@ -47,11 +48,14 @@ use tracing::{Level, event};
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::{EnvFilter, Layer as _};
+use uuid::fmt::Urn;
 
 use crate::address_monitor::create_address_monitor;
 use crate::build_env::get_build_env;
 use crate::cli::parse_cli;
 use crate::config::{Config, PortOrSocket};
+use crate::constants::WSD_MAX_KNOWN_MESSAGES;
+use crate::max_size_deque::MaxSizeDeque;
 use crate::network_handler::{Command, NetworkHandler};
 use crate::security::{chroot, drop_privileges};
 use crate::shutdown::Shutdown;
@@ -227,6 +231,9 @@ async fn start_tasks() -> Shutdown {
         return shutdown;
     }
 
+    let recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>> =
+        Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES)));
+
     // this channel is used to communicate between
     // tasks and this function, in the case that a task fails, they'll send a message on the shutdown channel
     // after which we'll gracefully terminate other services
@@ -237,8 +244,13 @@ async fn start_tasks() -> Shutdown {
     let (command_tx, command_rx) = tokio::sync::mpsc::channel(10);
     let (start_tx, start_rx) = tokio::sync::watch::channel::<()>(());
 
-    let mut network_handler =
-        NetworkHandler::new(cancellation_token.clone(), &config, command_rx, start_tx);
+    let mut network_handler = NetworkHandler::new(
+        cancellation_token.clone(),
+        &config,
+        command_rx,
+        start_tx,
+        recent_messages,
+    );
 
     {
         let cancellation_token = cancellation_token.clone();

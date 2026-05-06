@@ -4,13 +4,15 @@ use std::sync::atomic::AtomicU64;
 
 use axum::Router;
 use color_eyre::eyre;
+use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
+use uuid::fmt::Urn;
 
 use crate::config::Config;
+use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
 use crate::soap::parser::MessageHandler;
-use crate::wsd::HANDLED_MESSAGES;
 use crate::wsd::http::router::build_router;
 
 pub struct WSDHttpServer {
@@ -29,8 +31,9 @@ impl WSDHttpServer {
         config: Arc<Config>,
         messages_built: Arc<AtomicU64>,
         http_listen_address: SocketAddr,
+        recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
     ) -> Result<WSDHttpServer, std::io::Error> {
-        let message_handler = MessageHandler::new(Arc::clone(&HANDLED_MESSAGES), bound_to.clone());
+        let message_handler = MessageHandler::new(bound_to.clone(), recent_messages);
 
         event!(Level::INFO, ?http_listen_address, "Trying to bind");
 
@@ -93,10 +96,12 @@ mod tests {
     use ipnet::IpNet;
     use libc::RT_SCOPE_SITE;
     use pretty_assertions::assert_eq;
+    use tokio::sync::RwLock;
     use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
 
-    use crate::constants;
+    use crate::constants::{self, WSD_MAX_KNOWN_MESSAGES};
+    use crate::max_size_deque::MaxSizeDeque;
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
     use crate::test_utils::build_config;
@@ -123,6 +128,7 @@ mod tests {
             Arc::clone(&host_config),
             host_messages_built,
             host_http_listening_address,
+            Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES))),
         )
         .await
         .unwrap();
@@ -221,6 +227,7 @@ mod tests {
             Arc::clone(&host_config),
             Arc::clone(&host_messages_built),
             host_http_listening_address,
+            Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES))),
         )
         .await
         .unwrap_or_else(|_| panic!("Failed to launch server on {}", host_http_listening_address));
@@ -282,6 +289,7 @@ mod tests {
             Arc::clone(&host_config),
             Arc::clone(&host_messages_built),
             host_http_listening_address,
+            Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES))),
         )
         .await
         .unwrap();

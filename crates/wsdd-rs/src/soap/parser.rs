@@ -29,8 +29,8 @@ use crate::wsd::device::DeviceUri;
 use crate::xml::{TextReadError, XmlError, XmlReader, read_text};
 
 pub struct MessageHandler {
-    handled_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
     network_address: NetworkAddress,
+    recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
 }
 
 pub struct Header {
@@ -281,12 +281,12 @@ pub fn deconstruct_http_message(raw: &[u8]) -> Result<(Header, WSDMessage), Mess
 
 impl MessageHandler {
     pub fn new(
-        handled_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
         network_address: NetworkAddress,
+        recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
     ) -> Self {
         Self {
-            handled_messages,
             network_address,
+            recent_messages,
         }
     }
 
@@ -329,14 +329,14 @@ impl MessageHandler {
     /// every message.
     pub async fn is_duplicated_msg(&self, message_id: Urn) -> bool {
         {
-            let read_lock = self.handled_messages.read().await;
+            let read_lock = self.recent_messages.read().await;
 
             if read_lock.contains(&message_id) {
                 return true;
             }
         }
 
-        let mut write_lock = self.handled_messages.write().await;
+        let mut write_lock = self.recent_messages.write().await;
 
         if write_lock.push_back(message_id) {
             // the queue did NOT have the message_id, so it's a new message
@@ -453,11 +453,11 @@ mod tests {
 
     fn handler_for_tests(history: usize) -> MessageHandler {
         MessageHandler::new(
-            Arc::new(RwLock::new(MaxSizeDeque::new(history))),
             NetworkAddress::new(
                 IpNet::new(Ipv4Addr::new(127, 1, 2, 3).into(), 16).unwrap(),
                 Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
             ),
+            Arc::new(RwLock::new(MaxSizeDeque::new(history))),
         )
     }
 
