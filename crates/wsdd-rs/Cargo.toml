@@ -62,7 +62,7 @@ tokio = { version = "1.52.2", features = [
     "tracing",
 ] }
 tokio-util = { version = "0.7.18", features = ["rt"] }
-tower-http = { version = "0.6.9", features = ["on-early-drop", "trace"] }
+tower-http = { version = "0.6.10", features = ["on-early-drop", "trace"] }
 tower-service = "0.3.3"
 tracing = "0.1.44"
 tracing-error = "0.2.1"
