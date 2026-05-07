@@ -167,6 +167,8 @@ fn build_buffer() -> Result<AlignedBuffer<{ align_of::<nlmsghdr>() }>, eyre::Rep
     // https://github.com/torvalds/linux/blob/24d479d26b25bce5faea3ddd9fa8f3a6c3129ea7/include/linux/netlink.h#L272-L276
     const MAX_PAGE_SIZE: usize = 8192;
 
+    // The kernel itself caps recvmsg sizing at `NLMSG_GOODSIZE = min(PAGE_SIZE, 8192)`,
+    // so allocating more than 8192 bytes would never be filled. We mirror that cap here.
     let page_size = getpagesize().clamp(MIN_PAGE_SIZE, MAX_PAGE_SIZE);
 
     AlignedBuffer::<{ align_of::<nlmsghdr>() }>::new(page_size).map_err(eyre::Report::msg)
