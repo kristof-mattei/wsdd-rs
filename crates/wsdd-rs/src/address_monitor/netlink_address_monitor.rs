@@ -212,7 +212,7 @@ where
         );
 
         let buffer = {
-            let raw_buffer = buffer.as_ref().as_ptr().cast::<u8>();
+            let raw_buffer = buffer.as_ptr().cast::<u8>();
 
             // SAFETY: we are only initializing the parts of the buffer `recv_buf` has written to
             unsafe { std::slice::from_raw_parts(raw_buffer, bytes_read) }
