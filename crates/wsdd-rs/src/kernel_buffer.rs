@@ -136,7 +136,11 @@ where
     fn deref(&self) -> &Self::Target {
         let ptr = self.buffer.as_ptr();
 
-        // SAFETY: The underlying buffer is of `N / size_of::<A>()`, so the buffer is valid for a length of `N`
+        // SAFETY: `self.buffer` was allocated with `len / MAPPED_TYPE_SIZE` elements
+        // of size `MAPPED_TYPE_SIZE`, so `self.buffer.len() * MAPPED_TYPE_SIZE` is exactly
+        // the original `len` bytes covered contiguously by the allocation. Alignment is
+        // trivially satisfied (`MaybeUninit<u8>` is 1-aligned), and `MaybeUninit<u8>` has
+        // no validity invariants, so any byte contents, including uninitialized, are fine.
         unsafe {
             std::slice::from_raw_parts(
                 ptr.cast::<MaybeUninit<u8>>(),
@@ -153,7 +157,11 @@ where
     fn deref_mut(&mut self) -> &mut Self::Target {
         let mut_ptr = self.buffer.as_mut_ptr();
 
-        // SAFETY: The underlying buffer is of `N / size_of::<A>()`, so the buffer is valid for a length of `N`
+        // SAFETY: `self.buffer` was allocated with `len / MAPPED_TYPE_SIZE` elements
+        // of size `MAPPED_TYPE_SIZE`, so `self.buffer.len() * MAPPED_TYPE_SIZE` is exactly
+        // the original `len` bytes covered contiguously by the allocation. Alignment is
+        // trivially satisfied (`MaybeUninit<u8>` is 1-aligned), and `MaybeUninit<u8>` has
+        // no validity invariants, so any byte contents, including uninitialized, are fine.
         unsafe {
             std::slice::from_raw_parts_mut(
                 mut_ptr.cast::<MaybeUninit<u8>>(),
