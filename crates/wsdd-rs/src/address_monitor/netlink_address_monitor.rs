@@ -160,7 +160,7 @@ impl NetlinkAddressMonitor {
     }
 }
 
-fn build_buffer() -> Result<AlignedBuffer<{ align_of::<nlmsghdr>() }>, eyre::Report> {
+fn build_buffer() -> AlignedBuffer<{ align_of::<nlmsghdr>() }> {
     // Can't have smaller than this on x86
     const MIN_PAGE_SIZE: usize = 4096;
     // Large enough for the kernel's max packet (see `NLMSG_GOODSIZE`)
@@ -171,7 +171,7 @@ fn build_buffer() -> Result<AlignedBuffer<{ align_of::<nlmsghdr>() }>, eyre::Rep
     // so allocating more than 8192 bytes would never be filled. We mirror that cap here.
     let page_size = getpagesize().clamp(MIN_PAGE_SIZE, MAX_PAGE_SIZE);
 
-    AlignedBuffer::<{ align_of::<nlmsghdr>() }>::new(page_size).map_err(eyre::Report::msg)
+    AlignedBuffer::<{ align_of::<nlmsghdr>() }>::new(page_size)
 }
 
 async fn process_changes<R>(
@@ -189,7 +189,7 @@ where
     // Notice the buffer's alignment being equal to the alignment of `nlmsghdr`.
     // This is because we will be reading structs from this buffer who have, at max, that alignment.
 
-    let mut buffer = build_buffer().map_err(eyre::Report::msg)?;
+    let mut buffer = build_buffer();
 
     loop {
         let bytes_read = {
