@@ -107,7 +107,9 @@ where
 {
     const MAPPED_TYPE_SIZE: usize = size_of::<<ConstToType<A> as MapConstToType>::Output>();
 
-    pub fn new(len: usize) -> Result<Self, &'static str> {
+    /// Allocates a buffer of at least `minimum_length` bytes, aligned to `A`.
+    /// If `minimum_length` is not a multiple of `A`, the byte length is rounded up to the next multiple of `A`.
+    pub fn new(minimum_length: usize) -> Self {
         const {
             assert!(
                 align_of::<<ConstToType<A> as MapConstToType>::Output>() >= A,
@@ -115,15 +117,9 @@ where
             );
         }
 
-        if !len.is_multiple_of(Self::MAPPED_TYPE_SIZE) {
-            return Err("len must be a multiple of the mapped type size");
+        Self {
+            buffer: Box::new_uninit_slice(minimum_length.div_ceil(Self::MAPPED_TYPE_SIZE)),
         }
-
-        let len = len / Self::MAPPED_TYPE_SIZE;
-
-        Ok(Self {
-            buffer: Box::new_uninit_slice(len),
-        })
     }
 }
 
@@ -136,11 +132,10 @@ where
     fn deref(&self) -> &Self::Target {
         let ptr = self.buffer.as_ptr();
 
-        // SAFETY: `self.buffer` was allocated with `len / MAPPED_TYPE_SIZE` elements
-        // of size `MAPPED_TYPE_SIZE`, so `self.buffer.len() * MAPPED_TYPE_SIZE` is exactly
-        // the original `len` bytes covered contiguously by the allocation. Alignment is
-        // trivially satisfied (`MaybeUninit<u8>` is 1-aligned), and `MaybeUninit<u8>` has
-        // no validity invariants, so any byte contents, including uninitialized, are fine.
+        // SAFETY: `self.buffer` is a contiguous allocation of exactly
+        // `self.buffer.len() * MAPPED_TYPE_SIZE` bytes. Alignment is trivially satisfied
+        // (`MaybeUninit<u8>` is 1-aligned), and `MaybeUninit<u8>` has no validity
+        // invariants, so any byte contents, including uninitialized, are fine.
         unsafe {
             std::slice::from_raw_parts(
                 ptr.cast::<MaybeUninit<u8>>(),
@@ -157,11 +152,10 @@ where
     fn deref_mut(&mut self) -> &mut Self::Target {
         let mut_ptr = self.buffer.as_mut_ptr();
 
-        // SAFETY: `self.buffer` was allocated with `len / MAPPED_TYPE_SIZE` elements
-        // of size `MAPPED_TYPE_SIZE`, so `self.buffer.len() * MAPPED_TYPE_SIZE` is exactly
-        // the original `len` bytes covered contiguously by the allocation. Alignment is
-        // trivially satisfied (`MaybeUninit<u8>` is 1-aligned), and `MaybeUninit<u8>` has
-        // no validity invariants, so any byte contents, including uninitialized, are fine.
+        // SAFETY: `self.buffer` is a contiguous allocation of exactly
+        // `self.buffer.len() * MAPPED_TYPE_SIZE` bytes. Alignment is trivially satisfied
+        // (`MaybeUninit<u8>` is 1-aligned), and `MaybeUninit<u8>` has no validity
+        // invariants, so any byte contents, including uninitialized, are fine.
         unsafe {
             std::slice::from_raw_parts_mut(
                 mut_ptr.cast::<MaybeUninit<u8>>(),
@@ -173,15 +167,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_matches;
+    use pretty_assertions::assert_eq;
 
     use crate::kernel_buffer::AlignedBuffer;
 
     #[test]
-    fn fail_when_not_multiple_of_alignment() {
-        assert_matches!(
-            AlignedBuffer::<4>::new(5),
-            Err("len must be a multiple of the mapped type size")
-        );
+    fn rounds_up_to_multiple_of_alignment() {
+        let buf = AlignedBuffer::<4>::new(5);
+        assert_eq!(buf.len(), 8);
     }
 }
