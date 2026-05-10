@@ -13,6 +13,9 @@ pub trait MapConstToType: private::Private {
     type Output;
 }
 
+// Ideally this would take a type `T` and derive the alignment internally:
+//     `pub struct AlignedBuffer<T> where ConstToType<{ align_of::<T>() }>: MapConstToType`
+// Blocked on `generic_const_exprs` (rust-lang/rust#76560).
 #[expect(
     private_bounds,
     reason = "Arbitrary implementations don't make sense and are not supported"
