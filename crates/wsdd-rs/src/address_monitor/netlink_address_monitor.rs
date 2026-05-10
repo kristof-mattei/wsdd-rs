@@ -492,9 +492,8 @@ mod tests {
         #[expect(clippy::mut_mut, reason = "Mandated by the trait")]
         async fn recv_buf(&self, buf: &mut &mut [MaybeUninit<u8>]) -> std::io::Result<usize> {
             if self.done.fetch_or(true, Ordering::Relaxed) {
-                tokio::task::yield_now().await;
-
-                return Ok(0);
+                // fixture exhausted; mirror a real socket and block
+                return std::future::pending().await;
             }
 
             let bytes = include_bytes!("fixtures/commands.bin");
