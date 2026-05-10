@@ -167,13 +167,49 @@ where
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_eq;
+    use std::mem::MaybeUninit;
+
+    use pretty_assertions::{assert_eq, assert_ne};
 
     use crate::kernel_buffer::AlignedBuffer;
 
     #[test]
-    fn rounds_up_to_multiple_of_alignment() {
-        let buf = AlignedBuffer::<4>::new(5);
-        assert_eq!(buf.len(), 8);
+    fn alignment_is_satisfied() {
+        #[expect(clippy::modulo_one, reason = "valid for this test")]
+        {
+            assert_eq!((AlignedBuffer::<1>::new(8).as_ptr() as usize) % 1, 0);
+        }
+        assert_eq!((AlignedBuffer::<2>::new(8).as_ptr() as usize) % 2, 0);
+        assert_eq!((AlignedBuffer::<4>::new(8).as_ptr() as usize) % 4, 0);
+        assert_eq!((AlignedBuffer::<8>::new(16).as_ptr() as usize) % 8, 0);
+        assert_eq!((AlignedBuffer::<16>::new(32).as_ptr() as usize) % 16, 0);
+    }
+
+    #[test]
+    fn length_matches_request_when_aligned() {
+        assert_eq!(AlignedBuffer::<1>::new(7).len(), 7);
+        assert_eq!(AlignedBuffer::<4>::new(8).len(), 8);
+        assert_eq!(AlignedBuffer::<16>::new(48).len(), 48);
+    }
+
+    #[test]
+    fn length_rounds_up_when_not_aligned() {
+        assert_eq!(AlignedBuffer::<4>::new(5).len(), 8);
+        assert_eq!(AlignedBuffer::<8>::new(1).len(), 8);
+        assert_eq!(AlignedBuffer::<16>::new(17).len(), 32);
+    }
+
+    #[test]
+    fn successive_calls_dont_alias() {
+        let a = AlignedBuffer::<4>::new(16);
+        let b = AlignedBuffer::<4>::new(16);
+        assert_ne!(a.as_ptr(), b.as_ptr());
+    }
+
+    #[test]
+    #[should_panic(expected = "index out of bounds")]
+    fn indexing_past_length_panics() {
+        let buf = AlignedBuffer::<4>::new(8);
+        let _: MaybeUninit<u8> = buf[8];
     }
 }
