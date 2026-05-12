@@ -42,35 +42,35 @@ struct ConstToType<const U: usize>;
 
 #[expect(
     dead_code,
-    reason = "field exists only to give the struct its size; alignment comes from repr(align)"
+    reason = "field exists only to give the struct its size, alignment comes from repr(align)"
 )]
 #[repr(align(1))]
 struct Align1([u8; 1]);
 
 #[expect(
     dead_code,
-    reason = "field exists only to give the struct its size; alignment comes from repr(align)"
+    reason = "field exists only to give the struct its size, alignment comes from repr(align)"
 )]
 #[repr(align(2))]
 struct Align2([u8; 2]);
 
 #[expect(
     dead_code,
-    reason = "field exists only to give the struct its size; alignment comes from repr(align)"
+    reason = "field exists only to give the struct its size, alignment comes from repr(align)"
 )]
 #[repr(align(4))]
 struct Align4([u8; 4]);
 
 #[expect(
     dead_code,
-    reason = "field exists only to give the struct its size; alignment comes from repr(align)"
+    reason = "field exists only to give the struct its size, alignment comes from repr(align)"
 )]
 #[repr(align(8))]
 struct Align8([u8; 8]);
 
 #[expect(
     dead_code,
-    reason = "field exists only to give the struct its size; alignment comes from repr(align)"
+    reason = "field exists only to give the struct its size, alignment comes from repr(align)"
 )]
 #[repr(align(16))]
 struct Align16([u8; 16]);

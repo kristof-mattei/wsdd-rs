@@ -282,7 +282,7 @@ mod tests {
 
         let mut reader = make_reader(xml);
 
-        // peek twice — both calls must observe the same event
+        // peek twice, both calls must observe the same event
         assert_matches!(reader.peek(), Ok(XmlEvent::StartDocument { .. }));
         assert_matches!(reader.peek(), Ok(XmlEvent::StartDocument { .. }));
 
@@ -304,7 +304,7 @@ mod tests {
 
         assert_eq!(reader.depth(), 0);
 
-        // StartDocument — no depth change
+        // StartDocument, no depth change
         let _unused = reader.next();
         assert_eq!(reader.depth(), 0);
 
@@ -316,7 +316,7 @@ mod tests {
         assert_matches!(reader.peek(), Ok(XmlEvent::StartElement { .. }));
         assert_eq!(reader.depth(), 0);
 
-        // consuming the stashed event is what advances depth — exactly once
+        // consuming the stashed event is what advances depth, exactly once
         assert_matches!(reader.next(), Ok(XmlEvent::StartElement { .. }));
         assert_eq!(reader.depth(), 1);
     }
