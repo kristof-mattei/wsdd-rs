@@ -1,4 +1,30 @@
 <!-- header goes here -->
+## [0.4.1](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.0..v0.4.1) - 2026-05-12
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update rust crate tokio to 1.52.2 by [@renovate[bot]](https://github.com/renovate[bot]) ([`f7fbab0`](https://github.com/kristof-mattei/wsdd-rs/commit/f7fbab09eebc873181ca1c99d677536b82d3c910))
+- *(deps)* Update rust crate pin-project to 1.1.12 by [@renovate[bot]](https://github.com/renovate[bot]) ([`49e27dc`](https://github.com/kristof-mattei/wsdd-rs/commit/49e27dc88b6767b4acd0f6b6a0fc5f5b81519ccb))
+- *(deps)* Update rust crate tower-http to 0.6.10 by [@renovate[bot]](https://github.com/renovate[bot]) ([`f18cf1e`](https://github.com/kristof-mattei/wsdd-rs/commit/f18cf1e433d4389f5c6ce30dcd9f6220243dc63c))
+- *(deps)* Update rust crate xml to 1.3.0 by [@renovate[bot]](https://github.com/renovate[bot]) ([`25f7555`](https://github.com/kristof-mattei/wsdd-rs/commit/25f7555f642ede5727d5bd7ebafea3ddb4da98dc))
+- *(deps)* Update rust crate tokio to 1.52.3 by [@renovate[bot]](https://github.com/renovate[bot]) ([`2f12a64`](https://github.com/kristof-mattei/wsdd-rs/commit/2f12a64d720a97ccaf34a1658d801aaee42ae4ce))
+- *(deps)* Update rust crate hashbrown to 0.17.1 by [@renovate[bot]](https://github.com/renovate[bot]) ([`8988fc0`](https://github.com/kristof-mattei/wsdd-rs/commit/8988fc0e2265201df1184d997644661d2ea6991e))
+- *(test)* Real socket doesn't end, it just sits there and nothing is received by [@kristof-mattei](https://github.com/kristof-mattei) ([`72d7893`](https://github.com/kristof-mattei/wsdd-rs/commit/72d7893ee54c893ea43a62637a91a2e0cb703a0b))
+- Depth now correctly works with next and peek by [@kristof-mattei](https://github.com/kristof-mattei) ([`707fab8`](https://github.com/kristof-mattei/wsdd-rs/commit/707fab86e704b778212826e185c6d83040c8dad4))
+- Add on-early-drop handler by [@kristof-mattei](https://github.com/kristof-mattei) ([`5e1c56e`](https://github.com/kristof-mattei/wsdd-rs/commit/5e1c56e0acf426a3fed948826538e81097543af7))
+- Remove static global, pass in as reference by [@kristof-mattei](https://github.com/kristof-mattei) ([`a409ebe`](https://github.com/kristof-mattei/wsdd-rs/commit/a409ebe3fa4a59fdf7a2378a5189e73493c392f7))
+- Use structs with pre-defined alignment, as opposed to relying on non-guaranteed ABIs by [@kristof-mattei](https://github.com/kristof-mattei) ([`560b68a`](https://github.com/kristof-mattei/wsdd-rs/commit/560b68a9b12fb5b2d5f771643fc606766333036d))
+- No need for `as_ref()` by [@kristof-mattei](https://github.com/kristof-mattei) ([`afffd8a`](https://github.com/kristof-mattei/wsdd-rs/commit/afffd8a29ab09936f6f4aa0ce1d10238435a7331))
+- Round up buffer size instead of failure at runtime by [@kristof-mattei](https://github.com/kristof-mattei) ([`530417f`](https://github.com/kristof-mattei/wsdd-rs/commit/530417f31330dfb2451d30779344e8fcc5a5f5e9))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(comment)* Clean up comments by [@kristof-mattei](https://github.com/kristof-mattei) ([`52a4ca3`](https://github.com/kristof-mattei/wsdd-rs/commit/52a4ca3be786d03ee5ab3158cfa823d0fee849c4))
+- *(docs)* Document why we can't do `align_of` internally by [@kristof-mattei](https://github.com/kristof-mattei) ([`00605a3`](https://github.com/kristof-mattei/wsdd-rs/commit/00605a3b3e7210fd71e71c73c9f9b812747a66dc))
+- Remove redundant `Index` and `IndexMut` implementations by [@kristof-mattei](https://github.com/kristof-mattei) ([`f254784`](https://github.com/kristof-mattei/wsdd-rs/commit/f2547844080b65879457af5cf1fc709ab7e0a773))
+- Better comments by [@kristof-mattei](https://github.com/kristof-mattei) ([`cf01ad9`](https://github.com/kristof-mattei/wsdd-rs/commit/cf01ad9fe4a6ea78580bf1dd7682e09565e90315))
+- Address page size minimum by [@kristof-mattei](https://github.com/kristof-mattei) ([`e9a9be1`](https://github.com/kristof-mattei/wsdd-rs/commit/e9a9be15b1fc2db8f1f854f6a0ffa0cd88f1936b))
+- More tests by [@kristof-mattei](https://github.com/kristof-mattei) ([`b95fb9a`](https://github.com/kristof-mattei/wsdd-rs/commit/b95fb9a00a4033ffa4ed677234a9afa9687df487))
 ## [0.4.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.3.0..v0.4.0) - 2026-04-30
 
 ### 🚀 Features
