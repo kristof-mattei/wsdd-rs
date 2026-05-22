@@ -40,7 +40,7 @@ http = "1.4.0"
 hyper-util = { version = "0.1.20", features = ["tracing"] }
 ipnet = "2.12.0"
 libc.workspace = true
-mimalloc = "0.1.51"
+mimalloc = "0.1.52"
 pin-project = "1.1.13"
 rand = "0.10.1"
 reqwest = { version = "0.13.3", default-features = false, features = [
