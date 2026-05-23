@@ -140,7 +140,7 @@ async fn socket_rx_forever(
         buffer.truncate(bytes_read);
 
         // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
-        let buffer = unsafe { &*(&raw const *buffer as *const [u8]) };
+        let buffer: &[u8] = unsafe { buffer.assume_init_ref() };
 
         let (header, message) = match message_handler.deconstruct_message(buffer, from).await {
             Ok(decoded) => decoded,

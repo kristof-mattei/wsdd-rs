@@ -51,11 +51,17 @@ impl<T: AsRef<tokio::net::UdpSocket>> std::fmt::Display for SocketAddrDisplay<'_
 // because `From::from` cannot be called in `const` yet
 pub const fn u16_to_usize(from: u16) -> usize {
     const _: () = assert!(
-        usize::BITS >= u16::BITS,
+        size_of::<usize>() >= size_of::<u16>(),
         "We only support 32-bit/64-bit platforms so this should not fail"
     );
 
-    from as usize
+    #[expect(
+        clippy::as_conversions,
+        reason = "Validated that `u16` fits in `usize`"
+    )]
+    {
+        from as usize
+    }
 }
 
 // because `From::from` cannot be called in `const` yet
@@ -63,9 +69,15 @@ pub const fn u16_to_usize(from: u16) -> usize {
 // do it on a `value_u64 as usize` on a 32-bit platform which truncates
 pub const fn u32_to_usize(from: u32) -> usize {
     const _: () = assert!(
-        usize::BITS >= 32,
+        size_of::<usize>() >= size_of::<u32>(),
         "rtnetlink doesn't support 16-bit, so we don't either"
     );
 
-    from as usize
+    #[expect(
+        clippy::as_conversions,
+        reason = "Validated that `u32` fits in `usize`"
+    )]
+    {
+        from as usize
+    }
 }

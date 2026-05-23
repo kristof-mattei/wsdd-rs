@@ -478,10 +478,14 @@ mod tests {
         RecvBuf, SIZE_OF_SOCKADDR_NL, process_changes,
     };
     use crate::network_handler::Command;
+    use crate::utils::u32_to_usize;
 
     #[test]
     fn size_of_sockaddr_nl() {
-        assert_eq!(size_of::<libc::sockaddr_nl>(), SIZE_OF_SOCKADDR_NL as usize);
+        assert_eq!(
+            size_of::<libc::sockaddr_nl>(),
+            u32_to_usize(SIZE_OF_SOCKADDR_NL)
+        );
     }
 
     struct MockNetlinkSocket {
