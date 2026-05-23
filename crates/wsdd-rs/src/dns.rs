@@ -37,8 +37,8 @@ impl GaiResolver {
         Box::pin(async move {
             this.call(name)
                 .await
-                .map(|addrs| Box::new(addrs) as Addrs)
-                .map_err(|error| Box::new(error) as BoxError)
+                .map(|addrs| -> Addrs { Box::new(addrs) })
+                .map_err(|error| -> BoxError { Box::new(error) })
         })
     }
 }

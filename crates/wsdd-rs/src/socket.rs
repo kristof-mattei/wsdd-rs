@@ -1,7 +1,9 @@
 use std::os::fd::AsFd;
 use std::os::unix::prelude::AsRawFd as _;
 
-use libc::c_int;
+use libc::{c_int, socklen_t};
+
+use crate::utils::u32_to_usize;
 
 macro_rules! syscall {
     ($fn: ident ( $($arg: expr),* $(,)* ) , $err: literal) => {{
@@ -25,14 +27,23 @@ pub unsafe fn setsockopt<F: AsFd, T>(
     val: c_int,
     payload: &T,
 ) -> std::io::Result<()> {
-    let payload = std::ptr::addr_of!(*payload).cast();
+    let payload = (&raw const *payload).cast();
 
     #[expect(
+        clippy::as_conversions,
         clippy::cast_possible_truncation,
-        reason = "Can't pass in things larger than `libc::socklen_t`"
+        reason = "Compile-time assert guarantees no truncation, `as` is required until TryInto is available in `const`"
     )]
-    // TODO switch to `try_into().unwrap()` once `try_into()` becomes `const`
-    let length: u32 = const { std::mem::size_of::<T>() as libc::socklen_t };
+    let length: libc::socklen_t = const {
+        let size = std::mem::size_of::<T>();
+
+        assert!(
+            size <= u32_to_usize(socklen_t::MAX),
+            "Payload type T is too large to fit in a libc::socklen_t"
+        );
+
+        size as libc::socklen_t
+    };
 
     syscall!(
         setsockopt(fd.as_fd().as_raw_fd(), opt, val, payload, length),

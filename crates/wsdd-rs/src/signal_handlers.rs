@@ -13,12 +13,14 @@ use crate::shutdown::Shutdown;
 use crate::wrap_and_report;
 
 #[expect(
+    clippy::as_conversions,
     clippy::cast_possible_truncation,
     reason = "Waiting for `try_into()` to become const"
 )]
 const SIGINT: u8 = libc::SIGINT as u8;
 
 #[expect(
+    clippy::as_conversions,
     clippy::cast_possible_truncation,
     reason = "Waiting for `try_into()` to become const"
 )]
@@ -76,10 +78,12 @@ pub fn set_up_handler(
     sig_handler: extern "C" fn(_: c_int),
 ) -> Result<(), eyre::Report> {
     #[expect(
+        clippy::as_conversions,
         clippy::fn_to_numeric_cast_any,
         reason = "We actually need the function as a pointer, and this is well-defined"
     )]
-    let sig_handler_ptr = sig_handler as usize;
+    let sig_handler_ptr = (sig_handler as *const ()).addr();
+
     #[cfg(not(target_os = "macos"))]
     // SAFETY: all zeroes are valid for `sigset_t`
     let sa_mask = unsafe { std::mem::zeroed::<libc::sigset_t>() };

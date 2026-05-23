@@ -180,12 +180,12 @@ mod tests {
     fn alignment_is_satisfied() {
         #[expect(clippy::modulo_one, reason = "valid for this test")]
         {
-            assert_eq!((AlignedBuffer::<1>::new(8).as_ptr() as usize) % 1, 0);
+            assert_eq!((AlignedBuffer::<1>::new(8).as_ptr().addr()) % 1, 0);
         }
-        assert_eq!((AlignedBuffer::<2>::new(8).as_ptr() as usize) % 2, 0);
-        assert_eq!((AlignedBuffer::<4>::new(8).as_ptr() as usize) % 4, 0);
-        assert_eq!((AlignedBuffer::<8>::new(16).as_ptr() as usize) % 8, 0);
-        assert_eq!((AlignedBuffer::<16>::new(32).as_ptr() as usize) % 16, 0);
+        assert_eq!((AlignedBuffer::<2>::new(8).as_ptr().addr()) % 2, 0);
+        assert_eq!((AlignedBuffer::<4>::new(8).as_ptr().addr()) % 4, 0);
+        assert_eq!((AlignedBuffer::<8>::new(16).as_ptr().addr()) % 8, 0);
+        assert_eq!((AlignedBuffer::<16>::new(32).as_ptr().addr()) % 16, 0);
     }
 
     #[test]
