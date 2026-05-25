@@ -59,8 +59,7 @@ use crate::max_size_deque::MaxSizeDeque;
 use crate::network_handler::{Command, NetworkHandler};
 use crate::security::{chroot, drop_privileges};
 use crate::shutdown::Shutdown;
-use crate::utils::flatten_shutdown_handle;
-use crate::utils::task::spawn_with_name;
+use crate::utils::task::{flatten_shutdown_handle, spawn_with_name};
 
 #[cfg_attr(not(miri), global_allocator)]
 #[cfg_attr(miri, expect(unused, reason = "Not supported in Miri"))]

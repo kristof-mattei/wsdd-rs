@@ -1,5 +1,14 @@
 use tokio::task::{Builder, JoinHandle};
 
+use crate::shutdown::Shutdown;
+
+pub async fn flatten_shutdown_handle(handle: JoinHandle<Shutdown>) -> Shutdown {
+    match handle.await {
+        Ok(shutdown) => shutdown,
+        Err(join_error) => Shutdown::UnexpectedError(join_error.into()),
+    }
+}
+
 #[track_caller]
 pub fn spawn_with_name<Fut>(name: &str, future: Fut) -> JoinHandle<Fut::Output>
 where
