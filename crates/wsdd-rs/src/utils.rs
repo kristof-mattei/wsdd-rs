@@ -13,7 +13,6 @@ pub async fn flatten_shutdown_handle(handle: JoinHandle<Shutdown>) -> Shutdown {
 }
 
 /// Utility struct to format the elements using the Display trait instead of the Debug trait.
-#[repr(transparent)]
 pub struct SliceDisplay<'s, T>(pub &'s [T]);
 
 impl<T: std::fmt::Display> std::fmt::Display for SliceDisplay<'_, T> {
@@ -34,7 +33,6 @@ impl<T: std::fmt::Display> std::fmt::Display for SliceDisplay<'_, T> {
     }
 }
 
-#[repr(transparent)]
 pub struct SocketAddrDisplay<'s, T: AsRef<tokio::net::UdpSocket>>(pub &'s T);
 
 impl<T: AsRef<tokio::net::UdpSocket>> std::fmt::Display for SocketAddrDisplay<'_, T> {
