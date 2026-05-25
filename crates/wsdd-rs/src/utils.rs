@@ -20,19 +20,17 @@ impl<T: std::fmt::Display> std::fmt::Display for SliceDisplay<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut iter = self.0.iter();
 
-        let Some(first) = iter.next() else {
-            return Ok(());
-        };
+        f.write_str("[")?;
 
-        write!(f, "[{}", first)?;
+        if let Some(first) = iter.next() {
+            write!(f, "{}", first)?;
 
-        for next in iter {
-            write!(f, ", {}", next)?;
+            for next in iter {
+                write!(f, ", {}", next)?;
+            }
         }
 
-        write!(f, "]")?;
-
-        Ok(())
+        f.write_str("]")
     }
 }
 
@@ -79,5 +77,28 @@ pub const fn u32_to_usize(from: u32) -> usize {
     )]
     {
         from as usize
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+
+    use crate::utils::SliceDisplay;
+
+    #[test]
+    fn slice_display_empty() {
+        let empty: &[u32] = &[];
+        assert_eq!(SliceDisplay(empty).to_string(), "[]");
+    }
+
+    #[test]
+    fn slice_display_single() {
+        assert_eq!(SliceDisplay(&[42_u32]).to_string(), "[42]");
+    }
+
+    #[test]
+    fn slice_display_multiple() {
+        assert_eq!(SliceDisplay(&[1_u32, 2, 3]).to_string(), "[1, 2, 3]");
     }
 }
