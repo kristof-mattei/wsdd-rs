@@ -125,7 +125,7 @@ impl WSDDiscoveredDevice {
         if let Some((display_name, belongs_to)) = self
             .props
             .get("DisplayName")
-            .and_then(|d| self.props.get("BelongsTo").map(|b| (d, b)))
+            .zip(self.props.get("BelongsTo"))
         {
             self.display_name = Some(display_name.to_owned());
 
