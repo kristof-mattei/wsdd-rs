@@ -26,8 +26,8 @@ use crate::network_interface::NetworkInterface;
 use crate::soap::parser::Header;
 use crate::soap::{ClientMessage, HostMessage, MessageType, MulticastMessage, UnicastMessage};
 use crate::udp_address::UdpAddress;
+use crate::udp_socket_with_addr::UdpSocketWithAddr;
 use crate::url_ip_addr::UrlIpAddr;
-use crate::utils::SocketAddrDisplay;
 use crate::utils::task::spawn_with_name;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 use crate::wsd::http::http_server::WSDHttpServer;
@@ -140,7 +140,11 @@ impl MulticastHandler {
             uc_wsd_port_socket,
         } = sockets;
 
-        let mc_wsd_port_socket = Arc::new(UdpSocket::from_std(mc_wsd_port_socket.into())?);
+        let mc_wsd_port_socket = {
+            let mc_wsd_port_socket = UdpSocket::from_std(mc_wsd_port_socket.into())?;
+
+            Arc::new(UdpSocketWithAddr::new(mc_wsd_port_socket)?)
+        };
 
         let mc_wsd_port_rx = MessageReceiver::new(
             cancellation_token.clone(),
@@ -149,7 +153,11 @@ impl MulticastHandler {
             Arc::clone(&mc_wsd_port_socket),
         );
 
-        let mc_local_port_socket = Arc::new(UdpSocket::from_std(mc_local_port_socket.into())?);
+        let mc_local_port_socket = {
+            let mc_local_port_socket = UdpSocket::from_std(mc_local_port_socket.into())?;
+
+            Arc::new(UdpSocketWithAddr::new(mc_local_port_socket)?)
+        };
 
         let mc_local_port_tx = MessageSender::new(
             Arc::clone(&mc_local_port_socket),
@@ -166,7 +174,11 @@ impl MulticastHandler {
             Arc::clone(&mc_local_port_socket),
         );
 
-        let uc_wsd_port_socket = Arc::new(UdpSocket::from_std(uc_wsd_port_socket.into())?);
+        let uc_wsd_port_socket = {
+            let uc_wsd_port_socket = UdpSocket::from_std(uc_wsd_port_socket.into())?;
+
+            Arc::new(UdpSocketWithAddr::new(uc_wsd_port_socket)?)
+        };
 
         let uc_wsd_port_tx = MessageSender::new(
             Arc::clone(&uc_wsd_port_socket),
@@ -555,7 +567,7 @@ impl MessageSplitter for UnicastMessageSplitter {
 }
 
 async fn repeatedly_send_buffer<T: MessageSplitter>(
-    socket: Arc<UdpSocket>,
+    socket: Arc<UdpSocketWithAddr>,
     message: T::Message,
     network_address: &NetworkAddress,
     to: SocketAddr,
@@ -580,6 +592,8 @@ async fn repeatedly_send_buffer<T: MessageSplitter>(
             delta = constants::UDP_UPPER_DELAY.min(delta * 2);
         }
 
+        let socket = socket.socket();
+
         match socket.send_to(buffer.as_ref(), to).await {
             Ok(_) => {},
             Err(error) => {
@@ -598,11 +612,15 @@ impl<T> MessageSender<T>
 where
     T: MessageSplitter + Send + 'static,
 {
-    fn new(socket: Arc<UdpSocket>, message_splitter: T, network_address: NetworkAddress) -> Self {
+    fn new(
+        socket: Arc<UdpSocketWithAddr>,
+        message_splitter: T,
+        network_address: NetworkAddress,
+    ) -> Self {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<T::ChannelMessage>(10);
 
         let handler = spawn_with_name(
-            format!("socket tx ({})", SocketAddrDisplay(&socket)).as_str(),
+            format!("socket tx ({})", socket.local_addr()).as_str(),
             async move {
                 let tracker = TaskTracker::new();
 
@@ -610,7 +628,7 @@ where
                     let Some(buffer) = rx.recv().await else {
                         event!(
                             Level::INFO,
-                            socket = %SocketAddrDisplay(&socket),
+                            socket = %socket.local_addr(),
                             splitter = %T::NAME,
                             "All senders gone, stopping sender"
                         );

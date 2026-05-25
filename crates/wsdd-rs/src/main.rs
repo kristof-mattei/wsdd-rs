@@ -25,6 +25,7 @@ mod span;
 mod task_tracker_ext;
 mod test_utils;
 mod udp_address;
+mod udp_socket_with_addr;
 mod url_ip_addr;
 mod utils;
 mod wsd;
