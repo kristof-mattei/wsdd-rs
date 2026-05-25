@@ -40,7 +40,7 @@ pub struct SocketAddrDisplay<'s, T: AsRef<tokio::net::UdpSocket>>(pub &'s T);
 impl<T: AsRef<tokio::net::UdpSocket>> std::fmt::Display for SocketAddrDisplay<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.0.as_ref().local_addr() {
-            Ok(addr) => write!(f, "{}", addr),
+            Ok(addr) => addr.fmt(f),
             Err(error) => write!(f, "Failed to get local socket address: {:?}", error),
         }
     }
