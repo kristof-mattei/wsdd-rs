@@ -24,15 +24,7 @@ impl<T: std::fmt::Display> std::fmt::Display for SliceDisplay<'_, T> {
 
 // because `From::from` cannot be called in `const` yet
 pub const fn u16_to_usize(from: u16) -> usize {
-    const _: () = assert!(
-        size_of::<usize>() >= size_of::<u16>(),
-        "We only support 32-bit/64-bit platforms so this should not fail"
-    );
-
-    #[expect(
-        clippy::as_conversions,
-        reason = "Validated that `u16` fits in `usize`"
-    )]
+    #[expect(clippy::as_conversions, reason = "Same as `usize::from(u16)`")]
     {
         from as usize
     }
