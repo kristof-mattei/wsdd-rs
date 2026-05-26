@@ -118,6 +118,10 @@ where
                 align_of::<<ConstToType<A> as MapConstToType>::Output>() >= A,
                 "backing type alignment is smaller than requested A",
             );
+            assert!(
+                size_of::<<ConstToType<A> as MapConstToType>::Output>() == A,
+                "backing type size must equal A so div_ceil rounds to A-multiples",
+            );
         }
 
         Self {
