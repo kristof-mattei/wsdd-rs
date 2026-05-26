@@ -1,5 +1,4 @@
 use std::io::Read;
-use std::ops::Deref;
 
 use color_eyre::eyre;
 use hashbrown::hash_map::EntryRef;
@@ -25,7 +24,7 @@ impl DeviceUri {
     }
 }
 
-impl Deref for DeviceUri {
+impl std::ops::Deref for DeviceUri {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {

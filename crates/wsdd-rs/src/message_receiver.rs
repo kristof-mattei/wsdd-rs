@@ -1,7 +1,6 @@
 use std::mem::MaybeUninit;
 use std::sync::Arc;
 
-use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
@@ -15,7 +14,7 @@ use crate::multicast_handler::{IncomingClientMessage, IncomingHostMessage};
 use crate::network_address::NetworkAddress;
 use crate::soap::WSDMessage;
 use crate::soap::parser::MessageHandler;
-use crate::utils::SocketAddrDisplay;
+use crate::udp_socket_with_addr::UdpSocketWithAddr;
 use crate::utils::task::spawn_with_name;
 
 struct ClientHostListener {
@@ -33,7 +32,7 @@ impl MessageReceiver {
         cancellation_token: CancellationToken,
         network_address: NetworkAddress,
         recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
-        socket: Arc<UdpSocket>,
+        socket: Arc<UdpSocketWithAddr>,
     ) -> Self {
         let listeners = Arc::new(RwLock::const_new(ClientHostListener {
             host_tx: None,
@@ -44,7 +43,7 @@ impl MessageReceiver {
             let listeners = Arc::clone(&listeners);
 
             spawn_with_name(
-                format!("socket rx ({})", SocketAddrDisplay(&socket)).as_str(),
+                format!("socket rx ({})", socket.local_addr()).as_str(),
                 socket_rx_forever(
                     cancellation_token.clone(),
                     network_address,
@@ -102,7 +101,7 @@ async fn socket_rx_forever(
     network_address: NetworkAddress,
     listeners: Arc<RwLock<ClientHostListener>>,
     recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
-    socket: Arc<UdpSocket>,
+    socket: Arc<UdpSocketWithAddr>,
 ) {
     let message_handler = MessageHandler::new(network_address, recent_messages);
 
@@ -111,6 +110,8 @@ async fn socket_rx_forever(
 
         let result = {
             let mut buffer_byte_cursor = &mut *buffer;
+
+            let socket = socket.socket();
 
             tokio::select! {
                 () = cancellation_token.cancelled() => {
@@ -128,7 +129,7 @@ async fn socket_rx_forever(
                 event!(
                     Level::ERROR,
                     ?error,
-                    socket = %SocketAddrDisplay(&socket),
+                    socket = %socket.local_addr(),
                     "Failed to read from socket"
                 );
 
@@ -164,7 +165,12 @@ async fn socket_rx_forever(
                         })
                         .await
                     {
-                        event!(Level::ERROR, ?error, socket = %SocketAddrDisplay(&socket), "Failed to send data to channel");
+                        event!(
+                            Level::ERROR,
+                            error = ?error,
+                            socket = %socket.local_addr(),
+                            "Failed to send data to channel"
+                        );
                     }
                 }
             },
@@ -178,7 +184,12 @@ async fn socket_rx_forever(
                         })
                         .await
                     {
-                        event!(Level::ERROR, ?error, socket = %SocketAddrDisplay(&socket), "Failed to send data to channel");
+                        event!(
+                            Level::ERROR,
+                            ?error,
+                            socket = %socket.local_addr(),
+                            "Failed to send data to channel"
+                        );
                     }
                 }
             },
