@@ -1,4 +1,38 @@
 <!-- header goes here -->
+## [0.4.2](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.1..v0.4.2) - 2026-05-26
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update rust crate pin-project to 1.1.13 by [@renovate[bot]](https://github.com/renovate[bot]) ([`3477ed8`](https://github.com/kristof-mattei/wsdd-rs/commit/3477ed8f297615b4bb78add4b8f8b34f768ed918))
+- *(deps)* Update rust crate tower-http to 0.6.11 by [@renovate[bot]](https://github.com/renovate[bot]) ([`917b661`](https://github.com/kristof-mattei/wsdd-rs/commit/917b661da52208acacb549fd91926ba1204ed213))
+- *(deps)* Update rust crate tower-http to 0.6.11 (#1912) by [@renovate[bot]](https://github.com/renovate[bot]) in #1912 ([`f6586e9`](https://github.com/kristof-mattei/wsdd-rs/commit/f6586e99fc2ec846dd0ba6181c8e71bf80af94fc))
+- *(deps)* Update rust crate mimalloc to 0.1.51 by [@renovate[bot]](https://github.com/renovate[bot]) ([`b64fe85`](https://github.com/kristof-mattei/wsdd-rs/commit/b64fe854704c732f348c824b65ac6270741589e8))
+- *(deps)* Update rust crate mimalloc to 0.1.51 (#1921) by [@renovate[bot]](https://github.com/renovate[bot]) in #1921 ([`7d8a00c`](https://github.com/kristof-mattei/wsdd-rs/commit/7d8a00c9dc5521b52c271fee8042a4e3c128b6c6))
+- *(deps)* Update rust crate mimalloc to 0.1.51 by [@renovate[bot]](https://github.com/renovate[bot]) ([`297ccb0`](https://github.com/kristof-mattei/wsdd-rs/commit/297ccb05fd6ab86c94994ef240d04deb57450250))
+- *(deps)* Update rust crate mimalloc to 0.1.51 (#2814) by [@renovate[bot]](https://github.com/renovate[bot]) ([`bdb432d`](https://github.com/kristof-mattei/wsdd-rs/commit/bdb432da30a587fbec7fa48d6e3c4b94081c9a98))
+- *(deps)* Update rust crate mimalloc to 0.1.52 by [@renovate[bot]](https://github.com/renovate[bot]) ([`866a1af`](https://github.com/kristof-mattei/wsdd-rs/commit/866a1af3840bc2b9c9a925aa4e0b1dc85886411d))
+- *(deps)* Update rust crate mimalloc to 0.1.52 (#1927) by [@renovate[bot]](https://github.com/renovate[bot]) in #1927 ([`79d2cde`](https://github.com/kristof-mattei/wsdd-rs/commit/79d2cdef7aea4fd33c18daf9ffda9de27a98a1ab))
+- *(deps)* Update rust crate mimalloc to 0.1.52 by [@renovate[bot]](https://github.com/renovate[bot]) ([`1890f97`](https://github.com/kristof-mattei/wsdd-rs/commit/1890f97240cf108d41c370179666282ebe343759))
+- *(deps)* Update rust crate mimalloc to 0.1.52 (#2820) by [@renovate[bot]](https://github.com/renovate[bot]) ([`f964185`](https://github.com/kristof-mattei/wsdd-rs/commit/f964185dff4cee94f1a89e05ca7be9ae0d4f862a))
+- *(deps)* Update rust crate http to 1.4.1 by [@renovate[bot]](https://github.com/renovate[bot]) ([`e769d05`](https://github.com/kristof-mattei/wsdd-rs/commit/e769d05e0223e8302888ed1e5163a273c76f104b))
+- *(deps)* Update rust crate http to 1.4.1 (#1945) by [@renovate[bot]](https://github.com/renovate[bot]) in #1945 ([`338543a`](https://github.com/kristof-mattei/wsdd-rs/commit/338543a3365921e0b7447954659f56dcb86ef27f))
+- *(deps)* Update rust crate reqwest to 0.13.4 by [@renovate[bot]](https://github.com/renovate[bot]) ([`f8bc147`](https://github.com/kristof-mattei/wsdd-rs/commit/f8bc147150aaed6386f5283d6762a7028581ee07))
+- *(deps)* Update rust crate reqwest to 0.13.4 (#1946) by [@renovate[bot]](https://github.com/renovate[bot]) in #1946 ([`ff24a91`](https://github.com/kristof-mattei/wsdd-rs/commit/ff24a9130b2eb24d62355b49b0a3dd2e927cc20b))
+- Managed to remove some `as` conversions, enabled lint, and excused the places where we can't get rid of it by [@kristof-mattei](https://github.com/kristof-mattei) ([`06d7feb`](https://github.com/kristof-mattei/wsdd-rs/commit/06d7feb409fd9b079e2a66cb44b278ac1eeb5c98))
+- Use `Option::zip` instead of manual implementation by [@kristof-mattei](https://github.com/kristof-mattei) ([`c2ed504`](https://github.com/kristof-mattei/wsdd-rs/commit/c2ed504fa9dcba196fda0c06f71f86e74d1dc150))
+- Empty slices now render `[]` instead of nothing by [@kristof-mattei](https://github.com/kristof-mattei) ([`83b9b1c`](https://github.com/kristof-mattei/wsdd-rs/commit/83b9b1cf28780969199710f63c4f307a6b0a7f55))
+- We don't want to tie our API signature into something that can be transmutable by [@kristof-mattei](https://github.com/kristof-mattei) ([`ca45fff`](https://github.com/kristof-mattei/wsdd-rs/commit/ca45fff8442d4c73fece8ff2fa3d1b12926ca55f))
+- Add additional assert on the size of the backing type, as we're interested in both size AND alignment by [@kristof-mattei](https://github.com/kristof-mattei) ([`0efb947`](https://github.com/kristof-mattei/wsdd-rs/commit/0efb947ca1606e74b2e23750d4a0920721dd2c0c))
+
+### ⚙️ Miscellaneous Tasks
+
+- Node v26 and pnpm 11.2.2 by [@kristof-mattei](https://github.com/kristof-mattei) ([`16139f7`](https://github.com/kristof-mattei/wsdd-rs/commit/16139f7f5ad75af955e9cb7cce9a5968d478ee04))
+- Enable `as_conversions` lint by [@kristof-mattei](https://github.com/kristof-mattei) ([`3bfb7bb`](https://github.com/kristof-mattei/wsdd-rs/commit/3bfb7bb6d1a60f11ecfa7c46b7b6f3d5f4e795a0))
+- Re-establish contents by [@kristof-mattei](https://github.com/kristof-mattei) ([`5c48a3e`](https://github.com/kristof-mattei/wsdd-rs/commit/5c48a3e1b62ae74bc99f81e01ffa784facfbd0d3))
+- Pass-through fmt instead of re-wrapping it with a `write!` by [@kristof-mattei](https://github.com/kristof-mattei) ([`a9723cd`](https://github.com/kristof-mattei/wsdd-rs/commit/a9723cd65572c32259c0991c632f7decf706e198))
+- Move `flatten_shutdown_handle` to `task` module, it fits better there by [@kristof-mattei](https://github.com/kristof-mattei) ([`04c6319`](https://github.com/kristof-mattei/wsdd-rs/commit/04c63190b2aa198dfd0f72f90b1c15b0f78dea89))
+- Store socket with address so `local_addr()` is infallible by [@kristof-mattei](https://github.com/kristof-mattei) ([`ab877a0`](https://github.com/kristof-mattei/wsdd-rs/commit/ab877a0e3aefa49a90c4e1fda5b2e3b9ee16d285))
+- Remove useless assert by [@kristof-mattei](https://github.com/kristof-mattei) ([`b2519cd`](https://github.com/kristof-mattei/wsdd-rs/commit/b2519cdde2bf612d6d6b14cf4add1e54c540a3a9))
 ## [0.4.1](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.0..v0.4.1) - 2026-05-12
 
 ### 🐛 Bug Fixes
