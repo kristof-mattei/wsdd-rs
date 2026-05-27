@@ -1,1 +1,1 @@
-pub struct Get {}
+pub struct Get;

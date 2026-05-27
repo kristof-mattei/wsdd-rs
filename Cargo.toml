@@ -65,10 +65,8 @@ doc_include_without_cfg = { level = "deny", priority = 127 }
 doc_paragraphs_missing_punctuation = { level = "deny", priority = 127 }
 else_if_without_else = { level = "deny", priority = 127 }
 empty_drop = { level = "deny", priority = 127 }
-# Lib only
-# empty_enum_variants_with_brackets = { level = "deny", priority = 127 }
-# Lib only
-# empty_structs_with_brackets = { level = "deny", priority = 127 }
+empty_enum_variants_with_brackets = { level = "deny", priority = 127 }
+empty_structs_with_brackets = { level = "deny", priority = 127 }
 error_impl_error = { level = "deny", priority = 127 }
 # Lib only
 # exhaustive_enums = { level = "deny", priority = 127 }
