@@ -552,7 +552,7 @@ impl MessageSplitter for MulticastMessageSplitter {
     }
 }
 
-struct UnicastMessageSplitter {}
+struct UnicastMessageSplitter;
 
 impl MessageSplitter for UnicastMessageSplitter {
     const NAME: &str = "UnicastMessageSplitter";

@@ -8,7 +8,7 @@ use crate::constants;
 use crate::soap::builder::WriteBody;
 use crate::soap::builder::body::add_endpoint_reference;
 
-pub struct MetaData {}
+pub struct MetaData;
 
 impl MetaData {
     pub fn new() -> Self {
