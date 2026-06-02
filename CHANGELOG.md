@@ -1,4 +1,17 @@
 <!-- header goes here -->
+## [0.4.3](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.2..v0.4.3) - 2026-06-02
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update rust crate socket2 to 0.6.4 by [@renovate[bot]](https://github.com/renovate[bot]) ([`b682b17`](https://github.com/kristof-mattei/wsdd-rs/commit/b682b176eb5da1fb43ebd3eb75a2ae3319120c1d))
+- *(deps)* Update rust crate socket2 to 0.6.4 (#1960) by [@renovate[bot]](https://github.com/renovate[bot]) in #1960 ([`bf28f69`](https://github.com/kristof-mattei/wsdd-rs/commit/bf28f6910b1c8b86ab695f9dbec7e7df94c8441a))
+- *(deps)* Update rust crate uuid to 1.23.2 by [@renovate[bot]](https://github.com/renovate[bot]) ([`c292218`](https://github.com/kristof-mattei/wsdd-rs/commit/c2922187098e7250de9431361ed7125483348a92))
+- *(deps)* Update rust crate uuid to 1.23.2 (#1965) by [@renovate[bot]](https://github.com/renovate[bot]) in #1965 ([`aa33ac4`](https://github.com/kristof-mattei/wsdd-rs/commit/aa33ac427d3e21278b22ed5f2255c6c9c08b2348))
+
+### ⚙️ Miscellaneous Tasks
+
+- Use unit structs by [@kristof-mattei](https://github.com/kristof-mattei) ([`bd2ad56`](https://github.com/kristof-mattei/wsdd-rs/commit/bd2ad5691febbce72d3ff5c66a30f24a5b66aa42))
+- Mandate `pretty_assertions::assert_matches` over `std` version by [@kristof-mattei](https://github.com/kristof-mattei) ([`d5e030c`](https://github.com/kristof-mattei/wsdd-rs/commit/d5e030cf9a767a50b2c10ad5eac80bf2257c49ab))
 ## [0.4.2](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.1..v0.4.2) - 2026-05-26
 
 ### 🐛 Bug Fixes
