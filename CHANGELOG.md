@@ -1,4 +1,31 @@
 <!-- header goes here -->
+## [0.4.4](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.3..v0.4.4) - 2026-07-01
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update rust crate http to 1.4.2 by [@renovate[bot]](https://github.com/renovate[bot]) ([`012e976`](https://github.com/kristof-mattei/wsdd-rs/commit/012e976b156ffe0e7ebc8f60f9df08da505f6561))
+- *(deps)* Update rust crate http to 1.4.2 (#1991) by [@renovate[bot]](https://github.com/renovate[bot]) in #1991 ([`05092da`](https://github.com/kristof-mattei/wsdd-rs/commit/05092da6482fbb5a04bb8e11d798f1aaea68adf7))
+- *(deps)* Update rust crate uuid to 1.23.3 by [@renovate[bot]](https://github.com/renovate[bot]) ([`98fd21b`](https://github.com/kristof-mattei/wsdd-rs/commit/98fd21b319b0e842075bc0c4ea287dce86bfc643))
+- *(deps)* Update rust crate uuid to 1.23.3 (#1993) by [@renovate[bot]](https://github.com/renovate[bot]) in #1993 ([`46c770a`](https://github.com/kristof-mattei/wsdd-rs/commit/46c770a257a086595211f0121d1c914e986a705d))
+- *(deps)* Update rust crate time to 0.3.49 by [@renovate[bot]](https://github.com/renovate[bot]) ([`565752c`](https://github.com/kristof-mattei/wsdd-rs/commit/565752cba5ec4386d545777d2ae269ad61f5c003))
+- *(deps)* Update rust crate tower-http to 0.7.0 by [@renovate[bot]](https://github.com/renovate[bot]) ([`92e3485`](https://github.com/kristof-mattei/wsdd-rs/commit/92e3485aaac53a3e6125b4fd47966fbc77863568))
+- *(deps)* Update rust crate tower-http to 0.7.0 (#2012) by [@renovate[bot]](https://github.com/renovate[bot]) in #2012 ([`5323fcc`](https://github.com/kristof-mattei/wsdd-rs/commit/5323fcc856136b9bcee808b1c2cb9398b0d6376e))
+- *(deps)* Update rust crate bytes to 1.12.0 by [@renovate[bot]](https://github.com/renovate[bot]) ([`6239573`](https://github.com/kristof-mattei/wsdd-rs/commit/62395732447bcb60192ab200df3c172e74ff9cdc))
+- *(deps)* Update rust crate bytes to 1.12.0 (#2020) by [@renovate[bot]](https://github.com/renovate[bot]) in #2020 ([`b574d42`](https://github.com/kristof-mattei/wsdd-rs/commit/b574d42276c3da6c4b1d304d32f375d221250a02))
+- *(deps)* Update rust crate time to 0.3.51 by [@renovate[bot]](https://github.com/renovate[bot]) ([`9c53c45`](https://github.com/kristof-mattei/wsdd-rs/commit/9c53c453bb87e6fdda39737d00cb9221eabf9578))
+- *(deps)* Update rust crate time to 0.3.51 (#2028) by [@renovate[bot]](https://github.com/renovate[bot]) in #2028 ([`e953cdb`](https://github.com/kristof-mattei/wsdd-rs/commit/e953cdb4db8726360745b29c225261b5788c2e04))
+- *(deps)* Update rust crate uuid to 1.23.4 by [@renovate[bot]](https://github.com/renovate[bot]) ([`bf9e07a`](https://github.com/kristof-mattei/wsdd-rs/commit/bf9e07a72c4f1d92dc4adcafac29bf8e25da0144))
+- *(deps)* Update rust crate uuid to 1.23.4 (#2041) by [@renovate[bot]](https://github.com/renovate[bot]) in #2041 ([`f551c05`](https://github.com/kristof-mattei/wsdd-rs/commit/f551c05f6c4e60dbe34606249b87b5cf9bb73a74))
+- *(deps)* Pin dependencies by [@renovate[bot]](https://github.com/renovate[bot]) ([`0c7037d`](https://github.com/kristof-mattei/wsdd-rs/commit/0c7037da1d97e611a51bc0e8be54706c03620a49))
+- *(deps)* Pin dependencies (#2053) by [@renovate[bot]](https://github.com/renovate[bot]) in #2053 ([`6341e73`](https://github.com/kristof-mattei/wsdd-rs/commit/6341e73ffc8dfcd1affd5f85b5affdb5bf33351f))
+- *(deps)* Update rust crate time to v0.3.52 by [@renovate[bot]](https://github.com/renovate[bot]) ([`2bae248`](https://github.com/kristof-mattei/wsdd-rs/commit/2bae24837e126ccf0b6b5e13b9d572e455b0796e))
+- *(deps)* Update rust crate time to v0.3.52 (#2057) by [@renovate[bot]](https://github.com/renovate[bot]) in #2057 ([`9390b5c`](https://github.com/kristof-mattei/wsdd-rs/commit/9390b5cbb17ea42aef40154770cabd97be8374b1))
+- *(deps)* Update rust crate time to v0.3.53 by [@renovate[bot]](https://github.com/renovate[bot]) ([`1a46bb2`](https://github.com/kristof-mattei/wsdd-rs/commit/1a46bb270792fe2b5076c17f7ea1b9cfaec6746f))
+- *(deps)* Update rust crate time to v0.3.53 (#2063) by [@renovate[bot]](https://github.com/renovate[bot]) in #2063 ([`b0c986f`](https://github.com/kristof-mattei/wsdd-rs/commit/b0c986f22200dba198aee2d6713bef618ee30829))
+
+### ⚙️ Miscellaneous Tasks
+
+- Tasks.json should not be executable by [@kristof-mattei](https://github.com/kristof-mattei) ([`5527290`](https://github.com/kristof-mattei/wsdd-rs/commit/552729080cf37c4ef92e90228e73971c42540bd9))
 ## [0.4.3](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.2..v0.4.3) - 2026-06-02
 
 ### 🐛 Bug Fixes
