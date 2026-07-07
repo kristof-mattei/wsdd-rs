@@ -1,4 +1,4 @@
-27
+28
 backport
 CDATA
 chroot
@@ -9,6 +9,7 @@ deduplicate
 deduplicates
 dereference
 DNS
+erroring
 interoperability
 multicast
 netlink
