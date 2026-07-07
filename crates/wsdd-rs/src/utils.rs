@@ -22,7 +22,7 @@ impl<T: std::fmt::Display> std::fmt::Display for SliceDisplay<'_, T> {
     }
 }
 
-// because `From::from` cannot be called in `const` yet
+/// `const` cast a `u16` to `usize`. `usize::from(u16)` is not `const` yet.
 pub const fn u16_to_usize(from: u16) -> usize {
     #[expect(clippy::as_conversions, reason = "Same as `usize::from(u16)`")]
     {
@@ -30,9 +30,13 @@ pub const fn u16_to_usize(from: u16) -> usize {
     }
 }
 
-// because `From::from` cannot be called in `const` yet
-// having raw `as usize` is dangerous, as copy-pasting might
-// do it on a `value_u64 as usize` on a 32-bit platform which truncates
+/// `const` cast a `u32` to `usize`.
+/// Validates at compile time that `usize` is at least as wide as `u32`.
+///
+/// Even if `usize::try_from(u32)` ever becomes `const`, this is better, as it fails at compile time.
+///
+/// Why?
+/// A raw `value as usize` at a call site is dangerous: if `value` is later widened to `u64` or `u128`, the cast silently truncates instead of erroring.
 pub const fn u32_to_usize(from: u32) -> usize {
     const _: () = assert!(
         size_of::<usize>() >= size_of::<u32>(),
