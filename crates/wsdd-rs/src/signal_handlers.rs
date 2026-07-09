@@ -79,7 +79,6 @@ pub fn set_up_handler(
 ) -> Result<(), eyre::Report> {
     #[expect(
         clippy::as_conversions,
-        clippy::fn_to_numeric_cast_any,
         reason = "We actually need the function as a pointer, and this is well-defined"
     )]
     let sig_handler_ptr = (sig_handler as *const ()).addr();
