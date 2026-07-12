@@ -1,0 +1,11 @@
+# Defaults for wsdd-rs, read by the systemd units as an environment file.
+# Note: this is not a shell script; quoting and expansion follow
+# systemd.exec(5) EnvironmentFile semantics.
+
+# Additional parameters for the host instance (wsdd-rs.service),
+# e.g. "--interface eth0 --ipv4only".
+#WSDD_PARAMS=
+
+# Additional parameters for the discovery instance
+# (wsdd-rs-discovery.service), e.g. "--interface eth0 --ipv4only".
+#WSDD_DISCOVERY_PARAMS=
