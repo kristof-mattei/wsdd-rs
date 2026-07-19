@@ -49,7 +49,7 @@ reqwest = { version = "=0.13.4", default-features = false, features = [
 ringmap = "=0.2.5"
 shared = { path = "../shared" }
 socket2 = { version = "=0.6.5", features = ["all"] }
-thiserror = "=2.0.18"
+thiserror = "=2.0.19"
 time = "=0.3.53"
 tokio = { version = "=1.53.0", features = [
     "io-util",
