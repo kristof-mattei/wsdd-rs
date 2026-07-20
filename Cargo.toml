@@ -18,9 +18,6 @@ include = ["crates/**", "/LICENSE", "/LICENSE-*"]
 libc = "=0.2.186"
 zerocopy = "=0.8.54"
 
-[workspace.metadata.spellcheck]
-config = "spellcheck.toml"
-
 [workspace.lints.clippy]
 # don't stop from compiling / running
 all = "warn"
