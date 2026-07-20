@@ -1,15 +1,7 @@
 #!/bin/bash
 
-<<<<<<< HEAD
-BASE_RUSTFLAGS="--cfg tokio_unstable"
-CARGO_FEATURES=""
-||||||| b3d58568
-BASE_RUSTFLAGS=""
-CARGO_FEATURES=""
-=======
-base_rustflags=""
+base_rustflags="--cfg tokio_unstable"
 cargo_features=""
->>>>>>> upstream/main
 
 export RUSTFLAGS="${base_rustflags} --allow=warnings -Cinstrument-coverage"
 
