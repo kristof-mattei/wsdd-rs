@@ -51,7 +51,7 @@ shared = { path = "../shared" }
 socket2 = { version = "=0.6.5", features = ["all"] }
 thiserror = "=2.0.19"
 time = "=0.3.54"
-tokio = { version = "=1.53.0", features = [
+tokio = { version = "=1.53.1", features = [
     "io-util",
     "macros",
     "net",
