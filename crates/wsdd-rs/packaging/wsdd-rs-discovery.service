@@ -1,0 +1,22 @@
+[Unit]
+Description=Web Services Dynamic Discovery client daemon
+Documentation=https://github.com/kristof-mattei/wsdd-rs
+; No [Install] section: this unit is only ever started on demand
+; through wsdd-rs-discovery.socket, which passes the API socket in
+; via sd_listen_fds(3)
+Requires=wsdd-rs-discovery.socket
+
+[Service]
+Type=exec
+; Use /etc/default/wsdd-rs for defaults, if it exists
+EnvironmentFile=-/etc/default/wsdd-rs
+; The service is put into an empty runtime directory chroot,
+; i.e. the runtime directory which usually resides under /run.
+; The source port differs from the host instance's so both can
+; coexist on the same machine.
+ExecStart=/usr/bin/wsdd-rs --shortlog --chroot=/run/wsdd-rs-discovery --source-port=37020 --no-host --discovery $WSDD_DISCOVERY_PARAMS
+DynamicUser=yes
+User=wsdd-rs-discovery
+Group=wsdd-rs-discovery
+RuntimeDirectory=wsdd-rs-discovery
+AmbientCapabilities=CAP_SYS_CHROOT

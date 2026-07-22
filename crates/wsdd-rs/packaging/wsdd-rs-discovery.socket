@@ -1,0 +1,9 @@
+[Unit]
+Description=Web Services Dynamic Discovery API socket
+Documentation=https://github.com/kristof-mattei/wsdd-rs
+
+[Socket]
+ListenStream=%t/wsdd-rs.socket
+
+[Install]
+WantedBy=sockets.target
