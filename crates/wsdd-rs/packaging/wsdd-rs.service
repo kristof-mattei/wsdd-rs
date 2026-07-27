@@ -1,0 +1,24 @@
+[Unit]
+Description=Web Services Dynamic Discovery host daemon
+Documentation=https://github.com/kristof-mattei/wsdd-rs
+; Start after the network has been configured
+After=network-online.target
+Wants=network-online.target
+; It makes sense to have Samba running when wsdd-rs starts, but it is not required
+;BindsTo=smb.service
+
+[Service]
+Type=exec
+; Use /etc/default/wsdd-rs for defaults, if it exists
+EnvironmentFile=-/etc/default/wsdd-rs
+; The service is put into an empty runtime directory chroot,
+; i.e. the runtime directory which usually resides under /run
+ExecStart=/usr/bin/wsdd-rs --shortlog --chroot=/run/wsdd-rs $WSDD_PARAMS
+DynamicUser=yes
+User=wsdd-rs
+Group=wsdd-rs
+RuntimeDirectory=wsdd-rs
+AmbientCapabilities=CAP_SYS_CHROOT
+
+[Install]
+WantedBy=multi-user.target

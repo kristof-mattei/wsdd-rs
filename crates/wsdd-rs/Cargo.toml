@@ -97,6 +97,31 @@ trybuild = "=1.0.118"
 [package.metadata.cargo-machete]
 ignored = []
 
+[package.metadata.deb]
+maintainer = "Kristof Mattei <864376+kristof-mattei@users.noreply.github.com>"
+section = "net"
+priority = "optional"
+default-features = false
+features = ["systemd"]
+license-file = ["../../LICENSE", "0"]
+extended-description = """\
+wsdd-rs implements a Web Service Discovery (WS-Discovery) host daemon. It \
+allows Linux hosts to be found by (and appear in the Network view of) \
+Windows clients, replacing the discovery functionality that was previously \
+provided by SMBv1/NetBIOS. Rust port of wsdd."""
+assets = [
+    { source = "target/release/wsdd-rs", dest = "usr/bin/", mode = "755" },
+    { source = "../../README.md", dest = "usr/share/doc/wsdd-rs/README.md", mode = "644" },
+    { source = "packaging/wsdd-rs.default", dest = "etc/default/wsdd-rs", mode = "644" },
+]
+conf-files = ["/etc/default/wsdd-rs"]
+maintainer-scripts = "packaging/"
+
+# enable installing systemd-units
+# table is empty because then cargo-deb only matches on services
+# matching the package's name, so wsdd-rs-discovery.* is not deployed
+[package.metadata.deb.systemd-units]
+
 [package.metadata.spellcheck]
 config = "spellcheck.toml"
 
