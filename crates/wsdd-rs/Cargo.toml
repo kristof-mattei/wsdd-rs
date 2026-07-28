@@ -97,8 +97,5 @@ trybuild = "=1.0.118"
 [package.metadata.cargo-machete]
 ignored = []
 
-[package.metadata.spellcheck]
-config = "spellcheck.toml"
-
 [lints]
 workspace = true
