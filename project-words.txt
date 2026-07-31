@@ -128,7 +128,6 @@ ntop
 nvmrc
 optlen
 pathbuf
-pids
 pnpx
 postprocessors
 prefixlen
@@ -137,7 +136,6 @@ probematches
 profraw
 pton
 pubpubpub
-purposfully
 recond
 recvmsg
 Retag
