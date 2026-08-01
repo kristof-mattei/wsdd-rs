@@ -1,4 +1,11 @@
 <!-- header goes here -->
+## [0.4.6](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.5..v0.4.6) - 2026-08-01
+
+### 🐛 Bug Fixes
+
+- *(ci)* Poll for the release source tag instead of racing the push retag by [@kristof-mattei](https://github.com/kristof-mattei) ([`c0be1d5`](https://github.com/kristof-mattei/wsdd-rs/commit/c0be1d5486cbb92bf8772e4aff991b4da9861f99))
+- *(ci)* Skip Docker Hub tags that already exist with the expected digest by [@kristof-mattei](https://github.com/kristof-mattei) ([`784a607`](https://github.com/kristof-mattei/wsdd-rs/commit/784a607d54f6872e85ed0fc069377ae347530858))
+- *(ci)* Give untagged container versions a grace period before cleanup by [@kristof-mattei](https://github.com/kristof-mattei) ([`9ee8d74`](https://github.com/kristof-mattei/wsdd-rs/commit/9ee8d74bd0d58c14a23d09343a26efe31527a8b7))
 ## [0.4.5](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.4..v0.4.5) - 2026-07-31
 
 ### 🐛 Bug Fixes
