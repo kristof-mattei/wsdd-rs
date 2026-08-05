@@ -237,6 +237,7 @@ jobs:
       checks: write
       contents: read
       id-token: write
+      issues: read
       pull-requests: write
     env:
       # most features don't work with miri
