@@ -375,6 +375,7 @@ jobs:
       - cargo-clippy-and-report
       - cargo-fmt
       - cargo-test-and-report
+      - cargo-test-and-report-miri
     if: |
       !cancelled()
     steps:
