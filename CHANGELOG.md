@@ -1,4 +1,19 @@
 <!-- header goes here -->
+## [0.4.7](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.6..v0.4.7) - 2026-08-05
+
+### 🐛 Bug Fixes
+
+- *(ci)* Retry the PR number lookup when retagging the build cache by [@kristof-mattei](https://github.com/kristof-mattei) ([`0d2e88a`](https://github.com/kristof-mattei/wsdd-rs/commit/0d2e88a8e91d40e49896be88e8f9d9ecc25ee6ed))
+- *(deps)* Update rust crate time to v0.3.55 by [@renovate[bot]](https://github.com/renovate[bot]) ([`277c428`](https://github.com/kristof-mattei/wsdd-rs/commit/277c42840405790c82f253f1c7cd45f54e7d636a))
+- *(deps)* Update rust crate time to v0.3.55 (#2191) by [@renovate[bot]](https://github.com/renovate[bot]) in #2191 ([`25a72b5`](https://github.com/kristof-mattei/wsdd-rs/commit/25a72b5cc7977a04d99e8e45bb7c71d51dd618ce))
+- *(deps)* Update rust crate ipnet to v2.12.1 by [@renovate[bot]](https://github.com/renovate[bot]) ([`0e1aa39`](https://github.com/kristof-mattei/wsdd-rs/commit/0e1aa3905d5a818e813b5a204e617b61064930b8))
+- *(deps)* Update rust crate ipnet to v2.12.1 (#2193) by [@renovate[bot]](https://github.com/renovate[bot]) in #2193 ([`26d1541`](https://github.com/kristof-mattei/wsdd-rs/commit/26d1541339b750c2462cfe184838b03a0c94a8d8))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* Ignore all untracked files via git by [@kristof-mattei](https://github.com/kristof-mattei) ([`5957a74`](https://github.com/kristof-mattei/wsdd-rs/commit/5957a7462d32571f4a58d53588086dccc1d410df))
+- *(ci)* Tighten permissions by [@kristof-mattei](https://github.com/kristof-mattei) ([`df43ce0`](https://github.com/kristof-mattei/wsdd-rs/commit/df43ce0e669655ee4e11a512a5918eb10f557813))
+- Ban `time::Duration`, it's deprecated by [@kristof-mattei](https://github.com/kristof-mattei) ([`85e4aa2`](https://github.com/kristof-mattei/wsdd-rs/commit/85e4aa2f6e7543a9467aca468d0425c3241fe788))
 ## [0.4.6](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.5..v0.4.6) - 2026-08-01
 
 ### 🐛 Bug Fixes
