@@ -16,7 +16,7 @@ include = ["crates/**", "/LICENSE", "/LICENSE-*"]
 
 [workspace.dependencies]
 libc = "=0.2.189"
-zerocopy = "=0.8.55"
+zerocopy = "=0.8.56"
 
 [workspace.lints.clippy]
 # don't stop from compiling / running
