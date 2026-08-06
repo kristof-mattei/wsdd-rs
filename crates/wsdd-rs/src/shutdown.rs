@@ -41,6 +41,8 @@ impl Termination for Shutdown {
         match self {
             Shutdown::Success => ExitCode::SUCCESS,
             Shutdown::Signal(signal) => {
+                // 128 + n mirrors the shell convention for death by signal n.
+                // Supervisors that key on exit codes count this as failure unless allowed (systemd: SuccessExitStatus=).
                 let exit_code = ExitCode::from(signal + 128);
 
                 event!(
