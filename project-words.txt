@@ -45,6 +45,7 @@ dorny
 dropguard
 dstaddr
 edff
+EINTR
 endfor
 endmacro
 errno
@@ -126,6 +127,7 @@ notifcation
 NOTREADY
 ntop
 nvmrc
+oldact
 optlen
 pathbuf
 pnpx
@@ -159,6 +161,7 @@ setsockopt
 setuid
 shortlog
 sigaction
+sigemptyset
 signum
 sigset
 skopeo

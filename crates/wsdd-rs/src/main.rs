@@ -234,9 +234,9 @@ async fn start_tasks() -> Shutdown {
     let recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>> =
         Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES)));
 
-    // this channel is used to communicate between
-    // tasks and this function, in the case that a task fails, they'll send a message on the shutdown channel
-    // after which we'll gracefully terminate other services
+    // shutdown broadcast: every task watches this token (or a child of it) to know
+    // when to stop, and holds a drop guard on it, so a task stopping on its own
+    // takes the others down with it
     let cancellation_token = CancellationToken::new();
 
     let tasks = tokio_util::task::TaskTracker::new();
@@ -292,10 +292,11 @@ async fn start_tasks() -> Shutdown {
     tasks.close();
 
     // now we wait forever for either
+    // * the cancellation token. we only cancel it ourselves after this select, so
+    //   here it means a task stopped on its own, which tasks only do on failure
     // * SIGTERM
     // * CTRL+c (SIGINT)
-    // * cancellation of the shutdown token, triggered by another task when it
-    //   completes unexpectedly (which means it failed)
+    // biased so that when multiple are ready at once, task failure wins over signals
     let shutdown_reason = tokio::select! {
         biased;
         () = cancellation_token.cancelled() => {
@@ -303,7 +304,7 @@ async fn start_tasks() -> Shutdown {
 
             Shutdown::OperationalFailure {
                 code: ExitCode::FAILURE,
-                message: "Some task unexpectedly failed which triggered a shutdown."
+                message: "A task failed, triggering a shutdown"
             }
         },
         result = signal_handlers::wait_for_sigterm() => {
@@ -317,6 +318,7 @@ async fn start_tasks() -> Shutdown {
     // backup, in case we forgot a dropguard somewhere
     cancellation_token.cancel();
 
+    // wait for the other tasks to shut down gracefully
     if timeout(Duration::from_secs(10), tasks.wait())
         .await
         .is_err()
