@@ -168,10 +168,11 @@ async fn send_probe(
 async fn remove_outdated_probes(probes: &Arc<RwLock<HashMap<Urn, Duration>>>) {
     let now = now();
 
-    probes
-        .write()
-        .await
-        .retain(|_, value| *value + (constants::PROBE_TIMEOUT * 2) > now);
+    probes.write().await.retain(|_, sent| is_fresh(*sent, now));
+}
+
+fn is_fresh(sent: Duration, now: Duration) -> bool {
+    sent + constants::MATCH_TIMEOUT > now
 }
 
 fn now() -> Duration {
@@ -316,9 +317,15 @@ async fn handle_probe_match(
         return Ok(());
     };
 
-    // do not handle to probematches issued not sent by ourself
-    if probes.read().await.get(&relates_to).is_none() {
-        event!(Level::DEBUG, %relates_to, "unknown probe");
+    // only accept probe matches for probes we sent recently
+    let fresh = probes
+        .read()
+        .await
+        .get(&relates_to)
+        .is_some_and(|sent| is_fresh(*sent, now()));
+
+    if !fresh {
+        event!(Level::DEBUG, %relates_to, "unknown or outdated probe");
         return Ok(());
     }
 
@@ -582,7 +589,7 @@ mod tests {
     use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
     use crate::wsd::udp::client::{
         WSDClient, handle_bye, handle_hello, handle_metadata, handle_probe_match,
-        handle_resolve_match, parse_xaddrs,
+        handle_resolve_match, now, parse_xaddrs,
     };
 
     fn setup_client() -> (
@@ -1187,7 +1194,7 @@ mod tests {
         let probes = {
             let mut hash_map = HashMap::new();
 
-            hash_map.insert(host_message_id.urn(), Duration::from_secs(100));
+            hash_map.insert(host_message_id.urn(), now());
 
             Arc::new(RwLock::new(hash_map))
         };
@@ -1222,6 +1229,64 @@ mod tests {
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(expected, response);
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn ignores_probe_matches_for_outdated_probe() {
+        let (message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // host
+        let host_message_id = Uuid::now_v7();
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+
+        let probe_matches = format!(
+            include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
+            host_message_id, host_config.wsd_instance_id, 0, host_config.uuid_as_device_uri
+        );
+
+        let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
+
+        let (header, message) = message_handler
+            .deconstruct_message(
+                probe_matches.as_bytes(),
+                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
+            )
+            .await
+            .unwrap();
+
+        // the probe was sent, but longer ago than the validity window
+        let probes = {
+            let mut hash_map = HashMap::new();
+
+            hash_map.insert(host_message_id.urn(), Duration::from_secs(100));
+
+            Arc::new(RwLock::new(hash_map))
+        };
+
+        let probe_match = message.into_probe_match().unwrap();
+
+        handle_probe_match(
+            &reqwest::ClientBuilder::new().build().unwrap(),
+            &client_config,
+            Arc::clone(&client_devices),
+            &client_network_address,
+            header.relates_to,
+            probes,
+            &multicast_tx,
+            probe_match,
+        )
+        .await
+        .unwrap();
+
+        // we expect no resolve to be sent
+        multicast_rx.try_recv().unwrap_err();
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1296,7 +1361,7 @@ mod tests {
         let probes = {
             let mut hash_map = HashMap::new();
 
-            hash_map.insert(host_message_id.urn(), Duration::from_secs(100));
+            hash_map.insert(host_message_id.urn(), now());
 
             Arc::new(RwLock::new(hash_map))
         };
