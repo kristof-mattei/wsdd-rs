@@ -99,12 +99,11 @@ pub const UDP_MIN_DELAY: Duration = Duration::from_millis(50);
 pub const UDP_MAX_DELAY: Duration = Duration::from_millis(250);
 pub const UDP_UPPER_DELAY: Duration = Duration::from_millis(500);
 
-// > ProbeMatches must arrive within 4 seconds of the Probe or the firewall drops them
-// See: documentation/windows-win32-wsdapi.pdf
-pub const PROBE_TIMEOUT: Duration = Duration::from_secs(4);
-
 // See documentation/ws-discovery.pdf, 2.4 Protocol Assignments, Table 4
 pub const APP_MAX_DELAY: Duration = Duration::from_millis(500);
+
+// See documentation/ws-discovery.pdf, 7. Security Model, Table 8
+pub const MATCH_TIMEOUT: Duration = APP_MAX_DELAY.saturating_add(Duration::from_millis(100));
 
 // A sane default for the size of text inside an XML element
 pub const STRING_DEFAULT_CAPACITY: usize = 128;
