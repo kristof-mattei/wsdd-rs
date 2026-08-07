@@ -1,4 +1,26 @@
 <!-- header goes here -->
+## [0.4.8](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.7..v0.4.8) - 2026-08-07
+
+### 🐛 Bug Fixes
+
+- *(ci)* Grant issues read so test result comments work in private repos by [@kristof-mattei](https://github.com/kristof-mattei) ([`d005c4c`](https://github.com/kristof-mattei/wsdd-rs/commit/d005c4c7eba096267cbbb1130e652ff6b71797f3))
+- *(ci)* Missing permissions by [@kristof-mattei](https://github.com/kristof-mattei) ([`5e92e26`](https://github.com/kristof-mattei/wsdd-rs/commit/5e92e26b15d374bc150e6e1d9f09cb2d8e553e36))
+- *(deps)* Update rust crate clap to v4.6.6 by [@renovate[bot]](https://github.com/renovate[bot]) ([`d120e6a`](https://github.com/kristof-mattei/wsdd-rs/commit/d120e6a54c3a83f5aaf549af068e4d0643c607e1))
+- *(deps)* Update rust crate clap to v4.6.6 (#2226) by [@renovate[bot]](https://github.com/renovate[bot]) in #2226 ([`43ee07a`](https://github.com/kristof-mattei/wsdd-rs/commit/43ee07adf305686bb502a0744643c9ede688f569))
+- *(deps)* Update rust crate xml to v1.4.0 by [@renovate[bot]](https://github.com/renovate[bot]) ([`777a2bb`](https://github.com/kristof-mattei/wsdd-rs/commit/777a2bbb93d6c79b3df26d59c93a2e465c716b88))
+- *(deps)* Update rust crate xml to v1.4.0 (#2227) by [@renovate[bot]](https://github.com/renovate[bot]) in #2227 ([`a4b8fa1`](https://github.com/kristof-mattei/wsdd-rs/commit/a4b8fa1230fc0d10840b576b3d85d7f646422c84))
+- Actionlint errors by [@kristof-mattei](https://github.com/kristof-mattei) ([`110fca4`](https://github.com/kristof-mattei/wsdd-rs/commit/110fca45f789675efa391c16c62ac4db4b08b765))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* Actionlint by [@kristof-mattei](https://github.com/kristof-mattei) ([`729f415`](https://github.com/kristof-mattei/wsdd-rs/commit/729f41554cab0e3b67a2ffc53f46f3bf8b55ec22))
+- *(ci)* We don't have python actions by [@kristof-mattei](https://github.com/kristof-mattei) ([`91ee78b`](https://github.com/kristof-mattei/wsdd-rs/commit/91ee78b23869880c9bacb6cecff58559cbb31afd))
+- Editorconfig parser doesn't understand comments after statement by [@kristof-mattei](https://github.com/kristof-mattei) ([`93857d2`](https://github.com/kristof-mattei/wsdd-rs/commit/93857d2415a9f1e9aaf91f2ab374604a2d56b0ff))
+- Reset permissions in all-done by [@kristof-mattei](https://github.com/kristof-mattei) ([`309ccc2`](https://github.com/kristof-mattei/wsdd-rs/commit/309ccc2e1ddf497ba29169daae21b4c210dd927b))
+- Explicitly wait for the miri tests to past in rust.yml by [@kristof-mattei](https://github.com/kristof-mattei) ([`1a13db3`](https://github.com/kristof-mattei/wsdd-rs/commit/1a13db37b013c415aa6d777d88bb7a42e628ffea))
+- The aggregator should not be allowed to read anything by [@kristof-mattei](https://github.com/kristof-mattei) ([`cea3733`](https://github.com/kristof-mattei/wsdd-rs/commit/cea373369aed7f97161816dd505df8535c2fedc4))
+- Update dictionary by [@kristof-mattei](https://github.com/kristof-mattei) ([`7d8dfb3`](https://github.com/kristof-mattei/wsdd-rs/commit/7d8dfb3132bff15ec3d5f0a8f79279fcceb0a5a7))
+- Bolster signals by [@kristof-mattei](https://github.com/kristof-mattei) ([`6fbae10`](https://github.com/kristof-mattei/wsdd-rs/commit/6fbae10b87291afc8fb6cb302eae5756574ac014))
 ## [0.4.7](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.6..v0.4.7) - 2026-08-05
 
 ### 🐛 Bug Fixes
