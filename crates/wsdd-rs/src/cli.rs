@@ -1,11 +1,9 @@
-use core::str;
 use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use clap::parser::ValueSource;
-use clap::{Arg, ArgAction, Command, command, value_parser};
+use clap::{ArgAction, Parser};
 use color_eyre::eyre;
 use tracing::{Level, event};
 use uuid::Uuid;
@@ -16,168 +14,98 @@ use crate::ffi::listen_fds;
 use crate::security::parse_userspec;
 use crate::wsd::device::DeviceUri;
 
-#[expect(clippy::too_many_lines, reason = "Lots of argument")]
-fn build_clap_command() -> Command {
-    command!()
-        .disable_version_flag(true)
-        .color(clap::ColorChoice::Always)
-        .long_version(format!(
-            "- Web Service Discovery Daemon, v{}",
-            env!("CARGO_PKG_VERSION")
-        ))
-        .version(format!("v{}", env!("CARGO_PKG_VERSION")))
-        .arg(
-            Arg::new("interface")
-                .long("interface")
-                .short('i')
-                .help("interface or address to use")
-                .action(ArgAction::Append),
-        )
-        .arg(
-            Arg::new("hoplimit")
-                .short('H')
-                .long("hoplimit")
-                .help("limit for multicast packets")
-                .default_value("1")
-                .value_parser(value_parser!(u8)),
-        )
-        .arg(
-            Arg::new("uuid")
-                .short('U')
-                .long("uuid")
-                .help("UUID for the target device")
-                .value_parser(value_parser!(Uuid)),
-        )
-        .arg(
-            Arg::new("verbose")
-                .short('v')
-                .long("verbose")
-                .help("increase verbosity")
-                .default_value("0")
-                .action(ArgAction::Count),
-        )
-        .arg(
-            Arg::new("domain")
-                .short('d')
-                .long("domain")
-                .group("domain-workgroup")
-                .help("set domain name (disables workgroup)"),
-        )
-        .arg(
-            Arg::new("hostname")
-                .short('n')
-                .long("hostname")
-                .help("override (NetBIOS) hostname to be used")
-                .default_value("hostname"),
-        )
-        .arg(
-            Arg::new("workgroup")
-                .short('w')
-                .long("workgroup")
-                .group("domain-workgroup")
-                .help("set workgroup name")
-                .default_value("WORKGROUP"),
-        )
-        .arg(
-            Arg::new("no-autostart")
-                .short('A')
-                .long("no-autostart")
-                .help("do not start networking after launch")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("no-http")
-                .short('t')
-                .long("no-http")
-                .help("disable http service (e.g. for debugging)")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("ipv4only")
-                .short('4')
-                .long("ipv4only")
-                .group("ip")
-                .help("use only IPv4")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("ipv6only")
-                .short('6')
-                .long("ipv6only")
-                .group("ip")
-                .help("use only IPv6")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("shortlog")
-                .short('s')
-                .long("shortlog")
-                .help("log only level and message")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("preserve-case")
-                .short('p')
-                .long("preserve-case")
-                .help("preserve case of the provided/detected hostname")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("chroot")
-                .short('c')
-                .long("chroot")
-                .help("directory to chroot into")
-                .value_parser(value_parser!(PathBuf)),
-        )
-        .arg(
-            Arg::new("user")
-                .short('u')
-                .long("user")
-                .help("drop privileges to user:group")
-                .value_parser(parse_userspec),
-        )
-        .arg(
-            Arg::new("discovery")
-                .short('D')
-                .long("discovery")
-                .help("enable discovery operation mode")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("listen")
-                .short('l')
-                .long("listen")
-                .help("listen on path or localhost port in discovery mode")
-                .value_parser(to_listen),
-        )
-        .arg(
-            Arg::new("no-host")
-                .short('o')
-                .long("no-host")
-                .help("disable server mode operation (host will be undiscoverable)")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("version")
-                .short('V')
-                .long("version")
-                .help("show version number and exit")
-                .action(ArgAction::Version),
-        )
-        .arg(
-            Arg::new("metadata-timeout")
-                .long("metadata-timeout")
-                .help("set timeout for HTTP-based metadata exchange")
-                .value_parser(float_to_duration_parser)
-                .default_value("2.0"),
-        )
-        .arg(
-            Arg::new("source-port")
-                .long("source-port")
-                .help("send multicast traffic/receive replies on this port")
-                .value_parser(clap::value_parser!(u16))
-                .default_value("0"),
-        )
+#[expect(clippy::struct_excessive_bools, reason = "CLI flags")]
+#[derive(Parser)]
+#[command(
+    about,
+    version = concat!("v", env!("CARGO_PKG_VERSION")),
+    long_version = concat!("- Web Service Discovery Daemon, v", env!("CARGO_PKG_VERSION")),
+    color = clap::ColorChoice::Always
+)]
+struct CliArgs {
+    #[arg(short, long, help = "interface or address to use")]
+    interface: Vec<String>,
+
+    #[arg(
+        short = 'H',
+        long,
+        default_value_t = 1,
+        help = "limit for multicast packets"
+    )]
+    hoplimit: u8,
+
+    #[arg(short = 'U', long, help = "UUID for the target device")]
+    uuid: Option<Uuid>,
+
+    #[arg(short, long, action = ArgAction::Count, help = "increase verbosity")]
+    verbose: u8,
+
+    #[arg(
+        short,
+        long,
+        group = "domain-workgroup",
+        help = "set domain name (disables workgroup)"
+    )]
+    domain: Option<String>,
+
+    #[arg(short = 'n', long, help = "override (NetBIOS) hostname to be used")]
+    hostname: Option<String>,
+
+    #[arg(
+        short,
+        long,
+        group = "domain-workgroup",
+        default_value = "WORKGROUP",
+        help = "set workgroup name"
+    )]
+    workgroup: String,
+
+    #[arg(short = 'A', long, help = "do not start networking after launch")]
+    no_autostart: bool,
+
+    #[arg(short = 't', long, help = "disable http service (e.g. for debugging)")]
+    no_http: bool,
+
+    #[arg(short = '4', long, group = "ip", help = "use only IPv4")]
+    ipv4only: bool,
+
+    #[arg(short = '6', long, group = "ip", help = "use only IPv6")]
+    ipv6only: bool,
+
+    #[arg(short, long, help = "log only level and message")]
+    shortlog: bool,
+
+    #[arg(short, long, help = "preserve case of the provided/detected hostname")]
+    preserve_case: bool,
+
+    #[arg(short, long, help = "directory to chroot into")]
+    chroot: Option<PathBuf>,
+
+    #[arg(short, long, value_parser = parse_userspec, help = "drop privileges to user:group")]
+    user: Option<(u32, u32)>,
+
+    #[arg(short = 'D', long, help = "enable discovery operation mode")]
+    discovery: bool,
+
+    #[arg(short, long, value_parser = to_listen, help = "listen on path or localhost port in discovery mode")]
+    listen: Option<PortOrSocket>,
+
+    #[arg(
+        short = 'o',
+        long,
+        help = "disable server mode operation (host will be undiscoverable)"
+    )]
+    no_host: bool,
+
+    #[arg(long, default_value = "2.0", value_parser = float_to_duration_parser, help = "set timeout for HTTP-based metadata exchange")]
+    metadata_timeout: Duration,
+
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "send multicast traffic/receive replies on this port"
+    )]
+    source_port: u16,
 }
 
 fn float_to_duration_parser(value: &str) -> Result<Duration, String> {
@@ -195,22 +123,22 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    let mut command = build_clap_command();
-
     // TODO: How do we return a specific error (e.g. 3 for the user spec's value parser) when an error occurs?
-    let matches = command.try_get_matches_from_mut(from)?;
+    let args = CliArgs::try_parse_from(from)?;
 
-    let interfaces: Vec<Box<str>> =
-        if let Some(interfaces) = matches.get_many::<String>("interface") {
-            interfaces.map(|i| i.to_owned().into_boxed_str()).collect()
-        } else {
-            event!(Level::WARN, "no interface given, using all interfaces");
+    let interfaces: Vec<Box<str>> = if args.interface.is_empty() {
+        event!(Level::WARN, "no interface given, using all interfaces");
 
-            vec![]
-        };
+        vec![]
+    } else {
+        args.interface
+            .into_iter()
+            .map(String::into_boxed_str)
+            .collect()
+    };
 
-    let hostname = if let Some(hostname) = get_user_cli_value::<String>(&matches, "hostname") {
-        hostname.to_owned().into_boxed_str()
+    let hostname = if let Some(hostname) = args.hostname {
+        hostname.into_boxed_str()
     } else {
         let hostname = gethostname()?;
 
@@ -220,63 +148,50 @@ where
             .unwrap_or(hostname)
     };
 
-    let verbosity = match get_user_cli_value::<u8>(&matches, "verbose") {
-        None | Some(&0) => Level::WARN,
-        Some(&1) => Level::INFO,
-        Some(_) => Level::DEBUG,
+    let verbosity = match args.verbose {
+        0 => Level::WARN,
+        1 => Level::INFO,
+        _ => Level::DEBUG,
     };
 
-    let uuid = match get_user_cli_value::<Uuid>(&matches, "uuid") {
-        Some(uuid) => Ok(*uuid),
-        None => get_uuid_from_machine(),
-    }?;
+    let uuid = match args.uuid {
+        Some(uuid) => uuid,
+        None => get_uuid_from_machine()?,
+    };
 
     let uuid_as_device_uri = DeviceUri::new(uuid.urn().to_string().into_boxed_str());
 
-    let listen = matches
-        .get_one::<PortOrSocket>("listen")
-        .cloned()
-        .or_else(|| match listen_fds(true) {
-            Ok(fds) => fds.first().map(|&fd| PortOrSocket::Socket(fd)),
-            Err(error) => {
-                event!(Level::ERROR, ?error, "Error receiving file descriptors");
+    let listen = args.listen.or_else(|| match listen_fds(true) {
+        Ok(fds) => fds.first().map(|&fd| PortOrSocket::Socket(fd)),
+        Err(error) => {
+            event!(Level::ERROR, ?error, "Error receiving file descriptors");
 
-                None
-            },
-        });
+            None
+        },
+    });
 
-    let preserve_case = matches.get_one("preserve-case").copied().unwrap_or(false);
-
-    let full_hostname = if let Some(domain) = matches.get_one::<String>("domain").cloned() {
+    let full_hostname = if let Some(domain) = args.domain {
         // for `domain` the default is to lowercase the `hostname`
-        let hostname = if preserve_case {
+        let hostname = if args.preserve_case {
             &*hostname
         } else {
             &*hostname.to_lowercase()
         };
         format!("{}/Domain:{}", hostname, domain)
     } else {
-        let workgroup = matches
-            .get_one::<String>("workgroup")
-            .cloned()
-            .expect("workgroup has a default");
-
         // for `workgroup` the default is to UPPERCASE the `hostname`
-        let hostname = if preserve_case {
+        let hostname = if args.preserve_case {
             &*hostname
         } else {
             &*hostname.to_uppercase()
         };
 
-        format!("{}/Workgroup:{}", hostname, workgroup)
+        format!("{}/Workgroup:{}", hostname, args.workgroup)
     };
 
-    let ipv4only = matches.get_one("ipv4only").copied().unwrap_or(false);
-    let ipv6only = matches.get_one("ipv6only").copied().unwrap_or(false);
-
-    let bind_to = if ipv4only {
+    let bind_to = if args.ipv4only {
         BindTo::IPv4
-    } else if ipv6only {
+    } else if args.ipv6only {
         BindTo::IPv6
     } else {
         BindTo::DualStack
@@ -284,29 +199,23 @@ where
 
     let config = Config {
         interfaces,
-        hoplimit: *matches.get_one("hoplimit").expect("hoplimit has a default"),
+        hoplimit: args.hoplimit,
         uuid,
         uuid_as_device_uri,
         verbosity,
         hostname,
         full_hostname: full_hostname.into_boxed_str(),
-        no_autostart: matches.get_one("no-autostart").copied().unwrap_or(false),
-        no_http: matches.get_one("no-http").copied().unwrap_or(false),
+        no_autostart: args.no_autostart,
+        no_http: args.no_http,
         bind_to,
-        shortlog: matches.get_one("shortlog").copied().unwrap_or(false),
-        chroot: matches.get_one("chroot").cloned(),
-        user: matches.get_one("user").copied(),
-        discovery: matches.get_one("discovery").copied().unwrap_or(false),
+        shortlog: args.shortlog,
+        chroot: args.chroot,
+        user: args.user,
+        discovery: args.discovery,
         listen,
-        no_host: matches.get_one("no-host").copied().unwrap_or(false),
-        metadata_timeout: matches
-            .get_one("metadata-timeout")
-            .copied()
-            .expect("metadata-timeout has a default"),
-        source_port: matches
-            .get_one("source-port")
-            .copied()
-            .expect("source-port has a default"),
+        no_host: args.no_host,
+        metadata_timeout: args.metadata_timeout,
+        source_port: args.source_port,
         wsd_instance_id: now().as_secs().to_string().into_boxed_str(),
         sequence_id: sequence_id().to_string().into_boxed_str(),
     };
@@ -417,27 +326,6 @@ fn get_uuid_from_machine() -> Result<Uuid, eyre::Report> {
     event!(Level::INFO, %uuid, "using pre-defined UUID");
 
     Ok(uuid)
-}
-
-fn get_user_cli_value<'a, T>(matches: &'a clap::ArgMatches, key: &str) -> Option<&'a T>
-where
-    T: Clone + Send + Sync + 'static,
-{
-    // our CLI has defaults, so we check if the user has provided a value
-    let Some(ValueSource::CommandLine) = matches.value_source(key) else {
-        return None;
-    };
-
-    // NOTE: we might change this later to always use the user's input, as we might want this module
-    // to drive the config's defaults.
-    // I am always confused as to who should do what. Who provides defaults? Who provides upper and lower limits?
-    // Because not everything comes through a CLI. I would love to share this with something like
-    // a yaml file. But then we run into issues with valid values for a type (say 1 for max-line-length) but
-    // that's an invalid number in our logic.
-    // on the other hand there are port 100000 which doesn't even fit into our data type
-
-    // return the value provided by the user
-    matches.get_one::<T>(key)
 }
 
 #[cfg(test)]
