@@ -1340,7 +1340,8 @@ mod tests {
         let mut server = mockito::Server::new_with_opts_async(ServerOpts {
             // a host in IPv4 form ensures we bind to an IPv4 address
             host: "127.0.0.1",
-            port: 5357,
+            // random port
+            port: 0,
             assert_on_drop: true,
         })
         .await;
@@ -1380,6 +1381,7 @@ mod tests {
             0,
             host_config.uuid_as_device_uri,
             server.socket_address().ip(),
+            server.socket_address().port(),
             host_config.uuid
         );
 

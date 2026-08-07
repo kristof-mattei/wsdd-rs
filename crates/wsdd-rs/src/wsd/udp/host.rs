@@ -291,6 +291,7 @@ mod tests {
     use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
 
+    use crate::constants;
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
     use crate::test_utils::xml::to_string_pretty;
@@ -435,6 +436,7 @@ mod tests {
             host_messages_built.load(Ordering::Relaxed) - 1,
             host_config.uuid_as_device_uri,
             host_ip,
+            constants::WSD_HTTP_PORT,
             host_config.uuid
         );
 
