@@ -111,6 +111,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       checks: write
+      code-quality: write
       contents: read
       id-token: write
       issues: read
@@ -182,13 +183,22 @@ jobs:
             --keep-only "crates/**" \
             --llvm \
             --output-path ./reports/ \
-            --output-type lcov \
+            --output-type cobertura \
             --source-dir .
 
       - name: Record Rust version
         shell: bash
         run: |
+          ls -l reports/
+          ls -l reports/cobertura
+
           echo "RUST=$(rustc --version)" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-code-coverage@f8bb4848421d758cb893e8e371d261678618a754 # v1.4.1
+        with:
+          file: reports/cobertura/cobertura.xml
+          language: Rust
+          label: code-coverage
 
       - name: Upload coverage results (to Codecov.io)
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
@@ -198,7 +208,7 @@ jobs:
           env_vars: OS,RUST
           fail_ci_if_error: true
           flags: tests
-          files: reports/lcov
+          files: reports/cobertura
           name: code-coverage
           plugins: noop
           report_type: "coverage"
