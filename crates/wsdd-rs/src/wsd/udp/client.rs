@@ -171,6 +171,14 @@ async fn remove_outdated_probes(probes: &Arc<RwLock<HashMap<Urn, Duration>>>) {
     probes.write().await.retain(|_, sent| is_fresh(*sent, now));
 }
 
+fn record_resolve(resolves: &mut HashMap<Urn, Duration>, message_id: Urn) {
+    let now = now();
+
+    resolves.retain(|_, sent| is_fresh(*sent, now));
+
+    resolves.insert(message_id, now);
+}
+
 fn is_fresh(sent: Duration, now: Duration) -> bool {
     sent + constants::MATCH_TIMEOUT > now
 }
@@ -251,6 +259,7 @@ async fn handle_hello(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
     multicast: &Sender<MulticastMessage>,
+    resolves: &mut HashMap<Urn, Duration>,
     Hello {
         endpoint,
         raw_xaddrs,
@@ -259,7 +268,9 @@ async fn handle_hello(
     let Some(raw_xaddrs) = raw_xaddrs else {
         event!(Level::INFO, "Hello without XAddrs, sending resolve");
 
-        let (message, _) = Builder::build_resolve(config, &endpoint)?;
+        let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
+
+        record_resolve(resolves, message_id);
 
         multicast.send(message).await?;
 
@@ -307,6 +318,7 @@ async fn handle_probe_match(
     relates_to: Option<Urn>,
     probes: Arc<RwLock<HashMap<Urn, Duration>>>,
     mc_local_port_tx: &Sender<MulticastMessage>,
+    resolves: &mut HashMap<Urn, Duration>,
     ProbeMatch {
         endpoint,
         raw_xaddrs,
@@ -334,7 +346,9 @@ async fn handle_probe_match(
     let Some(raw_xaddrs) = raw_xaddrs else {
         event!(Level::INFO, "ProbeMatch without XAddrs, sending resolve");
 
-        let (message, _) = Builder::build_resolve(config, &endpoint)?;
+        let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
+
+        record_resolve(resolves, message_id);
 
         mc_local_port_tx.send(message).await?;
 
@@ -361,11 +375,28 @@ async fn handle_resolve_match(
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
+    relates_to: Option<Urn>,
+    resolves: &HashMap<Urn, Duration>,
     ResolveMatch {
         endpoint,
         raw_xaddrs,
     }: ResolveMatch,
 ) -> Result<(), eyre::Report> {
+    let Some(relates_to) = relates_to else {
+        event!(Level::DEBUG, "missing `RelatesTo`");
+        return Ok(());
+    };
+
+    // only accept resolve matches for resolves we sent recently
+    let fresh = resolves
+        .get(&relates_to)
+        .is_some_and(|sent| is_fresh(*sent, now()));
+
+    if !fresh {
+        event!(Level::DEBUG, %relates_to, "unknown or outdated resolve");
+        return Ok(());
+    }
+
     let Some(raw_xaddrs) = raw_xaddrs else {
         event!(Level::DEBUG, "ResolveMatch without xaddr, nothing to do");
 
@@ -488,6 +519,8 @@ async fn listen_forever(
         .build()
         .expect("WSD Client cannot operate without HTTP Client");
 
+    let mut resolves = HashMap::new();
+
     loop {
         let message = tokio::select! {
             () = cancellation_token.cancelled() => {
@@ -520,6 +553,7 @@ async fn listen_forever(
                     Arc::clone(&devices),
                     &bound_to,
                     &mc_local_port_tx,
+                    &mut resolves,
                     hello,
                 )
                 .await
@@ -534,6 +568,7 @@ async fn listen_forever(
                     header.relates_to,
                     Arc::clone(&probes),
                     &mc_local_port_tx,
+                    &mut resolves,
                     probe_match,
                 )
                 .await
@@ -544,6 +579,8 @@ async fn listen_forever(
                     &config,
                     Arc::clone(&devices),
                     &bound_to,
+                    header.relates_to,
+                    &resolves,
                     resolve_match,
                 )
                 .await
@@ -635,16 +672,22 @@ mod tests {
 
         let hello = message.into_hello().unwrap();
 
+        let mut resolves = HashMap::new();
+
         handle_hello(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
             &multicast_tx,
+            &mut resolves,
             hello,
         )
         .await
         .unwrap();
+
+        // the resolve's message id must be recorded to accept the future ResolveMatches
+        assert!(resolves.contains_key(&Uuid::nil().urn()));
 
         let expected = format!(
             include_str!("../../test/resolve-template.xml"),
@@ -734,12 +777,15 @@ mod tests {
 
         let hello = message.into_hello().unwrap();
 
+        let mut resolves = HashMap::new();
+
         handle_hello(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
             &bound_to,
             &multicast_tx,
+            &mut resolves,
             hello,
         )
         .await
@@ -747,6 +793,7 @@ mod tests {
 
         // we expect no resolve to be sent
         multicast_rx.try_recv().unwrap_err();
+        assert!(resolves.is_empty());
 
         // ensure the mock is hit
         mock.assert_async().await;
@@ -887,12 +934,15 @@ mod tests {
 
         let hello = message.into_hello().unwrap();
 
+        let mut resolves = HashMap::new();
+
         handle_hello(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
             &network_address,
             &multicast_tx,
+            &mut resolves,
             hello,
         )
         .await
@@ -900,6 +950,7 @@ mod tests {
 
         // we expect no resolve to be sent
         multicast_rx.try_recv().unwrap_err();
+        assert!(resolves.is_empty());
 
         // ensure the mock is hit
         mock.assert_async().await;
@@ -1201,6 +1252,8 @@ mod tests {
 
         let probe_match = message.into_probe_match().unwrap();
 
+        let mut resolves = HashMap::new();
+
         handle_probe_match(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
@@ -1209,10 +1262,14 @@ mod tests {
             header.relates_to,
             probes,
             &multicast_tx,
+            &mut resolves,
             probe_match,
         )
         .await
         .unwrap();
+
+        // the resolve's message id must be recorded to accept the future ResolveMatches
+        assert!(resolves.contains_key(&Uuid::nil().urn()));
 
         let expected = format!(
             include_str!("../../test/resolve-template.xml"),
@@ -1272,6 +1329,8 @@ mod tests {
 
         let probe_match = message.into_probe_match().unwrap();
 
+        let mut resolves = HashMap::new();
+
         handle_probe_match(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
@@ -1280,6 +1339,7 @@ mod tests {
             header.relates_to,
             probes,
             &multicast_tx,
+            &mut resolves,
             probe_match,
         )
         .await
@@ -1287,6 +1347,7 @@ mod tests {
 
         // we expect no resolve to be sent
         multicast_rx.try_recv().unwrap_err();
+        assert!(resolves.is_empty());
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1368,6 +1429,8 @@ mod tests {
 
         let probe_match = message.into_probe_match().unwrap();
 
+        let mut resolves = HashMap::new();
+
         handle_probe_match(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
@@ -1376,6 +1439,7 @@ mod tests {
             header.relates_to,
             probes,
             &multicast_tx,
+            &mut resolves,
             probe_match,
         )
         .await
@@ -1385,6 +1449,7 @@ mod tests {
         mock.assert_async().await;
 
         assert_matches!(multicast_rx.try_recv(), Err(TryRecvError::Empty));
+        assert!(resolves.is_empty());
 
         let client_devices = client_devices.read().await;
 
@@ -1450,13 +1515,21 @@ mod tests {
             host_config.uuid
         );
 
-        let (_, message) = message_handler
+        let (header, message) = message_handler
             .deconstruct_message(
                 resolve_matches.as_bytes(),
                 SocketAddr::new(server.socket_address().ip(), 5000),
             )
             .await
             .unwrap();
+
+        let resolves = {
+            let mut hash_map = HashMap::new();
+
+            hash_map.insert(host_message_id.urn(), now());
+
+            hash_map
+        };
 
         let resolve_match = message.into_resolve_match().unwrap();
 
@@ -1465,6 +1538,8 @@ mod tests {
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
+            header.relates_to,
+            &resolves,
             resolve_match,
         )
         .await
@@ -1476,6 +1551,152 @@ mod tests {
         let client_devices = client_devices.read().await;
 
         assert_matches!(client_devices.get(&host_config.uuid_as_device_uri), Some(_));
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn ignores_resolve_matches_for_unknown_resolve() {
+        let (message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // host
+        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
+            // a host in IPv4 form ensures we bind to an IPv4 address
+            host: "127.0.0.1",
+            // random port
+            port: 0,
+            assert_on_drop: true,
+        })
+        .await;
+
+        let host_message_id = Uuid::now_v7();
+        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+
+        let mock = server
+            .mock("POST", &*format!("/{}", host_config.uuid))
+            .expect(0)
+            .create_async()
+            .await;
+
+        let resolve_matches = format!(
+            include_str!("../../test/resolve-matches-template.xml"),
+            host_message_id,
+            host_config.wsd_instance_id,
+            0,
+            host_config.uuid_as_device_uri,
+            server.socket_address().ip(),
+            server.socket_address().port(),
+            host_config.uuid
+        );
+
+        let (header, message) = message_handler
+            .deconstruct_message(
+                resolve_matches.as_bytes(),
+                SocketAddr::new(server.socket_address().ip(), 5000),
+            )
+            .await
+            .unwrap();
+
+        let resolve_match = message.into_resolve_match().unwrap();
+
+        // no resolve with the message's `RelatesTo` was sent by us
+        handle_resolve_match(
+            &reqwest::ClientBuilder::new().build().unwrap(),
+            &client_config,
+            Arc::clone(&client_devices),
+            &client_network_address,
+            header.relates_to,
+            &HashMap::new(),
+            resolve_match,
+        )
+        .await
+        .unwrap();
+
+        // ensure the mock is not hit
+        mock.assert_async().await;
+
+        assert!(client_devices.read().await.is_empty());
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn ignores_resolve_matches_for_outdated_resolve() {
+        let (message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // host
+        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
+            // a host in IPv4 form ensures we bind to an IPv4 address
+            host: "127.0.0.1",
+            // random port
+            port: 0,
+            assert_on_drop: true,
+        })
+        .await;
+
+        let host_message_id = Uuid::now_v7();
+        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+
+        let mock = server
+            .mock("POST", &*format!("/{}", host_config.uuid))
+            .expect(0)
+            .create_async()
+            .await;
+
+        let resolve_matches = format!(
+            include_str!("../../test/resolve-matches-template.xml"),
+            host_message_id,
+            host_config.wsd_instance_id,
+            0,
+            host_config.uuid_as_device_uri,
+            server.socket_address().ip(),
+            server.socket_address().port(),
+            host_config.uuid
+        );
+
+        let (header, message) = message_handler
+            .deconstruct_message(
+                resolve_matches.as_bytes(),
+                SocketAddr::new(server.socket_address().ip(), 5000),
+            )
+            .await
+            .unwrap();
+
+        // the resolve was sent, but longer ago than the validity window
+        let resolves = {
+            let mut hash_map = HashMap::new();
+
+            hash_map.insert(host_message_id.urn(), Duration::from_secs(100));
+
+            hash_map
+        };
+
+        let resolve_match = message.into_resolve_match().unwrap();
+
+        handle_resolve_match(
+            &reqwest::ClientBuilder::new().build().unwrap(),
+            &client_config,
+            Arc::clone(&client_devices),
+            &client_network_address,
+            header.relates_to,
+            &resolves,
+            resolve_match,
+        )
+        .await
+        .unwrap();
+
+        // ensure the mock is not hit
+        mock.assert_async().await;
+
+        assert!(client_devices.read().await.is_empty());
     }
 
     #[test]
