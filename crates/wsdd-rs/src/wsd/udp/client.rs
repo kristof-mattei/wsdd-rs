@@ -674,7 +674,7 @@ mod tests {
 
         let mut resolves = HashMap::new();
 
-        handle_hello(
+        let result = handle_hello(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
@@ -683,8 +683,9 @@ mod tests {
             &mut resolves,
             hello,
         )
-        .await
-        .unwrap();
+        .await;
+
+        assert_matches!(result, Ok(()));
 
         // the resolve's message id must be recorded to accept the future ResolveMatches
         assert!(resolves.contains_key(&Uuid::nil().urn()));
@@ -779,7 +780,7 @@ mod tests {
 
         let mut resolves = HashMap::new();
 
-        handle_hello(
+        let result = handle_hello(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
@@ -788,11 +789,12 @@ mod tests {
             &mut resolves,
             hello,
         )
-        .await
-        .unwrap();
+        .await;
+
+        assert_matches!(result, Ok(()));
 
         // we expect no resolve to be sent
-        multicast_rx.try_recv().unwrap_err();
+        assert_matches!(multicast_rx.try_recv(), Err(TryRecvError::Empty));
         assert!(resolves.is_empty());
 
         // ensure the mock is hit
@@ -861,7 +863,9 @@ mod tests {
 
         let bye = message.into_bye().unwrap();
 
-        handle_bye(Arc::clone(&client_devices), bye).await.unwrap();
+        let result = handle_bye(Arc::clone(&client_devices), bye).await;
+
+        assert_matches!(result, Ok(()));
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -936,7 +940,7 @@ mod tests {
 
         let mut resolves = HashMap::new();
 
-        handle_hello(
+        let result = handle_hello(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
@@ -945,11 +949,12 @@ mod tests {
             &mut resolves,
             hello,
         )
-        .await
-        .unwrap();
+        .await;
+
+        assert_matches!(result, Ok(()));
 
         // we expect no resolve to be sent
-        multicast_rx.try_recv().unwrap_err();
+        assert_matches!(multicast_rx.try_recv(), Err(TryRecvError::Empty));
         assert!(resolves.is_empty());
 
         // ensure the mock is hit
@@ -982,7 +987,9 @@ mod tests {
 
         let bye = message.into_bye().unwrap();
 
-        handle_bye(Arc::clone(&client_devices), bye).await.unwrap();
+        let result = handle_bye(Arc::clone(&client_devices), bye).await;
+
+        assert_matches!(result, Ok(()));
 
         // ensure the host is no longer present
         assert!(
@@ -1254,7 +1261,7 @@ mod tests {
 
         let mut resolves = HashMap::new();
 
-        handle_probe_match(
+        let result = handle_probe_match(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
@@ -1265,8 +1272,9 @@ mod tests {
             &mut resolves,
             probe_match,
         )
-        .await
-        .unwrap();
+        .await;
+
+        assert_matches!(result, Ok(()));
 
         // the resolve's message id must be recorded to accept the future ResolveMatches
         assert!(resolves.contains_key(&Uuid::nil().urn()));
@@ -1331,7 +1339,7 @@ mod tests {
 
         let mut resolves = HashMap::new();
 
-        handle_probe_match(
+        let result = handle_probe_match(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
@@ -1342,11 +1350,12 @@ mod tests {
             &mut resolves,
             probe_match,
         )
-        .await
-        .unwrap();
+        .await;
+
+        assert_matches!(result, Ok(()));
 
         // we expect no resolve to be sent
-        multicast_rx.try_recv().unwrap_err();
+        assert_matches!(multicast_rx.try_recv(), Err(TryRecvError::Empty));
         assert!(resolves.is_empty());
     }
 
@@ -1431,7 +1440,7 @@ mod tests {
 
         let mut resolves = HashMap::new();
 
-        handle_probe_match(
+        let result = handle_probe_match(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
@@ -1442,8 +1451,9 @@ mod tests {
             &mut resolves,
             probe_match,
         )
-        .await
-        .unwrap();
+        .await;
+
+        assert_matches!(result, Ok(()));
 
         // ensure the mock is hit
         mock.assert_async().await;
@@ -1533,7 +1543,7 @@ mod tests {
 
         let resolve_match = message.into_resolve_match().unwrap();
 
-        handle_resolve_match(
+        let result = handle_resolve_match(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
@@ -1542,8 +1552,9 @@ mod tests {
             &resolves,
             resolve_match,
         )
-        .await
-        .unwrap();
+        .await;
+
+        assert_matches!(result, Ok(()));
 
         // ensure the mock is hit
         mock.assert_async().await;
@@ -1604,7 +1615,7 @@ mod tests {
         let resolve_match = message.into_resolve_match().unwrap();
 
         // no resolve with the message's `RelatesTo` was sent by us
-        handle_resolve_match(
+        let result = handle_resolve_match(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
@@ -1613,8 +1624,9 @@ mod tests {
             &HashMap::new(),
             resolve_match,
         )
-        .await
-        .unwrap();
+        .await;
+
+        assert_matches!(result, Ok(()));
 
         // ensure the mock is not hit
         mock.assert_async().await;
@@ -1681,7 +1693,7 @@ mod tests {
 
         let resolve_match = message.into_resolve_match().unwrap();
 
-        handle_resolve_match(
+        let result = handle_resolve_match(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
@@ -1690,8 +1702,9 @@ mod tests {
             &resolves,
             resolve_match,
         )
-        .await
-        .unwrap();
+        .await;
+
+        assert_matches!(result, Ok(()));
 
         // ensure the mock is not hit
         mock.assert_async().await;
