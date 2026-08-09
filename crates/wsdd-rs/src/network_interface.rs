@@ -71,21 +71,32 @@ pub fn if_nametoindex(name: &str) -> Result<u32, std::io::Error> {
 }
 
 pub fn if_indextoname(index: u32) -> Result<Box<str>, std::io::Error> {
-    let mut buffer = vec![0_u8; IF_NAMESIZE];
+    #[cfg(miri)]
+    {
+        // Miri cannot call `if_indextoname`, behave as if no interface exists
+        let _ = index;
 
-    // SAFETY: libc call
-    let result = unsafe { libc::if_indextoname(index, buffer.as_mut_ptr().cast()) };
-
-    if result.is_null() {
-        return Err(Error::last_os_error());
+        Err(Error::from_raw_os_error(libc::ENXIO))
     }
 
-    let ifname = CStr::from_bytes_until_nul(&buffer)
-        .expect("We used oversized buffer, so not finding a null is impossible")
-        .to_str()
-        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
+    #[cfg(not(miri))]
+    {
+        let mut buffer = vec![0_u8; IF_NAMESIZE];
 
-    Ok(String::from(ifname).into_boxed_str())
+        // SAFETY: libc call
+        let result = unsafe { libc::if_indextoname(index, buffer.as_mut_ptr().cast()) };
+
+        if result.is_null() {
+            return Err(Error::last_os_error());
+        }
+
+        let ifname = CStr::from_bytes_until_nul(&buffer)
+            .expect("We used oversized buffer, so not finding a null is impossible")
+            .to_str()
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
+
+        Ok(String::from(ifname).into_boxed_str())
+    }
 }
 
 #[cfg(test)]

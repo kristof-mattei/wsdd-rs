@@ -89,8 +89,7 @@ pub fn build_message_handler() -> MessageHandler {
     )
 }
 
-#[expect(unused, reason = "WIP")]
-fn find_first_non_lo_network_interface() -> Result<(Box<str>, u32), std::io::Error> {
+pub fn find_first_non_lo_network_interface() -> Result<(Box<str>, u32), std::io::Error> {
     let mut ifaddrs_p: *mut ifaddrs = std::ptr::null_mut();
 
     // SAFETY: libc call

@@ -436,9 +436,8 @@ fn parse_address_message(raw_nlh: *const nlmsghdr) -> Option<(IpNet, u8, u32)> {
 
             addr = Some(Ipv4Addr::from_bits(u32::from_be_bytes(*ipv4_in_network_order)).into());
         } else if rta.rta_type == IFA_LABEL {
-            // unused, original codebase extracted
-            // the labels in here for ipv4, but ipv6 requires another way
-            // we do both the ipv6 way
+            // Intentionally unused, the label (only present on IPv4 messages) is not what we name interfaces by,
+            // as it might be an alias label, e.g. `eth0:0`.
         } else if rta.rta_type == IFA_FLAGS {
             // https://github.com/torvalds/linux/blob/febbc555cf0fff895546ddb8ba2c9a523692fb55/include/uapi/linux/if_addr.h#L35
             // unused

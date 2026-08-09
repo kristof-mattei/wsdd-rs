@@ -48,6 +48,7 @@ edff
 EINTR
 endfor
 endmacro
+ENXIO
 errno
 errorlens
 fccd
