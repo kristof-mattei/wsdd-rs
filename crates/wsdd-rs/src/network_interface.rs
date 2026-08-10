@@ -88,6 +88,39 @@ pub fn if_indextoname(index: u32) -> Result<Box<str>, std::io::Error> {
     Ok(String::from(ifname).into_boxed_str())
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub struct DevName(Box<str>);
+
+impl TryFrom<Box<str>> for DevName {
+    type Error = eyre::Report;
+
+    /// Follows the kernel's `dev_valid_name`.
+    fn try_from(value: Box<str>) -> Result<Self, Self::Error> {
+        let valid = !value.is_empty()
+            && value.len() < libc::IFNAMSIZ
+            && &*value != "."
+            && &*value != ".."
+            && !value
+                .chars()
+                .any(|c| c == '/' || c == ':' || c.is_whitespace());
+
+        if valid {
+            Ok(Self(value))
+        } else {
+            Err(eyre::Report::msg(format!(
+                "`{}` is not a valid interface name",
+                value
+            )))
+        }
+    }
+}
+
+impl AsRef<str> for DevName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
 #[cfg_attr(test, mockall::automock)]
 pub trait ResolveInterfaceName {
     fn resolve(&self, index: u32) -> Result<Box<str>, std::io::Error>;

@@ -1,3 +1,4 @@
+use std::net::IpAddr;
 use std::os::fd::RawFd;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -5,12 +6,13 @@ use std::time::Duration;
 use tracing::{Level, event};
 use uuid::Uuid;
 
+use crate::network_interface::DevName;
 use crate::wsd::device::DeviceUri;
 
 #[expect(clippy::struct_excessive_bools, reason = "Main config")]
 #[derive(Debug)]
 pub struct Config {
-    pub interfaces: Vec<Box<str>>,
+    pub interfaces: Vec<InterfaceFilter>,
     pub hoplimit: u8,
     pub uuid: Uuid,
     pub uuid_as_device_uri: DeviceUri,
@@ -39,6 +41,12 @@ pub struct Config {
     pub wsd_instance_id: Box<str>,
     pub sequence_id: Box<str>,
     pub bind_to: BindTo,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum InterfaceFilter {
+    Name(DevName),
+    Address(IpAddr),
 }
 
 #[derive(Debug, Eq, PartialEq)]

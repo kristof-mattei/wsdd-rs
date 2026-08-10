@@ -6,12 +6,14 @@ use std::time::Duration;
 
 use clap::{ArgAction, Parser};
 use color_eyre::eyre;
+use color_eyre::eyre::WrapErr as _;
 use tracing::{Level, event};
 use uuid::Uuid;
 use uuid::fmt::Urn;
 
-use crate::config::{BindTo, Config, PortOrSocket};
+use crate::config::{BindTo, Config, InterfaceFilter, PortOrSocket};
 use crate::ffi::listen_fds;
+use crate::network_interface::DevName;
 use crate::security::parse_userspec;
 use crate::wsd::device::DeviceUri;
 
@@ -127,24 +129,18 @@ where
     // TODO: How do we return a specific error (e.g. 3 for the user spec's value parser) when an error occurs?
     let args = CliArgs::try_parse_from(from)?;
 
-    let interfaces: Vec<Box<str>> = if args.interface.is_empty() {
+    let interfaces: Vec<InterfaceFilter> = if args.interface.is_empty() {
         event!(Level::WARN, "no interface given, using all interfaces");
 
         vec![]
     } else {
         args.interface
             .into_iter()
-            .map(String::into_boxed_str)
-            .inspect(|interface| {
-                if interface_value_can_never_match(interface) {
-                    event!(
-                        Level::WARN,
-                        %interface,
-                        "interface value can never match, alias labels like `eth0:0` are not supported yet, use the interface name or address"
-                    );
-                }
-            })
-            .collect()
+            .map(to_interface_filter)
+            .collect::<Result<_, _>>()
+            .wrap_err(
+                "invalid --interface value, alias labels like `eth0:0` are not supported yet",
+            )?
     };
 
     let hostname = if let Some(hostname) = args.hostname {
@@ -268,10 +264,12 @@ fn sequence_id() -> Urn {
     }
 }
 
-/// Interface names cannot contain `:` (see the kernel's `dev_valid_name`), so a value with a
-/// colon that is not an IPv6 address can never match an interface or an address.
-fn interface_value_can_never_match(value: &str) -> bool {
-    value.contains(':') && value.parse::<IpAddr>().is_err()
+fn to_interface_filter(value: String) -> Result<InterfaceFilter, eyre::Report> {
+    if let Ok(address) = value.parse::<IpAddr>() {
+        return Ok(InterfaceFilter::Address(address));
+    }
+
+    DevName::try_from(value.into_boxed_str()).map(InterfaceFilter::Name)
 }
 
 fn to_listen(listen: &str) -> Result<PortOrSocket, String> {
@@ -346,13 +344,15 @@ fn get_uuid_from_machine() -> Result<Uuid, eyre::Report> {
 
 #[cfg(test)]
 mod tests {
+    use std::net::IpAddr;
     use std::path::Path;
 
     use pretty_assertions::{assert_eq, assert_matches};
     use tracing::Level;
 
-    use crate::cli::{interface_value_can_never_match, parse_cli_from, to_listen};
-    use crate::config::PortOrSocket;
+    use crate::cli::{parse_cli_from, to_interface_filter, to_listen};
+    use crate::config::{InterfaceFilter, PortOrSocket};
+    use crate::network_interface::DevName;
 
     #[test]
     fn interfaces() {
@@ -360,24 +360,53 @@ mod tests {
             parse_cli_from(["wsdd-rs", "--interface", "eth0", "--interface", "eth1"]).unwrap();
 
         assert_eq!(
-            config
-                .interfaces
-                .iter()
-                .map(AsRef::as_ref)
-                .collect::<Vec<_>>(),
-            &["eth0", "eth1"]
+            config.interfaces,
+            &[
+                InterfaceFilter::Name(DevName::try_from(Box::from("eth0")).unwrap()),
+                InterfaceFilter::Name(DevName::try_from(Box::from("eth1")).unwrap())
+            ]
         );
     }
 
     #[test]
-    fn interface_values_with_colons_can_never_match() {
-        assert!(interface_value_can_never_match("eth0:0"));
-        assert!(interface_value_can_never_match("fe80::1%eth0"));
+    fn interface_values_classify_as_name_or_address() {
+        assert_matches!(to_interface_filter("eth0".into()), Ok(InterfaceFilter::Name(n)) if n.as_ref() == "eth0");
+        assert_matches!(
+            to_interface_filter("eth0.100".into()),
+            Ok(InterfaceFilter::Name(_))
+        );
+        assert_matches!(
+            to_interface_filter("a".repeat(15)),
+            Ok(InterfaceFilter::Name(_))
+        );
+        assert_matches!(
+            to_interface_filter("192.168.1.5".into()),
+            Ok(InterfaceFilter::Address(IpAddr::V4(_)))
+        );
+        assert_matches!(
+            to_interface_filter("fe80::1".into()),
+            Ok(InterfaceFilter::Address(IpAddr::V6(_)))
+        );
+    }
 
-        assert!(!interface_value_can_never_match("eth0"));
-        assert!(!interface_value_can_never_match("eth0.100"));
-        assert!(!interface_value_can_never_match("fe80::1"));
-        assert!(!interface_value_can_never_match("192.168.1.5"));
+    #[test]
+    fn invalid_interface_values_are_rejected() {
+        assert_matches!(to_interface_filter("eth0:0".into()), Err(_));
+        assert_matches!(to_interface_filter("fe80::1%eth0".into()), Err(_));
+        assert_matches!(to_interface_filter(String::new()), Err(_));
+        assert_matches!(to_interface_filter(".".into()), Err(_));
+        assert_matches!(to_interface_filter("..".into()), Err(_));
+        assert_matches!(to_interface_filter("eth 0".into()), Err(_));
+        assert_matches!(to_interface_filter("eth/0".into()), Err(_));
+        assert_matches!(to_interface_filter("a".repeat(16)), Err(_));
+    }
+
+    #[test]
+    fn any_invalid_interface_value_is_an_error() {
+        // valid values do not mask the invalid one
+        let result = parse_cli_from(["wsdd-rs", "--interface", "eth0", "--interface", "eth0:0"]);
+
+        assert_matches!(result, Err(_));
     }
 
     #[test]

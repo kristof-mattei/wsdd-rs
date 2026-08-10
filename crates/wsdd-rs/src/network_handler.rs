@@ -21,7 +21,7 @@ use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
 use uuid::fmt::Urn;
 
-use crate::config::Config;
+use crate::config::{Config, InterfaceFilter};
 use crate::max_size_deque::MaxSizeDeque;
 use crate::multicast_handler::MulticastHandler;
 use crate::network_address::NetworkAddress;
@@ -334,18 +334,12 @@ where
             return Err(Reason::AddressNotMulticastable);
         }
 
-        // Use interface only if it's in the list of user-provided interface names
+        // Use the address only if it matches one of the user-provided filters
         if !self.config.interfaces.is_empty()
-            && !self
-                .config
-                .interfaces
-                .iter()
-                .any(|i| &**i == address.interface.name())
-            && !self
-                .config
-                .interfaces
-                .iter()
-                .any(|i| **i == address.address.to_string())
+            && !self.config.interfaces.iter().any(|filter| match *filter {
+                InterfaceFilter::Name(ref name) => name.as_ref() == address.interface.name(),
+                InterfaceFilter::Address(ip) => ip == address.address.addr(),
+            })
         {
             return Err(Reason::ExcludedInterface);
         }
@@ -545,16 +539,33 @@ where
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::sync::atomic::Ordering;
 
     use pretty_assertions::{assert_eq, assert_matches};
     use tokio::sync::{RwLock, mpsc, watch};
     use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
 
+    use crate::config::{Config, InterfaceFilter};
     use crate::max_size_deque::MaxSizeDeque;
-    use crate::network_handler::{Command, NetworkHandler};
-    use crate::network_interface::MockResolveInterfaceName;
+    use crate::network_address::NetworkAddress;
+    use crate::network_handler::{Command, NetworkHandler, Reason};
+    use crate::network_interface::{DevName, MockResolveInterfaceName, NetworkInterface};
     use crate::test_utils::{build_config, find_first_non_lo_network_interface};
+
+    fn build_network_handler(config: Config) -> NetworkHandler<MockResolveInterfaceName> {
+        let (_command_tx, command_rx) = mpsc::channel(1);
+        let (start_tx, _start_rx) = watch::channel(());
+
+        NetworkHandler::with_resolver(
+            CancellationToken::new(),
+            &Arc::new(config),
+            command_rx,
+            start_tx,
+            Arc::new(RwLock::new(MaxSizeDeque::new(10))),
+            MockResolveInterfaceName::new(),
+        )
+    }
 
     #[tokio::test]
     async fn failed_interface_lookup_does_not_stop_command_processing() {
@@ -663,5 +674,49 @@ mod tests {
         let interface = network_handler.add_interface(0, index).unwrap();
 
         assert_eq!(interface.name(), &*name);
+    }
+
+    #[test]
+    fn interface_filter_matches_by_name() {
+        let mut config = build_config(Uuid::now_v7(), "1");
+        config.interfaces = vec![InterfaceFilter::Name(
+            DevName::try_from(Box::from("eth0")).unwrap(),
+        )];
+
+        let network_handler = build_network_handler(config);
+        network_handler.active.store(true, Ordering::Relaxed);
+
+        let eth0 = Arc::new(NetworkInterface::new_with_index("eth0", 0, 2));
+        let eth1 = Arc::new(NetworkInterface::new_with_index("eth1", 0, 3));
+
+        let on_eth0 = NetworkAddress::new("192.168.100.5/24".parse().unwrap(), eth0);
+        let on_eth1 = NetworkAddress::new("192.168.200.5/24".parse().unwrap(), eth1);
+
+        assert_matches!(network_handler.is_address_handled(&on_eth0), Ok(()));
+        assert_matches!(
+            network_handler.is_address_handled(&on_eth1),
+            Err(Reason::ExcludedInterface)
+        );
+    }
+
+    #[test]
+    fn interface_filter_matches_by_address() {
+        let mut config = build_config(Uuid::now_v7(), "1");
+        config.interfaces = vec![InterfaceFilter::Address("192.168.100.5".parse().unwrap())];
+
+        let network_handler = build_network_handler(config);
+        network_handler.active.store(true, Ordering::Relaxed);
+
+        let interface = Arc::new(NetworkInterface::new_with_index("eth0", 0, 2));
+
+        let matching =
+            NetworkAddress::new("192.168.100.5/24".parse().unwrap(), Arc::clone(&interface));
+        let other = NetworkAddress::new("192.168.100.6/24".parse().unwrap(), interface);
+
+        assert_matches!(network_handler.is_address_handled(&matching), Ok(()));
+        assert_matches!(
+            network_handler.is_address_handled(&other),
+            Err(Reason::ExcludedInterface)
+        );
     }
 }
