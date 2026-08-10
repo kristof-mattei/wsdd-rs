@@ -25,7 +25,7 @@ use crate::config::Config;
 use crate::max_size_deque::MaxSizeDeque;
 use crate::multicast_handler::MulticastHandler;
 use crate::network_address::NetworkAddress;
-use crate::network_interface::{self, NetworkInterface};
+use crate::network_interface::{LibcInterfaceNameResolver, NetworkInterface, ResolveInterfaceName};
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 
 #[derive(Debug)]
@@ -66,7 +66,8 @@ pub enum Reason {
     ExcludedInterface,
 }
 
-pub struct NetworkHandler {
+pub struct NetworkHandler<R = LibcInterfaceNameResolver> {
+    resolver: R,
     active: AtomicBool,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
@@ -92,7 +93,31 @@ impl NetworkHandler {
         start_tx: StartSender<()>,
         recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
     ) -> Self {
+        Self::with_resolver(
+            cancellation_token,
+            config,
+            command_rx,
+            start_tx,
+            recent_messages,
+            LibcInterfaceNameResolver,
+        )
+    }
+}
+
+impl<R> NetworkHandler<R>
+where
+    R: ResolveInterfaceName,
+{
+    fn with_resolver(
+        cancellation_token: CancellationToken,
+        config: &Arc<Config>,
+        command_rx: Receiver<Command>,
+        start_tx: StartSender<()>,
+        recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
+        resolver: R,
+    ) -> Self {
         Self {
+            resolver,
             active: AtomicBool::new(false),
             config: Arc::clone(config),
             cancellation_token,
@@ -262,7 +287,7 @@ impl NetworkHandler {
         let interface = match self.interfaces.entry(ifa_index) {
             Entry::Occupied(occupied_entry) => Arc::clone(occupied_entry.get()),
             Entry::Vacant(vacant_entry) => {
-                let if_name = match network_interface::if_indextoname(ifa_index) {
+                let if_name = match self.resolver.resolve(ifa_index) {
                     Ok(if_name) => if_name,
                     Err(error) => {
                         // the interface can vanish between the netlink event and this lookup
@@ -528,6 +553,7 @@ mod tests {
 
     use crate::max_size_deque::MaxSizeDeque;
     use crate::network_handler::{Command, NetworkHandler};
+    use crate::network_interface::MockResolveInterfaceName;
     use crate::test_utils::{build_config, find_first_non_lo_network_interface};
 
     #[tokio::test]
@@ -536,22 +562,29 @@ mod tests {
         let (command_tx, command_rx) = mpsc::channel(10);
         let (start_tx, mut start_rx) = watch::channel(());
 
-        let mut network_handler = NetworkHandler::new(
+        let mut resolver = MockResolveInterfaceName::new();
+
+        resolver
+            .expect_resolve()
+            .times(2)
+            .returning(|_| Err(std::io::Error::from_raw_os_error(libc::ENXIO)));
+
+        let mut network_handler = NetworkHandler::with_resolver(
             CancellationToken::new(),
             &config,
             command_rx,
             start_tx,
             Arc::new(RwLock::new(MaxSizeDeque::new(10))),
+            resolver,
         );
 
         let handle = tokio::spawn(async move { network_handler.process_commands().await });
 
-        // `u32::MAX` never resolves to an interface name
         command_tx
             .send(Command::NewAddress {
                 address: "192.0.2.1/24".parse().unwrap(),
                 scope: 0,
-                index: u32::MAX,
+                index: 7,
             })
             .await
             .unwrap();
@@ -560,7 +593,7 @@ mod tests {
             .send(Command::DeleteAddress {
                 address: "192.0.2.1/24".parse().unwrap(),
                 scope: 0,
-                index: u32::MAX,
+                index: 7,
             })
             .await
             .unwrap();
@@ -575,9 +608,44 @@ mod tests {
         assert_matches!(handle.await.unwrap(), Ok(()));
     }
 
+    #[test]
+    fn interface_lookup_caches_the_name() {
+        let config = Arc::new(build_config(Uuid::now_v7(), "1"));
+        let (_command_tx, command_rx) = mpsc::channel(1);
+        let (start_tx, _start_rx) = watch::channel(());
+
+        let mut resolver = MockResolveInterfaceName::new();
+
+        // the cache is insert-only, only the first lookup may resolve
+        resolver
+            .expect_resolve()
+            .times(1)
+            .returning(|_| Ok(Box::from("eth0")));
+
+        let mut network_handler = NetworkHandler::with_resolver(
+            CancellationToken::new(),
+            &config,
+            command_rx,
+            start_tx,
+            Arc::new(RwLock::new(MaxSizeDeque::new(10))),
+            resolver,
+        );
+
+        let first = network_handler.add_interface(0, 2).unwrap();
+
+        assert_eq!(first.name(), "eth0");
+
+        let second = network_handler.add_interface(0, 2).unwrap();
+
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "a second lookup returns the same entry"
+        );
+    }
+
     #[cfg_attr(not(miri), test)]
     #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
-    fn interface_lookup_resolves_the_real_name_and_caches_it() {
+    fn interface_lookup_resolves_the_real_name() {
         let config = Arc::new(build_config(Uuid::now_v7(), "1"));
         let (_command_tx, command_rx) = mpsc::channel(1);
         let (start_tx, _start_rx) = watch::channel(());
@@ -592,15 +660,8 @@ mod tests {
 
         let (name, index) = find_first_non_lo_network_interface().unwrap();
 
-        let first = network_handler.add_interface(0, index).unwrap();
+        let interface = network_handler.add_interface(0, index).unwrap();
 
-        assert_eq!(first.name(), &*name);
-
-        let second = network_handler.add_interface(0, index).unwrap();
-
-        assert!(
-            Arc::ptr_eq(&first, &second),
-            "the cache is insert-only, a second lookup returns the same entry"
-        );
+        assert_eq!(interface.name(), &*name);
     }
 }
