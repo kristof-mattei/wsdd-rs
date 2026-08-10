@@ -86,6 +86,7 @@ reqwest = { version = "=0.13.4", default-features = false, features = [
 ] }
 
 [dev-dependencies]
+mockall = "=0.15.0"
 mockito = "=1.7.2"
 pretty_assertions = { version = "=1.4.1", features = ["unstable"] }
 trybuild = "=1.0.120"

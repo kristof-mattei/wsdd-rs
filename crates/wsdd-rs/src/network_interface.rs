@@ -71,31 +71,33 @@ pub fn if_nametoindex(name: &str) -> Result<u32, std::io::Error> {
 }
 
 pub fn if_indextoname(index: u32) -> Result<Box<str>, std::io::Error> {
-    #[cfg(miri)]
-    {
-        // Miri cannot call `if_indextoname`, behave as if no interface exists
-        let _ = index;
+    let mut buffer = vec![0_u8; IF_NAMESIZE];
 
-        Err(Error::from_raw_os_error(libc::ENXIO))
+    // SAFETY: libc call
+    let result = unsafe { libc::if_indextoname(index, buffer.as_mut_ptr().cast()) };
+
+    if result.is_null() {
+        return Err(Error::last_os_error());
     }
 
-    #[cfg(not(miri))]
-    {
-        let mut buffer = vec![0_u8; IF_NAMESIZE];
+    let ifname = CStr::from_bytes_until_nul(&buffer)
+        .expect("We used oversized buffer, so not finding a null is impossible")
+        .to_str()
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
 
-        // SAFETY: libc call
-        let result = unsafe { libc::if_indextoname(index, buffer.as_mut_ptr().cast()) };
+    Ok(String::from(ifname).into_boxed_str())
+}
 
-        if result.is_null() {
-            return Err(Error::last_os_error());
-        }
+#[cfg_attr(test, mockall::automock)]
+pub trait ResolveInterfaceName {
+    fn resolve(&self, index: u32) -> Result<Box<str>, std::io::Error>;
+}
 
-        let ifname = CStr::from_bytes_until_nul(&buffer)
-            .expect("We used oversized buffer, so not finding a null is impossible")
-            .to_str()
-            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
+pub struct LibcInterfaceNameResolver;
 
-        Ok(String::from(ifname).into_boxed_str())
+impl ResolveInterfaceName for LibcInterfaceNameResolver {
+    fn resolve(&self, index: u32) -> Result<Box<str>, std::io::Error> {
+        if_indextoname(index)
     }
 }
 
