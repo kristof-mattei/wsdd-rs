@@ -1,5 +1,6 @@
 use std::mem::MaybeUninit;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use bytes::BufMut;
@@ -33,6 +34,7 @@ define_typed_size!(SIZE_OF_SOCKADDR_NL, u32, libc::sockaddr_nl);
 pub struct NetlinkAddressMonitor {
     cancellation_token: CancellationToken,
     command_tx: Sender<Command>,
+    config: Arc<Config>,
     socket: Arc<tokio::net::UdpSocket>,
     start_handler: tokio::task::JoinHandle<()>,
 }
@@ -111,6 +113,7 @@ impl NetlinkAddressMonitor {
 
         let start_handler = {
             let cancellation_token = cancellation_token.clone();
+            let config = Arc::clone(&config);
             let socket = Arc::clone(&socket);
             let mut start_rx = start_rx;
 
@@ -139,6 +142,7 @@ impl NetlinkAddressMonitor {
         Ok(Self {
             cancellation_token,
             command_tx,
+            config,
             socket,
             start_handler,
         })
@@ -151,12 +155,35 @@ impl NetlinkAddressMonitor {
     }
 
     pub async fn process_changes(&self) -> Result<(), eyre::Report> {
-        process_changes::<&tokio::net::UdpSocket>(
-            &self.cancellation_token,
-            &*self.socket,
-            self.command_tx.clone(),
-        )
-        .await
+        // we originally had this on the stack (array) but tokio then moves the whole task to the heap because of size
+        // Notice the buffer's alignment being equal to the alignment of `nlmsghdr`.
+        // This is because we will be reading structs from this buffer who have, at max, that alignment.
+        let mut buffer = build_buffer();
+
+        loop {
+            match process_changes::<&tokio::net::UdpSocket>(
+                &self.cancellation_token,
+                &*self.socket,
+                self.command_tx.clone(),
+                &mut buffer,
+            )
+            .await?
+            {
+                ControlFlow::Break(()) => {
+                    return Ok(());
+                },
+                ControlFlow::Continue(()) => {
+                    // recover the lost notifications by re-requesting the current state
+                    if let Err(error) = request_current_state(&self.config, &self.socket) {
+                        event!(
+                            Level::ERROR,
+                            ?error,
+                            "Failed to re-request current network state"
+                        );
+                    }
+                },
+            }
+        }
     }
 }
 
@@ -174,33 +201,44 @@ fn build_buffer() -> AlignedBuffer<{ align_of::<nlmsghdr>() }> {
     AlignedBuffer::<{ align_of::<nlmsghdr>() }>::new(page_size)
 }
 
+/// Reads and processes netlink messages until cancelled (`Break`), the receive queue
+/// overflows (`Continue`, the caller recovers and re-enters), or a fatal receive error.
 async fn process_changes<R>(
     cancellation_token: &CancellationToken,
     recv_buf: R,
     command_tx: Sender<Command>,
-) -> Result<(), eyre::Report>
+    buffer: &mut AlignedBuffer<{ align_of::<nlmsghdr>() }>,
+) -> Result<ControlFlow<()>, eyre::Report>
 where
     R: for<'a> RecvBuf<&'a mut [MaybeUninit<u8>]>,
 {
-    // we originally had this on the stack (array) but tokio then moves the whole task to the heap because of size
-
     // we don't need to zero out the buffer between runs as `recv_buf` starts at 0 and returns `bytes_read`
     // since we only read that portion we don't need to worry about the leftovers
-    // Notice the buffer's alignment being equal to the alignment of `nlmsghdr`.
-    // This is because we will be reading structs from this buffer who have, at max, that alignment.
-
-    let mut buffer = build_buffer();
 
     loop {
         let bytes_read = {
-            let mut buffer_byte_cursor = &mut *buffer;
+            let mut buffer_byte_cursor = &mut **buffer;
 
             tokio::select! {
                 () = cancellation_token.cancelled() => {
-                    break;
+                    return Ok(ControlFlow::Break(()));
                 },
                 result = recv_buf.recv_buf(&mut buffer_byte_cursor) => {
-                    result?
+                    match result {
+                        Ok(bytes_read) => bytes_read,
+                        Err(error) if error.raw_os_error() == Some(libc::ENOBUFS) => {
+                            // the kernel dropped notifications because our receive queue overflowed
+                            event!(
+                                Level::WARN,
+                                "netlink receive queue overflowed, notifications were lost"
+                            );
+
+                            return Ok(ControlFlow::Continue(()));
+                        },
+                        Err(error) => {
+                            return Err(error.into());
+                        },
+                    }
                 },
             }
         };
@@ -226,8 +264,6 @@ where
             );
         }
     }
-
-    Ok(())
 }
 
 fn request_current_state(
@@ -467,14 +503,15 @@ fn parse_address_message(raw_nlh: *const nlmsghdr) -> Option<(IpNet, u8, u32)> {
 #[cfg(test)]
 mod tests {
     use std::mem::MaybeUninit;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::ops::ControlFlow;
+    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
     use bytes::BufMut as _;
     use pretty_assertions::{assert_eq, assert_matches};
     use tokio_util::sync::CancellationToken;
 
     use crate::address_monitor::netlink_address_monitor::{
-        RecvBuf, SIZE_OF_SOCKADDR_NL, process_changes,
+        RecvBuf, SIZE_OF_SOCKADDR_NL, build_buffer, process_changes,
     };
     use crate::network_handler::Command;
     use crate::utils::u32_to_usize;
@@ -592,15 +629,85 @@ mod tests {
             });
         }
 
+        let mut buffer = build_buffer();
+
         let result = process_changes(
             &cancellation_token,
             MockNetlinkSocket {
                 done: AtomicBool::new(false),
             },
             command_tx,
+            &mut buffer,
         )
         .await;
 
-        assert_matches!(result, Ok(()));
+        assert_matches!(result, Ok(ControlFlow::Break(())));
+    }
+
+    struct OverflowingNetlinkSocket {
+        calls: AtomicU8,
+    }
+
+    impl RecvBuf<&mut [MaybeUninit<u8>]> for &OverflowingNetlinkSocket {
+        #[expect(clippy::mut_mut, reason = "Mandated by the trait")]
+        async fn recv_buf(&self, buf: &mut &mut [MaybeUninit<u8>]) -> std::io::Result<usize> {
+            match self.calls.fetch_add(1, Ordering::Relaxed) {
+                0 => Err(std::io::Error::from_raw_os_error(libc::ENOBUFS)),
+                1 => {
+                    let bytes = include_bytes!("fixtures/commands.bin");
+
+                    buf.put_slice(bytes);
+
+                    Ok(bytes.len())
+                },
+                _ => {
+                    // fixture exhausted; mirror a real socket and block
+                    std::future::pending().await
+                },
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn receive_queue_overflow_is_recoverable() {
+        let cancellation_token = CancellationToken::new();
+
+        let (command_tx, mut command_rx) = tokio::sync::mpsc::channel::<Command>(100);
+
+        let socket = OverflowingNetlinkSocket {
+            calls: AtomicU8::new(0),
+        };
+
+        let mut buffer = build_buffer();
+
+        // the first pass ends at the overflow, asking the caller to recover and re-enter
+        let result = process_changes(
+            &cancellation_token,
+            &socket,
+            command_tx.clone(),
+            &mut buffer,
+        )
+        .await;
+
+        assert_matches!(result, Ok(ControlFlow::Continue(())));
+
+        let consumer = {
+            let cancellation_token = cancellation_token.clone();
+
+            tokio::task::spawn(async move {
+                let _guard = cancellation_token.clone().drop_guard();
+
+                // a command arriving proves the re-entered loop picks up where the kernel left off
+                let command = command_rx.recv().await;
+
+                assert_matches!(command, Some(Command::NewAddress { .. }));
+            })
+        };
+
+        let result = process_changes(&cancellation_token, &socket, command_tx, &mut buffer).await;
+
+        assert_matches!(result, Ok(ControlFlow::Break(())));
+
+        consumer.await.unwrap();
     }
 }
