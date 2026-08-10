@@ -50,6 +50,7 @@ except ModuleNotFoundError:
 
 WSDD_VERSION: str = '0.9'
 
+
 args: argparse.Namespace
 logger: logging.Logger
 
@@ -119,8 +120,8 @@ class NetworkAddress:
         # Nah, this check is not optimal but there are no local flags for
         # addresses, but it should be safe for IPv4 anyways
         # (https://tools.ietf.org/html/rfc5735#page-3)
-        return ((self._family == socket.AF_INET) and (self._raw_address[0] != 127) or
-                (self._family == socket.AF_INET6) and (self._raw_address[0:2] == b'\xfe\x80'))
+        return ((self._family == socket.AF_INET) and (self._raw_address[0] != 127)
+                or (self._family == socket.AF_INET6) and (self._raw_address[0:2] == b'\xfe\x80'))
 
     @property
     def raw(self):
@@ -542,8 +543,8 @@ class WSDMessageHandler(INetworkPacketHandler):
         _, _, action_method = action.rpartition('/')
 
         if src:
-            logger.info('{}:{}({}) - - "{} {} UDP" - -'.format(src.transport_str, src.port, src.interface,
-                                                               action_method, msg_id))
+            logger.info('{}:{}({}) - - "{} {} UDP" - -'.format(
+                src.transport_str, src.port, src.interface, action_method, msg_id))
         else:
             # http logging is already done by according server
             logger.debug('processing WSD {} message ({})'.format(action_method, msg_id))
@@ -712,7 +713,8 @@ class WSDDiscoveredDevice:
             return
 
         comp = root.findtext(PUB_COMPUTER, '', namespaces)
-        self.props['DisplayName'], _, self.props['BelongsTo'] = (comp.partition('/'))
+        self.props['DisplayName'], _, self.props['BelongsTo'] = (
+            comp.partition('/'))
 
 
 class WSDClient(WSDUDPMessageHandler):
@@ -1015,12 +1017,10 @@ class WSDHost(WSDUDPMessageHandler):
         return matches, WSD_RESOLVE_MATCH
 
     def add_header_elements(self, header: ElementTree.Element, extra: Any):
-        ElementTree.SubElement(
-            header, 'wsd:AppSequence', {
-                'InstanceId': str(wsd_instance_id),
-                'SequenceId': uuid.uuid1().urn,
-                'MessageNumber': str(type(self).message_number)
-            })
+        ElementTree.SubElement(header, 'wsd:AppSequence', {
+            'InstanceId': str(wsd_instance_id),
+            'SequenceId': uuid.uuid1().urn,
+            'MessageNumber': str(type(self).message_number)})
 
         type(self).message_number += 1
 
@@ -1154,21 +1154,15 @@ class ApiServer:
         # Thus, we ignore type errors here.
         if isinstance(listen_address, socket.SocketType):
             # create socket from systemd file descriptor/socket
-            self.server = await aio_loop.create_task(
-                asyncio.start_unix_server(  # type: ignore
-                    self.on_connect, sock=listen_address))
+            self.server = await aio_loop.create_task(asyncio.start_unix_server(  # type: ignore
+                self.on_connect, sock=listen_address))
         elif isinstance(listen_address, int) or listen_address.isnumeric():
-            self.server = await aio_loop.create_task(
-                asyncio.start_server(  # type: ignore
-                    self.on_connect,
-                    host='localhost',
-                    port=int(listen_address),
-                    reuse_address=True,
-                    reuse_port=True))
+            self.server = await aio_loop.create_task(asyncio.start_server(  # type: ignore
+                self.on_connect, host='localhost', port=int(listen_address), reuse_address=True,
+                reuse_port=True))
         else:
-            self.server = await aio_loop.create_task(
-                asyncio.start_unix_server(  # type: ignore
-                    self.on_connect, path=listen_address))
+            self.server = await aio_loop.create_task(asyncio.start_unix_server(  # type: ignore
+                self.on_connect, path=listen_address))
 
     async def on_connect(self, read_stream: asyncio.StreamReader, write_stream: asyncio.StreamWriter) -> None:
         self.clients.append(write_stream)
@@ -1232,9 +1226,12 @@ class ApiServer:
                 addrs_str.append(', '.join(['{}'.format(a) for a in addrs]))
 
             retval = retval + '{}\t{}\t{}\t{}\t{}\t{}\n'.format(
-                dev_uri, dev.display_name, dev.props['BelongsTo'] if 'BelongsTo' in dev.props else '',
-                datetime.datetime.fromtimestamp(dev.last_seen).isoformat('T', 'seconds'), ','.join(addrs_str), ','.join(
-                    dev.types))
+                dev_uri,
+                dev.display_name,
+                dev.props['BelongsTo'] if 'BelongsTo' in dev.props else '',
+                datetime.datetime.fromtimestamp(dev.last_seen).isoformat('T', 'seconds'),
+                ','.join(addrs_str),
+                ','.join(dev.types))
 
         retval += '.\n'
         return retval
@@ -1319,23 +1316,29 @@ class NetworkAddressMonitor(metaclass=MetaEnumAfterInit):
 
         return self.interfaces[interface.index]
 
+    def get_handled_address_families(self) -> Set[int]:
+        """ get a set of handles address families for filtering during enumeration  """
+        if not self.active:
+            return set()
+
+        if args.ipv4only:
+            return {socket.AF_INET}
+        if args.ipv6only:
+            return {socket.AF_INET6}
+
+        return {socket.AF_INET, socket.AF_INET6}
+
     def is_address_handled(self, address: NetworkAddress) -> bool:
         # do not handle anything when we are not active
         if not self.active:
-            return False
-
-        # filter out address families we are not interested in
-        if args.ipv4only and address.family != socket.AF_INET:
-            return False
-        if args.ipv6only and address.family != socket.AF_INET6:
             return False
 
         if not address.is_multicastable:
             return False
 
         # Use interface only if it's in the list of user-provided interface names
-        if ((args.interface) and (address.interface.name not in args.interface) and
-            (address.address_str not in args.interface)):
+        if ((args.interface) and (address.interface.name not in args.interface)
+                and (address.address_str not in args.interface)):
             return False
 
         return True
@@ -1523,8 +1526,8 @@ class NetlinkAddressMonitor(NetworkAddressMonitor):
 
         kernel = (0, 0)
         # Append an unsigned byte to the header for the request.
-        req = struct.pack(NLM_HDR_DEF + 'B', self.NLM_HDR_LEN + 1, self.RTM_GETADDR, NLM_F_REQUEST | NLM_F_DUMP, 1, 0,
-                          socket.AF_PACKET)
+        req = struct.pack(NLM_HDR_DEF + 'B', self.NLM_HDR_LEN + 1, self.RTM_GETADDR,
+                          NLM_F_REQUEST | NLM_F_DUMP, 1, 0, socket.AF_PACKET)
         self.socket.sendto(req, kernel)
 
     def handle_change(self) -> None:
@@ -1532,6 +1535,7 @@ class NetlinkAddressMonitor(NetworkAddressMonitor):
 
         buf, src = self.socket.recvfrom(4096)
         logger.debug('netlink message with {} bytes'.format(len(buf)))
+        handled_families = self.get_handled_address_families()
 
         offset = 0
         while offset < len(buf):
@@ -1549,14 +1553,19 @@ class NetlinkAddressMonitor(NetworkAddressMonitor):
 
             # decode ifaddrmsg as in if_addr.h
             ifa_family, _, ifa_flags, ifa_scope, ifa_idx = struct.unpack_from(IFADDR_MSG_DEF, buf, offset)
-            if ((ifa_flags & IFA_F_DADFAILED) or (ifa_flags & IFA_F_HOMEADDRESS) or (ifa_flags & IFA_F_DEPRECATED) or
-                (ifa_flags & IFA_F_TENTATIVE)):
+            if ifa_family not in handled_families:
+                offset += align_to(msg_len, NLM_HDR_ALIGNTO)
+                logger.debug('ignore address with wrong address family {}'.format(ifa_family))
+                continue
+
+            if ((ifa_flags & IFA_F_DADFAILED) or (ifa_flags & IFA_F_HOMEADDRESS)
+                    or (ifa_flags & IFA_F_DEPRECATED) or (ifa_flags & IFA_F_TENTATIVE)):
                 logger.debug('ignore address with invalid state {}'.format(hex(ifa_flags)))
                 offset += align_to(msg_len, NLM_HDR_ALIGNTO)
                 continue
 
             logger.debug('RTM new/del addr family: {} flags: {} scope: {} idx: {}'.format(
-                ifa_family, ifa_flags, ifa_scope, ifa_idx))
+                         ifa_family, ifa_flags, ifa_scope, ifa_idx))
             addr = None
             i = offset + IFA_MSG_LEN
             while i - offset < msg_len:
@@ -1727,8 +1736,8 @@ class RouteSocketAddressMonitor(NetworkAddressMonitor):
                 break
 
             # skip over non-understood packets and versions
-            if (rtm_type not in [self.RTM_NEWADDR, self.RTM_DELADDR, self.RTM_IFINFO]) or (rtm_version
-                                                                                           != self.RTM_VERSION):
+            if (rtm_type not in [self.RTM_NEWADDR, self.RTM_DELADDR, self.RTM_IFINFO]) or (
+                    rtm_version != self.RTM_VERSION):
                 offset += rtm_len
                 continue
 
@@ -1762,12 +1771,15 @@ class RouteSocketAddressMonitor(NetworkAddressMonitor):
         addr_type_idx = 1
         addr = None
         addr_family: int = socket.AF_UNSPEC
+
+        handled_families = self.get_handled_address_families()
+
         while offset < limit:
             while not (addr_type_idx & addr_mask) and (addr_type_idx <= addr_mask):
                 addr_type_idx = addr_type_idx << 1
 
             sa_len, sa_fam = struct.unpack_from('@BB', buf, offset)
-            if sa_fam in [socket.AF_INET, socket.AF_INET6] and addr_type_idx == RTA_IFA:
+            if sa_fam in handled_families and addr_type_idx == RTA_IFA:
                 addr_family = sa_fam
                 addr_offset = 4 if sa_fam == socket.AF_INET else 8
                 addr_length = 4 if sa_fam == socket.AF_INET else 16
@@ -1775,7 +1787,7 @@ class RouteSocketAddressMonitor(NetworkAddressMonitor):
                 addr = buf[addr_start:addr_start + addr_length]
                 if sa_fam == socket.AF_INET6:
                     addr = self.clear_addr_scope(addr)
-            elif sa_fam == socket.AF_LINK:
+            elif sa_fam == socket.AF_LINK:  # type: ignore[attr-defined]
                 idx, _, name_len = struct.unpack_from('@HBB', buf, offset + 2)
                 if idx > 0:
                     off_name = offset + 8
@@ -1814,14 +1826,20 @@ class RouteSocketAddressMonitor(NetworkAddressMonitor):
 class DladmAddressMonitor(NetworkAddressMonitor):
 
     class sockaddr(ctypes.Structure):
-        _fields_ = [("family", ctypes.c_ushort), ("dummy", ctypes.c_ushort), ("data", ctypes.c_ubyte * 14)]
+        _fields_ = [("family", ctypes.c_ushort),
+                    ("dummy", ctypes.c_ushort),
+                    ("data", ctypes.c_ubyte * 14)]
 
     class ifaddrs(ctypes.Structure):
         pass
 
-    ifaddrs._fields_ = [("next", ctypes.POINTER(ifaddrs)), ("name", ctypes.c_char_p), ("flags", ctypes.c_ulonglong),
-                        ("addr", ctypes.POINTER(sockaddr)), ("netmask", ctypes.POINTER(sockaddr)),
-                        ("dstaddr", ctypes.POINTER(sockaddr)), ("data", ctypes.c_void_p)]
+    ifaddrs._fields_ = [("next", ctypes.POINTER(ifaddrs)),
+                        ("name", ctypes.c_char_p),
+                        ("flags", ctypes.c_ulonglong),
+                        ("addr", ctypes.POINTER(sockaddr)),
+                        ("netmask", ctypes.POINTER(sockaddr)),
+                        ("dstaddr", ctypes.POINTER(sockaddr)),
+                        ("data", ctypes.c_void_p)]
 
     def freeifaddrs(self, ifa) -> None:
         libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
@@ -1839,13 +1857,20 @@ class DladmAddressMonitor(NetworkAddressMonitor):
         super().do_enumerate()
         libsocket = ctypes.CDLL(ctypes.util.find_library('socket'), use_errno=True)
         ifas = self.ifaddrs()
+        handled_families = self.get_handled_address_families()
         if libsocket.getifaddrs(ctypes.byref(ifas)) == 0:
             ifa = ifas
             ifa_idx = 0
             while ifa.next:
                 if ifa.name:
-                    logger.debug("{}%{}".format(socket.inet_ntop(ifa.addr[0].family, bytes(ifa.addr[0].data[:4])),
-                                                ifa.name.decode()))
+                    if ifa.addr[0].family not in handled_families:
+                        ifa = ifa.next[0]
+                        ifa_idx += 1
+                        continue
+
+                    logger.debug("{}%{}".format(
+                        socket.inet_ntop(ifa.addr[0].family, bytes(ifa.addr[0].data[:4])),
+                        ifa.name.decode()))
                     addr = socket.inet_ntop(ifa.addr[0].family, bytes(ifa.addr[0].data[:4]))
                     intf = NetworkInterface(ifa.name.decode(), 0, ifa_idx)
                     self.add_interface(intf)
@@ -1867,41 +1892,92 @@ def parse_args() -> None:
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-i', '--interface', help='interface or address to use', action='append', default=[])
-    parser.add_argument('-H', '--hoplimit', help='hop limit for multicast packets (default = 1)', type=int, default=1)
-    parser.add_argument('-U', '--uuid', help='UUID for the target device', default=None)
-    parser.add_argument('-v', '--verbose', help='increase verbosity', action='count', default=0)
-    parser.add_argument('-d', '--domain', help='set domain name (disables workgroup)', default=None)
     parser.add_argument(
-        '-n',
-        '--hostname',
+        '-i', '--interface',
+        help='interface or address to use',
+        action='append', default=[])
+    parser.add_argument(
+        '-H', '--hoplimit',
+        help='hop limit for multicast packets (default = 1)', type=int,
+        default=1)
+    parser.add_argument(
+        '-U', '--uuid',
+        help='UUID for the target device',
+        default=None)
+    parser.add_argument(
+        '-v', '--verbose',
+        help='increase verbosity',
+        action='count', default=0)
+    parser.add_argument(
+        '-d', '--domain',
+        help='set domain name (disables workgroup)',
+        default=None)
+    parser.add_argument(
+        '-n', '--hostname',
         help='override (NetBIOS) hostname to be used (default hostname)',
         # use only the local part of a possible FQDN
         default=socket.gethostname().partition('.')[0])
-    parser.add_argument('-w', '--workgroup', help='set workgroup name (default WORKGROUP)', default='WORKGROUP')
-    parser.add_argument('-A', '--no-autostart', help='do not start networking after launch', action='store_true')
-    parser.add_argument('-t', '--no-http', help='disable http service (for debugging, e.g.)', action='store_true')
-    parser.add_argument('-4', '--ipv4only', help='use only IPv4 (default = off)', action='store_true')
-    parser.add_argument('-6', '--ipv6only', help='use IPv6 (default = off)', action='store_true')
-    parser.add_argument('-s', '--shortlog', help='log only level and message', action='store_true')
-    parser.add_argument('-p',
-                        '--preserve-case',
-                        help='preserve case of the provided/detected hostname',
-                        action='store_true')
-    parser.add_argument('-c', '--chroot', help='directory to chroot into', default=None)
-    parser.add_argument('-u', '--user', help='drop privileges to user:group', default=None)
-    parser.add_argument('-D', '--discovery', help='enable discovery operation mode', action='store_true')
-    parser.add_argument('-l', '--listen', help='listen on path or localhost port in discovery mode', default=None)
-    parser.add_argument('-o',
-                        '--no-host',
-                        help='disable server mode operation (host will be undiscoverable)',
-                        action='store_true')
-    parser.add_argument('-V', '--version', help='show version number and exit', action='store_true')
-    parser.add_argument('--metadata-timeout', help='set timeout for HTTP-based metadata exchange', default=2.0)
-    parser.add_argument('--source-port',
-                        help='send multicast traffic/receive replies on this port',
-                        type=int,
-                        default=0)
+    parser.add_argument(
+        '-w', '--workgroup',
+        help='set workgroup name (default WORKGROUP)',
+        default='WORKGROUP')
+    parser.add_argument(
+        '-A', '--no-autostart',
+        help='do not start networking after launch',
+        action='store_true')
+    parser.add_argument(
+        '-t', '--no-http',
+        help='disable http service (for debugging, e.g.)',
+        action='store_true')
+    parser.add_argument(
+        '-4', '--ipv4only',
+        help='use only IPv4 (default = off)',
+        action='store_true')
+    parser.add_argument(
+        '-6', '--ipv6only',
+        help='use IPv6 (default = off)',
+        action='store_true')
+    parser.add_argument(
+        '-s', '--shortlog',
+        help='log only level and message',
+        action='store_true')
+    parser.add_argument(
+        '-p', '--preserve-case',
+        help='preserve case of the provided/detected hostname',
+        action='store_true')
+    parser.add_argument(
+        '-c', '--chroot',
+        help='directory to chroot into',
+        default=None)
+    parser.add_argument(
+        '-u', '--user',
+        help='drop privileges to user:group',
+        default=None)
+    parser.add_argument(
+        '-D', '--discovery',
+        help='enable discovery operation mode',
+        action='store_true')
+    parser.add_argument(
+        '-l', '--listen',
+        help='listen on path or localhost port in discovery mode',
+        default=None)
+    parser.add_argument(
+        '-o', '--no-host',
+        help='disable server mode operation (host will be undiscoverable)',
+        action='store_true')
+    parser.add_argument(
+        '-V', '--version',
+        help='show version number and exit',
+        action='store_true')
+    parser.add_argument(
+        '--metadata-timeout',
+        help='set timeout for HTTP-based metadata exchange',
+        default=2.0)
+    parser.add_argument(
+        '--source-port',
+        help='send multicast traffic/receive replies on this port',
+        type=int,
+        default=0)
 
     args = parser.parse_args(sys.argv[1:])
 
@@ -1930,7 +2006,6 @@ def parse_args() -> None:
         logger.warning('no interface given, using all interfaces')
 
     if not args.uuid:
-
         def read_uuid_from_file(fn: str) -> Union[None, uuid.UUID]:
             try:
                 with open(fn) as f:

@@ -136,11 +136,8 @@ impl NetworkHandler {
                     scope,
                     index,
                 } => {
-                    let interface = match self.add_interface(scope, index) {
-                        Ok(interface) => interface,
-                        Err(_error) => {
-                            return Ok(());
-                        },
+                    let Ok(interface) = self.add_interface(scope, index) else {
+                        continue;
                     };
 
                     self.handle_new_address(NetworkAddress::new(address, Arc::clone(&interface)))
@@ -151,11 +148,8 @@ impl NetworkHandler {
                     scope,
                     index,
                 } => {
-                    let interface = match self.add_interface(scope, index) {
-                        Ok(interface) => interface,
-                        Err(_error) => {
-                            return Ok(());
-                        },
+                    let Ok(interface) = self.add_interface(scope, index) else {
+                        continue;
                     };
 
                     self.handle_deleted_address(NetworkAddress::new(
@@ -271,9 +265,9 @@ impl NetworkHandler {
                 let if_name = match network_interface::if_indextoname(ifa_index) {
                     Ok(if_name) => if_name,
                     Err(error) => {
-                        // accept this exception (which should not occur)
+                        // the interface can vanish between the netlink event and this lookup
                         event!(
-                            Level::ERROR,
+                            Level::WARN,
                             ifa_idx = ifa_index,
                             ?error,
                             "interface detection failed",
@@ -520,5 +514,93 @@ impl NetworkHandler {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use pretty_assertions::{assert_eq, assert_matches};
+    use tokio::sync::{RwLock, mpsc, watch};
+    use tokio_util::sync::CancellationToken;
+    use uuid::Uuid;
+
+    use crate::max_size_deque::MaxSizeDeque;
+    use crate::network_handler::{Command, NetworkHandler};
+    use crate::test_utils::{build_config, find_first_non_lo_network_interface};
+
+    #[tokio::test]
+    async fn failed_interface_lookup_does_not_stop_command_processing() {
+        let config = Arc::new(build_config(Uuid::now_v7(), "1"));
+        let (command_tx, command_rx) = mpsc::channel(10);
+        let (start_tx, mut start_rx) = watch::channel(());
+
+        let mut network_handler = NetworkHandler::new(
+            CancellationToken::new(),
+            &config,
+            command_rx,
+            start_tx,
+            Arc::new(RwLock::new(MaxSizeDeque::new(10))),
+        );
+
+        let handle = tokio::spawn(async move { network_handler.process_commands().await });
+
+        // `u32::MAX` never resolves to an interface name
+        command_tx
+            .send(Command::NewAddress {
+                address: "192.0.2.1/24".parse().unwrap(),
+                scope: 0,
+                index: u32::MAX,
+            })
+            .await
+            .unwrap();
+
+        command_tx
+            .send(Command::DeleteAddress {
+                address: "192.0.2.1/24".parse().unwrap(),
+                scope: 0,
+                index: u32::MAX,
+            })
+            .await
+            .unwrap();
+
+        command_tx.send(Command::Start).await.unwrap();
+
+        // `Start` is only reached when the failed lookups did not end the loop
+        start_rx.changed().await.unwrap();
+
+        drop(command_tx);
+
+        assert_matches!(handle.await.unwrap(), Ok(()));
+    }
+
+    #[cfg_attr(not(miri), test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    fn interface_lookup_resolves_the_real_name_and_caches_it() {
+        let config = Arc::new(build_config(Uuid::now_v7(), "1"));
+        let (_command_tx, command_rx) = mpsc::channel(1);
+        let (start_tx, _start_rx) = watch::channel(());
+
+        let mut network_handler = NetworkHandler::new(
+            CancellationToken::new(),
+            &config,
+            command_rx,
+            start_tx,
+            Arc::new(RwLock::new(MaxSizeDeque::new(10))),
+        );
+
+        let (name, index) = find_first_non_lo_network_interface().unwrap();
+
+        let first = network_handler.add_interface(0, index).unwrap();
+
+        assert_eq!(first.name(), &*name);
+
+        let second = network_handler.add_interface(0, index).unwrap();
+
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "the cache is insert-only, a second lookup returns the same entry"
+        );
     }
 }

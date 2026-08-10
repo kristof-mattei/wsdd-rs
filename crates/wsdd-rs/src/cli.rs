@@ -1,5 +1,6 @@
 use std::env;
 use std::ffi::OsString;
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -134,6 +135,15 @@ where
         args.interface
             .into_iter()
             .map(String::into_boxed_str)
+            .inspect(|interface| {
+                if interface_value_can_never_match(interface) {
+                    event!(
+                        Level::WARN,
+                        %interface,
+                        "interface value can never match, alias labels like `eth0:0` are not supported yet, use the interface name or address"
+                    );
+                }
+            })
             .collect()
     };
 
@@ -258,6 +268,12 @@ fn sequence_id() -> Urn {
     }
 }
 
+/// Interface names cannot contain `:` (see the kernel's `dev_valid_name`), so a value with a
+/// colon that is not an IPv6 address can never match an interface or an address.
+fn interface_value_can_never_match(value: &str) -> bool {
+    value.contains(':') && value.parse::<IpAddr>().is_err()
+}
+
 fn to_listen(listen: &str) -> Result<PortOrSocket, String> {
     // if listen is numeric, it's try and parse it as a port
     let all_numeric = listen.chars().all(char::is_numeric);
@@ -335,7 +351,7 @@ mod tests {
     use pretty_assertions::{assert_eq, assert_matches};
     use tracing::Level;
 
-    use crate::cli::{parse_cli_from, to_listen};
+    use crate::cli::{interface_value_can_never_match, parse_cli_from, to_listen};
     use crate::config::PortOrSocket;
 
     #[test]
@@ -351,6 +367,17 @@ mod tests {
                 .collect::<Vec<_>>(),
             &["eth0", "eth1"]
         );
+    }
+
+    #[test]
+    fn interface_values_with_colons_can_never_match() {
+        assert!(interface_value_can_never_match("eth0:0"));
+        assert!(interface_value_can_never_match("fe80::1%eth0"));
+
+        assert!(!interface_value_can_never_match("eth0"));
+        assert!(!interface_value_can_never_match("eth0.100"));
+        assert!(!interface_value_can_never_match("fe80::1"));
+        assert!(!interface_value_can_never_match("192.168.1.5"));
     }
 
     #[test]
