@@ -49,7 +49,6 @@ use tracing::{Level, event};
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::{EnvFilter, Layer as _};
-use uuid::fmt::Urn;
 
 use crate::address_monitor::create_address_monitor;
 use crate::build_env::get_build_env;
@@ -60,6 +59,7 @@ use crate::max_size_deque::MaxSizeDeque;
 use crate::network_handler::{Command, NetworkHandler};
 use crate::security::{chroot, drop_privileges};
 use crate::shutdown::Shutdown;
+use crate::soap::MessageId;
 use crate::utils::task::{flatten_shutdown_handle, spawn_with_name};
 
 #[cfg_attr(not(miri), global_allocator)]
@@ -231,7 +231,7 @@ async fn start_tasks() -> Shutdown {
         return shutdown;
     }
 
-    let recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>> =
+    let recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>> =
         Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES)));
 
     // shutdown broadcast: every task watches this token (or a child of it) to know

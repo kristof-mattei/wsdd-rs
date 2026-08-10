@@ -19,13 +19,13 @@ use tokio::sync::watch::Sender as StartSender;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
-use uuid::fmt::Urn;
 
 use crate::config::{Config, InterfaceFilter};
 use crate::max_size_deque::MaxSizeDeque;
 use crate::multicast_handler::MulticastHandler;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::{LibcInterfaceNameResolver, NetworkInterface, ResolveInterfaceName};
+use crate::soap::MessageId;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 
 #[derive(Debug)]
@@ -76,7 +76,7 @@ pub struct NetworkHandler<R = LibcInterfaceNameResolver> {
     multicast_handlers: Vec<MulticastHandler>,
     command_rx: Receiver<Command>,
     start_tx: StartSender<()>,
-    recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
+    recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
 }
 
 #[derive(Debug, Error)]
@@ -91,7 +91,7 @@ impl NetworkHandler {
         config: &Arc<Config>,
         command_rx: Receiver<Command>,
         start_tx: StartSender<()>,
-        recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
+        recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
     ) -> Self {
         Self::with_resolver(
             cancellation_token,
@@ -113,7 +113,7 @@ where
         config: &Arc<Config>,
         command_rx: Receiver<Command>,
         start_tx: StartSender<()>,
-        recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
+        recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
         resolver: R,
     ) -> Self {
         Self {

@@ -1,4 +1,5 @@
 use axum::response::IntoResponse;
+use uuid::fmt::Urn;
 
 use crate::soap::parser::bye::Bye;
 use crate::soap::parser::get::Get;
@@ -10,6 +11,37 @@ use crate::soap::parser::resolve_match::ResolveMatch;
 
 pub mod builder;
 pub mod parser;
+
+/// An incoming `[message id]` or `[relates to]` value.
+///
+/// WS-Addressing declares these as `xs:anyURI`, so they are opaque and compared
+/// byte-wise, never parsed. Replies echo them verbatim.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MessageId(Box<str>);
+
+impl MessageId {
+    pub fn new(value: Box<str>) -> Self {
+        Self(value)
+    }
+}
+
+impl From<Urn> for MessageId {
+    fn from(urn: Urn) -> Self {
+        Self(urn.to_string().into_boxed_str())
+    }
+}
+
+impl AsRef<str> for MessageId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for MessageId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 pub trait MessageType {
     fn message_type(&self) -> &str;
