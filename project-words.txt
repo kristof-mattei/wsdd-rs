@@ -88,6 +88,7 @@ ifas
 IFINFO
 IFLIST
 ifname
+IFNAMSIZ
 IHHII
 implictely
 indextoname
