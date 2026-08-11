@@ -113,7 +113,7 @@ async fn build_response(
         WSDMessage::HostMessage(HostMessage::Get(_get)) => {
             match header.to.as_ref() {
                 Some(to) if to == &config.uuid_as_device_uri => Ok(Some(
-                    builder::Builder::build_get_response(config, header.message_id)?,
+                    builder::Builder::build_get_response(config, &header.message_id)?,
                 )),
                 Some(_) => {
                     // error when `To` doesn't match us
@@ -129,7 +129,7 @@ async fn build_response(
         },
         WSDMessage::HostMessage(HostMessage::Probe(probe)) => {
             // only the probe one is checked for duplicates
-            if message_handler.is_duplicated_msg(header.message_id).await {
+            if message_handler.is_duplicated_msg(&header.message_id).await {
                 event!(
                     Level::DEBUG,
                     message_id = %header.message_id,
@@ -143,7 +143,7 @@ async fn build_response(
                 return Ok(Some(builder::Builder::build_probe_matches(
                     config,
                     messages_built,
-                    header.message_id,
+                    &header.message_id,
                 )?));
             }
 

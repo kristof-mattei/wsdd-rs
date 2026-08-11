@@ -15,7 +15,6 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
-use uuid::fmt::Urn;
 
 use crate::config::Config;
 use crate::constants;
@@ -24,7 +23,9 @@ use crate::message_receiver::MessageReceiver;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
 use crate::soap::parser::Header;
-use crate::soap::{ClientMessage, HostMessage, MessageType, MulticastMessage, UnicastMessage};
+use crate::soap::{
+    ClientMessage, HostMessage, MessageId, MessageType, MulticastMessage, UnicastMessage,
+};
 use crate::udp_address::UdpAddress;
 use crate::udp_socket_with_addr::UdpSocketWithAddr;
 use crate::url_ip_addr::UrlIpAddr;
@@ -43,7 +44,7 @@ pub struct MulticastHandler {
     /// Shared reference to all discovered devices.
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
 
-    recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
+    recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
 
     /// Shared reference for global message counter.
     messages_built: Arc<AtomicU64>,
@@ -99,7 +100,7 @@ impl MulticastHandler {
         cancellation_token: CancellationToken,
         config: Arc<Config>,
         devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
-        recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
+        recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
     ) -> Result<Self, eyre::Report> {
         let domain = match network_address.address {
             IpNet::V4(_) => Domain::IPV4,

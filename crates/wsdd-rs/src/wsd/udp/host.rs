@@ -6,7 +6,6 @@ use color_eyre::eyre;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
-use uuid::fmt::Urn;
 
 use crate::config::Config;
 use crate::multicast_handler::{IncomingHostMessage, OutgoingMessage};
@@ -14,7 +13,7 @@ use crate::network_address::NetworkAddress;
 use crate::soap::builder::{self, Builder};
 use crate::soap::parser::probe::Probe;
 use crate::soap::parser::resolve::Resolve;
-use crate::soap::{HostMessage, MulticastMessage, UnicastMessage};
+use crate::soap::{HostMessage, MessageId, MulticastMessage, UnicastMessage};
 use crate::utils::task::spawn_with_name;
 
 /// handles WSD requests coming from UDP datagrams.
@@ -151,7 +150,7 @@ async fn send_hello(
 pub fn handle_probe(
     config: &Config,
     messages_built: &AtomicU64,
-    relates_to: Urn,
+    relates_to: &MessageId,
     probe: &Probe,
 ) -> Result<Option<UnicastMessage>, eyre::Report> {
     if probe.types.is_empty() || probe.requested_type_match() {
@@ -176,7 +175,7 @@ fn handle_resolve(
     config: &Config,
     messages_built: &AtomicU64,
     target_uuid: uuid::Uuid,
-    relates_to: Urn,
+    relates_to: &MessageId,
     resolve: &Resolve,
 ) -> Result<Option<UnicastMessage>, eyre::Report> {
     if resolve.addr_urn == target_uuid.urn() {
@@ -231,14 +230,14 @@ async fn listen_forever(
         // dispatch based on the SOAP Action header
         let response = match message {
             HostMessage::Probe(probe) => {
-                handle_probe(&config, &messages_built, header.message_id, &probe)
+                handle_probe(&config, &messages_built, &header.message_id, &probe)
             },
             HostMessage::Resolve(resolve) => handle_resolve(
                 address,
                 &config,
                 &messages_built,
                 config.uuid,
-                header.message_id,
+                &header.message_id,
                 &resolve,
             ),
             HostMessage::Get(_) => {
@@ -423,7 +422,7 @@ mod tests {
             &host_config,
             &host_messages_built,
             host_config.uuid,
-            header.message_id,
+            &header.message_id,
             &resolve,
         )
         .unwrap()
@@ -431,7 +430,7 @@ mod tests {
 
         let expected = format!(
             include_str!("../../test/resolve-matches-template.xml"),
-            client_message_id,
+            client_message_id.urn(),
             host_config.wsd_instance_id,
             host_messages_built.load(Ordering::Relaxed) - 1,
             host_config.uuid_as_device_uri,
@@ -454,7 +453,7 @@ mod tests {
             client_message_id
         );
 
-        handles_probe_generic(client_message_id, &probe).await;
+        handles_probe_generic(client_message_id.urn(), &probe).await;
     }
 
     #[tokio::test]
@@ -466,7 +465,7 @@ mod tests {
             client_message_id
         );
 
-        handles_probe_generic(client_message_id, &probe).await;
+        handles_probe_generic(client_message_id.urn(), &probe).await;
     }
 
     #[tokio::test]
@@ -477,10 +476,23 @@ mod tests {
             client_message_id
         );
 
-        handles_probe_generic(client_message_id, &probe).await;
+        handles_probe_generic(client_message_id.urn(), &probe).await;
     }
 
-    async fn handles_probe_generic(client_message_id: Uuid, probe: &str) {
+    #[tokio::test]
+    async fn handles_probe_with_non_urn_message_id() {
+        // the WS-Discovery spec's own example Probe uses this form, MessageID is `xs:anyURI`
+        const MESSAGE_ID: &str = "uuid:0a6dc791-2be6-4991-9af1-454778a1917a";
+
+        let probe = format!(
+            include_str!("../../test/probe-template-any-uri-message-id.xml"),
+            MESSAGE_ID
+        );
+
+        handles_probe_generic(MESSAGE_ID, &probe).await;
+    }
+
+    async fn handles_probe_generic(client_message_id: impl std::fmt::Display, probe: &str) {
         let host_message_handler = build_message_handler();
 
         // host
@@ -503,7 +515,7 @@ mod tests {
         let response = handle_probe(
             &host_config,
             &host_messages_built,
-            header.message_id,
+            &header.message_id,
             &probe,
         )
         .unwrap()

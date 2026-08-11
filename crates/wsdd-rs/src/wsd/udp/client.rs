@@ -24,7 +24,7 @@ use crate::soap::parser::hello::Hello;
 use crate::soap::parser::probe_match::ProbeMatch;
 use crate::soap::parser::resolve_match::ResolveMatch;
 use crate::soap::parser::xaddrs::XAddr;
-use crate::soap::{ClientMessage, MulticastMessage};
+use crate::soap::{ClientMessage, MessageId, MulticastMessage};
 use crate::utils::SliceDisplay;
 use crate::utils::task::spawn_with_name;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
@@ -36,7 +36,7 @@ pub(crate) struct WSDClient {
     _devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     handle: tokio::task::JoinHandle<()>,
     mc_local_port_tx: Sender<MulticastMessage>,
-    probes: Arc<RwLock<HashMap<Urn, Duration>>>,
+    probes: Arc<RwLock<HashMap<MessageId, Duration>>>,
 }
 
 impl WSDClient {
@@ -54,7 +54,7 @@ impl WSDClient {
         mc_local_port_rx: Receiver<IncomingClientMessage>,
         mc_local_port_tx: Sender<MulticastMessage>,
     ) -> Self {
-        let probes = Arc::new(RwLock::new(HashMap::<Urn, Duration>::new()));
+        let probes = Arc::new(RwLock::new(HashMap::<MessageId, Duration>::new()));
 
         let handle = {
             let cancellation_token = cancellation_token.clone();
@@ -143,7 +143,7 @@ impl WSDClient {
 async fn send_probe(
     cancellation_token: &CancellationToken,
     config: &Arc<Config>,
-    probes: &Arc<RwLock<HashMap<Urn, Duration>>>,
+    probes: &Arc<RwLock<HashMap<MessageId, Duration>>>,
     mc_local_port_tx: &Sender<MulticastMessage>,
 ) -> Result<(), eyre::Report> {
     let future = async move {
@@ -151,7 +151,7 @@ async fn send_probe(
 
         let (probe, message_id) = Builder::build_probe(config)?;
 
-        probes.write().await.insert(message_id, now());
+        probes.write().await.insert(message_id.into(), now());
 
         mc_local_port_tx
             .send(probe)
@@ -165,18 +165,18 @@ async fn send_probe(
         .unwrap_or(Ok(()))
 }
 
-async fn remove_outdated_probes(probes: &Arc<RwLock<HashMap<Urn, Duration>>>) {
+async fn remove_outdated_probes(probes: &Arc<RwLock<HashMap<MessageId, Duration>>>) {
     let now = now();
 
     probes.write().await.retain(|_, sent| is_fresh(*sent, now));
 }
 
-fn record_resolve(resolves: &mut HashMap<Urn, Duration>, message_id: Urn) {
+fn record_resolve(resolves: &mut HashMap<MessageId, Duration>, message_id: Urn) {
     let now = now();
 
     resolves.retain(|_, sent| is_fresh(*sent, now));
 
-    resolves.insert(message_id, now);
+    resolves.insert(message_id.into(), now);
 }
 
 fn is_fresh(sent: Duration, now: Duration) -> bool {
@@ -259,7 +259,7 @@ async fn handle_hello(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
     multicast: &Sender<MulticastMessage>,
-    resolves: &mut HashMap<Urn, Duration>,
+    resolves: &mut HashMap<MessageId, Duration>,
     Hello {
         endpoint,
         raw_xaddrs,
@@ -315,10 +315,10 @@ async fn handle_probe_match(
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
-    relates_to: Option<Urn>,
-    probes: Arc<RwLock<HashMap<Urn, Duration>>>,
+    relates_to: Option<MessageId>,
+    probes: Arc<RwLock<HashMap<MessageId, Duration>>>,
     mc_local_port_tx: &Sender<MulticastMessage>,
-    resolves: &mut HashMap<Urn, Duration>,
+    resolves: &mut HashMap<MessageId, Duration>,
     ProbeMatch {
         endpoint,
         raw_xaddrs,
@@ -375,8 +375,8 @@ async fn handle_resolve_match(
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
-    relates_to: Option<Urn>,
-    resolves: &HashMap<Urn, Duration>,
+    relates_to: Option<MessageId>,
+    resolves: &HashMap<MessageId, Duration>,
     ResolveMatch {
         endpoint,
         raw_xaddrs,
@@ -507,7 +507,7 @@ async fn listen_forever(
     mut mc_wsd_port_rx: Receiver<IncomingClientMessage>,
     mut mc_local_port_rx: Receiver<IncomingClientMessage>,
     mc_local_port_tx: Sender<MulticastMessage>,
-    probes: Arc<RwLock<HashMap<Urn, Duration>>>,
+    probes: Arc<RwLock<HashMap<MessageId, Duration>>>,
 ) {
     // Note: we bind on the interface's name.
     // This is to ensure we send out requests via the interface that we received the XML message on
@@ -620,6 +620,7 @@ mod tests {
     use uuid::Uuid;
 
     use crate::network_interface::NetworkInterface;
+    use crate::soap::MessageId;
     use crate::soap::parser::xaddrs::XAddr;
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler_with_network_address};
@@ -688,7 +689,7 @@ mod tests {
         assert_matches!(result, Ok(()));
 
         // the resolve's message id must be recorded to accept the future ResolveMatches
-        assert!(resolves.contains_key(&Uuid::nil().urn()));
+        assert!(resolves.contains_key(&MessageId::from(Uuid::nil().urn())));
 
         let expected = format!(
             include_str!("../../test/resolve-template.xml"),
@@ -741,8 +742,8 @@ mod tests {
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
                     include_str!("../../test/get-response-synology.xml"),
-                    Uuid::now_v7(),
-                    Uuid::now_v7(),
+                    Uuid::now_v7().urn(),
+                    Uuid::now_v7().urn(),
                 );
 
                 assert_eq!(
@@ -757,7 +758,7 @@ mod tests {
 
         let hello = format!(
             include_str!("../../test/hello-with-xaddrs-template.xml"),
-            host_message_id,
+            host_message_id.urn(),
             host_config.wsd_instance_id,
             Uuid::now_v7(),
             host_config.uuid_as_device_uri,
@@ -901,8 +902,8 @@ mod tests {
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
                     include_str!("../../test/get-response-synology.xml"),
-                    Uuid::now_v7(),
-                    Uuid::now_v7(),
+                    Uuid::now_v7().urn(),
+                    Uuid::now_v7().urn(),
                 );
 
                 assert_eq!(
@@ -1053,8 +1054,8 @@ mod tests {
 
         let metadata: String = format!(
             include_str!("../../test/get-response-synology.xml"),
-            Uuid::now_v7(),
-            Uuid::now_v7(),
+            Uuid::now_v7().urn(),
+            Uuid::now_v7().urn(),
         );
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
@@ -1113,8 +1114,8 @@ mod tests {
 
         let metadata: String = format!(
             include_str!("../../test/get-response-samsung-printer.xml"),
-            Uuid::now_v7(),
-            Uuid::now_v7(),
+            Uuid::now_v7().urn(),
+            Uuid::now_v7().urn(),
         );
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
@@ -1170,8 +1171,8 @@ mod tests {
 
         let metadata: String = format!(
             include_str!("../../test/get-response-windows.xml"),
-            Uuid::now_v7(),
-            Uuid::now_v7(),
+            Uuid::now_v7().urn(),
+            Uuid::now_v7().urn(),
         );
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
@@ -1236,7 +1237,10 @@ mod tests {
 
         let probe_matches = format!(
             include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
-            host_message_id, host_config.wsd_instance_id, 0, host_config.uuid_as_device_uri
+            host_message_id.urn(),
+            host_config.wsd_instance_id,
+            0,
+            host_config.uuid_as_device_uri
         );
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
@@ -1252,7 +1256,7 @@ mod tests {
         let probes = {
             let mut hash_map = HashMap::new();
 
-            hash_map.insert(host_message_id.urn(), now());
+            hash_map.insert(MessageId::from(host_message_id.urn()), now());
 
             Arc::new(RwLock::new(hash_map))
         };
@@ -1277,7 +1281,7 @@ mod tests {
         assert_matches!(result, Ok(()));
 
         // the resolve's message id must be recorded to accept the future ResolveMatches
-        assert!(resolves.contains_key(&Uuid::nil().urn()));
+        assert!(resolves.contains_key(&MessageId::from(Uuid::nil().urn())));
 
         let expected = format!(
             include_str!("../../test/resolve-template.xml"),
@@ -1313,7 +1317,10 @@ mod tests {
 
         let probe_matches = format!(
             include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
-            host_message_id, host_config.wsd_instance_id, 0, host_config.uuid_as_device_uri
+            host_message_id.urn(),
+            host_config.wsd_instance_id,
+            0,
+            host_config.uuid_as_device_uri
         );
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
@@ -1330,7 +1337,10 @@ mod tests {
         let probes = {
             let mut hash_map = HashMap::new();
 
-            hash_map.insert(host_message_id.urn(), Duration::from_secs(100));
+            hash_map.insert(
+                MessageId::from(host_message_id.urn()),
+                Duration::from_secs(100),
+            );
 
             Arc::new(RwLock::new(hash_map))
         };
@@ -1393,8 +1403,8 @@ mod tests {
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
                     include_str!("../../test/get-response-synology.xml"),
-                    Uuid::now_v7(),
-                    Uuid::now_v7(),
+                    Uuid::now_v7().urn(),
+                    Uuid::now_v7().urn(),
                 );
 
                 assert_eq!(
@@ -1409,7 +1419,7 @@ mod tests {
 
         let probe_matches = format!(
             include_str!("../../test/probe-matches-with-xaddrs-template.xml"),
-            host_message_id,
+            host_message_id.urn(),
             host_config.wsd_instance_id,
             0,
             host_config.uuid_as_device_uri,
@@ -1431,7 +1441,7 @@ mod tests {
         let probes = {
             let mut hash_map = HashMap::new();
 
-            hash_map.insert(host_message_id.urn(), now());
+            hash_map.insert(MessageId::from(host_message_id.urn()), now());
 
             Arc::new(RwLock::new(hash_map))
         };
@@ -1500,8 +1510,8 @@ mod tests {
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
                     include_str!("../../test/get-response-synology.xml"),
-                    Uuid::now_v7(),
-                    Uuid::now_v7(),
+                    Uuid::now_v7().urn(),
+                    Uuid::now_v7().urn(),
                 );
 
                 assert_eq!(
@@ -1516,7 +1526,7 @@ mod tests {
 
         let resolve_matches = format!(
             include_str!("../../test/resolve-matches-template.xml"),
-            host_message_id,
+            host_message_id.urn(),
             host_config.wsd_instance_id,
             0,
             host_config.uuid_as_device_uri,
@@ -1536,7 +1546,7 @@ mod tests {
         let resolves = {
             let mut hash_map = HashMap::new();
 
-            hash_map.insert(host_message_id.urn(), now());
+            hash_map.insert(MessageId::from(host_message_id.urn()), now());
 
             hash_map
         };
@@ -1595,7 +1605,7 @@ mod tests {
 
         let resolve_matches = format!(
             include_str!("../../test/resolve-matches-template.xml"),
-            host_message_id,
+            host_message_id.urn(),
             host_config.wsd_instance_id,
             0,
             host_config.uuid_as_device_uri,
@@ -1665,7 +1675,7 @@ mod tests {
 
         let resolve_matches = format!(
             include_str!("../../test/resolve-matches-template.xml"),
-            host_message_id,
+            host_message_id.urn(),
             host_config.wsd_instance_id,
             0,
             host_config.uuid_as_device_uri,
@@ -1686,7 +1696,10 @@ mod tests {
         let resolves = {
             let mut hash_map = HashMap::new();
 
-            hash_map.insert(host_message_id.urn(), Duration::from_secs(100));
+            hash_map.insert(
+                MessageId::from(host_message_id.urn()),
+                Duration::from_secs(100),
+            );
 
             hash_map
         };

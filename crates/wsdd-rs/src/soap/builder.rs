@@ -26,7 +26,7 @@ use crate::soap::builder::header::WriteExtraHeaders;
 use crate::soap::builder::header::app_sequence::AppSequence;
 use crate::soap::builder::header::none::NoExtraHeaders;
 use crate::soap::builder::header::reply_to_from::ReplyToFrom;
-use crate::soap::{MulticastMessage, UnicastMessage};
+use crate::soap::{MessageId, MulticastMessage, UnicastMessage};
 use crate::wsd::device::DeviceUri;
 
 pub struct Builder<'config> {
@@ -61,7 +61,7 @@ impl<'config> Builder<'config> {
         &mut self,
         to_addr: D,
         action: &str,
-        relates_to: Option<Urn>,
+        relates_to: Option<&MessageId>,
         extra_headers: H,
         body: B,
     ) -> Result<(W, Urn), xml::writer::Error>
@@ -100,7 +100,7 @@ impl<'config> Builder<'config> {
         &mut self,
         to_addr: &D,
         action: &str,
-        relates_to: Option<Urn>,
+        relates_to: Option<&MessageId>,
         extra_headers: H,
         body: B,
     ) -> Result<(W, Urn), xml::writer::Error>
@@ -151,9 +151,8 @@ impl<'config> Builder<'config> {
 
         if let Some(relates_to) = relates_to {
             header_and_body.write(XmlEvent::start_element("wsa:RelatesTo"))?;
-            header_and_body.write(XmlEvent::Characters(
-                relates_to.encode_lower(&mut Uuid::encode_buffer()),
-            ))?;
+            // `[relates to]` MUST be the value of the incoming `[message id]`, echo it verbatim
+            header_and_body.write(XmlEvent::Characters(relates_to.as_ref()))?;
             header_and_body.write(XmlEvent::end_element())?;
         }
 
@@ -257,7 +256,7 @@ impl<'config> Builder<'config> {
         config: &Config,
         address: IpAddr,
         messages_built: &AtomicU64,
-        relates_to: Urn,
+        relates_to: &MessageId,
     ) -> Result<UnicastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
@@ -279,7 +278,7 @@ impl<'config> Builder<'config> {
     pub fn build_probe_matches(
         config: &Config,
         messages_built: &AtomicU64,
-        relates_to: Urn,
+        relates_to: &MessageId,
     ) -> Result<UnicastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
@@ -314,7 +313,7 @@ impl<'config> Builder<'config> {
 
     pub fn build_get_response(
         config: &Config,
-        relates_to: Urn,
+        relates_to: &MessageId,
     ) -> Result<UnicastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
 

@@ -15,7 +15,6 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{Level, event};
-use uuid::fmt::Urn;
 use xml::ParserConfig;
 use xml::reader::XmlEvent;
 
@@ -24,20 +23,20 @@ use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
 use crate::soap::parser::get::Get;
-use crate::soap::{self, WSDMessage};
+use crate::soap::{self, MessageId, WSDMessage};
 use crate::wsd::device::DeviceUri;
 use crate::xml::{TextReadError, XmlError, XmlReader, read_text};
 
 pub struct MessageHandler {
     network_address: NetworkAddress,
-    recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
+    recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
 }
 
 pub struct Header {
     pub to: Option<DeviceUri>,
     pub action: Box<str>,
-    pub message_id: Urn,
-    pub relates_to: Option<Urn>,
+    pub message_id: MessageId,
+    pub relates_to: Option<MessageId>,
 }
 
 #[derive(Error, Debug)]
@@ -48,10 +47,6 @@ pub enum HeaderParsingError {
     MissingMessageId,
     #[error("Missing Action")]
     MissingAction,
-    #[error("Invalid Message Id: {}", .0)]
-    InvalidMessageId(uuid::Error),
-    #[error("Invalid Relates To: {}", .0)]
-    InvalidRelatesTo(uuid::Error),
 }
 
 impl From<xml::reader::Error> for HeaderParsingError {
@@ -282,7 +277,7 @@ pub fn deconstruct_http_message(raw: &[u8]) -> Result<(Header, WSDMessage), Mess
 impl MessageHandler {
     pub fn new(
         network_address: NetworkAddress,
-        recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
+        recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
     ) -> Self {
         Self {
             network_address,
@@ -299,7 +294,7 @@ impl MessageHandler {
         let (header, has_body, reader) = deconstruct_raw(raw)?;
 
         // check for duplicates
-        if self.is_duplicated_msg(header.message_id).await {
+        if self.is_duplicated_msg(&header.message_id).await {
             event!(
                 Level::DEBUG,
                 message_id = %header.message_id,
@@ -324,21 +319,21 @@ impl MessageHandler {
     /// Implements SOAP-over-UDP Appendix II Item 2
     /// Deduplicates best-effort: read lock filters most repeats cheaply, then a write
     /// lock inserts the ID if it is still absent. The unlocked gap means a rapid burst
-    /// can insert and evict the same `Urn` before our write guard runs, so some
+    /// can insert and evict the same id before our write guard runs, so some
     /// in-flight duplicates may be reprocessed, but we avoid taking a write lock for
     /// every message.
-    pub async fn is_duplicated_msg(&self, message_id: Urn) -> bool {
+    pub async fn is_duplicated_msg(&self, message_id: &MessageId) -> bool {
         {
             let read_lock = self.recent_messages.read().await;
 
-            if read_lock.contains(&message_id) {
+            if read_lock.contains(message_id) {
                 return true;
             }
         }
 
         let mut write_lock = self.recent_messages.write().await;
 
-        if write_lock.push_back(message_id) {
+        if write_lock.push_back(message_id.clone()) {
             // the queue did NOT have the message_id, so it's a new message
             false
         } else {
@@ -381,24 +376,12 @@ where
                         action = read_text(reader)?.map(String::into_boxed_str);
                     },
                     "MessageID" => {
-                        let m_id = read_text(reader)?
-                            .map(|m_id| {
-                                m_id.parse::<Urn>()
-                                    .map_err(HeaderParsingError::InvalidMessageId)
-                            })
-                            .transpose()?;
-
-                        message_id = m_id;
+                        message_id =
+                            read_text(reader)?.map(|m_id| MessageId::new(m_id.into_boxed_str()));
                     },
                     "RelatesTo" => {
-                        let r_to = read_text(reader)?
-                            .map(|r_to| {
-                                r_to.parse::<Urn>()
-                                    .map_err(HeaderParsingError::InvalidRelatesTo)
-                            })
-                            .transpose()?;
-
-                        relates_to = r_to;
+                        relates_to =
+                            read_text(reader)?.map(|r_to| MessageId::new(r_to.into_boxed_str()));
                     },
                     _ => {
                         // Not a match, continue
@@ -444,11 +427,11 @@ mod tests {
     use tokio::sync::RwLock;
     use tokio::time::{Duration, timeout};
     use uuid::Uuid;
-    use uuid::fmt::Urn;
 
     use crate::max_size_deque::MaxSizeDeque;
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
+    use crate::soap::MessageId;
     use crate::soap::parser::MessageHandler;
 
     fn handler_for_tests(history: usize) -> MessageHandler {
@@ -464,11 +447,11 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn is_duplicated_msg_drops_read_lock_before_waiting_for_write_lock() {
         let handler = handler_for_tests(8);
-        let message_id = Urn::from_uuid(Uuid::now_v7());
+        let message_id = MessageId::from(Uuid::now_v7().urn());
 
         let first_hit = timeout(
             Duration::from_millis(100),
-            handler.is_duplicated_msg(message_id),
+            handler.is_duplicated_msg(&message_id),
         )
         .await
         .expect("read guard must be released before awaiting a write guard");
@@ -478,7 +461,7 @@ mod tests {
             "first observation of a message id should be reported as new"
         );
 
-        let second_hit = handler.is_duplicated_msg(message_id).await;
+        let second_hit = handler.is_duplicated_msg(&message_id).await;
 
         assert!(
             second_hit,

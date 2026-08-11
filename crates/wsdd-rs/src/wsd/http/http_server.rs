@@ -7,11 +7,11 @@ use color_eyre::eyre;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
-use uuid::fmt::Urn;
 
 use crate::config::Config;
 use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
+use crate::soap::MessageId;
 use crate::soap::parser::MessageHandler;
 use crate::wsd::http::router::build_router;
 
@@ -31,7 +31,7 @@ impl WSDHttpServer {
         config: Arc<Config>,
         messages_built: Arc<AtomicU64>,
         http_listen_address: SocketAddr,
-        recent_messages: Arc<RwLock<MaxSizeDeque<Urn>>>,
+        recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
     ) -> Result<WSDHttpServer, std::io::Error> {
         let message_handler = MessageHandler::new(bound_to.clone(), recent_messages);
 
@@ -159,7 +159,7 @@ mod tests {
         let expected_response = format!(
             include_str!("../../test/get-response-template.xml"),
             Uuid::nil(),
-            Uuid::nil(),
+            Uuid::nil().urn(),
             host_config.hostname,
             host_config.uuid_as_device_uri,
             host_config.uuid_as_device_uri,
@@ -251,7 +251,7 @@ mod tests {
 
         let expected = format!(
             include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
-            client_message_id,
+            client_message_id.urn(),
             host_config.wsd_instance_id,
             host_messages_built.load(Ordering::Relaxed) - 1,
             host_config.uuid_as_device_uri,
