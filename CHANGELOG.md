@@ -1,4 +1,47 @@
 <!-- header goes here -->
+## [0.4.8](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.7..v0.4.8) - 2026-08-11
+
+### 🐛 Bug Fixes
+
+- *(ci)* Grant issues read so test result comments work in private repos by [@kristof-mattei](https://github.com/kristof-mattei) ([`d005c4c`](https://github.com/kristof-mattei/wsdd-rs/commit/d005c4c7eba096267cbbb1130e652ff6b71797f3))
+- *(ci)* Missing permissions by [@kristof-mattei](https://github.com/kristof-mattei) ([`5e92e26`](https://github.com/kristof-mattei/wsdd-rs/commit/5e92e26b15d374bc150e6e1d9f09cb2d8e553e36))
+- *(client)* Only accept `ProbeMatches` within `MATCH_TIMEOUT` of the `Probe` by [@kristof-mattei](https://github.com/kristof-mattei) ([`04835b3`](https://github.com/kristof-mattei/wsdd-rs/commit/04835b37b6a23d96f760f39463f4e7919198afc5))
+- *(client)* Require `ResolveMatches` to correlate to a `Resolve` we sent by [@kristof-mattei](https://github.com/kristof-mattei) ([`a8c05c7`](https://github.com/kristof-mattei/wsdd-rs/commit/a8c05c7ab300e2b38cf3b39c536c5d1ef3b9ed59))
+- *(deps)* Update rust crate clap to v4.6.6 by [@renovate[bot]](https://github.com/renovate[bot]) ([`d120e6a`](https://github.com/kristof-mattei/wsdd-rs/commit/d120e6a54c3a83f5aaf549af068e4d0643c607e1))
+- *(deps)* Update rust crate clap to v4.6.6 (#2226) by [@renovate[bot]](https://github.com/renovate[bot]) in #2226 ([`43ee07a`](https://github.com/kristof-mattei/wsdd-rs/commit/43ee07adf305686bb502a0744643c9ede688f569))
+- *(deps)* Update rust crate xml to v1.4.0 by [@renovate[bot]](https://github.com/renovate[bot]) ([`777a2bb`](https://github.com/kristof-mattei/wsdd-rs/commit/777a2bbb93d6c79b3df26d59c93a2e465c716b88))
+- *(deps)* Update rust crate xml to v1.4.0 (#2227) by [@renovate[bot]](https://github.com/renovate[bot]) in #2227 ([`a4b8fa1`](https://github.com/kristof-mattei/wsdd-rs/commit/a4b8fa1230fc0d10840b576b3d85d7f646422c84))
+- *(deps)* Update rust crate thiserror to v2.0.20 by [@renovate[bot]](https://github.com/renovate[bot]) ([`d24417a`](https://github.com/kristof-mattei/wsdd-rs/commit/d24417aeadd91b06fe08e498bb389616e0ab33bb))
+- *(deps)* Update rust crate thiserror to v2.0.20 (#2235) by [@renovate[bot]](https://github.com/renovate[bot]) in #2235 ([`9a86edc`](https://github.com/kristof-mattei/wsdd-rs/commit/9a86edcbe2b518adf234454f688357e99ce75665))
+- Actionlint errors by [@kristof-mattei](https://github.com/kristof-mattei) ([`110fca4`](https://github.com/kristof-mattei/wsdd-rs/commit/110fca45f789675efa391c16c62ac4db4b08b765))
+- Skip addresses whose interface vanished instead of shutting down by [@kristof-mattei](https://github.com/kristof-mattei) ([`2e61f02`](https://github.com/kristof-mattei/wsdd-rs/commit/2e61f025da8cb8a8bdb9620ca3a14d230efe26ea))
+- Survive netlink receive queue overflow by [@kristof-mattei](https://github.com/kristof-mattei) ([`461b58c`](https://github.com/kristof-mattei/wsdd-rs/commit/461b58c6404937797fc98d580d37b463c697e81c))
+- Honor IP addresses given to `--interface` by [@kristof-mattei](https://github.com/kristof-mattei) ([`7971d81`](https://github.com/kristof-mattei/wsdd-rs/commit/7971d81d2030c6050a73e1deda571a2a2a3fef97))
+- Accept any URI as `MessageID` by [@kristof-mattei](https://github.com/kristof-mattei) ([`c479734`](https://github.com/kristof-mattei/wsdd-rs/commit/c479734d11258875febaa3d64b43b10e8e484687))
+
+### 🚜 Refactor
+
+- *(cli)* Switch clap from builder to derive API by [@kristof-mattei](https://github.com/kristof-mattei) ([`6f069df`](https://github.com/kristof-mattei/wsdd-rs/commit/6f069df83b8ef3acf9430b1504055ff38b5be989))
+
+### 🧪 Testing
+
+- Parameterize the `XAddrs` port in the resolve-matches template by [@kristof-mattei](https://github.com/kristof-mattei) ([`b964c7f`](https://github.com/kristof-mattei/wsdd-rs/commit/b964c7f4c43d7687c0852ed0bcbaa854e2684b33))
+- Use more assert_matches by [@kristof-mattei](https://github.com/kristof-mattei) ([`e3b0e2d`](https://github.com/kristof-mattei/wsdd-rs/commit/e3b0e2de7bc1fd2acb5ad5bbd644ac19650db8d8))
+- Mock interface name resolution by [@kristof-mattei](https://github.com/kristof-mattei) ([`fb92a09`](https://github.com/kristof-mattei/wsdd-rs/commit/fb92a09c5cfe5b221a03affe66a2fbf9b70801cb))
+- Stop asserting id shapes we don't own by [@kristof-mattei](https://github.com/kristof-mattei) ([`d6edb18`](https://github.com/kristof-mattei/wsdd-rs/commit/d6edb1805a2c46b502354257b9f464d0b38aff47))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* Actionlint by [@kristof-mattei](https://github.com/kristof-mattei) ([`729f415`](https://github.com/kristof-mattei/wsdd-rs/commit/729f41554cab0e3b67a2ffc53f46f3bf8b55ec22))
+- *(ci)* We don't have python actions by [@kristof-mattei](https://github.com/kristof-mattei) ([`91ee78b`](https://github.com/kristof-mattei/wsdd-rs/commit/91ee78b23869880c9bacb6cecff58559cbb31afd))
+- *(ci)* Use git-cliff for conventional-commit validation, dropping cocogitto by [@kristof-mattei](https://github.com/kristof-mattei) ([`bfa5602`](https://github.com/kristof-mattei/wsdd-rs/commit/bfa5602da15f82b6cb96ce09a92ee69c3e3b973d))
+- Editorconfig parser doesn't understand comments after statement by [@kristof-mattei](https://github.com/kristof-mattei) ([`93857d2`](https://github.com/kristof-mattei/wsdd-rs/commit/93857d2415a9f1e9aaf91f2ab374604a2d56b0ff))
+- Reset permissions in all-done by [@kristof-mattei](https://github.com/kristof-mattei) ([`309ccc2`](https://github.com/kristof-mattei/wsdd-rs/commit/309ccc2e1ddf497ba29169daae21b4c210dd927b))
+- Explicitly wait for the miri tests to past in rust.yml by [@kristof-mattei](https://github.com/kristof-mattei) ([`1a13db3`](https://github.com/kristof-mattei/wsdd-rs/commit/1a13db37b013c415aa6d777d88bb7a42e628ffea))
+- The aggregator should not be allowed to read anything by [@kristof-mattei](https://github.com/kristof-mattei) ([`cea3733`](https://github.com/kristof-mattei/wsdd-rs/commit/cea373369aed7f97161816dd505df8535c2fedc4))
+- Update dictionary by [@kristof-mattei](https://github.com/kristof-mattei) ([`7d8dfb3`](https://github.com/kristof-mattei/wsdd-rs/commit/7d8dfb3132bff15ec3d5f0a8f79279fcceb0a5a7))
+- Bolster signals by [@kristof-mattei](https://github.com/kristof-mattei) ([`6fbae10`](https://github.com/kristof-mattei/wsdd-rs/commit/6fbae10b87291afc8fb6cb302eae5756574ac014))
+- Compute version bump offline with git-cliff by [@kristof-mattei](https://github.com/kristof-mattei) ([`5fd481c`](https://github.com/kristof-mattei/wsdd-rs/commit/5fd481c61d030d20bdcaa26f2cdd1aaf8db607f2))
 ## [0.4.7](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.6..v0.4.7) - 2026-08-05
 
 ### 🐛 Bug Fixes
