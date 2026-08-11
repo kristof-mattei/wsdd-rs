@@ -52,7 +52,7 @@ use tracing_subscriber::{EnvFilter, Layer as _};
 
 use crate::address_monitor::create_address_monitor;
 use crate::build_env::get_build_env;
-use crate::cli::parse_cli;
+use crate::cli::{CliArgs, parse_args, to_config};
 use crate::config::{Config, PortOrSocket};
 use crate::constants::WSD_MAX_KNOWN_MESSAGES;
 use crate::max_size_deque::MaxSizeDeque;
@@ -69,11 +69,11 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 fn build_filter() -> (EnvFilter, Option<eyre::Report>) {
     fn build_default_filter() -> EnvFilter {
         EnvFilter::builder()
-            .parse(format!("INFO,{}=TRACE", env!("CARGO_CRATE_NAME")))
+            .parse("warn")
             .expect("Default filter should always work")
     }
 
-    let (filter, parsing_error) = match env::var(EnvFilter::DEFAULT_ENV) {
+    match env::var(EnvFilter::DEFAULT_ENV) {
         Ok(user_directive) => match EnvFilter::builder().parse(user_directive) {
             Ok(filter) => (filter, None),
             Err(error) => (build_default_filter(), Some(eyre::Report::new(error))),
@@ -82,9 +82,7 @@ fn build_filter() -> (EnvFilter, Option<eyre::Report>) {
         Err(error @ VarError::NotUnicode(_)) => {
             (build_default_filter(), Some(eyre::Report::new(error)))
         },
-    };
-
-    (filter, parsing_error)
+    }
 }
 
 fn init_tracing(filter: EnvFilter) -> Result<(), eyre::Report> {
@@ -109,6 +107,23 @@ fn main() -> ExitCode {
         .install()
         .expect("Failed to install panic handler");
 
+    // parse before tracing is set up, so `--help`/`--version` and usage errors
+    // are not preceded by log output
+    let args = match parse_args() {
+        Ok(args) => args,
+        Err(error) => {
+            // this prints the error in color and exits
+            // can't do anything else until
+            // https://github.com/clap-rs/clap/issues/2914
+            // is merged in
+            if let Some(clap_error) = error.downcast_ref::<clap::error::Error>() {
+                clap_error.exit();
+            }
+
+            return Err::<Infallible, _>(error).report();
+        },
+    };
+
     let (env_filter, parsing_error) = build_filter();
 
     init_tracing(env_filter).expect("Failed to set up tracing");
@@ -127,7 +142,7 @@ fn main() -> ExitCode {
         .block_on(async {
             // explicitly launch everything in a spawned task
             // see https://docs.rs/tokio/latest/tokio/attr.main.html#non-worker-async-function
-            let handle = spawn_with_name("main task runner", start_tasks());
+            let handle = spawn_with_name("main task runner", start_tasks(args));
 
             flatten_shutdown_handle(handle).await
         });
@@ -149,20 +164,6 @@ fn print_header() {
         build_env.get_target(),
         build_env.get_target_cpu().unwrap_or("base cpu variant"),
     );
-}
-
-fn get_config() -> Result<Arc<Config>, eyre::Report> {
-    let config = Arc::new(parse_cli().inspect_err(|error| {
-        // this prints the error in color and exits
-        // can't do anything else until
-        // https://github.com/clap-rs/clap/issues/2914
-        // is merged in
-        if let Some(clap_error) = error.downcast_ref::<clap::error::Error>() {
-            clap_error.exit();
-        }
-    })?);
-
-    Ok(config)
 }
 
 fn try_chroot(config: &Config) -> Option<Shutdown> {
@@ -217,11 +218,11 @@ fn try_chroot(config: &Config) -> Option<Shutdown> {
 
 /// starts all the tasks, such as the web server, the key refresh, ...
 /// ensures all tasks are gracefully shutdown in case of error, `CTRL+c` or `SIGTERM`.
-async fn start_tasks() -> Shutdown {
+async fn start_tasks(args: CliArgs) -> Shutdown {
     print_header();
 
-    let config = match get_config() {
-        Ok(config) => config,
+    let config = match to_config(args) {
+        Ok(config) => Arc::new(config),
         Err(error) => return Shutdown::from(error),
     };
 

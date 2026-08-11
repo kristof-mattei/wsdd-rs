@@ -16,21 +16,10 @@ pub struct Config {
     pub hoplimit: u8,
     pub uuid: Uuid,
     pub uuid_as_device_uri: DeviceUri,
-    #[cfg_attr(not(test), expect(unused, reason = "WIP"))]
-    pub verbosity: Level,
     pub hostname: Box<str>,
     pub full_hostname: Box<str>,
     pub no_autostart: bool,
     pub no_http: bool,
-    //     if args.shortlog:
-    //         fmt = '%(levelname)s: %(message)s'
-    //     else:
-    //         fmt = '%(asctime)s:%(name)s %(levelname)s(pid %(process)d): %(message)s'
-
-    //     logging.basicConfig(level=log_level, format=fmt)
-    //     logger = logging.getLogger('wsdd')
-    #[expect(unused, reason = "WIP")]
-    pub shortlog: bool,
     pub chroot: Option<PathBuf>,
     pub user: Option<(u32, u32)>,
     pub discovery: bool,
