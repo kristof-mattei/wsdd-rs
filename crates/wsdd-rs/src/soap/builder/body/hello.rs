@@ -41,13 +41,15 @@ where
     ) -> Result<(), xml::writer::Error> {
         writer.write(XmlEvent::start_element("wsd:Hello"))?;
 
+        // element order is the `HelloType` sequence, see documentation/ws-discovery.pdf, Appendix II
         add_endpoint_reference(writer, &config.uuid_as_device_uri)?;
+
+        // TODO: make this optional, like adding `xaddr`
+        add_types(writer, constants::WSDP_TYPE_DEVICE_COMPUTER)?;
 
         // THINK: Microsoft does not send the transport address here due to privacy reasons. Could make this optional.
         add_xaddr(writer, config, self.xaddr)?;
 
-        // TODO: make this optional, like adding `xaddr` ^
-        add_types(writer, constants::WSDP_TYPE_DEVICE_COMPUTER)?;
         add_metadata_version(writer)?;
 
         writer.write(XmlEvent::end_element())?;

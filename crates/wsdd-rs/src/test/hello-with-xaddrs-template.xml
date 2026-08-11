@@ -17,8 +17,8 @@
             <wsa:EndpointReference>
                 <wsa:Address>{}</wsa:Address>
             </wsa:EndpointReference>
-            <wsd:XAddrs>http://{}:{}/{}</wsd:XAddrs>
             <wsd:Types>wsdp:Device pub:Computer</wsd:Types>
+            <wsd:XAddrs>http://{}:{}/{}</wsd:XAddrs>
             <wsd:MetadataVersion>1</wsd:MetadataVersion>
         </wsd:Hello>
     </soap:Body>
