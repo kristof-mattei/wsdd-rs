@@ -742,8 +742,8 @@ mod tests {
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
                     include_str!("../../test/get-response-synology.xml"),
-                    Uuid::now_v7(),
-                    Uuid::now_v7(),
+                    Uuid::now_v7().urn(),
+                    Uuid::now_v7().urn(),
                 );
 
                 assert_eq!(
@@ -758,7 +758,7 @@ mod tests {
 
         let hello = format!(
             include_str!("../../test/hello-with-xaddrs-template.xml"),
-            host_message_id,
+            host_message_id.urn(),
             host_config.wsd_instance_id,
             Uuid::now_v7(),
             host_config.uuid_as_device_uri,
@@ -902,8 +902,8 @@ mod tests {
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
                     include_str!("../../test/get-response-synology.xml"),
-                    Uuid::now_v7(),
-                    Uuid::now_v7(),
+                    Uuid::now_v7().urn(),
+                    Uuid::now_v7().urn(),
                 );
 
                 assert_eq!(
@@ -1054,8 +1054,8 @@ mod tests {
 
         let metadata: String = format!(
             include_str!("../../test/get-response-synology.xml"),
-            Uuid::now_v7(),
-            Uuid::now_v7(),
+            Uuid::now_v7().urn(),
+            Uuid::now_v7().urn(),
         );
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
@@ -1114,8 +1114,8 @@ mod tests {
 
         let metadata: String = format!(
             include_str!("../../test/get-response-samsung-printer.xml"),
-            Uuid::now_v7(),
-            Uuid::now_v7(),
+            Uuid::now_v7().urn(),
+            Uuid::now_v7().urn(),
         );
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
@@ -1171,8 +1171,8 @@ mod tests {
 
         let metadata: String = format!(
             include_str!("../../test/get-response-windows.xml"),
-            Uuid::now_v7(),
-            Uuid::now_v7(),
+            Uuid::now_v7().urn(),
+            Uuid::now_v7().urn(),
         );
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
@@ -1237,7 +1237,10 @@ mod tests {
 
         let probe_matches = format!(
             include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
-            host_message_id, host_config.wsd_instance_id, 0, host_config.uuid_as_device_uri
+            host_message_id.urn(),
+            host_config.wsd_instance_id,
+            0,
+            host_config.uuid_as_device_uri
         );
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
@@ -1314,7 +1317,10 @@ mod tests {
 
         let probe_matches = format!(
             include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
-            host_message_id, host_config.wsd_instance_id, 0, host_config.uuid_as_device_uri
+            host_message_id.urn(),
+            host_config.wsd_instance_id,
+            0,
+            host_config.uuid_as_device_uri
         );
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
@@ -1397,8 +1403,8 @@ mod tests {
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
                     include_str!("../../test/get-response-synology.xml"),
-                    Uuid::now_v7(),
-                    Uuid::now_v7(),
+                    Uuid::now_v7().urn(),
+                    Uuid::now_v7().urn(),
                 );
 
                 assert_eq!(
@@ -1413,7 +1419,7 @@ mod tests {
 
         let probe_matches = format!(
             include_str!("../../test/probe-matches-with-xaddrs-template.xml"),
-            host_message_id,
+            host_message_id.urn(),
             host_config.wsd_instance_id,
             0,
             host_config.uuid_as_device_uri,
@@ -1504,8 +1510,8 @@ mod tests {
             .with_body_from_request(move |request| {
                 let metadata: String = format!(
                     include_str!("../../test/get-response-synology.xml"),
-                    Uuid::now_v7(),
-                    Uuid::now_v7(),
+                    Uuid::now_v7().urn(),
+                    Uuid::now_v7().urn(),
                 );
 
                 assert_eq!(
@@ -1520,7 +1526,7 @@ mod tests {
 
         let resolve_matches = format!(
             include_str!("../../test/resolve-matches-template.xml"),
-            host_message_id,
+            host_message_id.urn(),
             host_config.wsd_instance_id,
             0,
             host_config.uuid_as_device_uri,
@@ -1599,7 +1605,7 @@ mod tests {
 
         let resolve_matches = format!(
             include_str!("../../test/resolve-matches-template.xml"),
-            host_message_id,
+            host_message_id.urn(),
             host_config.wsd_instance_id,
             0,
             host_config.uuid_as_device_uri,
@@ -1669,7 +1675,7 @@ mod tests {
 
         let resolve_matches = format!(
             include_str!("../../test/resolve-matches-template.xml"),
-            host_message_id,
+            host_message_id.urn(),
             host_config.wsd_instance_id,
             0,
             host_config.uuid_as_device_uri,

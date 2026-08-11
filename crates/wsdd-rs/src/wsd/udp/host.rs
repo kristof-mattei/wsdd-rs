@@ -430,7 +430,7 @@ mod tests {
 
         let expected = format!(
             include_str!("../../test/resolve-matches-template.xml"),
-            client_message_id,
+            client_message_id.urn(),
             host_config.wsd_instance_id,
             host_messages_built.load(Ordering::Relaxed) - 1,
             host_config.uuid_as_device_uri,
@@ -453,7 +453,7 @@ mod tests {
             client_message_id
         );
 
-        handles_probe_generic(client_message_id, &probe).await;
+        handles_probe_generic(client_message_id.urn(), &probe).await;
     }
 
     #[tokio::test]
@@ -465,7 +465,7 @@ mod tests {
             client_message_id
         );
 
-        handles_probe_generic(client_message_id, &probe).await;
+        handles_probe_generic(client_message_id.urn(), &probe).await;
     }
 
     #[tokio::test]
@@ -476,7 +476,7 @@ mod tests {
             client_message_id
         );
 
-        handles_probe_generic(client_message_id, &probe).await;
+        handles_probe_generic(client_message_id.urn(), &probe).await;
     }
 
     #[tokio::test]
@@ -489,44 +489,10 @@ mod tests {
             MESSAGE_ID
         );
 
-        let host_message_handler = build_message_handler();
-
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
-        let host_messages_built = Arc::new(AtomicU64::new(0));
-
-        let (header, message) = host_message_handler
-            .deconstruct_message(
-                probe.as_bytes(),
-                SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(192, 168, 100, 5), 5000)),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(header.message_id.as_ref(), MESSAGE_ID);
-
-        let probe = message.into_probe().unwrap();
-
-        let response = handle_probe(
-            &host_config,
-            &host_messages_built,
-            &header.message_id,
-            &probe,
-        )
-        .unwrap()
-        .unwrap();
-
-        let response = String::from_utf8_lossy(response.as_ref()).into_owned();
-
-        // the reply echoes the id verbatim
-        assert!(
-            response.contains(
-                "<wsa:RelatesTo>uuid:0a6dc791-2be6-4991-9af1-454778a1917a</wsa:RelatesTo>"
-            ),
-            "RelatesTo must echo the incoming MessageID byte-for-byte"
-        );
+        handles_probe_generic(MESSAGE_ID, &probe).await;
     }
 
-    async fn handles_probe_generic(client_message_id: Uuid, probe: &str) {
+    async fn handles_probe_generic(client_message_id: impl std::fmt::Display, probe: &str) {
         let host_message_handler = build_message_handler();
 
         // host

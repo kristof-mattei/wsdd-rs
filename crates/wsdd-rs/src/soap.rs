@@ -12,10 +12,7 @@ use crate::soap::parser::resolve_match::ResolveMatch;
 pub mod builder;
 pub mod parser;
 
-/// An incoming `[message id]` or `[relates to]` value.
-///
-/// WS-Addressing declares these as `xs:anyURI`, so they are opaque and compared
-/// byte-wise, never parsed. Replies echo them verbatim.
+/// An incoming `[message id]` or `[relates to]`, an opaque `xs:anyURI` compared byte-wise.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MessageId(Box<str>);
 

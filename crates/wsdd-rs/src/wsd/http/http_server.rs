@@ -159,7 +159,7 @@ mod tests {
         let expected_response = format!(
             include_str!("../../test/get-response-template.xml"),
             Uuid::nil(),
-            Uuid::nil(),
+            Uuid::nil().urn(),
             host_config.hostname,
             host_config.uuid_as_device_uri,
             host_config.uuid_as_device_uri,
@@ -251,7 +251,7 @@ mod tests {
 
         let expected = format!(
             include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
-            client_message_id,
+            client_message_id.urn(),
             host_config.wsd_instance_id,
             host_messages_built.load(Ordering::Relaxed) - 1,
             host_config.uuid_as_device_uri,
