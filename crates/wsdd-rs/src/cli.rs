@@ -4,7 +4,7 @@ use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use clap::{ArgAction, Parser};
+use clap::Parser;
 use color_eyre::eyre;
 use color_eyre::eyre::WrapErr as _;
 use tracing::{Level, event};
@@ -25,7 +25,7 @@ use crate::wsd::device::DeviceUri;
     long_version = concat!("- Web Service Discovery Daemon, v", env!("CARGO_PKG_VERSION")),
     color = clap::ColorChoice::Always
 )]
-struct CliArgs {
+pub struct CliArgs {
     #[arg(short, long, help = "interface or address to use")]
     interface: Vec<String>,
 
@@ -39,9 +39,6 @@ struct CliArgs {
 
     #[arg(short = 'U', long, help = "UUID for the target device")]
     uuid: Option<Uuid>,
-
-    #[arg(short, long, action = ArgAction::Count, help = "increase verbosity")]
-    verbose: u8,
 
     #[arg(
         short,
@@ -74,9 +71,6 @@ struct CliArgs {
 
     #[arg(short = '6', long, group = "ip", help = "use only IPv6")]
     ipv6only: bool,
-
-    #[arg(short, long, help = "log only level and message")]
-    shortlog: bool,
 
     #[arg(short, long, help = "preserve case of the provided/detected hostname")]
     preserve_case: bool,
@@ -117,18 +111,29 @@ fn float_to_duration_parser(value: &str) -> Result<Duration, String> {
     Duration::try_from_secs_f32(value).map_err(|error| error.to_string())
 }
 
-pub fn parse_cli() -> Result<Config, eyre::Report> {
-    parse_cli_from(env::args_os())
+pub fn parse_args() -> Result<CliArgs, eyre::Report> {
+    parse_args_from(env::args_os())
 }
 
-pub fn parse_cli_from<I, T>(from: I) -> Result<Config, eyre::Report>
+fn parse_args_from<I, T>(from: I) -> Result<CliArgs, eyre::Report>
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
     // TODO: How do we return a specific error (e.g. 3 for the user spec's value parser) when an error occurs?
-    let args = CliArgs::try_parse_from(from)?;
+    Ok(CliArgs::try_parse_from(from)?)
+}
 
+#[cfg(test)]
+pub fn parse_cli_from<I, T>(from: I) -> Result<Config, eyre::Report>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
+    to_config(parse_args_from(from)?)
+}
+
+pub fn to_config(args: CliArgs) -> Result<Config, eyre::Report> {
     let interfaces: Vec<InterfaceFilter> = if args.interface.is_empty() {
         event!(Level::WARN, "no interface given, using all interfaces");
 
@@ -152,12 +157,6 @@ where
             .split_once('.')
             .map(|(first, _rest)| Box::from(first))
             .unwrap_or(hostname)
-    };
-
-    let verbosity = match args.verbose {
-        0 => Level::WARN,
-        1 => Level::INFO,
-        _ => Level::DEBUG,
     };
 
     let uuid = match args.uuid {
@@ -208,13 +207,11 @@ where
         hoplimit: args.hoplimit,
         uuid,
         uuid_as_device_uri,
-        verbosity,
         hostname,
         full_hostname: full_hostname.into_boxed_str(),
         no_autostart: args.no_autostart,
         no_http: args.no_http,
         bind_to,
-        shortlog: args.shortlog,
         chroot: args.chroot,
         user: args.user,
         discovery: args.discovery,
@@ -348,7 +345,6 @@ mod tests {
     use std::path::Path;
 
     use pretty_assertions::{assert_eq, assert_matches};
-    use tracing::Level;
 
     use crate::cli::{parse_cli_from, to_interface_filter, to_listen};
     use crate::config::{InterfaceFilter, PortOrSocket};
@@ -407,27 +403,6 @@ mod tests {
         let result = parse_cli_from(["wsdd-rs", "--interface", "eth0", "--interface", "eth0:0"]);
 
         assert_matches!(result, Err(_));
-    }
-
-    #[test]
-    fn no_verbose() {
-        let config = parse_cli_from(["wsdd-rs"]).unwrap();
-
-        assert_eq!(config.verbosity, Level::WARN);
-    }
-
-    #[test]
-    fn verbose() {
-        let config = parse_cli_from(["wsdd-rs", "--verbose"]).unwrap();
-
-        assert_eq!(config.verbosity, Level::INFO);
-    }
-
-    #[test]
-    fn very_verbose() {
-        let config = parse_cli_from(["wsdd-rs", "--verbose", "--verbose"]).unwrap();
-
-        assert_eq!(config.verbosity, Level::DEBUG);
     }
 
     #[test]
