@@ -191,7 +191,7 @@ pub fn to_config(args: CliArgs) -> Result<Config, eyre::Report> {
             &*hostname.to_uppercase()
         };
 
-        format!("{}/Workgroup:{}", hostname, args.workgroup)
+        format!("{}/Workgroup:{}", hostname, args.workgroup.to_uppercase())
     };
 
     let bind_to = if args.ipv4only {
@@ -403,6 +403,14 @@ mod tests {
         let result = parse_cli_from(["wsdd-rs", "--interface", "eth0", "--interface", "eth0:0"]);
 
         assert_matches!(result, Err(_));
+    }
+
+    #[test]
+    fn workgroup_is_uppercased() {
+        let config =
+            parse_cli_from(["wsdd-rs", "--hostname", "host", "--workgroup", "mygroup"]).unwrap();
+
+        assert_eq!(&*config.full_hostname, "HOST/Workgroup:MYGROUP");
     }
 
     #[test]
