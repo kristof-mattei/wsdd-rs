@@ -17,7 +17,7 @@ use tracing::{Level, event};
 
 use crate::config::Config;
 use crate::constants;
-use crate::soap::parser::{MessageHandler, deconstruct_http_message};
+use crate::soap::parser::{MessageHandler, MessageHandlerError};
 use crate::soap::{HostMessage, UnicastMessage, WSDMessage, builder};
 use crate::span::MakeSpanWithUuid;
 
@@ -99,8 +99,11 @@ async fn build_response(
     buffer: &[u8],
     messages_built: &AtomicU64,
 ) -> Result<Option<UnicastMessage>, eyre::Report> {
-    let (header, message) = match deconstruct_http_message(buffer) {
+    let (header, message) = match message_handler.deconstruct_http_message(buffer).await {
         Ok(pieces) => pieces,
+        Err(MessageHandlerError::DuplicateMessage) => {
+            return Ok(None);
+        },
         Err(error) => {
             error.log(buffer);
 
@@ -128,17 +131,6 @@ async fn build_response(
             }
         },
         WSDMessage::HostMessage(HostMessage::Probe(probe)) => {
-            // only the probe one is checked for duplicates
-            if message_handler.is_duplicated_msg(&header.message_id).await {
-                event!(
-                    Level::DEBUG,
-                    message_id = %header.message_id,
-                    "known message: dropping it",
-                );
-
-                return Ok(None);
-            }
-
             if probe.types.is_empty() || probe.requested_type_match() {
                 return Ok(Some(builder::Builder::build_probe_matches(
                     config,

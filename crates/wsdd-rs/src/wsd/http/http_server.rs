@@ -174,6 +174,69 @@ mod tests {
 
     #[cfg_attr(not(miri), tokio::test)]
     #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn drops_duplicate_get() {
+        // host
+        let host_ip = Ipv4Addr::LOCALHOST;
+        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
+        let host_messages_built = Arc::new(AtomicU64::new(0));
+
+        let cancellation_token = CancellationToken::new();
+
+        let http_server = WSDHttpServer::init(
+            NetworkAddress::new(
+                IpNet::new(host_ip.into(), 8).unwrap(),
+                Arc::new(NetworkInterface::new_with_index("lo", RT_SCOPE_SITE, 5)),
+            ),
+            cancellation_token.child_token(),
+            Arc::clone(&host_config),
+            host_messages_built,
+            host_http_listening_address,
+            Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES))),
+        )
+        .await
+        .unwrap();
+
+        // the template's MessageID is fixed, so the same body twice is a duplicate
+        let body = format!(
+            include_str!("../../test/get-template.xml"),
+            host_config.uuid_as_device_uri,
+            Uuid::now_v7()
+        );
+
+        let client = reqwest::ClientBuilder::new().build().unwrap();
+
+        let url = format!("http://{}/{}", http_server.http_bound_to, host_config.uuid);
+
+        let first = client
+            .post(&url)
+            .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
+            .header("User-Agent", "wsdd-rs")
+            .body(body.clone())
+            .timeout(host_config.metadata_timeout)
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(StatusCode::OK, first.status());
+
+        let second = client
+            .post(&url)
+            .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
+            .header("User-Agent", "wsdd-rs")
+            .body(body)
+            .timeout(host_config.metadata_timeout)
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(StatusCode::ACCEPTED, second.status());
+        // no content
+        assert_eq!(vec![], second.bytes().await.unwrap());
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn handles_probe_wsdp_device() {
         let client_message_id = Uuid::now_v7();
         let probe = format!(
