@@ -7,7 +7,6 @@ adress
 ALIGNTO
 appgroup
 appuser
-asctime
 asyncio
 attrlen
 autopad
@@ -24,11 +23,11 @@ cfgs
 chdir
 Christgau
 chrooted
-cinstrument
+Cinstrument
 clearscope
-cocogitto
+cliffignore
 coro
-ctarget
+Ctarget
 cttc
 cves
 DADFAILED
@@ -96,7 +95,6 @@ intf
 IPPROTO
 kristof
 kwargs
-levelname
 libsocket
 libsystemd
 listeneng
@@ -142,10 +140,11 @@ profraw
 pton
 pubpubpub
 pyflakes
+rawfile
 recond
 recvmsg
-retag
-retagging
+Retag
+Retagging
 reuseaddr
 reuseport
 ringmap
@@ -168,6 +167,8 @@ sigemptyset
 signum
 sigset
 skopeo
+skopeo's
+slurpfile
 SOCKADDR
 socklen
 startswith
@@ -177,12 +178,13 @@ striptags
 syscall
 syscalls
 taiki
-targetplatformdash
+TARGETPLATFORMDASH
 telem
-tera
+Tera
 timeval
 topo
 trixie
+TRUNC
 ulonglong
 Uninit
 uninlined
@@ -193,6 +195,7 @@ unuseable
 usernamehw
 userspec
 vadimcn
+worktree
 wprt
 wsdapi
 wsdd
