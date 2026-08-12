@@ -263,17 +263,6 @@ fn parse_message_body(
     Ok(response)
 }
 
-/// Handle a WSD message.
-pub fn deconstruct_http_message(raw: &[u8]) -> Result<(Header, WSDMessage), MessageHandlerError> {
-    let (header, has_body, reader) = deconstruct_raw(raw)?;
-
-    let header = validate_action_body(raw, header, None, has_body)?;
-
-    let body = parse_message_body(&header, reader)?;
-
-    Ok((header, body))
-}
-
 impl MessageHandler {
     pub fn new(
         network_address: NetworkAddress,
@@ -285,11 +274,27 @@ impl MessageHandler {
         }
     }
 
-    /// Handle a WSD message.
+    /// Handle a WSD message received over UDP.
     pub async fn deconstruct_message(
         &self,
         raw: &[u8],
         source: SocketAddr,
+    ) -> Result<(Header, WSDMessage), MessageHandlerError> {
+        self.deconstruct(raw, Some(source)).await
+    }
+
+    /// Handle a WSD message received over HTTP.
+    pub async fn deconstruct_http_message(
+        &self,
+        raw: &[u8],
+    ) -> Result<(Header, WSDMessage), MessageHandlerError> {
+        self.deconstruct(raw, None).await
+    }
+
+    async fn deconstruct(
+        &self,
+        raw: &[u8],
+        source: Option<SocketAddr>,
     ) -> Result<(Header, WSDMessage), MessageHandlerError> {
         let (header, has_body, reader) = deconstruct_raw(raw)?;
 
@@ -307,7 +312,7 @@ impl MessageHandler {
         let header = validate_action_body(
             raw,
             header,
-            Some((source, &*self.network_address.interface)),
+            source.map(|source| (source, &*self.network_address.interface)),
             has_body,
         )?;
 
