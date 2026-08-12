@@ -167,8 +167,8 @@ mod tests {
         );
 
         assert_eq!(
-            to_string_pretty(expected_response.as_bytes()).unwrap(),
-            to_string_pretty(&response.bytes().await.unwrap()).unwrap()
+            to_string_pretty(&response.bytes().await.unwrap()).unwrap(),
+            to_string_pretty(expected_response.as_bytes()).unwrap()
         );
     }
 
@@ -218,7 +218,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(StatusCode::OK, first.status());
+        assert_eq!(first.status(), StatusCode::OK);
 
         let second = client
             .post(&url)
@@ -230,9 +230,9 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(StatusCode::ACCEPTED, second.status());
+        assert_eq!(second.status(), StatusCode::ACCEPTED);
         // no content
-        assert_eq!(vec![], second.bytes().await.unwrap());
+        assert_eq!(second.bytes().await.unwrap(), vec![]);
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -323,7 +323,7 @@ mod tests {
         let response = to_string_pretty(response.bytes().await.unwrap().as_ref()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
-        assert_eq!(expected, response);
+        assert_eq!(response, expected);
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -374,8 +374,8 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(StatusCode::ACCEPTED, response.status());
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
         // no content
-        assert_eq!(vec![], response.bytes().await.unwrap());
+        assert_eq!(response.bytes().await.unwrap(), vec![]);
     }
 }

@@ -33,7 +33,7 @@ mod tests {
 
         let url_ip_addr: UrlIpAddr = ip_addr.into();
 
-        assert_eq!("192.168.100.5", url_ip_addr.to_string());
+        assert_eq!(url_ip_addr.to_string(), "192.168.100.5");
     }
 
     #[test]
@@ -46,8 +46,8 @@ mod tests {
         let url_ip_addr: UrlIpAddr = ip_addr.into();
 
         assert_eq!(
-            "[2001:db8:5c41:f105:2cf9:cd58:b74:684]",
-            url_ip_addr.to_string()
+            url_ip_addr.to_string(),
+            "[2001:db8:5c41:f105:2cf9:cd58:b74:684]"
         );
     }
 }

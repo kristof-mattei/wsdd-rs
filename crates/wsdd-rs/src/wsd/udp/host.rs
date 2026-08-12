@@ -338,7 +338,7 @@ mod tests {
         let response = to_string_pretty(hello.as_ref()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
-        assert_eq!(expected, response);
+        assert_eq!(response, expected);
     }
 
     #[tokio::test]
@@ -386,7 +386,7 @@ mod tests {
         let response = to_string_pretty(bye.as_ref()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
-        assert_eq!(expected, response);
+        assert_eq!(response, expected);
     }
 
     #[tokio::test]
@@ -442,7 +442,7 @@ mod tests {
         let response = to_string_pretty(response.as_ref()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
-        assert_eq!(expected, response);
+        assert_eq!(response, expected);
     }
 
     #[tokio::test]
@@ -532,6 +532,6 @@ mod tests {
         let response = to_string_pretty(response.as_ref()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
-        assert_eq!(expected, response);
+        assert_eq!(response, expected);
     }
 }

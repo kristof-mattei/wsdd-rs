@@ -519,8 +519,8 @@ mod tests {
     #[test]
     fn size_of_sockaddr_nl() {
         assert_eq!(
-            size_of::<libc::sockaddr_nl>(),
-            u32_to_usize(SIZE_OF_SOCKADDR_NL)
+            u32_to_usize(SIZE_OF_SOCKADDR_NL),
+            size_of::<libc::sockaddr_nl>()
         );
     }
 
