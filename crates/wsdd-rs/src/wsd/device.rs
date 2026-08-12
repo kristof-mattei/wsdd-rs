@@ -463,9 +463,10 @@ where
             computer_namespace_prefix
         };
 
-        if types.contains(&*actual_pub_computer)
-            && let Some((display_name, belongs_to)) = computer.split_once('/')
-        {
+        if types.contains(&*actual_pub_computer) {
+            // no '/' means the whole value is the DisplayName, with no BelongsTo
+            let (display_name, belongs_to) = computer.split_once('/').unwrap_or((&*computer, ""));
+
             return Ok((
                 types,
                 Some((
@@ -485,7 +486,7 @@ mod tests {
     use xml::reader::EventReader;
 
     use crate::constants;
-    use crate::wsd::device::extract_wsdp_props;
+    use crate::wsd::device::{extract_wsdp_props, read_types_and_pub_computer};
     use crate::xml::{XmlError, XmlReader, find_child};
 
     #[test]
@@ -513,6 +514,56 @@ mod tests {
             bag.get("PresentationUrl").map(|s| &**s),
             Some("http://example")
         );
+        Ok(())
+    }
+
+    #[test]
+    fn pub_computer_without_slash_keeps_display_name() -> Result<(), XmlError> {
+        let xml = format!(
+            r#"<wsdp:Host xmlns:wsdp="{}" xmlns:pub="{}">
+                   <wsdp:Types>pub:Computer</wsdp:Types>
+                   <pub:Computer>MYPC</pub:Computer>
+               </wsdp:Host>"#,
+            constants::XML_WSDP_NAMESPACE,
+            constants::XML_PUB_NAMESPACE
+        );
+
+        let mut reader = XmlReader::new(EventReader::new(xml.as_bytes()));
+
+        find_child(&mut reader, Some(constants::XML_WSDP_NAMESPACE), "Host")?;
+
+        let (_types, display_name_belongs_to) = read_types_and_pub_computer(&mut reader)?;
+
+        assert_eq!(
+            display_name_belongs_to,
+            Some((Box::from("MYPC"), Box::from("")))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn pub_computer_with_slash_splits_display_name_and_belongs_to() -> Result<(), XmlError> {
+        let xml = format!(
+            r#"<wsdp:Host xmlns:wsdp="{}" xmlns:pub="{}">
+                   <wsdp:Types>pub:Computer</wsdp:Types>
+                   <pub:Computer>MYPC/Workgroup:MYGROUP</pub:Computer>
+               </wsdp:Host>"#,
+            constants::XML_WSDP_NAMESPACE,
+            constants::XML_PUB_NAMESPACE
+        );
+
+        let mut reader = XmlReader::new(EventReader::new(xml.as_bytes()));
+
+        find_child(&mut reader, Some(constants::XML_WSDP_NAMESPACE), "Host")?;
+
+        let (_types, display_name_belongs_to) = read_types_and_pub_computer(&mut reader)?;
+
+        assert_eq!(
+            display_name_belongs_to,
+            Some((Box::from("MYPC"), Box::from("Workgroup:MYGROUP")))
+        );
+
         Ok(())
     }
 
