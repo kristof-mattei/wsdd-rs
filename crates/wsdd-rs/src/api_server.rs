@@ -1,6 +1,6 @@
 mod generic;
 
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::os::fd::FromRawFd as _;
 use std::sync::Arc;
 use std::time::Duration;
@@ -39,7 +39,7 @@ const ISO8601_SECOND_PRECISION: Iso8601<
 pub struct ApiServer {
     cancellation_token: CancellationToken,
     command_tx: Sender<Command>,
-    listener: GenericListener,
+    listeners: (GenericListener, Option<GenericListener>),
 }
 
 impl ApiServer {
@@ -48,14 +48,49 @@ impl ApiServer {
         listen_on: &PortOrSocket,
         command_tx: Sender<Command>,
     ) -> Result<ApiServer, std::io::Error> {
-        let listener: GenericListener = match *listen_on {
+        let listeners: (GenericListener, Option<GenericListener>) = match *listen_on {
             PortOrSocket::Port(port) => {
-                let socket = tokio::net::TcpSocket::new_v4()?;
-                socket.set_reuseaddr(true)?;
-                socket.set_reuseport(true)?;
-                socket.bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)))?;
+                // one loopback socket per family, only wildcard binds can be dual-stack
+                let v4 =
+                    bind_tcp_loopback(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)));
+                let v6 = bind_tcp_loopback(SocketAddr::V6(SocketAddrV6::new(
+                    Ipv6Addr::LOCALHOST,
+                    port,
+                    0,
+                    0,
+                )));
 
-                socket.listen(MAX_CONNECTION_BACKLOG)?.into()
+                match (v4, v6) {
+                    (Ok(v4), Ok(v6)) => (v4, Some(v6)),
+                    (Ok(v4), Err(error)) => {
+                        event!(
+                            Level::WARN,
+                            ?error,
+                            "Failed to bind [::1], API server is IPv4-only"
+                        );
+
+                        (v4, None)
+                    },
+                    (Err(error), Ok(v6)) => {
+                        event!(
+                            Level::WARN,
+                            ?error,
+                            "Failed to bind 127.0.0.1, API server is IPv6-only"
+                        );
+
+                        (v6, None)
+                    },
+                    (Err(v4_error), Err(v6_error)) => {
+                        event!(
+                            Level::ERROR,
+                            ?v4_error,
+                            ?v6_error,
+                            "Failed to bind either loopback"
+                        );
+
+                        return Err(v4_error);
+                    },
+                }
             },
             PortOrSocket::Socket(fd) => {
                 // SAFETY: passed in by systemd, so it's a valid descriptor
@@ -67,7 +102,7 @@ impl ApiServer {
 
                         let socket = UnixListener::from_std(socket.into())?;
 
-                        socket.into()
+                        (socket.into(), None)
                     },
                     (r#type, domain) => {
                         event!(
@@ -87,14 +122,14 @@ impl ApiServer {
             PortOrSocket::SocketPath(ref path) => {
                 let socket = tokio::net::UnixSocket::new_stream()?;
                 socket.bind(path)?;
-                socket.listen(MAX_CONNECTION_BACKLOG)?.into()
+                (socket.listen(MAX_CONNECTION_BACKLOG)?.into(), None)
             },
         };
 
         Ok(Self {
             cancellation_token,
             command_tx,
-            listener,
+            listeners,
         })
     }
 
@@ -106,7 +141,10 @@ impl ApiServer {
                 () = self.cancellation_token.cancelled() => {
                     return Ok(());
                 },
-                new_connection = self.listener.accept() => {
+                new_connection = self.listeners.0.accept() => {
+                    new_connection
+                },
+                new_connection = accept_secondary(self.listeners.1.as_ref()) => {
                     new_connection
                 },
             };
@@ -164,6 +202,29 @@ impl ApiServer {
 
     pub fn teardown(self) {
         self.cancellation_token.cancel();
+    }
+}
+
+fn bind_tcp_loopback(address: SocketAddr) -> Result<GenericListener, std::io::Error> {
+    let socket = match address {
+        SocketAddr::V4(_) => tokio::net::TcpSocket::new_v4(),
+        SocketAddr::V6(_) => tokio::net::TcpSocket::new_v6(),
+    }?;
+
+    socket.set_reuseaddr(true)?;
+    socket.set_reuseport(true)?;
+    socket.bind(address)?;
+
+    Ok(socket.listen(MAX_CONNECTION_BACKLOG)?.into())
+}
+
+/// Never resolves when there is no secondary listener.
+async fn accept_secondary(
+    listener: Option<&GenericListener>,
+) -> Result<GenericStream, std::io::Error> {
+    match listener {
+        Some(listener) => listener.accept().await,
+        None => std::future::pending().await,
     }
 }
 
@@ -380,3 +441,43 @@ fn format_wsd_discovered_device(device_uri: &DeviceUri, device: &WSDDiscoveredDe
 //         if self.server:
 //             self.server.close()
 //             await self.server.wait_closed()
+
+#[cfg(test)]
+mod tests {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    use tokio_util::sync::CancellationToken;
+
+    use crate::api_server::ApiServer;
+    use crate::config::PortOrSocket;
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn port_mode_binds_both_loopbacks() {
+        let probe =
+            std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("Failed to find a port");
+        let port = probe
+            .local_addr()
+            .expect("Bound socket has an address")
+            .port();
+        drop(probe);
+
+        let (command_tx, _command_rx) = tokio::sync::mpsc::channel(1);
+
+        let api_server = ApiServer::new(
+            CancellationToken::new(),
+            &PortOrSocket::Port(port),
+            command_tx,
+        )
+        .expect("Failed to bind API server");
+
+        tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+            .await
+            .expect("Failed to connect over IPv4 loopback");
+        tokio::net::TcpStream::connect((Ipv6Addr::LOCALHOST, port))
+            .await
+            .expect("Failed to connect over IPv6 loopback");
+
+        api_server.teardown();
+    }
+}

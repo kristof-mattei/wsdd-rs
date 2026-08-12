@@ -98,6 +98,7 @@ libsocket
 libsystemd
 listeneng
 lldb
+loopbacks
 mattei
 MCAST
 mchs

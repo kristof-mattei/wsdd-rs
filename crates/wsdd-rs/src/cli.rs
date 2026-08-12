@@ -270,12 +270,9 @@ fn to_interface_filter(value: String) -> Result<InterfaceFilter, eyre::Report> {
 }
 
 fn to_listen(listen: &str) -> Result<PortOrSocket, String> {
-    // if listen is numeric, it's try and parse it as a port
-    let all_numeric = listen.chars().all(char::is_numeric);
-
-    if all_numeric {
-        let listen =
-            (listen.parse::<u16>()).map_err(|_| "number too large to fit in u16".to_owned())?;
+    // ASCII digits are a port, anything else is a socket path
+    if listen.chars().all(|c| c.is_ascii_digit()) {
+        let listen = listen.parse::<u16>().map_err(|error| error.to_string())?;
 
         Ok(PortOrSocket::Port(listen))
     } else {
@@ -435,7 +432,27 @@ mod tests {
 
         assert_matches!(
             port.err().as_deref(),
-            Some("number too large to fit in u16")
+            Some("number too large to fit in target type")
+        );
+    }
+
+    #[test]
+    fn to_listen_non_ascii_digits_socket() {
+        // Arabic-Indic digits 123, only ASCII digits count as a port
+        let path = "\u{661}\u{662}\u{663}";
+
+        let port = to_listen(path);
+
+        assert_matches!(port, Ok(PortOrSocket::SocketPath(p)) if p == Path::new(path));
+    }
+
+    #[test]
+    fn to_listen_empty() {
+        let port = to_listen("");
+
+        assert_matches!(
+            port.err().as_deref(),
+            Some("cannot parse integer from empty string")
         );
     }
 }
