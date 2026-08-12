@@ -1,0 +1,148 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Apply changelog selection
+
+# The release PR body is a ballot: every changelog entry is a checkbox.
+# Toggling one edits the PR body, which fires pull_request:edited.
+# This workflow turns the unchecked entries into .cliffignore, regenerates CHANGELOG.md and rebuilds the release commit.
+
+on:
+  pull_request:
+    types:
+      - edited
+
+permissions:
+  contents: write # to rebuild the release commit via createCommitOnBranch
+  pull-requests: write # to refresh the release PR body
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.event.pull_request.number }}"
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    name: Apply changelog selection
+    runs-on: ubuntu-latest
+    if: |
+      github.event.pull_request.state == 'open' &&
+      startsWith(github.event.pull_request.head.ref, 'release/v') &&
+      github.event.changes.body != null
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          show-progress: false
+          token: ${{ secrets.TOKEN_TO_TRIGGER_SUBSEQUENT_WORKFLOWS }}
+
+      - name: Install git-cliff to regenerate the changelog
+        uses: taiki-e/install-action@7f4eb899022d8fe70b20c4f3de697aa85c309026 # v2.85.11
+        with:
+          tool: git-cliff
+
+      - name: Compute selection from the PR body
+        id: ballot
+        uses: ./.github/actions/compute-changelog-selection
+        with:
+          body: ${{ github.event.pull_request.body }}
+
+      - name: Compare with the applied selection
+        shell: bash
+        id: selection
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          SELECTION_FILE: ${{ steps.ballot.outputs.selection-file }}
+        run: |
+          # release/v0.4.8 -> v0.4.8
+          tag="${BRANCH#release/}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+          git show "HEAD:.cliffignore" > "${RUNNER_TEMP}/current.cliffignore" 2> /dev/null || true
+
+          if cmp --silent "${SELECTION_FILE}" "${RUNNER_TEMP}/current.cliffignore"; then
+            echo "::notice::Selection unchanged, nothing to do"
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Regenerate changelog
+        if: steps.selection.outputs.changed == 'true'
+        shell: bash
+        env:
+          # git-cliff reads GITHUB_TOKEN from the environment
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.selection.outputs.tag }}
+          SELECTION_FILE: ${{ steps.ballot.outputs.selection-file }}
+        run: |
+          # The ballot context lists every commit, so build it without a .cliffignore in the worktree
+          rm --force .cliffignore
+          git-cliff --context --unreleased --tag "${TAG}" > ballot-context.json
+
+          if [ -s "${SELECTION_FILE}" ]; then
+            cp "${SELECTION_FILE}" .cliffignore
+          fi
+
+          # git-cliff skips the commits listed in .cliffignore
+          git-cliff --output CHANGELOG.md --tag "${TAG}"
+
+      - name: Rebuild release commit
+        id: commit
+        if: steps.selection.outputs.changed == 'true'
+        uses: ./.github/actions/create-release-commit
+        with:
+          branch: ${{ github.event.pull_request.head.ref }}
+          base-sha: ${{ steps.ballot.outputs.base-sha }}
+          headline: "chore(release): prepare for ${{ steps.selection.outputs.tag }}"
+          files: CHANGELOG.md .cliffignore
+          staging-suffix: -selection-staging
+          # GITHUB_TOKEN attributes the API commit to github-actions[bot].
+          # The branch itself is pushed with the checkout PAT so workflows trigger.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Refresh pull request body
+        if: steps.selection.outputs.changed == 'true'
+        shell: bash
+        env:
+          # The default token's edits don't fire pull_request events, so this update can't retrigger this workflow
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ steps.commit.outputs.commit-sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Point the compare link at the rebuilt release commit
+          jq --arg sha "${RELEASE_SHA}" '.[0].extra = {compare_to: $sha}' ballot-context.json > diff-context.json
+
+          git-cliff --from-context diff-context.json --output diff-CHANGELOG.md
+
+          # Render every entry as a checkbox, excluded entries as unchecked
+          sed --in-place 's/^- /- [x] /' diff-CHANGELOG.md
+
+          if [ -s .cliffignore ]; then
+            while IFS= read -r sha; do
+              [ -n "${sha}" ] || continue
+              sed --in-place "\|/commit/${sha}|s/^- \[x\]/- [ ]/" diff-CHANGELOG.md
+            done < .cliffignore
+          fi
+
+          # Truncate diff-CHANGELOG.md if it exceeds GitHub's PR character body limit
+          max_length=65536
+          truncation_message=$'\n\n---\n\n> **Note:** Changelog was truncated because it exceeded GitHub'"'"'s 65,536 character limit.'
+          file_length=$(wc --chars < diff-CHANGELOG.md)
+
+          if [ "$file_length" -gt "$max_length" ]; then
+            truncated_length=$(( max_length - ${#truncation_message} ))
+            head --bytes="$truncated_length" diff-CHANGELOG.md > diff-CHANGELOG-truncated.md
+            printf '%s' "$truncation_message" >> diff-CHANGELOG-truncated.md
+            mv diff-CHANGELOG-truncated.md diff-CHANGELOG.md
+          fi
+
+          # REST PATCH instead of gh pr edit, which needs read:org (cli/cli#13575)
+          gh api --method PATCH --silent "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --field body=@diff-CHANGELOG.md
+
+      - name: Clean up stranded staging branch
+        if: failure() || cancelled()
+        shell: bash
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          git push origin --delete "${BRANCH}-selection-staging" || true

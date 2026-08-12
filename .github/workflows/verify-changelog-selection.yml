@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Verify changelog selection
+
+# Required status check closing the toggle-then-merge race: unchecking a ballot entry turns this red on the stale release commit, and it only goes green again once the apply workflow has rebuilt the branch.
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.event.pull_request.number }}"
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify changelog selection
+    runs-on: ubuntu-latest
+    # Skipped on non-release PRs, a skipped job still satisfies the required check
+    if: startsWith(github.event.pull_request.head.ref, 'release/v')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+          show-progress: false
+
+      - name: Compute selection from the PR body
+        id: ballot
+        uses: ./.github/actions/compute-changelog-selection
+        with:
+          body: ${{ github.event.pull_request.body }}
+
+      - name: Compare with the committed .cliffignore
+        shell: bash
+        env:
+          SELECTION_FILE: ${{ steps.ballot.outputs.selection-file }}
+        run: |
+          git show "HEAD:.cliffignore" > "${RUNNER_TEMP}/committed.cliffignore" 2> /dev/null || true
+
+          if ! cmp --silent "${SELECTION_FILE}" "${RUNNER_TEMP}/committed.cliffignore"; then
+            echo "::error::The ballot selection hasn't been applied to the release commit yet. The apply workflow rebuilds it, this check re-runs automatically."
+            exit 1
+          fi

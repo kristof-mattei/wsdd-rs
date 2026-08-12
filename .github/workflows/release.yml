@@ -24,7 +24,7 @@ concurrency:
 
 permissions:
   contents: write # to create the release commit via createCommitOnBranch
-  pull-requests: read # to list open release PRs
+  pull-requests: write # to update the release PR body with the default token
 
 env:
   CARGO_TERM_COLOR: always
@@ -54,13 +54,10 @@ jobs:
         with:
           tool: git-cliff
 
-      - name: Compute version, generate changelog, create branch and open PR
+      - name: Compute version and generate changelog
         shell: bash
         id: release
         env:
-          # GITHUB_TOKEN attributes the API commit to github-actions[bot].
-          # But we push the branch using the checkout PAT so workflows trigger.
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # git-cliff reads GITHUB_TOKEN from the environment
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -160,73 +157,64 @@ jobs:
           echo "branch=$branch" >> "${GITHUB_OUTPUT}"
 
           commit_message="chore(release): prepare for ${release_version}"
-
-          git-cliff --output CHANGELOG.md --tag "${release_version}"
+          echo "commit_message=${commit_message}" >> "${GITHUB_OUTPUT}"
 
           main_sha=$(git rev-parse HEAD)
+          echo "main_sha=${main_sha}" >> "${GITHUB_OUTPUT}"
 
-          # Stage the commit on a scratch branch so the release branch moves
-          # only once, straight to the finished commit
-          staging_branch="${branch}-staging"
+          # The PR body is a ballot listing every commit, and git-cliff applies .cliffignore when building a context, so build it before the carried-over selection lands in the worktree
+          git-cliff --context --unreleased --tag "${release_version}" > ballot-context.json
 
-          git push --force origin "${main_sha}:refs/heads/${staging_branch}"
+          # Carry over the selection from an earlier run of this release
+          if git ls-remote --exit-code --heads origin "${branch}" > /dev/null; then
+            git fetch origin "refs/heads/${branch}"
 
-          # Commit via createCommitOnBranch. Commits created via the API are signed by GitHub.
-          base64 --wrap=0 CHANGELOG.md > changelog.base64
+            if git show "FETCH_HEAD:.cliffignore" > "${RUNNER_TEMP}/carried.cliffignore" 2> /dev/null; then
+              cat "${RUNNER_TEMP}/carried.cliffignore" >> .cliffignore
+              sort --unique --output .cliffignore .cliffignore
+            fi
+          fi
 
-          query=$(cat <<'GRAPHQL'
-            mutation ($repositoryNameWithOwner: String!, $branchName: String!, $expectedHeadOid: GitObjectID!, $headline: String!, $contents: Base64String!) {
-              createCommitOnBranch(
-                input: {
-                  branch: { repositoryNameWithOwner: $repositoryNameWithOwner, branchName: $branchName }
-                  expectedHeadOid: $expectedHeadOid
-                  message: { headline: $headline }
-                  fileChanges: { additions: [{ path: "CHANGELOG.md", contents: $contents }] }
-                }
-              ) {
-                commit {
-                  oid
-                }
-              }
-            }
-          GRAPHQL
-          )
+          # git-cliff skips the commits listed in .cliffignore
+          git-cliff --output CHANGELOG.md --tag "${release_version}"
 
-          release_sha=$(gh api graphql \
-            --raw-field query="${query}" \
-            --raw-field repositoryNameWithOwner="${GITHUB_REPOSITORY}" \
-            --raw-field branchName="${staging_branch}" \
-            --raw-field expectedHeadOid="${main_sha}" \
-            --raw-field headline="${commit_message}" \
-            --field contents=@changelog.base64 \
-            --jq '.data.createCommitOnBranch.commit.oid')
-
-          echo "::notice::Release commit: ${release_sha}"
-
-          # The commit only exists server-side, fetch it so we can push its SHA
-          git fetch origin "refs/heads/${staging_branch}"
-
-          # Create or reset the release branch to the signed commit
-          git push --force origin "${release_sha}:refs/heads/${branch}"
-
-          git push origin --delete "${staging_branch}"
-
-          # Build the PR-body changelog from a context whose compare-link target
-          # is the release-branch head SHA, because the ${release_version} tag
-          # doesn't exist until after this PR is merged.
-          git-cliff --context --unreleased --tag "${release_version}" \
-            | jq --arg sha "${release_sha}" '.[0].extra = {compare_to: $sha}' \
-            > diff-context.json
-
-          git-cliff --from-context diff-context.json --output diff-CHANGELOG.md
+      - name: Create release commit
+        id: commit
+        uses: ./.github/actions/create-release-commit
+        with:
+          branch: ${{ steps.release.outputs.branch }}
+          base-sha: ${{ steps.release.outputs.main_sha }}
+          headline: ${{ steps.release.outputs.commit_message }}
+          files: CHANGELOG.md .cliffignore
+          # GITHUB_TOKEN attributes the API commit to github-actions[bot]. The branch itself is pushed with the checkout PAT so workflows trigger.
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Open or update pull request
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.TOKEN_TO_TRIGGER_SUBSEQUENT_WORKFLOWS }}
+          # git-cliff reads GITHUB_TOKEN from the environment
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ steps.commit.outputs.commit-sha }}
         run: |
           branch="${{ steps.release.outputs.branch }}"
           release_version="${{ steps.release.outputs.release_version }}"
+
+          # Build the PR-body changelog from a context whose compare-link target is the release-branch head SHA, because the ${release_version} tag doesn't exist until after this PR is merged.
+          jq --arg sha "${RELEASE_SHA}" '.[0].extra = {compare_to: $sha}' ballot-context.json > diff-context.json
+
+          # --from-context renders the context as-is, so the ballot lists every commit even though CHANGELOG.md has the excluded ones removed
+          git-cliff --from-context diff-context.json --output diff-CHANGELOG.md
+
+          # Render every entry as a checkbox, excluded entries as unchecked
+          sed --in-place 's/^- /- [x] /' diff-CHANGELOG.md
+
+          if [ -s .cliffignore ]; then
+            while IFS= read -r sha; do
+              [ -n "${sha}" ] || continue
+              sed --in-place "\|/commit/${sha}|s/^- \[x\]/- [ ]/" diff-CHANGELOG.md
+            done < .cliffignore
+          fi
 
           # Truncate diff-CHANGELOG.md if it exceeds GitHub's PR character body limit
           max_length=65536
@@ -244,9 +232,8 @@ jobs:
           existing_pr=$(gh pr list --head "${branch}" --state open --json number --jq '.[0].number // empty')
 
           if [ -n "$existing_pr" ]; then
-            # gh pr edit needs read:org, even for --body (cli/cli#13575).
-            # The REST PATCH works with just the repo scope.
-            gh api --method PATCH --silent "repos/${GITHUB_REPOSITORY}/pulls/${existing_pr}" \
+            # Update the body with the default token: its edits don't fire pull_request events, so this can't trigger the selection workflow. REST PATCH instead of gh pr edit, which needs read:org (cli/cli#13575).
+            GH_TOKEN="${GITHUB_TOKEN}" gh api --method PATCH --silent "repos/${GITHUB_REPOSITORY}/pulls/${existing_pr}" \
               --field body=@diff-CHANGELOG.md
           else
             gh pr create \
