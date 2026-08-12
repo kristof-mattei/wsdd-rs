@@ -337,8 +337,8 @@ where
     Ok(true)
 }
 
-fn format_wsd_discovered_device(device_uri: &DeviceUri, device: &WSDDiscoveredDevice) -> Box<str> {
-    let line = format!(
+fn format_wsd_discovered_device(device_uri: &DeviceUri, device: &WSDDiscoveredDevice) -> String {
+    format!(
         "{}\t{}\t{}\t{}\t{}\t{}\n",
         device_uri,
         device.display_name().unwrap_or_default(),
@@ -371,9 +371,7 @@ fn format_wsd_discovered_device(device_uri: &DeviceUri, device: &WSDDiscoveredDe
             .map(|t| &**t)
             .collect::<Vec<_>>()
             .join(","),
-    );
-
-    line.into_boxed_str()
+    )
 }
 
 //     async def cleanup(self) -> None:
