@@ -705,7 +705,7 @@ mod tests {
 
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
-        assert_eq!(expected, response);
+        assert_eq!(response, expected);
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -747,8 +747,8 @@ mod tests {
                 );
 
                 assert_eq!(
-                    to_string_pretty(expected_get.as_bytes()).unwrap(),
-                    to_string_pretty(request.body().unwrap()).unwrap()
+                    to_string_pretty(request.body().unwrap()).unwrap(),
+                    to_string_pretty(expected_get.as_bytes()).unwrap()
                 );
 
                 metadata.into()
@@ -829,7 +829,7 @@ mod tests {
             .map(|(key, value)| (&**key, &**value))
             .collect::<HashMap<_, _>>();
 
-        assert_eq!(expected_props, device_props);
+        assert_eq!(device_props, expected_props);
     }
 
     #[tokio::test]
@@ -907,8 +907,8 @@ mod tests {
                 );
 
                 assert_eq!(
-                    to_string_pretty(expected_get.as_bytes()).unwrap(),
-                    to_string_pretty(request.body().unwrap()).unwrap()
+                    to_string_pretty(request.body().unwrap()).unwrap(),
+                    to_string_pretty(expected_get.as_bytes()).unwrap()
                 );
 
                 metadata.into()
@@ -1040,7 +1040,7 @@ mod tests {
         let response = to_string_pretty(probe.as_ref()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
-        assert_eq!(expected, response);
+        assert_eq!(response, expected);
     }
 
     #[tokio::test]
@@ -1100,7 +1100,7 @@ mod tests {
             .map(|(key, value)| (&**key, &**value))
             .collect::<HashMap<_, _>>();
 
-        assert_eq!(expected_props, device_props);
+        assert_eq!(device_props, expected_props);
     }
 
     #[tokio::test]
@@ -1157,7 +1157,7 @@ mod tests {
             .map(|(key, value)| (&**key, &**value))
             .collect::<HashMap<_, _>>();
 
-        assert_eq!(expected_props, device_props);
+        assert_eq!(device_props, expected_props);
     }
 
     #[tokio::test]
@@ -1217,7 +1217,7 @@ mod tests {
             .map(|(key, value)| (&**key, &**value))
             .collect::<HashMap<_, _>>();
 
-        assert_eq!(expected_props, device_props);
+        assert_eq!(device_props, expected_props);
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1297,7 +1297,7 @@ mod tests {
 
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
-        assert_eq!(expected, response);
+        assert_eq!(response, expected);
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1408,8 +1408,8 @@ mod tests {
                 );
 
                 assert_eq!(
-                    to_string_pretty(expected_get.as_bytes()).unwrap(),
-                    to_string_pretty(request.body().unwrap()).unwrap()
+                    to_string_pretty(request.body().unwrap()).unwrap(),
+                    to_string_pretty(expected_get.as_bytes()).unwrap()
                 );
 
                 metadata.into()
@@ -1515,8 +1515,8 @@ mod tests {
                 );
 
                 assert_eq!(
-                    to_string_pretty(expected_get.as_bytes()).unwrap(),
-                    to_string_pretty(request.body().unwrap()).unwrap()
+                    to_string_pretty(request.body().unwrap()).unwrap(),
+                    to_string_pretty(expected_get.as_bytes()).unwrap()
                 );
 
                 metadata.into()
@@ -1740,8 +1740,8 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(
-            ["http://valid.example.com/", "https://also.valid/"][..],
-            raws
+            raws,
+            ["http://valid.example.com/", "https://also.valid/"][..]
         );
     }
 
@@ -1759,7 +1759,7 @@ mod tests {
             .map(|xaddr| xaddr.url().as_str())
             .collect::<Vec<_>>();
 
-        assert_eq!(["https://example.com/path"][..], raws);
+        assert_eq!(raws, ["https://example.com/path"][..]);
     }
 
     #[test]
@@ -1778,6 +1778,6 @@ mod tests {
             .collect::<Vec<_>>();
 
         // link-local must be sorted first
-        assert_eq!(Some("https://[fe80::abcd]/local"), raws.first().copied());
+        assert_eq!(raws.first().copied(), Some("https://[fe80::abcd]/local"));
     }
 }
