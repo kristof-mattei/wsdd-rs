@@ -25,7 +25,6 @@ Christgau
 chrooted
 Cinstrument
 clearscope
-cliffignore
 coro
 Ctarget
 cttc
@@ -113,6 +112,7 @@ multicastable
 multicasting
 multiplatform
 Mutlicast
+mygroup
 mypy
 NAMESIZE
 nametoindex
@@ -140,7 +140,6 @@ profraw
 pton
 pubpubpub
 pyflakes
-rawfile
 recond
 recvmsg
 Retag
@@ -168,7 +167,6 @@ signum
 sigset
 skopeo
 skopeo's
-slurpfile
 SOCKADDR
 socklen
 startswith
@@ -192,10 +190,10 @@ unseparated
 UNSPEC
 Unsupport
 unuseable
+uppercased
 usernamehw
 userspec
 vadimcn
-worktree
 wprt
 wsdapi
 wsdd
