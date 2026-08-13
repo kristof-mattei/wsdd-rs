@@ -2,7 +2,7 @@ use std::mem::MaybeUninit;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::Sender;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
@@ -60,32 +60,28 @@ impl MessageReceiver {
         }
     }
 
-    pub async fn get_host_rx(&mut self) -> Result<Receiver<IncomingHostMessage>, ()> {
+    pub async fn subscribe_host(&mut self, tx: Sender<IncomingHostMessage>) -> Result<(), ()> {
         let mut writer = self.listeners.write().await;
 
         if writer.host_tx.is_some() {
             return Err(());
         }
 
-        let (tx, rx) = tokio::sync::mpsc::channel(10);
-
         writer.host_tx = Some(tx);
 
-        Ok(rx)
+        Ok(())
     }
 
-    pub async fn get_client_rx(&mut self) -> Result<Receiver<IncomingClientMessage>, ()> {
+    pub async fn subscribe_client(&mut self, tx: Sender<IncomingClientMessage>) -> Result<(), ()> {
         let mut writer = self.listeners.write().await;
 
         if writer.client_tx.is_some() {
             return Err(());
         }
 
-        let (tx, rx) = tokio::sync::mpsc::channel(10);
-
         writer.client_tx = Some(tx);
 
-        Ok(rx)
+        Ok(())
     }
 
     pub async fn teardown(self) {

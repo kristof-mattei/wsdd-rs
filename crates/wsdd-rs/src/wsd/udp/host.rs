@@ -31,7 +31,7 @@ impl WSDHost {
         config: Arc<Config>,
         messages_built: Arc<AtomicU64>,
         bound_to: NetworkAddress,
-        mc_wsd_port_rx: Receiver<IncomingHostMessage>,
+        incoming_rx: Receiver<IncomingHostMessage>,
         mc_local_port_tx: Sender<MulticastMessage>,
         uc_wsd_port_tx: Sender<OutgoingMessage>,
     ) -> Self {
@@ -50,7 +50,7 @@ impl WSDHost {
                         cancellation_token,
                         config,
                         messages_built,
-                        mc_wsd_port_rx,
+                        incoming_rx,
                         uc_wsd_port_tx,
                     )
                     .await;
@@ -202,7 +202,7 @@ async fn listen_forever(
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     messages_built: Arc<AtomicU64>,
-    mut mc_wsd_port_rx: Receiver<IncomingHostMessage>,
+    mut incoming_rx: Receiver<IncomingHostMessage>,
     uc_wsd_port_tx: Sender<OutgoingMessage>,
 ) {
     let address = bound_to.address.addr();
@@ -212,7 +212,7 @@ async fn listen_forever(
             () = cancellation_token.cancelled() => {
                 break;
             },
-            message = mc_wsd_port_rx.recv() => {
+            message = incoming_rx.recv() => {
                 message
             }
         };
@@ -305,7 +305,7 @@ mod tests {
         let host_messages_built = Arc::new(AtomicU64::new(0));
 
         let cancellation_token = CancellationToken::new();
-        let (_mc_wsd_port_tx, mc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
+        let (_incoming_tx, incoming_rx) = tokio::sync::mpsc::channel(10);
         let (mc_local_port_tx, mut mc_local_port_rx) = tokio::sync::mpsc::channel(10);
         let (uc_wsd_port_tx, _uc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
 
@@ -317,7 +317,7 @@ mod tests {
                 IpNet::new(host_ip.into(), 24).unwrap(),
                 Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
             ),
-            mc_wsd_port_rx,
+            incoming_rx,
             mc_local_port_tx,
             uc_wsd_port_tx,
         );
@@ -349,7 +349,7 @@ mod tests {
         let host_messages_built = Arc::new(AtomicU64::new(0));
 
         let cancellation_token = CancellationToken::new();
-        let (_mc_wsd_port_tx, mc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
+        let (_incoming_tx, incoming_rx) = tokio::sync::mpsc::channel(10);
         let (mc_local_port_tx, mut mc_local_port_rx) = tokio::sync::mpsc::channel(10);
         let (uc_wsd_port_tx, _uc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
 
@@ -361,7 +361,7 @@ mod tests {
                 IpNet::new(host_ip.into(), 24).unwrap(),
                 Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
             ),
-            mc_wsd_port_rx,
+            incoming_rx,
             mc_local_port_tx,
             uc_wsd_port_tx,
         );
