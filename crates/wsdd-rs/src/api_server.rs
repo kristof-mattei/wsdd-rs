@@ -151,7 +151,7 @@ impl ApiServer {
 
             match new_connection {
                 Ok(mut stream) => {
-                    let Ok(permit) = Arc::clone(&semaphore).acquire_owned().await else {
+                    let Ok(permit) = Arc::clone(&semaphore).try_acquire_owned() else {
                         event!(
                             Level::ERROR,
                             "Failed to accept connection, no slots available"
@@ -446,9 +446,11 @@ fn format_wsd_discovered_device(device_uri: &DeviceUri, device: &WSDDiscoveredDe
 mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
 
+    use pretty_assertions::assert_eq;
+    use tokio::io::AsyncReadExt as _;
     use tokio_util::sync::CancellationToken;
 
-    use crate::api_server::ApiServer;
+    use crate::api_server::{ApiServer, MAX_CONCURRENT_CONNECTIONS};
     use crate::config::PortOrSocket;
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -479,5 +481,53 @@ mod tests {
             .expect("Failed to connect over IPv6 loopback");
 
         api_server.teardown();
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn rejects_connections_beyond_the_cap() {
+        let probe =
+            std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("Failed to find a port");
+        let port = probe
+            .local_addr()
+            .expect("Bound socket has an address")
+            .port();
+        drop(probe);
+
+        let (command_tx, _command_rx) = tokio::sync::mpsc::channel(1);
+
+        let cancellation_token = CancellationToken::new();
+
+        let api_server = ApiServer::new(
+            cancellation_token.child_token(),
+            &PortOrSocket::Port(port),
+            command_tx,
+        )
+        .expect("Failed to bind API server");
+
+        tokio::task::spawn(async move { api_server.handle_connections().await });
+
+        let mut held = Vec::new();
+        for _ in 0..MAX_CONCURRENT_CONNECTIONS {
+            held.push(
+                tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                    .await
+                    .expect("Failed to connect"),
+            );
+        }
+
+        let mut rejected = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+            .await
+            .expect("Failed to connect");
+
+        let mut response = String::new();
+        rejected
+            .read_to_string(&mut response)
+            .await
+            .expect("Failed to read the rejection");
+
+        assert_eq!(response, "No slots available");
+
+        cancellation_token.cancel();
     }
 }
