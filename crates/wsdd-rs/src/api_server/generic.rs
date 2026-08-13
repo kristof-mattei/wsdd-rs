@@ -219,3 +219,23 @@ impl GenericListener {
         }
     }
 }
+
+pub enum Listeners {
+    Single(GenericListener),
+    PerFamily {
+        v4: GenericListener,
+        v6: GenericListener,
+    },
+}
+
+impl Listeners {
+    pub async fn accept(&self) -> io::Result<GenericStream> {
+        match *self {
+            Listeners::Single(ref listener) => listener.accept().await,
+            Listeners::PerFamily { ref v4, ref v6 } => tokio::select! {
+                connection = v4.accept() => connection,
+                connection = v6.accept() => connection,
+            },
+        }
+    }
+}
