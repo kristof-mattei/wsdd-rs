@@ -390,6 +390,9 @@ impl MulticastHandler {
             .set_multicast_all_v4(false)
             .wrap_err("Failed to disable IP_MULTICAST_ALL")?;
 
+        // binding the group address limits delivery to group-addressed datagrams,
+        // unicast to this port lands on the more specific uc_wsd_port_socket bind,
+        // see Stevens: Unix Network Programming, Section 21.6, last paragraph
         let socket_addr =
             SocketAddrV4::new(constants::WSD_MCAST_GRP_V4, constants::WSD_UDP_PORT.into());
 
