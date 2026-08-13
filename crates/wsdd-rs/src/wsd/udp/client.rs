@@ -42,16 +42,14 @@ pub(crate) struct WSDClient {
 impl WSDClient {
     /// Parameters:
     ///
-    /// * `mc_wsd_port_rx`: used to receive multicast messages on `WSD_PORT`
-    /// * `mc_local_port_rx`: used to receive multicast messages sent to the local port
+    /// * `incoming_rx`: used to receive client messages from every subscribed socket
     /// * `mc_local_port_tx`: use to send multicast messages, from the local port to `WSD_PORT`
     pub fn init(
         cancellation_token: CancellationToken,
         config: Arc<Config>,
         devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
         bound_to: NetworkAddress,
-        mc_wsd_port_rx: Receiver<IncomingClientMessage>,
-        mc_local_port_rx: Receiver<IncomingClientMessage>,
+        incoming_rx: Receiver<IncomingClientMessage>,
         mc_local_port_tx: Sender<MulticastMessage>,
     ) -> Self {
         let probes = Arc::new(RwLock::new(HashMap::<MessageId, Duration>::new()));
@@ -71,8 +69,7 @@ impl WSDClient {
                     cancellation_token,
                     config,
                     devices,
-                    mc_wsd_port_rx,
-                    mc_local_port_rx,
+                    incoming_rx,
                     mc_local_port_tx,
                     probes,
                 ),
@@ -498,14 +495,12 @@ async fn handle_metadata(
     Ok(())
 }
 
-#[expect(clippy::too_many_arguments, reason = "WIP")]
 async fn listen_forever(
     bound_to: NetworkAddress,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
-    mut mc_wsd_port_rx: Receiver<IncomingClientMessage>,
-    mut mc_local_port_rx: Receiver<IncomingClientMessage>,
+    mut incoming_rx: Receiver<IncomingClientMessage>,
     mc_local_port_tx: Sender<MulticastMessage>,
     probes: Arc<RwLock<HashMap<MessageId, Duration>>>,
 ) {
@@ -526,10 +521,7 @@ async fn listen_forever(
             () = cancellation_token.cancelled() => {
                 break;
             },
-            message = mc_wsd_port_rx.recv() => {
-                message
-            },
-            message = mc_local_port_rx.recv() => {
+            message = incoming_rx.recv() => {
                 message
             },
         };
@@ -1009,9 +1001,8 @@ mod tests {
         // client
         let (client_config, client_devices) = setup_client();
 
-        let (_mc_wsd_port_tx, mc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
-        let (_mc_local_port_tx, mc_local_port_rx) = tokio::sync::mpsc::channel(10);
-        let (uc_wsd_port_tx, mut uc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
+        let (_incoming_tx, incoming_rx) = tokio::sync::mpsc::channel(10);
+        let (mc_local_port_tx, mut mc_local_port_rx) = tokio::sync::mpsc::channel(10);
 
         let bound_to = crate::network_address::NetworkAddress::new(
             Ipv4Net::new(Ipv4Addr::new(192, 168, 100, 5), 24)
@@ -1025,12 +1016,11 @@ mod tests {
             client_config,
             client_devices,
             bound_to,
-            mc_wsd_port_rx,
-            mc_local_port_rx,
-            uc_wsd_port_tx,
+            incoming_rx,
+            mc_local_port_tx,
         );
 
-        let probe = uc_wsd_port_rx.recv().await.unwrap();
+        let probe = mc_local_port_rx.recv().await.unwrap();
 
         let expected = format!(
             include_str!("../../test/probe-template-wsdp-device.xml"),

@@ -66,6 +66,8 @@ pub struct MulticastHandler {
     mc_local_port_rx: MessageReceiver,
     /// sending unicast messages from the WSD Port.
     uc_wsd_port_tx: MessageSender<UnicastMessageSplitter>,
+    /// receiving unicast traffic on the WSD Port.
+    uc_wsd_port_rx: MessageReceiver,
 }
 
 #[expect(clippy::struct_field_names, reason = "Clarity")]
@@ -187,6 +189,13 @@ impl MulticastHandler {
             network_address.clone(),
         );
 
+        let uc_wsd_port_rx = MessageReceiver::new(
+            cancellation_token.clone(),
+            network_address.clone(),
+            Arc::clone(&recent_messages),
+            uc_wsd_port_socket,
+        );
+
         Ok(Self {
             config,
             cancellation_token,
@@ -203,6 +212,7 @@ impl MulticastHandler {
             mc_local_port_tx,
             mc_local_port_rx,
             uc_wsd_port_tx,
+            uc_wsd_port_rx,
         })
     }
 
@@ -252,6 +262,7 @@ impl MulticastHandler {
 
         self.mc_wsd_port_rx.teardown().await;
         self.mc_local_port_rx.teardown().await;
+        self.uc_wsd_port_rx.teardown().await;
 
         // since this consumes self, now the sockets etc are closed. We awaited all tasks, and thus are sure that messages were either
         // sent, or failed to send, but we avoided the 'schedule but shut down too soon' situation.
@@ -424,23 +435,27 @@ impl MulticastHandler {
     pub async fn enable_wsd_host(&mut self) {
         self.wsd_host
             .get_or_init(|| async {
-                let mc_wsd_port_rx = self
-                    .mc_wsd_port_rx
-                    .get_host_rx()
-                    .await
-                    .expect("Can't get host_rx twice");
+                let (host_tx, host_rx) = tokio::sync::mpsc::channel(10);
 
-                let host = WSDHost::init(
+                self.mc_wsd_port_rx
+                    .subscribe_host(host_tx.clone())
+                    .await
+                    .expect("Can't subscribe host twice");
+
+                self.uc_wsd_port_rx
+                    .subscribe_host(host_tx)
+                    .await
+                    .expect("Can't subscribe host twice");
+
+                WSDHost::init(
                     self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
                     Arc::clone(&self.messages_built),
                     self.network_address.clone(),
-                    mc_wsd_port_rx,
+                    host_rx,
                     self.mc_local_port_tx.get_tx(),
                     self.uc_wsd_port_tx.get_tx(),
-                );
-
-                host
+                )
             })
             .await;
     }
@@ -452,29 +467,26 @@ impl MulticastHandler {
     pub async fn enable_wsd_client(&mut self) {
         self.wsd_client
             .get_or_init(|| async {
-                let mc_wsd_port_rx = self
-                    .mc_wsd_port_rx
-                    .get_client_rx()
-                    .await
-                    .expect("Can't get client_rx twice");
+                let (client_tx, client_rx) = tokio::sync::mpsc::channel(10);
 
-                let mc_local_port_rx = self
-                    .mc_local_port_rx
-                    .get_client_rx()
+                self.mc_wsd_port_rx
+                    .subscribe_client(client_tx.clone())
                     .await
-                    .expect("Can't get client_rx twice");
+                    .expect("Can't subscribe client twice");
 
-                let client = WSDClient::init(
+                self.mc_local_port_rx
+                    .subscribe_client(client_tx)
+                    .await
+                    .expect("Can't subscribe client twice");
+
+                WSDClient::init(
                     self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
                     Arc::clone(&self.devices),
                     self.network_address.clone(),
-                    mc_wsd_port_rx,
-                    mc_local_port_rx,
+                    client_rx,
                     self.mc_local_port_tx.get_tx(),
-                );
-
-                client
+                )
             })
             .await;
     }
