@@ -17,7 +17,7 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
-use crate::api_server::generic::{GenericListener, GenericStream};
+use crate::api_server::generic::{GenericListener, GenericStream, Listeners};
 use crate::config::PortOrSocket;
 use crate::network_handler::Command;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
@@ -39,7 +39,7 @@ const ISO8601_SECOND_PRECISION: Iso8601<
 pub struct ApiServer {
     cancellation_token: CancellationToken,
     command_tx: Sender<Command>,
-    listeners: (GenericListener, Option<GenericListener>),
+    listeners: Listeners,
 }
 
 impl ApiServer {
@@ -48,7 +48,7 @@ impl ApiServer {
         listen_on: &PortOrSocket,
         command_tx: Sender<Command>,
     ) -> Result<ApiServer, std::io::Error> {
-        let listeners: (GenericListener, Option<GenericListener>) = match *listen_on {
+        let listeners: Listeners = match *listen_on {
             PortOrSocket::Port(port) => {
                 // one loopback socket per family, only wildcard binds can be dual-stack
                 let v4 =
@@ -61,7 +61,7 @@ impl ApiServer {
                 )));
 
                 match (v4, v6) {
-                    (Ok(v4), Ok(v6)) => (v4, Some(v6)),
+                    (Ok(v4), Ok(v6)) => Listeners::PerFamily { v4, v6 },
                     (Ok(v4), Err(error)) => {
                         event!(
                             Level::WARN,
@@ -69,7 +69,7 @@ impl ApiServer {
                             "Failed to bind [::1], API server is IPv4-only"
                         );
 
-                        (v4, None)
+                        Listeners::Single(v4)
                     },
                     (Err(error), Ok(v6)) => {
                         event!(
@@ -78,7 +78,7 @@ impl ApiServer {
                             "Failed to bind 127.0.0.1, API server is IPv6-only"
                         );
 
-                        (v6, None)
+                        Listeners::Single(v6)
                     },
                     (Err(v4_error), Err(v6_error)) => {
                         event!(
@@ -102,7 +102,7 @@ impl ApiServer {
 
                         let socket = UnixListener::from_std(socket.into())?;
 
-                        (socket.into(), None)
+                        Listeners::Single(socket.into())
                     },
                     (r#type, domain) => {
                         event!(
@@ -122,7 +122,8 @@ impl ApiServer {
             PortOrSocket::SocketPath(ref path) => {
                 let socket = tokio::net::UnixSocket::new_stream()?;
                 socket.bind(path)?;
-                (socket.listen(MAX_CONNECTION_BACKLOG)?.into(), None)
+
+                Listeners::Single(socket.listen(MAX_CONNECTION_BACKLOG)?.into())
             },
         };
 
@@ -141,10 +142,7 @@ impl ApiServer {
                 () = self.cancellation_token.cancelled() => {
                     return Ok(());
                 },
-                new_connection = self.listeners.0.accept() => {
-                    new_connection
-                },
-                new_connection = accept_secondary(self.listeners.1.as_ref()) => {
+                new_connection = self.listeners.accept() => {
                     new_connection
                 },
             };
@@ -216,16 +214,6 @@ fn bind_tcp_loopback(address: SocketAddr) -> Result<GenericListener, std::io::Er
     socket.bind(address)?;
 
     Ok(socket.listen(MAX_CONNECTION_BACKLOG)?.into())
-}
-
-/// Never resolves when there is no secondary listener.
-async fn accept_secondary(
-    listener: Option<&GenericListener>,
-) -> Result<GenericStream, std::io::Error> {
-    match listener {
-        Some(listener) => listener.accept().await,
-        None => std::future::pending().await,
-    }
 }
 
 async fn handle_single_connection(
