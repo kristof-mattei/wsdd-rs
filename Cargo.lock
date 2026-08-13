@@ -2469,6 +2469,7 @@ dependencies = [
  "const-str",
  "delegate",
  "dotenvy",
+ "futures-util",
  "hashbrown",
  "http",
  "hyper-util",

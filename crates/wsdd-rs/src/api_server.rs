@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use color_eyre::eyre;
+use futures_util::stream::{self, StreamExt as _};
 use socket2::{Domain, Type};
 use time::format_description::well_known::Iso8601;
 use time::format_description::well_known::iso8601::{Config as Iso8601Config, TimePrecision};
@@ -136,19 +137,24 @@ impl ApiServer {
     pub async fn handle_connections(&self) -> Result<(), eyre::Report> {
         let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
 
-        loop {
-            let new_connection = tokio::select! {
-                () = self.cancellation_token.cancelled() => {
-                    return Ok(());
-                },
-                new_connection = self.listeners.0.accept() => {
-                    new_connection
-                },
-                new_connection = accept_secondary(self.listeners.1.as_ref()) => {
-                    new_connection
-                },
-            };
+        let primary = stream::unfold(&self.listeners.0, |listener| async move {
+            Some((listener.accept().await, listener))
+        });
 
+        let secondary = match self.listeners.1 {
+            Some(ref listener) => stream::unfold(listener, |listener| async move {
+                Some((listener.accept().await, listener))
+            })
+            .left_stream(),
+            None => stream::pending().right_stream(),
+        };
+
+        let connections =
+            stream::select(primary, secondary).take_until(self.cancellation_token.cancelled());
+
+        tokio::pin!(connections);
+
+        while let Some(new_connection) = connections.next().await {
             match new_connection {
                 Ok(mut stream) => {
                     let Ok(permit) = Arc::clone(&semaphore).try_acquire_owned() else {
@@ -198,6 +204,8 @@ impl ApiServer {
                 },
             }
         }
+
+        Ok(())
     }
 
     pub fn teardown(self) {
@@ -216,16 +224,6 @@ fn bind_tcp_loopback(address: SocketAddr) -> Result<GenericListener, std::io::Er
     socket.bind(address)?;
 
     Ok(socket.listen(MAX_CONNECTION_BACKLOG)?.into())
-}
-
-/// Never resolves when there is no secondary listener.
-async fn accept_secondary(
-    listener: Option<&GenericListener>,
-) -> Result<GenericStream, std::io::Error> {
-    match listener {
-        Some(listener) => listener.accept().await,
-        None => std::future::pending().await,
-    }
 }
 
 async fn handle_single_connection(
