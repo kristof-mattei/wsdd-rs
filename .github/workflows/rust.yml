@@ -207,7 +207,7 @@ jobs:
         with:
           disable_search: true
           disable_telem: true
-          env_vars: OS,RUST
+          env_vars: RUNNER_OS,RUST
           fail_ci_if_error: true
           flags: tests
           files: reports/lcov
@@ -224,7 +224,7 @@ jobs:
         with:
           disable_search: true
           disable_telem: true
-          env_vars: OS,RUST
+          env_vars: RUNNER_OS,RUST
           fail_ci_if_error: true
           flags: tests
           files: reports/results.xml
@@ -257,6 +257,8 @@ jobs:
     env:
       # most features don't work with miri
       CARGO_FEATURES: ""
+      # sccache is not installed in this job; cargo-miri does not support wrappers anyway
+      RUSTC_WRAPPER: ""
       TOOLCHAIN: "nightly"
     steps:
       - *checkout
@@ -285,16 +287,6 @@ jobs:
           # restore symlinks
           rustup update
 
-      - name: Install llvm-tools
-        shell: bash
-        run: |
-          rustup component add llvm-tools
-
-          # restore symlinks
-          rustup update
-
-      - *set_up_sccache
-
       # we purposefully don't install libsystemd because
       # we don't compile the feature, as it doesn't run with miri
       # - *set_up_libsystemd_dev
@@ -316,6 +308,9 @@ jobs:
         continue-on-error: true
 
       - name: Upload test results
+        if: |
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository
         uses: EnricoMi/publish-unit-test-result-action@d0a4676d0e0b938bc201470d88276b7c74c712b3 # v2.24.0
         with:
           check_name: Test results for Rust with Miri
@@ -326,14 +321,17 @@ jobs:
       - name: Record Rust version
         shell: bash
         run: |
-          echo "RUST=$(rustc --version)" >> "$GITHUB_ENV"
+          echo "RUST=$(rustup run "${TOOLCHAIN}" rustc --version)" >> "$GITHUB_ENV"
 
       - name: Upload test results (to Codecov.io)
+        if: |
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           disable_search: true
           disable_telem: true
-          env_vars: OS,RUST
+          env_vars: RUNNER_OS,RUST
           fail_ci_if_error: true
           flags: tests-with-miri
           files: reports/results.xml
