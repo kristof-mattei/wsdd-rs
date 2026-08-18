@@ -238,11 +238,11 @@ jobs:
     name: Cargo test (and report) with miri
     runs-on: ubuntu-26.04
     permissions:
-      checks: write
+      checks: write # publish-unit-test-result-action creates a check run
       contents: read
-      id-token: write
-      issues: read
-      pull-requests: write
+      id-token: write # codecov-action authenticates over OIDC
+      issues: read # publish-unit-test-result-action needs this in private repos
+      pull-requests: write # publish-unit-test-result-action comments the test summary
     env:
       # most features don't work with miri
       CARGO_FEATURES: ""
@@ -300,7 +300,8 @@ jobs:
           MIRIFLAGS: "-Zmiri-backtrace=full -Zmiri-disable-isolation -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check"
           RUSTFLAGS: "${{ env.RUSTFLAGS }} --allow=warnings"
         run: |
-          cargo "+${TOOLCHAIN}" miri nextest run --profile ci --no-fail-fast ${{ env.CARGO_FEATURES }} --all-targets --workspace
+          # shellcheck disable=SC2086 # CARGO_FEATURES can hold more than one flag
+          cargo "+${TOOLCHAIN}" miri nextest run --profile ci --no-fail-fast ${CARGO_FEATURES} --all-targets --workspace
         continue-on-error: true
 
       - name: Upload test results
