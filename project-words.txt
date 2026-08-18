@@ -7,10 +7,12 @@ adress
 ALIGNTO
 appgroup
 appuser
+artipacked
 asyncio
 attrlen
 autopad
 BBBBI
+BINDTODEVICE
 bkeepers
 buildcache
 cabf
@@ -25,6 +27,7 @@ Christgau
 chrooted
 Cinstrument
 clearscope
+combinators
 coro
 Ctarget
 cttc
@@ -32,6 +35,8 @@ cves
 DADFAILED
 datagram
 datagrams
+dedupped
+dedups
 DELADDR
 deque
 DGRAM
@@ -56,6 +61,7 @@ fedc
 fefd
 freeifaddrs
 GETADDR
+getaddrinfo
 getgid
 getgrnam
 getgrname
@@ -92,6 +98,7 @@ implictely
 indextoname
 intf
 IPPROTO
+isnumeric
 kristof
 kwargs
 libsocket
@@ -120,7 +127,9 @@ NAMESIZE
 nametoindex
 netinet
 netlink
+netns
 NEWADDR
+newtype
 nextest
 nlmsg
 nlmsgerr
@@ -142,6 +151,7 @@ profraw
 pton
 pubpubpub
 pyflakes
+rcvbuf
 recond
 recvmsg
 Retag
@@ -149,6 +159,7 @@ Retagging
 reuseaddr
 reuseport
 ringmap
+rpartition
 rsplit
 rtattr
 rtattributes
@@ -188,14 +199,18 @@ TRUNC
 ulonglong
 Uninit
 uninlined
+uninspectable
+unparseable
 unseparated
 UNSPEC
 Unsupport
 unuseable
 uppercased
+uppercases
 usernamehw
 userspec
 vadimcn
+veth
 wprt
 wsdapi
 wsdd
@@ -204,4 +219,5 @@ WSDUDP
 xaddr
 xaddrs
 xmlsoap
+Zizmor
 Zmiri
