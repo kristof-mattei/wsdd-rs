@@ -686,7 +686,7 @@ mod tests {
         let expected = format!(
             include_str!("../../test/resolve-template.xml"),
             Uuid::nil(),
-            &host_endpoint_device_uri,
+            host_endpoint_device_uri,
         );
 
         let response = {
@@ -1276,7 +1276,7 @@ mod tests {
         let expected = format!(
             include_str!("../../test/resolve-template.xml"),
             Uuid::nil(),
-            &host_config.uuid_as_device_uri,
+            host_config.uuid_as_device_uri,
         );
 
         let response = {
