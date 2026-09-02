@@ -26,6 +26,7 @@ christgau
 chrooted
 cinstrument
 clearscope
+cliffignore
 combinators
 coro
 ctarget
@@ -102,7 +103,6 @@ kwargs
 libsocket
 libsystemd
 listeneng
-lldb
 loopbacks
 mattei
 mcast
@@ -120,7 +120,6 @@ multiplatform
 mutlicast
 mygroup
 mypc
-mypy
 namesize
 nametoindex
 netinet
@@ -148,6 +147,7 @@ profraw
 pton
 pubpubpub
 pyflakes
+rawfile
 rcvbuf
 recond
 recvmsg
@@ -178,6 +178,7 @@ signum
 sigset
 skopeo
 skopeo's
+slurpfile
 sockaddr
 socklen
 startswith
