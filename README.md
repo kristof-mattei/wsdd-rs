@@ -2,6 +2,19 @@
 
 [![codecov](https://codecov.io/gh/kristof-mattei/wsdd-rs/graph/badge.svg?token=HR0QkiDgtt)](https://codecov.io/gh/kristof-mattei/wsdd-rs)
 
+# Installation
+
+## Debian package
+
+Every [release](https://github.com/kristof-mattei/wsdd-rs/releases) ships `.deb` packages for `amd64` and `arm64`. The package installs `/usr/bin/wsdd-rs`, enables and starts `wsdd-rs.service`, and reads extra command line parameters from `/etc/default/wsdd-rs`. The discovery mode ships as `wsdd-rs-discovery.socket` with its socket-activated service, installed but not enabled: `systemctl enable --now wsdd-rs-discovery.socket` turns it on.
+
+```sh
+gh attestation verify wsdd-rs_<version>-1_amd64.deb --repo kristof-mattei/wsdd-rs
+sudo apt install ./wsdd-rs_<version>-1_amd64.deb
+```
+
+The packages are also published to `ghcr.io/kristof-mattei/wsdd-rs-deb`, tagged `edge` for the latest build on `main` and `vX.Y.Z` per release, for use with `oras pull`.
+
 # TODO
 
 - TODOs in the code
