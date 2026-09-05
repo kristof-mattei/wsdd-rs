@@ -1,0 +1,22 @@
+[Unit]
+Description=Web Services Dynamic Discovery host daemon
+Documentation=https://github.com/kristof-mattei/wsdd-rs
+After=network-online.target
+Wants=network-online.target
+; Samba is not required, uncomment to couple the two
+;BindsTo=smb.service
+
+[Service]
+Type=exec
+; Use /etc/default/wsdd-rs for defaults, if it exists
+EnvironmentFile=-/etc/default/wsdd-rs
+; chrooted into its empty runtime directory under /run
+ExecStart=/usr/bin/wsdd-rs --chroot=/run/wsdd-rs $WSDD_PARAMS
+DynamicUser=yes
+User=wsdd-rs
+Group=wsdd-rs
+RuntimeDirectory=wsdd-rs
+AmbientCapabilities=CAP_SYS_CHROOT
+
+[Install]
+WantedBy=multi-user.target

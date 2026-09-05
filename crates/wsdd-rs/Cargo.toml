@@ -98,5 +98,37 @@ trybuild = "=1.0.120"
 [package.metadata.cargo-machete]
 ignored = []
 
+[package.metadata.deb]
+maintainer = "Kristof Mattei <864376+kristof-mattei@users.noreply.github.com>"
+section = "net"
+priority = "optional"
+default-features = false
+features = ["systemd"]
+license-file = ["../../LICENSE", "0"]
+extended-description = """\
+wsdd-rs implements a Web Service Discovery (WS-Discovery) host daemon. It \
+allows Linux hosts to be found by (and appear in the Network view of) \
+Windows clients, replacing the discovery functionality that was previously \
+provided by SMBv1/NetBIOS. Rust port of wsdd."""
+assets = [
+    { source = "target/release/wsdd-rs", dest = "usr/bin/", mode = "755" },
+    { source = "../../README.md", dest = "usr/share/doc/wsdd-rs/README.md", mode = "644" },
+    { source = "packaging/wsdd-rs.default", dest = "etc/default/wsdd-rs", mode = "644" },
+]
+conf-files = ["/etc/default/wsdd-rs"]
+maintainer-scripts = "packaging/"
+# placeholder for local builds, CI stamps the release version
+changelog = "packaging/changelog"
+
+# an entry without unit-name claims every unit in the package
+[[package.metadata.deb.systemd-units]]
+unit-name = "wsdd-rs"
+
+# the discovery instance is opt-in, the user enables the socket
+[[package.metadata.deb.systemd-units]]
+unit-name = "wsdd-rs-discovery"
+enable = false
+start = false
+
 [lints]
 workspace = true

@@ -102,6 +102,7 @@ kristof
 kwargs
 libsocket
 libsystemd
+lintian
 listeneng
 loopbacks
 mattei
@@ -137,6 +138,7 @@ notready
 ntop
 oldact
 optlen
+oras
 pathbuf
 pnpx
 postprocessors
