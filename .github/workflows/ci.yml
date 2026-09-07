@@ -110,9 +110,8 @@ jobs:
           GH_REPO: ${{ github.repository }} # no checkout, so gh cannot infer the repository from a git remote
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Release PRs build no container and no Debian package, so the retag run for their merge commit falls back to
-          # the `sha-<base>-*` tag, which the retag run for the base commit creates.
-          # Merging before that run has finished makes the merge commit's retag fail.
+          # Release PRs build nothing, so the merge commit's retag reuses the base commit's `sha-<base>-*` tag.
+          # That tag comes from the base commit's own retag run; merge before it finishes and the merge's retag fails.
           url=""
           conclusion=""
 
@@ -123,7 +122,7 @@ jobs:
 
             echo "Looking for the retag run of ${BASE_SHA} (attempt ${attempt} of 30)"
 
-            # || true: no run yet, or a transient api error, both mean retry
+            # no run yet and a transient api error both mean retry, so don't fail here
             run=$(gh run list \
               --workflow retag-containers-after-push.yml \
               --event push \
@@ -173,6 +172,7 @@ jobs:
       contents: read
       pull-requests: read # dorny/paths-filter reads the PR's changed files
     outputs:
+      deb: ${{ steps.filter.outputs.deb }}
       docker: ${{ steps.filter.outputs.docker }}
       rust: ${{ steps.filter.outputs.rust }}
     steps:
@@ -195,23 +195,22 @@ jobs:
     runs-on: ubuntu-slim
     permissions:
       contents: read
+      packages: read # read the base commit's artifacts from ghcr.io
     needs:
       - changes
       - repo-has-container
       - repo-has-deb
     outputs:
       version: ${{ steps.version.outputs.version }}
-    # a PR without a Rust or Docker change can still move the predicted version, so a deb is built on every PR
+      # the artifacts embed the predicted version, so a new version needs a rebuild just like a code change
+      build_container: ${{ fromJSON(needs.repo-has-container.outputs.has_container) && (fromJSON(needs.changes.outputs.docker) || fromJSON(needs.changes.outputs.rust) || fromJSON(steps.version_moved.outputs.version_moved)) }}
+      # the Dockerfile doesn't affect the deb, it builds in a pinned image
+      build_deb: ${{ fromJSON(needs.repo-has-deb.outputs.has_deb) && (fromJSON(needs.changes.outputs.deb) || fromJSON(steps.version_moved.outputs.version_moved)) }}
+    # a PR without a Rust or Docker change can still move the predicted version
     if: |
       github.event_name == 'pull_request' &&
       (
-        (
-          fromJSON(needs.repo-has-container.outputs.has_container) == true &&
-          (
-            fromJSON(needs.changes.outputs.docker) == true ||
-            fromJSON(needs.changes.outputs.rust) == true
-          )
-        ) ||
+        fromJSON(needs.repo-has-container.outputs.has_container) == true ||
         fromJSON(needs.repo-has-deb.outputs.has_deb) == true
       )
     steps:
@@ -233,7 +232,7 @@ jobs:
         run: |
           latest_tag=$(git describe --tags --abbrev=0 || true)
 
-          # The release branch contains .cliffignore and git-cliff applies it to --bumped-version as well, which would leave the hidden commits out of the version.
+          # git-cliff also applies .cliffignore to --bumped-version, so the release branch's copy would hide commits from the version bump
           rm --force .cliffignore
 
           bumped=$(git-cliff --bumped-version --unreleased --offline)
@@ -248,6 +247,59 @@ jobs:
           # tags are vX.Y.Z, cargo versions are not prefixed
           echo "version=${bumped#v}" >> "${GITHUB_OUTPUT}"
 
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          oras login "${REGISTRY,,}" --username "${GITHUB_ACTOR}" --password-stdin <<< "${GITHUB_TOKEN}"
+
+      - name: Compare against the version in the base commit's artifacts
+        shell: bash
+        id: version_moved
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HAS_CONTAINER: ${{ needs.repo-has-container.outputs.has_container }}
+          HAS_DEB: ${{ needs.repo-has-deb.outputs.has_deb }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          image_name="${REGISTRY,,}/${IMAGE_NAME,,}"
+
+          references=()
+          if [ "${HAS_CONTAINER}" = "true" ]; then
+            references+=("${image_name}")
+          fi
+          if [ "${HAS_DEB}" = "true" ]; then
+            references+=("${image_name}-deb")
+          fi
+
+          version_moved=false
+
+          for reference in "${references[@]}"; do
+            # the base commit's artifact was built with whatever version was predicted back then
+            base_version=""
+
+            for suffix in actual retag; do
+              if manifest=$(oras manifest fetch "${reference}:sha-${BASE_SHA}-${suffix}" 2>/dev/null); then
+                base_version=$(jq --raw-output '.annotations["org.opencontainers.image.version"] // empty' <<< "${manifest}")
+                break
+              fi
+            done
+
+            if [ "${base_version}" = "v${VERSION}" ]; then
+              echo "${reference} at ${BASE_SHA} already has v${VERSION}"
+            else
+              # no artifact at all lands here too, either nothing was built yet or the base's retag run is still going
+              echo "${reference} at ${BASE_SHA} has '${base_version}', this PR predicts v${VERSION}"
+              version_moved=true
+            fi
+          done
+
+          echo "version_moved=${version_moved}" >> "${GITHUB_OUTPUT}"
+
   prepare-variables:
     name: Prepare variables and version bump patch
     runs-on: ubuntu-26.04
@@ -261,12 +313,10 @@ jobs:
       registry: ${{ steps.variables.outputs.registry }}
       unique_tag: ${{ steps.variables.outputs.unique_tag }}
     needs:
-      - repo-has-container
-      - repo-has-deb
       - calculate-version
     if: |
-      fromJSON(needs.repo-has-container.outputs.has_container) == true ||
-      fromJSON(needs.repo-has-deb.outputs.has_deb) == true
+      fromJSON(needs.calculate-version.outputs.build_container) == true ||
+      fromJSON(needs.calculate-version.outputs.build_deb) == true
     steps:
       - &checkout
         name: Checkout
@@ -362,14 +412,7 @@ jobs:
       - calculate-version
       - architectures
       - prepare-variables
-      - changes
-      - repo-has-container
-    if: |
-      fromJSON(needs.repo-has-container.outputs.has_container) == true &&
-      (
-        fromJSON(needs.changes.outputs.docker) == true ||
-        fromJSON(needs.changes.outputs.rust) == true
-      )
+    if: fromJSON(needs.calculate-version.outputs.build_container) == true
     steps:
       - *checkout
 
@@ -506,7 +549,7 @@ jobs:
       - docker-build
       - deb-build
       - rust-build
-    # after a partial publish a bypassed merge would promote a container and a deb from different commits, so a PR publishes both or neither
+    # both or neither. If only one gets published and the PR is merged anyway, main ends up with a container and a deb from different commits.
     # Check if the event is not triggered by a fork
     if: |
       !cancelled() &&
@@ -760,20 +803,19 @@ jobs:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
     needs:
-      - repo-has-deb
       - calculate-version
       - prepare-variables
-    if: fromJSON(needs.repo-has-deb.outputs.has_deb) == true
+    if: fromJSON(needs.calculate-version.outputs.build_deb) == true
     steps:
       - name: Install build and packaging tools
         shell: bash
         run: |
           apt-get update
 
-          # the systemd feature links libsystemd for sd_listen_fds and reqwest links the system OpenSSL, so the build needs both dev packages and pkg-config
+          # libsystemd-dev for the systemd feature (sd_listen_fds), libssl-dev for reqwest, pkg-config to find both
           apt-get install --no-install-recommends --yes ca-certificates curl dpkg-dev git libssl-dev libsystemd-dev lintian mold pkg-config
 
-          # the workspace belongs to the runner's user and the container runs as root, git refuses the repository otherwise
+          # the container runs as root but the checkout belongs to the runner's user, so git refuses it without this
           git config --global --add safe.directory "${GITHUB_WORKSPACE}"
 
       - *checkout
@@ -811,7 +853,7 @@ jobs:
           APPLICATION_NAME: ${{ needs.prepare-variables.outputs.application_name }}
           VERSION: ${{ needs.calculate-version.outputs.version }}
         run: |
-          # the release version does not exist yet, so the deb carries the version predicted for this PR, checked again at graduation
+          # there is no release version yet, so the deb gets the predicted one; graduation checks that it matched
           maintainer=$(cargo metadata --format-version 1 --no-deps | jq --raw-output --arg name "${APPLICATION_NAME}" '.packages[] | select(.name == $name) | .metadata.deb.maintainer')
           date=$(git log -1 --format=%aD)
 
@@ -838,7 +880,7 @@ jobs:
         env:
           LC_ALL: C.UTF-8
         run: |
-          # no ITP bug and no man page are accepted for a package outside the Debian archive
+          # a package outside the Debian archive needs neither an ITP bug nor a man page
           lintian --fail-on warning --suppress-tags initial-upload-closes-no-bugs,no-manual-page target/debian/*.deb
 
       # users download the bare file from the release, so the attestation is on the file's hash, not on a registry digest
@@ -863,6 +905,7 @@ jobs:
     permissions:
       packages: write # push the PR's debs to ghcr.io
     needs:
+      - calculate-version
       - prepare-variables
       - deb-build
       - docker-build
@@ -904,9 +947,12 @@ jobs:
         env:
           FULL_DEB_NAME: ${{ needs.prepare-variables.outputs.full_deb_name_remote_registry }}
           UNIQUE_TAG: ${{ needs.prepare-variables.outputs.unique_tag }}
+          VERSION: ${{ needs.calculate-version.outputs.version }}
         run: |
           # the two debs go in one artifact, so the retag chain deals with a single reference
+          # the next PR's calculate-version reads this annotation
           oras push \
+            --annotation "org.opencontainers.image.version=v${VERSION}" \
             --artifact-type application/vnd.debian.binary-package \
             "${FULL_DEB_NAME}:${UNIQUE_TAG}" \
             ./*.deb

@@ -332,7 +332,7 @@ jobs:
         run: |
           repo_lower="${GITHUB_REPOSITORY,,}"
 
-          # || true: the package does not exist before the first push, which is the bootstrap case below
+          # the package doesn't exist before the first push, that's the bootstrap case below, so don't fail here
           all_tags=$(gh api "/users/${GITHUB_REPOSITORY_OWNER}/packages/container/${repo_lower##*/}-deb/versions" \
             --paginate \
             --jq '.[] | .metadata.container.tags[]') || true
@@ -347,7 +347,7 @@ jobs:
             old_tag="${PR_TAG}"
             suffix=actual
           else
-            # the incoming PR didn't produce debs, so the debs of the base commit are re-keyed to the current sha, same as the containers
+            # the incoming PR built no debs, so re-key the base commit's debs to the current sha, like the containers
             echo "Incoming PR produced nothing, or there was just a push to main"
 
             old_tag=$(grep "^sha-${BASE_SHA}-.*\$" <<< "${all_tags}" | head --lines 1) || true # .* is actual or retag
@@ -381,7 +381,7 @@ jobs:
 
           oras pull "${FULL_DEB_NAME}:${NEW_TAG}" --output /tmp/deb
 
-      # same file hash as the build attestation, this run's identity additionally proves the debs crossed into main
+      # same file hash as the build attestation, but signed by the push workflow, which proves the debs made it to main
       - name: Attest Debian packages
         if: fromJSON(steps.retag.outputs.found) == true
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
