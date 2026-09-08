@@ -110,9 +110,8 @@ jobs:
           GH_REPO: ${{ github.repository }} # no checkout, so gh cannot infer the repository from a git remote
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Release PRs build no container and no Debian package, so the retag run for their merge commit falls back to
-          # the `sha-<base>-*` tag, which the retag run for the base commit creates.
-          # Merging before that run has finished makes the merge commit's retag fail.
+          # Release PRs build nothing, so the merge commit's retag reuses the base commit's `sha-<base>-*` tag.
+          # That tag comes from the base commit's own retag run; merge before it finishes and the merge's retag fails.
           url=""
           conclusion=""
 
@@ -123,7 +122,7 @@ jobs:
 
             echo "Looking for the retag run of ${BASE_SHA} (attempt ${attempt} of 30)"
 
-            # || true: no run yet, or a transient api error, both mean retry
+            # no run yet and a transient api error both mean retry, so don't fail here
             run=$(gh run list \
               --workflow retag-containers-after-push.yml \
               --event push \
@@ -233,7 +232,7 @@ jobs:
         run: |
           latest_tag=$(git describe --tags --abbrev=0 || true)
 
-          # The release branch contains .cliffignore and git-cliff applies it to --bumped-version as well, which would leave the hidden commits out of the version.
+          # git-cliff also applies .cliffignore to --bumped-version, so the release branch's copy would hide commits from the version bump
           rm --force .cliffignore
 
           bumped=$(git-cliff --bumped-version --unreleased --offline)
@@ -506,7 +505,7 @@ jobs:
       - docker-build
       - deb-build
       - rust-build
-    # after a partial publish a bypassed merge would promote a container and a deb from different commits, so a PR publishes both or neither
+    # both or neither. If only one gets published and the PR is merged anyway, main ends up with a container and a deb from different commits.
     # Check if the event is not triggered by a fork
     if: |
       !cancelled() &&
@@ -770,10 +769,10 @@ jobs:
         run: |
           apt-get update
 
-          # the systemd feature links libsystemd for sd_listen_fds and reqwest links the system OpenSSL, so the build needs both dev packages and pkg-config
+          # libsystemd-dev for the systemd feature (sd_listen_fds), libssl-dev for reqwest, pkg-config to find both
           apt-get install --no-install-recommends --yes ca-certificates curl dpkg-dev git libssl-dev libsystemd-dev lintian mold pkg-config
 
-          # the workspace belongs to the runner's user and the container runs as root, git refuses the repository otherwise
+          # the container runs as root but the checkout belongs to the runner's user, so git refuses it without this
           git config --global --add safe.directory "${GITHUB_WORKSPACE}"
 
       - *checkout
@@ -811,7 +810,7 @@ jobs:
           APPLICATION_NAME: ${{ needs.prepare-variables.outputs.application_name }}
           VERSION: ${{ needs.calculate-version.outputs.version }}
         run: |
-          # the release version does not exist yet, so the deb carries the version predicted for this PR, checked again at graduation
+          # there is no release version yet, so the deb gets the predicted one; graduation checks that it matched
           maintainer=$(cargo metadata --format-version 1 --no-deps | jq --raw-output --arg name "${APPLICATION_NAME}" '.packages[] | select(.name == $name) | .metadata.deb.maintainer')
           date=$(git log -1 --format=%aD)
 
@@ -838,7 +837,7 @@ jobs:
         env:
           LC_ALL: C.UTF-8
         run: |
-          # no ITP bug and no man page are accepted for a package outside the Debian archive
+          # a package outside the Debian archive needs neither an ITP bug nor a man page
           lintian --fail-on warning --suppress-tags initial-upload-closes-no-bugs,no-manual-page target/debian/*.deb
 
       # users download the bare file from the release, so the attestation is on the file's hash, not on a registry digest

@@ -152,7 +152,7 @@ jobs:
         run: |
           # Truncate release-notes.md if it exceeds GitHub Release character body limit
           max_length=125000
-          truncation_message=$'\n\n---\n\n> **Note:** Release notes were truncated because they exceeded GitHub'"'"'s 125,000 character limit.'
+          truncation_message=$'\n\n---\n\n> The release notes exceed GitHub'"'"'s 125,000 character limit and were cut here.'
           file_length=$(wc --chars < release-notes.md)
 
           if [ "$file_length" -gt "$max_length" ]; then
@@ -185,7 +185,7 @@ jobs:
       packages: read # to pull the debs from ghcr.io
     needs:
       - graduate
-    # the predicted version never carries a pre-release part, so pre-releases ship without debs
+    # the predicted version has no pre-release suffix, so pre-releases ship without debs
     if: |
       vars.HAS_DEB == 'true' &&
       needs.graduate.outputs.finalized == 'false' &&
@@ -211,8 +211,8 @@ jobs:
         env:
           BASE_SHA: ${{ needs.graduate.outputs.base_sha }}
         run: |
-          # release PRs build no debs (CI skips release/ branches), so the release ships the base commit's debs, the merge's first parent
-          # the base commit's sha-<base>-* tag existed before the release PR could merge (the base check in CI), so a miss is final
+          # CI skips release/ branches, so a release PR builds no debs and the release ships the debs of its base commit (the merge's first parent)
+          # CI's base check made sure the base commit's sha-<base>-* tag existed before the release PR could merge, so if it's missing now, waiting won't help
           for suffix in actual retag; do
             old_tag="sha-${BASE_SHA}-${suffix}"
 
@@ -245,7 +245,7 @@ jobs:
 
             if [ "${actual}" != "${expected}" ]; then
               # every PR rebuilds the deb with the predicted version, so a mismatch means main moved without a PR build
-              echo "::error::Debian package version ${actual} of ${deb_file} does not match release version ${expected}. The release stays a draft: attach packages built from the tag by hand, or publish it without them."
+              echo "::error::Debian package version ${actual} of ${deb_file} does not match release version ${expected}. The release stays a draft. Attach packages built from the tag by hand, or publish it without them."
               exit 1
             fi
           done
@@ -292,7 +292,7 @@ jobs:
       - name: Publish release
         shell: bash
         env:
-          # GITHUB_TOKEN events trigger no workflows, and publishing has to fire the release event
+          # publishing has to fire the release event, and anything done with GITHUB_TOKEN doesn't trigger workflows
           GH_REPO: ${{ github.repository }} # no checkout, so gh cannot infer the repository from a git remote
           GH_TOKEN: ${{ secrets.TOKEN_TO_TRIGGER_SUBSEQUENT_WORKFLOWS }}
           TAG: ${{ needs.graduate.outputs.tag }}
