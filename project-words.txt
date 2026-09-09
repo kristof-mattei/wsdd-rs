@@ -11,7 +11,6 @@ asyncio
 attrlen
 autopad
 bbbbi
-bindtodevice
 bkeepers
 buildcache
 cabf
@@ -27,7 +26,6 @@ chrooted
 cinstrument
 clearscope
 cliffignore
-combinators
 coro
 ctarget
 cttc
@@ -35,8 +33,6 @@ cves
 dadfailed
 datagram
 datagrams
-dedupped
-dedups
 deladdr
 deque
 dgram
@@ -60,7 +56,6 @@ fedc
 fefd
 freeifaddrs
 getaddr
-getaddrinfo
 getgid
 getgrnam
 getgrname
@@ -97,7 +92,6 @@ implictely
 indextoname
 intf
 ipproto
-isnumeric
 kristof
 kwargs
 libsocket
@@ -125,9 +119,7 @@ namesize
 nametoindex
 netinet
 netlink
-netns
 newaddr
-newtype
 nextest
 nlmsg
 nlmsgerr
@@ -150,7 +142,6 @@ pton
 pubpubpub
 pyflakes
 rawfile
-rcvbuf
 recond
 recvmsg
 retag
@@ -159,7 +150,6 @@ reuseaddr
 reuseport
 rhysd
 ringmap
-rpartition
 rsplit
 rtattr
 rtattributes
@@ -201,17 +191,14 @@ ulonglong
 uninit
 uninlined
 uninspectable
-unparseable
 unseparated
 unspec
 unsupport
 unuseable
 uppercased
-uppercases
 usernamehw
 userspec
 vadimcn
-veth
 wprt
 wsdapi
 wsdd
