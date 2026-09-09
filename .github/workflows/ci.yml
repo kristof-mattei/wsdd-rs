@@ -176,9 +176,9 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       # the artifacts embed the predicted version, so a new version needs a rebuild
-      build_container: ${{ fromJSON(needs.repo-has-container.outputs.has_container) && (fromJSON(needs.changes.outputs.docker) || fromJSON(needs.changes.outputs.rust) || fromJSON(steps.version_moved.outputs.version_moved)) }}
+      build_container: ${{ fromJSON(needs.repo-has-container.outputs.has_container) && (fromJSON(needs.changes.outputs.docker) || fromJSON(needs.changes.outputs.rust) || fromJSON(steps.version_moved.outputs.container)) }}
       # the deb doesn't build from the Dockerfile
-      build_deb: ${{ fromJSON(needs.repo-has-deb.outputs.has_deb) && (fromJSON(needs.changes.outputs.deb) || fromJSON(steps.version_moved.outputs.version_moved)) }}
+      build_deb: ${{ fromJSON(needs.repo-has-deb.outputs.has_deb) && (fromJSON(needs.changes.outputs.deb) || fromJSON(steps.version_moved.outputs.deb)) }}
     # a PR without a Rust or Docker change can still move the predicted version
     if: |
       github.event_name == 'pull_request' &&
@@ -249,17 +249,18 @@ jobs:
         run: |
           image_name="${REGISTRY,,}/${IMAGE_NAME,,}"
 
-          references=()
+          declare -A references=()
           if [ "${HAS_CONTAINER}" = "true" ]; then
-            references+=("${image_name}")
+            references[container]="${image_name}"
           fi
           if [ "${HAS_DEB}" = "true" ]; then
-            references+=("${image_name}-deb")
+            references[deb]="${image_name}-deb"
           fi
 
-          version_moved=false
+          # the base commit can have one artifact and not the other, e.g. right after enabling debs, so each is checked separately
+          for name in "${!references[@]}"; do
+            reference="${references[${name}]}"
 
-          for reference in "${references[@]}"; do
             # the base commit's artifact was built with whatever version was predicted back then
             base_version=""
 
@@ -272,14 +273,13 @@ jobs:
 
             if [ "${base_version}" = "v${VERSION}" ]; then
               echo "${reference} at ${BASE_SHA} already has v${VERSION}"
+              echo "${name}=false" >> "${GITHUB_OUTPUT}"
             else
               # no artifact at all lands here too, either nothing was built yet or the base's retag run failed
               echo "${reference} at ${BASE_SHA} has '${base_version}', this PR predicts v${VERSION}"
-              version_moved=true
+              echo "${name}=true" >> "${GITHUB_OUTPUT}"
             fi
           done
-
-          echo "version_moved=${version_moved}" >> "${GITHUB_OUTPUT}"
 
   prepare-variables:
     name: Prepare variables and version bump patch
@@ -703,8 +703,11 @@ jobs:
       - prepare-variables
       - docker-build
       - docker-publish
+    # a skipped deb-build behind docker-publish would skip this job too, so the result is checked explicitly
     # Check if the event is not triggered by a fork
     if: |
+      !cancelled() &&
+      needs.docker-publish.result == 'success' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event_name == 'pull_request'
     steps:
@@ -763,7 +766,7 @@ jobs:
           organization: ${{ vars.DOCKERHUB_USERNAME }}
 
   deb-build:
-    name: Build Debian package (${{ matrix.arch }})
+    name: Build Debian package for ${{ matrix.arch }}
     strategy:
       matrix:
         include:
