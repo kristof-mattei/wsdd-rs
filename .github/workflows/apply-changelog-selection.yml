@@ -5,6 +5,7 @@ on:
   pull_request:
     types:
       - edited
+      - reopened
     branches:
       - main
 
@@ -27,7 +28,7 @@ jobs:
       github.event.pull_request.state == 'open' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       startsWith(github.event.pull_request.head.ref, 'release/v') &&
-      github.event.changes.body != null
+      (github.event.action == 'reopened' || github.event.changes.body != null)
     steps:
       # zizmor: ignore[artipacked] the release branch is pushed with this credential, see the rebuild step
       - name: Checkout
