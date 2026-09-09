@@ -144,6 +144,7 @@ jobs:
       contents: read
       pull-requests: read # dorny/paths-filter reads the PR's changed files
     outputs:
+      deb: ${{ steps.filter.outputs.deb }}
       docker: ${{ steps.filter.outputs.docker }}
       rust: ${{ steps.filter.outputs.rust }}
     steps:
@@ -167,16 +168,18 @@ jobs:
     permissions:
       actions: read # list the retag runs for the base commit
       contents: read
-      packages: read # read the base commit's container from ghcr.io
+      packages: read # read the base commit's artifacts from ghcr.io
     needs:
       - changes
       - repo-has-container
       - repo-has-deb
     outputs:
       version: ${{ steps.version.outputs.version }}
-      # the container embeds the predicted version, so a new version needs a rebuild just like a code change
+      # the artifacts embed the predicted version, so a new version needs a rebuild
       build_container: ${{ fromJSON(needs.repo-has-container.outputs.has_container) && (fromJSON(needs.changes.outputs.docker) || fromJSON(needs.changes.outputs.rust) || fromJSON(steps.version_moved.outputs.version_moved)) }}
-    # a PR without a Rust or Docker change can still move the predicted version, so a deb is built on every PR
+      # the deb doesn't build from the Dockerfile
+      build_deb: ${{ fromJSON(needs.repo-has-deb.outputs.has_deb) && (fromJSON(needs.changes.outputs.deb) || fromJSON(steps.version_moved.outputs.version_moved)) }}
+    # a PR without a Rust or Docker change can still move the predicted version
     if: |
       github.event_name == 'pull_request' &&
       (
@@ -228,23 +231,31 @@ jobs:
           # an unreachable registry costs a rebuild below, not a failed run
           oras login "${REGISTRY,,}" --username "${GITHUB_ACTOR}" --password-stdin <<< "${GITHUB_TOKEN}" || true
 
-      # the base commit's tag comes from its retag run, which may still be going
+      # the base commit's tags come from its retag run, which may still be going
       - name: Wait for the base commit's retag run
         uses: $/.github/actions/wait-for-retag-run
         with:
           sha: ${{ github.event.pull_request.base.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compare against the version in the base commit's container
+      - name: Compare against the version in the base commit's artifacts
         shell: bash
         id: version_moved
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HAS_CONTAINER: ${{ needs.repo-has-container.outputs.has_container }}
+          HAS_DEB: ${{ needs.repo-has-deb.outputs.has_deb }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           image_name="${REGISTRY,,}/${IMAGE_NAME,,}"
 
-          references=("${image_name}")
+          references=()
+          if [ "${HAS_CONTAINER}" = "true" ]; then
+            references+=("${image_name}")
+          fi
+          if [ "${HAS_DEB}" = "true" ]; then
+            references+=("${image_name}-deb")
+          fi
 
           version_moved=false
 
@@ -283,11 +294,10 @@ jobs:
       registry: ${{ steps.variables.outputs.registry }}
       unique_tag: ${{ steps.variables.outputs.unique_tag }}
     needs:
-      - repo-has-deb
       - calculate-version
     if: |
       fromJSON(needs.calculate-version.outputs.build_container) == true ||
-      fromJSON(needs.repo-has-deb.outputs.has_deb) == true
+      fromJSON(needs.calculate-version.outputs.build_deb) == true
     steps:
       - &checkout
         name: Checkout
@@ -774,10 +784,9 @@ jobs:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
     needs:
-      - repo-has-deb
       - calculate-version
       - prepare-variables
-    if: fromJSON(needs.repo-has-deb.outputs.has_deb) == true
+    if: fromJSON(needs.calculate-version.outputs.build_deb) == true
     steps:
       - name: Install build and packaging tools
         shell: bash
@@ -877,6 +886,7 @@ jobs:
     permissions:
       packages: write # push the PR's debs to ghcr.io
     needs:
+      - calculate-version
       - prepare-variables
       - deb-build
       - docker-build
@@ -918,9 +928,12 @@ jobs:
         env:
           FULL_DEB_NAME: ${{ needs.prepare-variables.outputs.full_deb_name_remote_registry }}
           UNIQUE_TAG: ${{ needs.prepare-variables.outputs.unique_tag }}
+          VERSION: ${{ needs.calculate-version.outputs.version }}
         run: |
           # the two debs go in one artifact, so the retag chain deals with a single reference
+          # the next PR's calculate-version reads this annotation
           oras push \
+            --annotation "org.opencontainers.image.version=v${VERSION}" \
             --artifact-type application/vnd.debian.binary-package \
             "${FULL_DEB_NAME}:${UNIQUE_TAG}" \
             ./*.deb

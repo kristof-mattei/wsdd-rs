@@ -5,9 +5,14 @@ docker:
   - *shared
   - ".dockerignore"
   - Dockerfile
-rust:
+rust: &rust
   - *shared
   - "**/*.toml"
   - ".cargo/**"
   - "crates/**"
   - Cargo.lock
+# the package installs both files, see `license-file` and `assets` in crates/wsdd-rs/Cargo.toml
+deb:
+  - *rust
+  - LICENSE
+  - README.md

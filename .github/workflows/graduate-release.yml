@@ -260,7 +260,7 @@ jobs:
             actual=$(dpkg-deb --field "${deb_file}" Version)
 
             if [ "${actual}" != "${expected}" ]; then
-              # every PR rebuilds the deb with the predicted version, so a mismatch means main moved without a PR build
+              # CI rebuilds the deb whenever the predicted version moves, so a mismatch means main moved without a PR build
               echo "::error::Debian package version ${actual} of ${deb_file} does not match release version ${expected}. The release stays a draft. Attach packages built from the tag by hand, or publish it without them."
               exit 1
             fi
