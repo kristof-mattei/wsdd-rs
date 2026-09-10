@@ -4,6 +4,7 @@ acff
 addrs
 adress
 alignto
+allgreen
 appgroup
 appuser
 artipacked
@@ -73,11 +74,11 @@ grcov
 groupname
 hbbhhhbb
 hdrlen
+headgreen
 healthz
 homeaddress
 hoplimit
 hostid
-hubot
 idents
 ifaddr
 ifaddrmsg
