@@ -133,6 +133,7 @@ oldact
 optlen
 oras
 pathbuf
+pkgs
 pnpx
 postprocessors
 prefixlen
@@ -186,6 +187,7 @@ telem
 tera
 timeval
 topo
+tostring
 trixie
 trunc
 ulonglong
