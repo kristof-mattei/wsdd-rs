@@ -1,4 +1,9 @@
 <!-- header goes here -->
+## [0.6.1](https://github.com/kristof-mattei/wsdd-rs/compare/v0.6.0..v0.6.1) - 2026-09-12
+
+### 🐛 Bug Fixes
+
+- Re-raise fatal signals instead of exiting 128+n by [@kristof-mattei](https://github.com/kristof-mattei) ([`ec8ae5a`](https://github.com/kristof-mattei/wsdd-rs/commit/ec8ae5abc3ac235e289ac0d0d6092f74592c2ab7))
 ## [0.6.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.5.0..v0.6.0) - 2026-09-05
 
 ### 🚀 Features
