@@ -320,11 +320,18 @@ async fn start_tasks(args: CliArgs) -> Shutdown {
     cancellation_token.cancel();
 
     // wait for the other tasks to shut down gracefully
-    if timeout(Duration::from_secs(10), tasks.wait())
-        .await
-        .is_err()
-    {
+    let drained = timeout(Duration::from_secs(10), tasks.wait()).await.is_ok();
+
+    if !drained {
         event!(Level::ERROR, "Tasks didn't stop within allotted time!");
+    }
+
+    // a shutdown that already reports a failure is returned unchanged
+    if !drained && matches!(shutdown_reason, Shutdown::Success | Shutdown::Signal(_)) {
+        return Shutdown::OperationalFailure {
+            code: ExitCode::FAILURE,
+            message: "Tasks didn't stop within the allotted time",
+        };
     }
 
     event!(Level::INFO, "Shutdown completed");

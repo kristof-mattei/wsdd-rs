@@ -76,6 +76,35 @@ pub async fn wait_for_sigint() -> Shutdown {
     }
 }
 
+/// Sets signal back to its default action and raises it, killing this process.
+/// Returns when the raise did not terminate the process: PID 1 of a PID namespace only receives signals it has a handler for, and the reset removes it.
+pub fn terminate_by_signal(signal: u8) {
+    let signum = c_int::from(signal);
+
+    // tokio's handler stays installed for the rest of the process (`Signal`'s caveats), so without this reset the raise runs it instead
+    // SAFETY: `signal(2)` with `SIG_DFL` has no preconditions
+    if unsafe { libc::signal(signum, libc::SIG_DFL) } == libc::SIG_ERR {
+        event!(
+            Level::ERROR,
+            error = %Error::last_os_error(),
+            signal,
+            "Failed to restore the default signal disposition"
+        );
+
+        return;
+    }
+
+    // SAFETY: `raise(3)` has no preconditions
+    if unsafe { libc::raise(signum) } != 0 {
+        event!(
+            Level::ERROR,
+            error = %Error::last_os_error(),
+            signal,
+            "Failed to raise the signal"
+        );
+    }
+}
+
 #[expect(unused, reason = "Unused")]
 /// Installs `sig_handler` for `signum` via `sigaction`.
 ///
@@ -133,4 +162,54 @@ pub unsafe fn set_up_handler(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::process::ExitStatusExt as _;
+    use std::process::{Command, Stdio};
+
+    use pretty_assertions::assert_eq;
+    use tokio::signal::unix::{SignalKind, signal};
+
+    use super::{SIGTERM, terminate_by_signal};
+
+    const CHILD_MARKER: &str = "WSDD_RS_TERMINATE_BY_SIGNAL_CHILD";
+
+    // the raise kills the calling process, so the scenario runs in a re-executed copy of this test binary
+    #[cfg_attr(not(miri), test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    fn dies_by_the_raised_signal_despite_tokio_handler() {
+        if std::env::var_os(CHILD_MARKER).is_some() {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_io()
+                .build()
+                .unwrap();
+
+            // installs tokio's handler, the case under test
+            runtime.block_on(async {
+                let _listener = signal(SignalKind::terminate()).unwrap();
+            });
+
+            drop(runtime);
+
+            terminate_by_signal(SIGTERM);
+
+            // surviving the raise exits 0, which fails the parent's assertion
+            return;
+        }
+
+        let status = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "signal_handlers::tests::dies_by_the_raised_signal_despite_tokio_handler",
+            ])
+            .env(CHILD_MARKER, "1")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .unwrap();
+
+        assert_eq!(status.signal(), Some(libc::SIGTERM));
+    }
 }
