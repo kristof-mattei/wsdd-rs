@@ -3,6 +3,8 @@ use std::process::{ExitCode, Termination};
 use color_eyre::eyre;
 use tracing::{Level, event};
 
+use crate::signal_handlers::terminate_by_signal;
+
 /// Represents all ways the application can terminate.
 pub enum Shutdown {
     #[expect(unused, reason = "Application is a daemon")]
@@ -41,15 +43,18 @@ impl Termination for Shutdown {
         match self {
             Shutdown::Success => ExitCode::SUCCESS,
             Shutdown::Signal(signal) => {
-                // 128 + n mirrors the shell convention for death by signal n.
-                // Supervisors that key on exit codes count this as failure unless allowed (systemd: SuccessExitStatus=).
-                let exit_code = ExitCode::from(signal + 128);
+                event!(Level::INFO, signal, "Terminating by re-raising the signal");
+
+                terminate_by_signal(signal);
+
+                // the process survived the raise, 128 + n is the shell's exit code for death by signal n
+                let exit_code = ExitCode::from(128 + signal);
 
                 event!(
-                    Level::INFO,
-                    signal = signal,
+                    Level::WARN,
+                    signal,
                     exit_code = ?exit_code,
-                    "Passing along exit signal"
+                    "Survived the re-raise, falling back to an exit code"
                 );
 
                 exit_code
