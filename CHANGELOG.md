@@ -1,4 +1,9 @@
 <!-- header goes here -->
+## [0.6.2](https://github.com/kristof-mattei/wsdd-rs/compare/v0.6.1..v0.6.2) - 2026-09-13
+
+### 💼 Other
+
+- Name the entrypoint binary after the application by [@kristof-mattei](https://github.com/kristof-mattei) ([`31126fc`](https://github.com/kristof-mattei/wsdd-rs/commit/31126fc1e47b47022d7fd6f7a190cde21ccd93b5))
 ## [0.6.1](https://github.com/kristof-mattei/wsdd-rs/compare/v0.6.0..v0.6.1) - 2026-09-12
 
 ### 🐛 Bug Fixes
