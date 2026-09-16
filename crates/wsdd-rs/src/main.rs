@@ -74,11 +74,13 @@ fn build_filter() -> (EnvFilter, Option<eyre::Report>) {
     }
 
     match env::var(EnvFilter::DEFAULT_ENV) {
-        Ok(user_directive) => match EnvFilter::builder().parse(user_directive) {
-            Ok(filter) => (filter, None),
-            Err(error) => (build_default_filter(), Some(eyre::Report::new(error))),
+        Ok(user_directive) if !user_directive.is_empty() => {
+            match EnvFilter::builder().parse(user_directive) {
+                Ok(filter) => (filter, None),
+                Err(error) => (build_default_filter(), Some(eyre::Report::new(error))),
+            }
         },
-        Err(VarError::NotPresent) => (build_default_filter(), None),
+        Ok(_) | Err(VarError::NotPresent) => (build_default_filter(), None),
         Err(error @ VarError::NotUnicode(_)) => {
             (build_default_filter(), Some(eyre::Report::new(error)))
         },
