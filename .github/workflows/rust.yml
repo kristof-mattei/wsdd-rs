@@ -115,6 +115,7 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       checks: write # publish-unit-test-result-action creates a check run
+      code-quality: write # upload-code-coverage publishes the coverage report
       contents: read
       id-token: write # codecov-action authenticates over OIDC
       issues: read # publish-unit-test-result-action needs this in private repos
@@ -192,13 +193,22 @@ jobs:
             --keep-only "crates/**" \
             --llvm \
             --output-path ./reports/ \
-            --output-type lcov \
+            --output-type cobertura \
             --source-dir .
 
       - name: Record Rust version
         shell: bash
         run: |
+          ls -l reports/
+          ls -l reports/cobertura
+
           echo "RUST=$(rustc --version)" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-code-coverage@f8bb4848421d758cb893e8e371d261678618a754 # v1.4.1
+        with:
+          file: reports/cobertura/cobertura.xml
+          language: Rust
+          label: code-coverage
 
       - name: Upload coverage results (to Codecov.io)
         # fork PRs run without id-token, so OIDC upload cannot work. Push runs must keep uploading to preserve base coverage
@@ -212,7 +222,7 @@ jobs:
           env_vars: RUNNER_OS,RUST
           fail_ci_if_error: true
           flags: tests
-          files: reports/lcov
+          files: reports/cobertura
           name: code-coverage
           plugins: noop
           report_type: "coverage"
