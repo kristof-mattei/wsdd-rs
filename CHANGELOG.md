@@ -1,4 +1,18 @@
 <!-- header goes here -->
+## [0.6.3](https://github.com/kristof-mattei/wsdd-rs/compare/v0.6.2..v0.6.3) - 2026-09-18
+
+### 🐛 Bug Fixes
+
+- Treat an empty `RUST_LOG` like an absent one by [@kristof-mattei](https://github.com/kristof-mattei) ([`d40aa50`](https://github.com/kristof-mattei/wsdd-rs/commit/d40aa50968ad00492a119a1398f612504e7418a9))
+- Treat an empty or blank `RUST_LOG` like an absent one by [@kristof-mattei](https://github.com/kristof-mattei) ([`5491710`](https://github.com/kristof-mattei/wsdd-rs/commit/54917103cba4960cfaee44e57bbe1a2d333c865a))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(codeql)* Install mold before the Rust analysis by [@kristof-mattei](https://github.com/kristof-mattei) ([`57ea65e`](https://github.com/kristof-mattei/wsdd-rs/commit/57ea65e196db2aa5643351b8f5de254ad035cba6))
+- *(codeql)* Analyze the Rust code for FreeBSD as well by [@kristof-mattei](https://github.com/kristof-mattei) ([`04370f2`](https://github.com/kristof-mattei/wsdd-rs/commit/04370f20424b2143fc20318d8e5f32282a06b76e))
+- *(release)* Copy the container to Docker Hub from a `docker-io` environment that links to the released tags by [@kristof-mattei](https://github.com/kristof-mattei) ([`0e842b0`](https://github.com/kristof-mattei/wsdd-rs/commit/0e842b00a4b6b771dfc406af570eae697cf3337e))
+- Add the `authors` and `vendor` OCI labels to the container by [@kristof-mattei](https://github.com/kristof-mattei) ([`c99a47a`](https://github.com/kristof-mattei/wsdd-rs/commit/c99a47add3497590e832ec4c69e4027a13afa808))
+- Annotate the deb artifact with `authors`, `revision`, `source` and `vendor` by [@kristof-mattei](https://github.com/kristof-mattei) ([`6b3596e`](https://github.com/kristof-mattei/wsdd-rs/commit/6b3596e797b4bcb6955459ebc04ed534fe4d7ef9))
 ## [0.6.2](https://github.com/kristof-mattei/wsdd-rs/compare/v0.6.1..v0.6.2) - 2026-09-13
 
 ### 💼 Other
@@ -76,6 +90,7 @@
 - Reset permissions in all-done by [@kristof-mattei](https://github.com/kristof-mattei) ([`309ccc2`](https://github.com/kristof-mattei/wsdd-rs/commit/309ccc2e1ddf497ba29169daae21b4c210dd927b))
 - Explicitly wait for the miri tests to past in rust.yml by [@kristof-mattei](https://github.com/kristof-mattei) ([`1a13db3`](https://github.com/kristof-mattei/wsdd-rs/commit/1a13db37b013c415aa6d777d88bb7a42e628ffea))
 - The aggregator should not be allowed to read anything by [@kristof-mattei](https://github.com/kristof-mattei) ([`cea3733`](https://github.com/kristof-mattei/wsdd-rs/commit/cea373369aed7f97161816dd505df8535c2fedc4))
+- Update dictionary by [@kristof-mattei](https://github.com/kristof-mattei) ([`7d8dfb3`](https://github.com/kristof-mattei/wsdd-rs/commit/7d8dfb3132bff15ec3d5f0a8f79279fcceb0a5a7))
 - Bolster signals by [@kristof-mattei](https://github.com/kristof-mattei) ([`6fbae10`](https://github.com/kristof-mattei/wsdd-rs/commit/6fbae10b87291afc8fb6cb302eae5756574ac014))
 - Compute version bump offline with git-cliff by [@kristof-mattei](https://github.com/kristof-mattei) ([`5fd481c`](https://github.com/kristof-mattei/wsdd-rs/commit/5fd481c61d030d20bdcaa26f2cdd1aaf8db607f2))
 - Update from upstream by [@kristof-mattei](https://github.com/kristof-mattei) ([`225bfad`](https://github.com/kristof-mattei/wsdd-rs/commit/225bfadfcbeed2c61e7d997d2c0f2f58f8d61b4e))
@@ -150,6 +165,8 @@
 - Cspell by [@kristof-mattei](https://github.com/kristof-mattei) ([`9f5797a`](https://github.com/kristof-mattei/wsdd-rs/commit/9f5797a16adf5f2880b5bbdea2827ad7cf465688))
 - Fix old merge issue by [@kristof-mattei](https://github.com/kristof-mattei) ([`0aa3a80`](https://github.com/kristof-mattei/wsdd-rs/commit/0aa3a803d23a365c7d6c6798bc18681f98a38c32))
 - Remove copilot instructions as copilot is now behind a paywall by [@kristof-mattei](https://github.com/kristof-mattei) ([`8a34ae2`](https://github.com/kristof-mattei/wsdd-rs/commit/8a34ae290dfdb5ddf5d2b73eeca90a14146f3e9b))
+- Remove unused word by [@kristof-mattei](https://github.com/kristof-mattei) ([`4cf5b2d`](https://github.com/kristof-mattei/wsdd-rs/commit/4cf5b2dbd13e7d5f8143634ffaa773f10175141c))
+- Update dictionary by [@kristof-mattei](https://github.com/kristof-mattei) ([`e7f3adf`](https://github.com/kristof-mattei/wsdd-rs/commit/e7f3adf73bd90fcf5c8312052e247aafa3bb5dea))
 
 ### 💼 Other
 
@@ -164,6 +181,10 @@
 - *(deps)* Update rust crate uuid to 1.23.4 by [@renovate[bot]](https://github.com/renovate[bot]) ([`bf9e07a`](https://github.com/kristof-mattei/wsdd-rs/commit/bf9e07a72c4f1d92dc4adcafac29bf8e25da0144))
 - *(deps)* Pin dependencies by [@renovate[bot]](https://github.com/renovate[bot]) ([`0c7037d`](https://github.com/kristof-mattei/wsdd-rs/commit/0c7037da1d97e611a51bc0e8be54706c03620a49))
 - *(deps)* Update rust crate time to v0.3.53 by [@renovate[bot]](https://github.com/renovate[bot]) ([`1a46bb2`](https://github.com/kristof-mattei/wsdd-rs/commit/1a46bb270792fe2b5076c17f7ea1b9cfaec6746f))
+
+### ⚙️ Miscellaneous Tasks
+
+- Tasks.json should not be executable by [@kristof-mattei](https://github.com/kristof-mattei) ([`5527290`](https://github.com/kristof-mattei/wsdd-rs/commit/552729080cf37c4ef92e90228e73971c42540bd9))
 ## [0.4.3](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.2..v0.4.3) - 2026-06-02
 
 ### 🐛 Bug Fixes
@@ -342,6 +363,7 @@
 - Remove test by [@kristof-mattei](https://github.com/kristof-mattei) ([`c73b6d6`](https://github.com/kristof-mattei/wsdd-rs/commit/c73b6d6d7181b52e65b4e94f37bbde8ddeabac74))
 - Not needed by [@kristof-mattei](https://github.com/kristof-mattei) ([`e92df85`](https://github.com/kristof-mattei/wsdd-rs/commit/e92df85de4a37e42e9774e6f983c27ebdf09b3c2))
 - Remove suprious newline by [@kristof-mattei](https://github.com/kristof-mattei) ([`be7faa7`](https://github.com/kristof-mattei/wsdd-rs/commit/be7faa7228268d8f0b97fdb7348ac2a552e3c6c6))
+- Sort by [@kristof-mattei](https://github.com/kristof-mattei) ([`a8b16ab`](https://github.com/kristof-mattei/wsdd-rs/commit/a8b16abc3b307557d1728ff6a5d6f8f217498382))
 - Move build cache by [@kristof-mattei](https://github.com/kristof-mattei) ([`0ab1328`](https://github.com/kristof-mattei/wsdd-rs/commit/0ab1328687c12bf15ae3e21bb031a2d38632c4c8))
 - Rename by [@kristof-mattei](https://github.com/kristof-mattei) ([`6544b67`](https://github.com/kristof-mattei/wsdd-rs/commit/6544b67f89b757a1a86986291fd1efef42f07445))
 - Stop skopeo from trying to infer type by [@kristof-mattei](https://github.com/kristof-mattei) ([`66ca282`](https://github.com/kristof-mattei/wsdd-rs/commit/66ca282f0a4adcd2a4ee63f8ad69c9c822ac88ac))
@@ -400,6 +422,8 @@
 - Clean up ignore by [@kristof-mattei](https://github.com/kristof-mattei) ([`404a01e`](https://github.com/kristof-mattei/wsdd-rs/commit/404a01e12c18e72240ce1f85a49ee6aa8fc9e403))
 - Rust 1.94.0 Docker by [@kristof-mattei](https://github.com/kristof-mattei) ([`9427eb1`](https://github.com/kristof-mattei/wsdd-rs/commit/9427eb18b46bf01da1357e3d83312f0846aa42ae))
 - Pin sha for Rust image by [@kristof-mattei](https://github.com/kristof-mattei) ([`e2986db`](https://github.com/kristof-mattei/wsdd-rs/commit/e2986db43914999be69f279056fd5be0908f7216))
+- Use trixie as dev image by [@kristof-mattei](https://github.com/kristof-mattei) ([`caa35f4`](https://github.com/kristof-mattei/wsdd-rs/commit/caa35f407f67a6bf86e45f83735ec9a5d31df207))
+- Devcontainer mold by [@kristof-mattei](https://github.com/kristof-mattei) ([`d4a14c0`](https://github.com/kristof-mattei/wsdd-rs/commit/d4a14c05f92ed61bad93d07ce0ab095b282d0111))
 ## [0.1.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.0.2..v0.1.0) - 2026-02-18
 
 ### 🚀 Features
@@ -451,6 +475,7 @@
 - Rust 1.60.0 by [@kristof-mattei](https://github.com/kristof-mattei) ([`0180532`](https://github.com/kristof-mattei/wsdd-rs/commit/0180532b1e432662ccb7908ebc98d39ad501a227))
 - Rust 1.61.0 by [@kristof-mattei](https://github.com/kristof-mattei) ([`c130478`](https://github.com/kristof-mattei/wsdd-rs/commit/c130478ad91eaf6b1cea04a2cfe57f6e926efa92))
 - Upgrade semgrep to latest version by [@kristof-mattei](https://github.com/kristof-mattei) ([`c7dc4f5`](https://github.com/kristof-mattei/wsdd-rs/commit/c7dc4f5bf96c15784a6b6b5c7ff260a15f244dcd))
+- Devcontainer by [@kristof-mattei](https://github.com/kristof-mattei) ([`1d77ed5`](https://github.com/kristof-mattei/wsdd-rs/commit/1d77ed59fbf4915e3b1393867d56ec36a22f9b42))
 - More rust 1.62 by [@kristof-mattei](https://github.com/kristof-mattei) ([`628756b`](https://github.com/kristof-mattei/wsdd-rs/commit/628756bf8790f9ffe84ac5cb3ff37baac70c7fcc))
 - Sync-repo-settings first pass by [@kristof-mattei](https://github.com/kristof-mattei) ([`0d88baa`](https://github.com/kristof-mattei/wsdd-rs/commit/0d88baa34a3d7b167028941aafdf32e5c464b9c2))
 - Generalize dockerfile by [@kristof-mattei](https://github.com/kristof-mattei) ([`be4e9a5`](https://github.com/kristof-mattei/wsdd-rs/commit/be4e9a5fe9cc34bcd239080845ace4c6a631ba97))
@@ -589,6 +614,7 @@
 - *(deps)* Update rust crate clap to 4.5.58 by [@renovate[bot]](https://github.com/renovate[bot]) ([`44dd287`](https://github.com/kristof-mattei/wsdd-rs/commit/44dd287912091724773f2df12ad227609efc4dd6))
 - *(upstream)* Devices are stored based on an opaque urn, not a UUID urn by [@kristof-mattei](https://github.com/kristof-mattei) ([`8622dc1`](https://github.com/kristof-mattei/wsdd-rs/commit/8622dc1857b1561d8503a329d4499a780796d96a))
 - Enabled codecov by [@kristof-mattei](https://github.com/kristof-mattei) ([`70a7b60`](https://github.com/kristof-mattei/wsdd-rs/commit/70a7b60de32c66a3c0315f67d0f8278d91fc797a))
+- Codecov by [@kristof-mattei](https://github.com/kristof-mattei) ([`1f6458f`](https://github.com/kristof-mattei/wsdd-rs/commit/1f6458f7eeb0ba5dd85d02ebcd67734c4dbd5623))
 - Bumped cargo version by [@kristof-mattei](https://github.com/kristof-mattei) ([`f47f7d0`](https://github.com/kristof-mattei/wsdd-rs/commit/f47f7d0d5f7c6ba227002ba705a58f2fdf05aa2b))
 - Username.toLowerCase() by [@kristof-mattei](https://github.com/kristof-mattei) ([`3c41052`](https://github.com/kristof-mattei/wsdd-rs/commit/3c410523e2c154652a3564511bbc90fde0710bb3))
 - Make sure husky doesn't install on CI servers by [@kristof-mattei](https://github.com/kristof-mattei) ([`6908d84`](https://github.com/kristof-mattei/wsdd-rs/commit/6908d84e175ffab99bd18227bcbd515e0020c778))
@@ -602,6 +628,7 @@
 - Forgot to put back line to add SHA to $env by [@kristof-mattei](https://github.com/kristof-mattei) ([`5e2a12a`](https://github.com/kristof-mattei/wsdd-rs/commit/5e2a12a1eea0baa55a445077396f9468a1a16e3e))
 - --quiet isn't quiet by [@kristof-mattei](https://github.com/kristof-mattei) ([`764ef0a`](https://github.com/kristof-mattei/wsdd-rs/commit/764ef0ab2140b0b80cf53b476ba6525b3a873b4e))
 - Initialize otherwise EXITCODE is not set on success, and then it still fails 😅 by [@kristof-mattei](https://github.com/kristof-mattei) ([`6658ea7`](https://github.com/kristof-mattei/wsdd-rs/commit/6658ea7799a523b54b122ff6c8d5a33a18e2c7c6))
+- Fake commit by [@kristof-mattei](https://github.com/kristof-mattei) ([`80eec6e`](https://github.com/kristof-mattei/wsdd-rs/commit/80eec6ed5bdf245ca071780face928adf95848f4))
 - Centralized names by [@kristof-mattei](https://github.com/kristof-mattei) ([`2e2345b`](https://github.com/kristof-mattei/wsdd-rs/commit/2e2345b2f1337ed5c99dea090d94de2b4b932949))
 - Removed submodules, going direct by [@kristof-mattei](https://github.com/kristof-mattei) ([`2e2a71c`](https://github.com/kristof-mattei/wsdd-rs/commit/2e2a71c68a23764369cf67dfc485c9a76372dad2))
 - Switched to fixed commits for actions by [@kristof-mattei](https://github.com/kristof-mattei) ([`2bd59a8`](https://github.com/kristof-mattei/wsdd-rs/commit/2bd59a85d847c6cbe5ce39038e25666c99086674))
@@ -741,7 +768,11 @@
 - Comment indent by [@kristof-mattei](https://github.com/kristof-mattei) ([`aff7168`](https://github.com/kristof-mattei/wsdd-rs/commit/aff7168b45600424fed73fb582001cf55c2e2cd3))
 - Don't retag when we don't build a container by [@kristof-mattei](https://github.com/kristof-mattei) ([`fe1a006`](https://github.com/kristof-mattei/wsdd-rs/commit/fe1a006c3d9e9d95f0d8cef01555d3a4c303e92a))
 - Set maximum backtrace by [@kristof-mattei](https://github.com/kristof-mattei) ([`cd44fe2`](https://github.com/kristof-mattei/wsdd-rs/commit/cd44fe2ab070d930dea9b1040a5e57ec9276ed34))
+- Also do RUST_BACKTRACE=full for debugging by [@kristof-mattei](https://github.com/kristof-mattei) ([`fde9619`](https://github.com/kristof-mattei/wsdd-rs/commit/fde9619668b4eb33ad41e0265c8ff5cae164001e))
+- Build all with tests too by [@kristof-mattei](https://github.com/kristof-mattei) ([`2fdf062`](https://github.com/kristof-mattei/wsdd-rs/commit/2fdf062917c86c9ffebbd81b3b9bb8720aa841ef))
+- Trace for all, not just the app by [@kristof-mattei](https://github.com/kristof-mattei) ([`e92d8c0`](https://github.com/kristof-mattei/wsdd-rs/commit/e92d8c04661c0a06a6932a701ba7fc4e0f731fc2))
 - Default is to use color-eyre by [@kristof-mattei](https://github.com/kristof-mattei) ([`9ec7951`](https://github.com/kristof-mattei/wsdd-rs/commit/9ec795182352fc168b18cd5a9fd623b1930494f3))
+- Trace for run and test by [@kristof-mattei](https://github.com/kristof-mattei) ([`57bb0f1`](https://github.com/kristof-mattei/wsdd-rs/commit/57bb0f18bcf3c360eca25ee5aeeb61ac37000d46))
 - Add update-name script by [@kristof-mattei](https://github.com/kristof-mattei) ([`57e5023`](https://github.com/kristof-mattei/wsdd-rs/commit/57e502335d9e4f409054ed5ecfb7d1ad8ab1d2d9))
 - Coveralls as CodeCov keeps on failing by [@kristof-mattei](https://github.com/kristof-mattei) ([`fab1710`](https://github.com/kristof-mattei/wsdd-rs/commit/fab171080b3de6c51c4bc7531699841534366f8a))
 - Specify version, Renovate will pin it by [@kristof-mattei](https://github.com/kristof-mattei) ([`2a44ecb`](https://github.com/kristof-mattei/wsdd-rs/commit/2a44ecbc3cbca50f1fddaf65ec4633b762384ef1))
@@ -750,6 +781,7 @@
 - Get application name automatically by [@kristof-mattei](https://github.com/kristof-mattei) ([`5f71149`](https://github.com/kristof-mattei/wsdd-rs/commit/5f71149c9c86a79155fe7180c8fc7e154febbca3))
 - Remove unneeded newline by [@kristof-mattei](https://github.com/kristof-mattei) ([`4a3fe57`](https://github.com/kristof-mattei/wsdd-rs/commit/4a3fe575e0eb6d3a254a5041ccba662ddcbcbdcd))
 - We don't use .idea config by [@kristof-mattei](https://github.com/kristof-mattei) ([`4d22e96`](https://github.com/kristof-mattei/wsdd-rs/commit/4d22e96241230cf0406dfc2cb3199b38acd2bad3))
+- Better defaults by [@kristof-mattei](https://github.com/kristof-mattei) ([`0c8b4a7`](https://github.com/kristof-mattei/wsdd-rs/commit/0c8b4a74b7e969af7b5b696ba9300b0b6cd31a85))
 - Consolidate clippy & rust config on top of main, all the rest causes duplication by [@kristof-mattei](https://github.com/kristof-mattei) ([`e158e41`](https://github.com/kristof-mattei/wsdd-rs/commit/e158e41a05171aadc4a36bed4f40685e9f15a8fc))
 - Don't show progress by [@kristof-mattei](https://github.com/kristof-mattei) ([`2be0887`](https://github.com/kristof-mattei/wsdd-rs/commit/2be088747fc874dad816ed60d0e49dbf3390e0bb))
 - Workflow_dispatch does not take a branch by [@kristof-mattei](https://github.com/kristof-mattei) ([`7cb9b28`](https://github.com/kristof-mattei/wsdd-rs/commit/7cb9b2833bc904c936e96cb57d091262d3246933))
@@ -976,7 +1008,9 @@
 - Update variant message by [@kristof-mattei](https://github.com/kristof-mattei) ([`038ba20`](https://github.com/kristof-mattei/wsdd-rs/commit/038ba2018651aba5bfc144ed2068b96f2a74d572))
 - Updated some cargo settings by [@kristof-mattei](https://github.com/kristof-mattei) ([`f6160d4`](https://github.com/kristof-mattei/wsdd-rs/commit/f6160d4250aa054e7b78eea5bcb8d1def4928237))
 - Update assert message by [@kristof-mattei](https://github.com/kristof-mattei) ([`2d7cd35`](https://github.com/kristof-mattei/wsdd-rs/commit/2d7cd358104231ae945a8c64760c7f69ba6c9d67))
+- Regenerate launch.json by [@kristof-mattei](https://github.com/kristof-mattei) ([`401c374`](https://github.com/kristof-mattei/wsdd-rs/commit/401c374aacc2a2d46c65dad30537dace5f8f5849))
 - String_to_string is deprecated and fails in 1.91.0 by [@kristof-mattei](https://github.com/kristof-mattei) ([`ebfba18`](https://github.com/kristof-mattei/wsdd-rs/commit/ebfba184701e819f7b0700d0e86b55c06f20c55c))
+- Regenerate launch.json by [@kristof-mattei](https://github.com/kristof-mattei) ([`bf8b4b3`](https://github.com/kristof-mattei/wsdd-rs/commit/bf8b4b3d753ab0690b1670efa31370df4e837f94))
 - Update build_env by [@kristof-mattei](https://github.com/kristof-mattei) ([`75149fe`](https://github.com/kristof-mattei/wsdd-rs/commit/75149fea98ba64e5679877bf4669c25ebdfac96a))
 - Limit amount of concurrent builds to reduce pressure by [@kristof-mattei](https://github.com/kristof-mattei) ([`8f67f94`](https://github.com/kristof-mattei/wsdd-rs/commit/8f67f94909e191e8ba75a2d21f8d415d779ef5a5))
 - Retry final docker push by [@kristof-mattei](https://github.com/kristof-mattei) ([`c49e870`](https://github.com/kristof-mattei/wsdd-rs/commit/c49e870692a536f7f261fb47ef14b1921aac16ab))
@@ -1129,9 +1163,12 @@
 
 ### 🧪 Testing
 
+- Sign with GPG signature by [@kristof-mattei](https://github.com/kristof-mattei) ([`979cd32`](https://github.com/kristof-mattei/wsdd-rs/commit/979cd322c6433c7f9200ed36c0deb84ab02b0706))
+- Sign with GPG signature by [@kristof-mattei](https://github.com/kristof-mattei) ([`63d0aa2`](https://github.com/kristof-mattei/wsdd-rs/commit/63d0aa281c26653cb62b1e7416fc047fe72c589a))
 - Flow by [@kristof-mattei](https://github.com/kristof-mattei) ([`9e940fb`](https://github.com/kristof-mattei/wsdd-rs/commit/9e940fbe55fa07e3b24358b023720ba2d73d8c86))
 - Print changelog.md by [@kristof-mattei](https://github.com/kristof-mattei) ([`ce90089`](https://github.com/kristof-mattei/wsdd-rs/commit/ce900894ee712c58c14955ec4bfa9b90b0c050e8))
 - Failure test by [@kristof-mattei](https://github.com/kristof-mattei) ([`fc23c01`](https://github.com/kristof-mattei/wsdd-rs/commit/fc23c01aee19e787bf952f9ce9b2205e62ff15cc))
+- Trigger build by [@kristof-mattei](https://github.com/kristof-mattei) ([`8ea2267`](https://github.com/kristof-mattei/wsdd-rs/commit/8ea226738eb615fce0abdffc37ef8cd01c6fabe6))
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -1236,8 +1273,10 @@
 - Set nice name by [@kristof-mattei](https://github.com/kristof-mattei) ([`22f0bca`](https://github.com/kristof-mattei/wsdd-rs/commit/22f0bcaf26b62359c2afd18cfad6fb280baf3d85))
 - Removed unneeded comments by [@kristof-mattei](https://github.com/kristof-mattei) ([`dca69dc`](https://github.com/kristof-mattei/wsdd-rs/commit/dca69dc3ea2cbacb0a490e011c8c5a385ebf7c51))
 - Exclude rustfmt and cargo-fmt from the cache as rustup doesn't like that by [@kristof-mattei](https://github.com/kristof-mattei) ([`d95f77f`](https://github.com/kristof-mattei/wsdd-rs/commit/d95f77ffd16ffa56db736e564928aa4726a7c224))
+- Use built-in rustup by [@kristof-mattei](https://github.com/kristof-mattei) ([`5a98432`](https://github.com/kristof-mattei/wsdd-rs/commit/5a9843252f358198ac7b43bb06825052e7be3fa7))
 - Exclude rustfmt and cargo-fmt from the cache as rustup doesn't like that by [@kristof-mattei](https://github.com/kristof-mattei) ([`2c04592`](https://github.com/kristof-mattei/wsdd-rs/commit/2c04592da28a24dc92b3f1025345654ed51d84cb))
 - Run prettier by [@kristof-mattei](https://github.com/kristof-mattei) ([`46ff0fb`](https://github.com/kristof-mattei/wsdd-rs/commit/46ff0fb4c6b3f3509f42798b1b9adbd59617f0b4))
+- Don't clean before clippy, not needed by [@kristof-mattei](https://github.com/kristof-mattei) ([`253afc2`](https://github.com/kristof-mattei/wsdd-rs/commit/253afc287d6ce9aafd9d906066a54410270ef80e))
 - Don't consider it 'all-done' when anything is cancelled by [@kristof-mattei](https://github.com/kristof-mattei) ([`4fdc19d`](https://github.com/kristof-mattei/wsdd-rs/commit/4fdc19df0990801ebaf40f25fa955eb22f3f1946))
 - Also rebuild on cargo.lock changes by [@kristof-mattei](https://github.com/kristof-mattei) ([`b196ad4`](https://github.com/kristof-mattei/wsdd-rs/commit/b196ad45b3b648f7588091e083df970f896b8185))
 - Updated npm packages by [@kristof-mattei](https://github.com/kristof-mattei) ([`79e5129`](https://github.com/kristof-mattei/wsdd-rs/commit/79e5129e640c62201cc72d4807e3ff44a8ad2033))
@@ -1250,7 +1289,9 @@
 - Correctly report test failure by [@kristof-mattei](https://github.com/kristof-mattei) ([`6250142`](https://github.com/kristof-mattei/wsdd-rs/commit/6250142008a5f74fad09c6088fa64ec87d5c49a5))
 - Also update cargo & toolchain by [@kristof-mattei](https://github.com/kristof-mattei) ([`291be2a`](https://github.com/kristof-mattei/wsdd-rs/commit/291be2aa3dd1d15c726686b0dd71ff2e35bff341))
 - Fail done properly by [@kristof-mattei](https://github.com/kristof-mattei) ([`9a420bf`](https://github.com/kristof-mattei/wsdd-rs/commit/9a420bf23ae315b64a7a0d20734de30db6ac01df))
+- Made task file rust-analyzer compliant by [@kristof-mattei](https://github.com/kristof-mattei) ([`6f244be`](https://github.com/kristof-mattei/wsdd-rs/commit/6f244beea8c5c8232b66f51bb1dcd0d42759d223))
 - Spacing and remove verbose by [@kristof-mattei](https://github.com/kristof-mattei) ([`abceeeb`](https://github.com/kristof-mattei/wsdd-rs/commit/abceeeb0e023cd1629df3540fe5f9d310b8dbd36))
+- Add release test script by [@kristof-mattei](https://github.com/kristof-mattei) ([`0918c90`](https://github.com/kristof-mattei/wsdd-rs/commit/0918c90afafcb26396983767979f08dc46d5d7c0))
 - Consolidated extensions by [@kristof-mattei](https://github.com/kristof-mattei) ([`7ebc90c`](https://github.com/kristof-mattei/wsdd-rs/commit/7ebc90c506e2570c0ec92145c4b4a6d23270c2cf))
 - Add title (name) to step by [@kristof-mattei](https://github.com/kristof-mattei) ([`8f4396d`](https://github.com/kristof-mattei/wsdd-rs/commit/8f4396d247c865897e0088c6af23a54a0affef7c))
 - Docker images names should always be lowercase by [@kristof-mattei](https://github.com/kristof-mattei) ([`9932b72`](https://github.com/kristof-mattei/wsdd-rs/commit/9932b72ad08d8a5eeacc0946b1fc367320c9e19f))
@@ -1276,6 +1317,7 @@
 - Restored codecov, remove executable modifier by [@kristof-mattei](https://github.com/kristof-mattei) ([`b45eb0f`](https://github.com/kristof-mattei/wsdd-rs/commit/b45eb0f353f1928990d23fd54996ed97b70e1c61))
 - Disable coveralls & codecov by [@kristof-mattei](https://github.com/kristof-mattei) ([`c43c49a`](https://github.com/kristof-mattei/wsdd-rs/commit/c43c49a500d053d5c1d2a5861a8ffa8d44281093))
 - Put versions so that renovate can tag correctly by [@kristof-mattei](https://github.com/kristof-mattei) ([`dce5fd5`](https://github.com/kristof-mattei/wsdd-rs/commit/dce5fd57af8aa1a1a7722f4bfedc42e7be29a306))
+- Remove variable from dockerfile by [@kristof-mattei](https://github.com/kristof-mattei) ([`1a47885`](https://github.com/kristof-mattei/wsdd-rs/commit/1a478854622fd3426534ebceac142ac2b633eaf5))
 - Try codecov again by [@kristof-mattei](https://github.com/kristof-mattei) ([`f53b8db`](https://github.com/kristof-mattei/wsdd-rs/commit/f53b8dbce2882cfdbff917b4ee2261bc7fa47ad2))
 - Node v18 by [@kristof-mattei](https://github.com/kristof-mattei) ([`33b78ea`](https://github.com/kristof-mattei/wsdd-rs/commit/33b78ea423dedd7d25bfc96395aa1f532347afa3))
 - Bump package-lock.json by [@kristof-mattei](https://github.com/kristof-mattei) ([`1e0d6eb`](https://github.com/kristof-mattei/wsdd-rs/commit/1e0d6eb569c0928fc17eba447bf64a4fe6e4f809))
@@ -1293,8 +1335,12 @@
 - Pin mold by [@kristof-mattei](https://github.com/kristof-mattei) ([`6222e7a`](https://github.com/kristof-mattei/wsdd-rs/commit/6222e7a5d096509d7b714b152c1dbfc4a5f32692))
 - Disable function-next-line formatting, it looks weird by [@kristof-mattei](https://github.com/kristof-mattei) ([`1eb4dd2`](https://github.com/kristof-mattei/wsdd-rs/commit/1eb4dd2f28f2e6955ba36f09e464e6891b6d4c2c))
 - Rename nextversion to next_version by [@kristof-mattei](https://github.com/kristof-mattei) ([`4821da4`](https://github.com/kristof-mattei/wsdd-rs/commit/4821da4b016aa974cffaf974c43165b504c1f125))
+- Ensure run and debug from main add the right LOG settings by [@kristof-mattei](https://github.com/kristof-mattei) ([`d271883`](https://github.com/kristof-mattei/wsdd-rs/commit/d27188314fa89fdcac88034f612d5bce6a13bcb4))
+- Console isn't useful, updated casing of levels by [@kristof-mattei](https://github.com/kristof-mattei) ([`0cb31d5`](https://github.com/kristof-mattei/wsdd-rs/commit/0cb31d5840aaf7672d71398a96e119fbc9d9a722))
 - No trailing commas in json by [@kristof-mattei](https://github.com/kristof-mattei) ([`a7b01be`](https://github.com/kristof-mattei/wsdd-rs/commit/a7b01be89742c69a3a671fba6f674d7895cec524))
+- Use internal console, not the terminal for debugging by [@kristof-mattei](https://github.com/kristof-mattei) ([`33e467c`](https://github.com/kristof-mattei/wsdd-rs/commit/33e467c0afbef21f88e46190f86ad01431cb41aa))
 - Fix startColumn/endColumn being 0. Is invalid. Normalize json file for diffing, ignore output. Diff is expected by [@kristof-mattei](https://github.com/kristof-mattei) ([`d37020f`](https://github.com/kristof-mattei/wsdd-rs/commit/d37020fdd19bd9f2d7348fd7b9553dd0921afa6f))
+- Explicitely set prettierrc's path by [@kristof-mattei](https://github.com/kristof-mattei) ([`3787f7f`](https://github.com/kristof-mattei/wsdd-rs/commit/3787f7f1842f1b72aad3ad93a86af660c438f138))
 - Align title by [@kristof-mattei](https://github.com/kristof-mattei) ([`0a560bf`](https://github.com/kristof-mattei/wsdd-rs/commit/0a560bf62205abac716b75abe3a54d1776fbca81))
 - Checkout to satisfy the codeql tool by [@kristof-mattei](https://github.com/kristof-mattei) ([`d6f858a`](https://github.com/kristof-mattei/wsdd-rs/commit/d6f858a3a1f026bb0c219e0dfdc199f3b3676af6))
 - Rename semgrep job to make it register with semgrep by [@kristof-mattei](https://github.com/kristof-mattei) ([`9720764`](https://github.com/kristof-mattei/wsdd-rs/commit/9720764f82f17f202c8886bd638cf0faa36c4897))
@@ -1381,6 +1427,8 @@
 - Clippy 1.86 fixes by [@kristof-mattei](https://github.com/kristof-mattei) ([`1ba9e82`](https://github.com/kristof-mattei/wsdd-rs/commit/1ba9e82c8de2d8fd2ba93018639ec3683e95c9e6))
 - Clippy 1.86 fixes by [@kristof-mattei](https://github.com/kristof-mattei) ([`86028aa`](https://github.com/kristof-mattei/wsdd-rs/commit/86028aa67c6c277525a822b36fe43bf1e7f4bba1))
 - Disable required signatures by [@kristof-mattei](https://github.com/kristof-mattei) ([`445e425`](https://github.com/kristof-mattei/wsdd-rs/commit/445e4253a7dcbe8fac577cdcaff328466590abe1))
+- Prepare for upstream merge by [@kristof-mattei](https://github.com/kristof-mattei) ([`54ecb3c`](https://github.com/kristof-mattei/wsdd-rs/commit/54ecb3cd94d78821745ff857660d97d409388ace))
+- Set default debug visualizer by [@kristof-mattei](https://github.com/kristof-mattei) ([`6941793`](https://github.com/kristof-mattei/wsdd-rs/commit/69417931ad3e2506dbee9732bef5b1ef9649c885))
 - Update debug setup by [@kristof-mattei](https://github.com/kristof-mattei) ([`59756b7`](https://github.com/kristof-mattei/wsdd-rs/commit/59756b712762276d2032290b7d24f3a9e900d059))
 - Formatting by [@kristof-mattei](https://github.com/kristof-mattei) ([`a41e50f`](https://github.com/kristof-mattei/wsdd-rs/commit/a41e50fde3e06f2e2172a38fde07f518748923c7))
 - Disable let_and_return by [@kristof-mattei](https://github.com/kristof-mattei) ([`5c07fd8`](https://github.com/kristof-mattei/wsdd-rs/commit/5c07fd84c7e20b87255c41e2868cb8abe5333b5d))
@@ -1446,6 +1494,8 @@
 - Resolve comparison by [@kristof-mattei](https://github.com/kristof-mattei) ([`63121e3`](https://github.com/kristof-mattei/wsdd-rs/commit/63121e36ce32f16d94482e284e95c36a693a45d1))
 - Remove lldb-prettifier built as part of repo, use shared config by [@kristof-mattei](https://github.com/kristof-mattei) ([`8a7e110`](https://github.com/kristof-mattei/wsdd-rs/commit/8a7e110376c9a57b26a0a3ab9540b466394a8290))
 - Fmt by [@kristof-mattei](https://github.com/kristof-mattei) ([`3d4e946`](https://github.com/kristof-mattei/wsdd-rs/commit/3d4e9462ada1800d8c22b210ba56ce28758770ec))
+- Remove submodule folder by [@kristof-mattei](https://github.com/kristof-mattei) ([`f6e5d3a`](https://github.com/kristof-mattei/wsdd-rs/commit/f6e5d3a28c8efe2dcae9575945860a54e710d410))
+- Sort by [@kristof-mattei](https://github.com/kristof-mattei) ([`c757c8d`](https://github.com/kristof-mattei/wsdd-rs/commit/c757c8de56467f6c8f45b8825684605c4435da47))
 - Typo by [@kristof-mattei](https://github.com/kristof-mattei) ([`cded012`](https://github.com/kristof-mattei/wsdd-rs/commit/cded012f14f816d0e1878e4abf0225bbc22b5925))
 - Rename variable by [@kristof-mattei](https://github.com/kristof-mattei) ([`1ae65bf`](https://github.com/kristof-mattei/wsdd-rs/commit/1ae65bfc44d20830bd31852dfaf39343adb20954))
 - Get-response-template by [@kristof-mattei](https://github.com/kristof-mattei) ([`1b6124d`](https://github.com/kristof-mattei/wsdd-rs/commit/1b6124de2b15dd4a3ceb9c22b73dc6c0433bc147))
