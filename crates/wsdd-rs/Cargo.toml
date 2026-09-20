@@ -42,7 +42,7 @@ ipnet = "=2.12.2"
 libc.workspace = true
 mimalloc = "=0.1.52"
 pin-project = "=1.1.13"
-rand = "=0.10.2"
+rand = "=0.10.3"
 reqwest = { version = "=0.13.5", default-features = false, features = [
     "native-tls",
 ] }
