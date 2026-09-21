@@ -1,4 +1,9 @@
 <!-- header goes here -->
+## [0.6.4](https://github.com/kristof-mattei/wsdd-rs/compare/v0.6.3..v0.6.4) - 2026-09-21
+
+### 💼 Other
+
+- Link the container binaries with mold by [@kristof-mattei](https://github.com/kristof-mattei) ([`525e8a0`](https://github.com/kristof-mattei/wsdd-rs/commit/525e8a0bed4f69ffeb72679c79ff7ba10fc034b2))
 ## [0.6.3](https://github.com/kristof-mattei/wsdd-rs/compare/v0.6.2..v0.6.3) - 2026-09-18
 
 ### 🐛 Bug Fixes
