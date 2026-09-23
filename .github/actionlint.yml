@@ -10,3 +10,5 @@ paths:
       # actionlint does not recognize `$/` in `uses:` yet (rhysd/actionlint#732)
       - 'reusable workflow call "\$/[^"]+" at "uses" is not following the format'
       - 'specifying action "\$/[^"]+" in invalid format because ref is missing'
+      # actionlint does not recognize the `code-quality` permission scope yet
+      - 'unknown permission scope "code-quality"'
