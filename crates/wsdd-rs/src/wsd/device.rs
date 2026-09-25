@@ -11,7 +11,7 @@ use crate::constants;
 use crate::network_address::NetworkAddress;
 use crate::soap::parser;
 use crate::soap::parser::xaddrs::XAddr;
-use crate::xml::{XmlError, XmlReader, find_child, read_text};
+use crate::xml::{XmlError, XmlReader, find_child, find_optional_child, read_text};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[repr(transparent)]
@@ -176,20 +176,11 @@ impl WSDDiscoveredDevice {
         // we're now in metadata
 
         // loop though the reader for each wsx:MetadataSection at depth 1 from where we are now
-        loop {
-            let (scope, attributes) = match find_child(
-                &mut reader,
-                Some(constants::XML_WSX_NAMESPACE),
-                "MetadataSection",
-            ) {
-                Ok((name, attributes)) => (name, attributes),
-                Err(XmlError::MissingElement(_)) => {
-                    // no more `MetadataSections to be found`
-                    break;
-                },
-                Err(error) => return Err(error.into()),
-            };
-
+        while let Some((scope, attributes)) = find_optional_child(
+            &mut reader,
+            Some(constants::XML_WSX_NAMESPACE),
+            "MetadataSection",
+        )? {
             for attribute in attributes {
                 if attribute.name.namespace_ref().is_none()
                     && attribute.name.local_name == "Dialect"
@@ -327,27 +318,23 @@ where
     // we are inside of the relationship metadata section, which contains ... RELATIONSHIPS
     // for each relationship, we find the one with Type=Host
     loop {
-        let (_element, attributes) = match find_child(
+        // we'll need to ensure that the depth is always the same
+        let Some((_element, attributes)) = find_optional_child(
             reader,
             Some(constants::XML_WSDP_NAMESPACE),
             constants::WSDP_RELATIONSHIP,
-        ) {
-            Ok((name, attributes)) => {
-                // we'll need to ensure that the depth is always the same
-                (name, attributes)
-            },
-            Err(XmlError::MissingElement(_)) => {
-                // no `wsdp:Relationship` to be found`
-                return Ok((HashSet::new(), None));
-            },
-            Err(error) => return Err(error),
+        )?
+        else {
+            // no `wsdp:Relationship` to be found`
+            return Ok((HashSet::new(), None));
         };
 
         for attribute in attributes {
             if attribute.name.namespace_ref().is_none() && attribute.name.local_name == "Type" {
                 if attribute.value == constants::WSDP_RELATIONSHIP_TYPE_HOST {
-                    match find_child(reader, Some(constants::XML_WSDP_NAMESPACE), "Host") {
-                        Ok((_name, _attributes)) => {
+                    match find_optional_child(reader, Some(constants::XML_WSDP_NAMESPACE), "Host")?
+                    {
+                        Some((_name, _attributes)) => {
                             let (types, display_name_belongs_to) =
                                 read_types_and_pub_computer(reader)?;
 
@@ -371,13 +358,12 @@ where
                             return Ok((types, display_name_belongs_to));
                         },
 
-                        Err(XmlError::MissingElement(_)) => {
+                        None => {
                             // no `Host` to be found, so we have just closed the `WSDP_RELATIONSHIP`
                             // we are now in `<wsx:MetadataSection>`
 
                             return Ok((HashSet::new(), None));
                         },
-                        Err(error) => return Err(error),
                     }
                 } else {
                     event!(

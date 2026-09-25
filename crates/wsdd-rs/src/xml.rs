@@ -1,7 +1,6 @@
 use std::io::Read;
 
 use thiserror::Error;
-use tracing::{Level, event};
 use xml::EventReader;
 use xml::attribute::OwnedAttribute;
 use xml::name::{Name, OwnedName};
@@ -134,6 +133,7 @@ pub enum XmlError {
 
 type FindDescendantResult = Result<(OwnedName, Vec<OwnedAttribute>), XmlError>;
 
+/// Like [`find_optional_child`], but a missing child is an [`XmlError::MissingElement`].
 pub fn find_child<R>(
     reader: &mut XmlReader<R>,
     namespace: Option<&str>,
@@ -142,12 +142,29 @@ pub fn find_child<R>(
 where
     R: Read,
 {
+    find_optional_child(reader, namespace, path)?.ok_or_else(|| {
+        let missing_element = Name {
+            local_name: path,
+            namespace,
+            prefix: None,
+        };
+
+        XmlError::MissingElement(missing_element.to_string().into_boxed_str())
+    })
+}
+
+/// Advances to the next direct child `{namespace}path` of the current element.
+///
+/// Returns `None` when the current element or the document ends first.
+pub fn find_optional_child<R>(
+    reader: &mut XmlReader<R>,
+    namespace: Option<&str>,
+    path: &str,
+) -> Result<Option<(OwnedName, Vec<OwnedAttribute>)>, xml::reader::Error>
+where
+    R: Read,
+{
     let entry_depth = reader.depth();
-    let missing_element = Name {
-        local_name: path,
-        namespace,
-        prefix: None,
-    };
 
     loop {
         #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
@@ -158,20 +175,13 @@ where
                 && name.namespace_ref() == namespace
                 && name.local_name == path =>
             {
-                return Ok((name, attributes));
+                return Ok(Some((name, attributes)));
             },
-            XmlEvent::EndElement { name } if reader.depth() < entry_depth => {
-                event!(
-                    Level::TRACE,
-                    now_in = %name,
-                    missing_element = %missing_element,
-                    "Could not find element"
-                );
-
-                break;
+            XmlEvent::EndElement { .. } if reader.depth() < entry_depth => {
+                return Ok(None);
             },
             XmlEvent::EndDocument => {
-                break;
+                return Ok(None);
             },
             _ => {
                 // these events are squelched by the parser config, or they're valid, but we ignore them
@@ -179,10 +189,6 @@ where
             },
         }
     }
-
-    Err(XmlError::MissingElement(
-        missing_element.to_string().into_boxed_str(),
-    ))
 }
 
 #[cfg(test)]
@@ -193,7 +199,7 @@ mod tests {
     use xml::name::OwnedName;
     use xml::reader::XmlEvent;
 
-    use crate::xml::{XmlError, XmlReader, find_child};
+    use crate::xml::{XmlError, XmlReader, find_child, find_optional_child};
 
     fn make_reader(xml: &str) -> XmlReader<&[u8]> {
         let reader = ParserConfig::new()
@@ -217,6 +223,32 @@ mod tests {
         let result = find_child(&mut reader, Some("urn:level3_ns"), "Level3");
 
         assert_matches!(result, Err(XmlError::MissingElement(name)) if &*name == "{urn:level3_ns}Level3");
+    }
+
+    #[test]
+    fn find_optional_child_returns_present_child() {
+        let xml = include_str!("./test/xml/three-levels.xml");
+
+        let mut reader = make_reader(xml);
+
+        let _result = find_child(&mut reader, None, "Level1").unwrap();
+        let _result = find_child(&mut reader, None, "Level2").unwrap();
+        let result = find_optional_child(&mut reader, Some("urn:level3_ns"), "NotLevel3");
+
+        assert_matches!(result, Ok(Some((name, _))) if name.local_name == "NotLevel3");
+    }
+
+    #[test]
+    fn find_optional_child_returns_none_when_parent_closes() {
+        let xml = include_str!("./test/xml/three-levels.xml");
+
+        let mut reader = make_reader(xml);
+
+        let _result = find_child(&mut reader, None, "Level1").unwrap();
+        let _result = find_child(&mut reader, None, "Level2").unwrap();
+        let result = find_optional_child(&mut reader, Some("urn:level3_ns"), "Level3");
+
+        assert_matches!(result, Ok(None));
     }
 
     #[test]
