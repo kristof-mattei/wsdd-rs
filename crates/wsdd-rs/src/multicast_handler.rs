@@ -9,9 +9,9 @@ use rand::RngExt as _;
 use socket2::{Domain, InterfaceIndexOrAddress, Socket, Type};
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::{OnceCell, RwLock};
+use tokio::sync::{OnceCell, RwLock, oneshot};
 use tokio::task::JoinHandle;
-use tokio::time::sleep;
+use tokio::time::{Instant, sleep};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{Level, event};
@@ -533,6 +533,7 @@ pub struct IncomingHostMessage {
 }
 pub struct IncomingClientMessage {
     pub from: SocketAddr,
+    pub received_at: Instant,
     pub header: Header,
     pub message: ClientMessage,
 }
@@ -542,6 +543,22 @@ pub struct OutgoingMessage {
     pub message: UnicastMessage,
 }
 
+#[derive(Debug)]
+pub struct OutgoingMulticastMessage {
+    pub message: MulticastMessage,
+    /// Notified with the send time of the last copy.
+    pub last_copy_tx: Option<oneshot::Sender<Instant>>,
+}
+
+impl From<MulticastMessage> for OutgoingMulticastMessage {
+    fn from(message: MulticastMessage) -> Self {
+        Self {
+            message,
+            last_copy_tx: None,
+        }
+    }
+}
+
 trait MessageSplitter {
     const NAME: &str;
     const REPEAT: usize;
@@ -549,7 +566,10 @@ trait MessageSplitter {
     type Message: AsRef<[u8]> + Send + MessageType;
     type ChannelMessage: Send;
 
-    fn split_message(&self, message: Self::ChannelMessage) -> (SocketAddr, Self::Message);
+    fn split_message(
+        &self,
+        message: Self::ChannelMessage,
+    ) -> (SocketAddr, Self::Message, Option<oneshot::Sender<Instant>>);
 }
 
 struct MulticastMessageSplitter {
@@ -561,10 +581,13 @@ impl MessageSplitter for MulticastMessageSplitter {
     const REPEAT: usize = constants::MULTICAST_UDP_REPEAT;
 
     type Message = MulticastMessage;
-    type ChannelMessage = Self::Message;
+    type ChannelMessage = OutgoingMulticastMessage;
 
-    fn split_message(&self, message: Self::ChannelMessage) -> (SocketAddr, Self::Message) {
-        (self.target, message)
+    fn split_message(
+        &self,
+        message: Self::ChannelMessage,
+    ) -> (SocketAddr, Self::Message, Option<oneshot::Sender<Instant>>) {
+        (self.target, message.message, message.last_copy_tx)
     }
 }
 
@@ -577,17 +600,21 @@ impl MessageSplitter for UnicastMessageSplitter {
     type Message = UnicastMessage;
     type ChannelMessage = OutgoingMessage;
 
-    fn split_message(&self, message: Self::ChannelMessage) -> (SocketAddr, Self::Message) {
-        (message.to, message.message)
+    fn split_message(
+        &self,
+        message: Self::ChannelMessage,
+    ) -> (SocketAddr, Self::Message, Option<oneshot::Sender<Instant>>) {
+        (message.to, message.message, None)
     }
 }
 
+/// Returns the send time of the last copy.
 async fn repeatedly_send_buffer<T: MessageSplitter>(
     socket: Arc<UdpSocketWithAddr>,
     message: T::Message,
     network_address: &NetworkAddress,
     to: SocketAddr,
-) {
+) -> Instant {
     let buffer = message.as_ref();
 
     event!(
@@ -617,6 +644,8 @@ async fn repeatedly_send_buffer<T: MessageSplitter>(
             },
         }
     }
+
+    Instant::now()
 }
 
 struct MessageSender<T: MessageSplitter> {
@@ -652,7 +681,7 @@ where
                         break;
                     };
 
-                    let (to, message) = message_splitter.split_message(buffer);
+                    let (to, message, last_copy_tx) = message_splitter.split_message(buffer);
 
                     {
                         let socket = Arc::clone(&socket);
@@ -661,8 +690,17 @@ where
                         spawn_with_name(
                             "message sender",
                             tracker.track_future(async move {
-                                repeatedly_send_buffer::<T>(socket, message, &network_address, to)
-                                    .await;
+                                let last_copy_sent_at = repeatedly_send_buffer::<T>(
+                                    socket,
+                                    message,
+                                    &network_address,
+                                    to,
+                                )
+                                .await;
+
+                                if let Some(last_copy_tx) = last_copy_tx {
+                                    let _r = last_copy_tx.send(last_copy_sent_at);
+                                }
                             }),
                         );
                     }
@@ -687,5 +725,75 @@ where
         // we're explicitly not forcefully cancelling our own handler
         // to allow everybody to send their messages and shut down gracefully before we shut down
         let _r = self.handler.await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::Ipv4Addr;
+    use std::sync::Arc;
+
+    use ipnet::IpNet;
+    use libc::RT_SCOPE_SITE;
+    use tokio::net::UdpSocket;
+    use tokio::sync::oneshot;
+    use tokio::time::Instant;
+
+    use crate::constants;
+    use crate::multicast_handler::{
+        MessageSender, MulticastMessageSplitter, OutgoingMulticastMessage,
+    };
+    use crate::network_address::NetworkAddress;
+    use crate::network_interface::NetworkInterface;
+    use crate::soap::MulticastMessage;
+    use crate::udp_socket_with_addr::UdpSocketWithAddr;
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn reports_send_time_of_last_copy() {
+        let receiver = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let target = receiver.local_addr().unwrap();
+
+        let arrivals = tokio::task::spawn(async move {
+            let mut buffer = [0_u8; 16];
+            let mut arrivals = Vec::with_capacity(constants::MULTICAST_UDP_REPEAT);
+
+            for _ in 0..constants::MULTICAST_UDP_REPEAT {
+                receiver.recv_from(&mut buffer).await.unwrap();
+
+                arrivals.push(Instant::now());
+            }
+
+            arrivals
+        });
+
+        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+
+        let mut message_sender = MessageSender::new(
+            Arc::new(UdpSocketWithAddr::new(socket).unwrap()),
+            MulticastMessageSplitter { target },
+            NetworkAddress::new(
+                IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
+                Arc::new(NetworkInterface::new_with_index("lo", RT_SCOPE_SITE, 1)),
+            ),
+        );
+
+        let (last_copy_tx, last_copy_rx) = oneshot::channel();
+
+        message_sender
+            .get_tx()
+            .send(OutgoingMulticastMessage {
+                message: MulticastMessage::Probe(Box::from(&b"probe"[..])),
+                last_copy_tx: Some(last_copy_tx),
+            })
+            .await
+            .unwrap();
+
+        let last_copy_sent_at = last_copy_rx.await.unwrap();
+
+        let arrivals = arrivals.await.unwrap();
+
+        // copies are at least `UDP_MIN_DELAY` apart
+        assert!(last_copy_sent_at + constants::UDP_MIN_DELAY > *arrivals.last().unwrap());
     }
 }

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
@@ -132,6 +133,8 @@ async fn socket_rx_forever(
             },
         };
 
+        let received_at = Instant::now();
+
         // `recv_buf` tells us that `bytes_read` were read from the socket into our `buffer`, so they're initialized
         buffer.truncate(bytes_read);
 
@@ -155,6 +158,7 @@ async fn socket_rx_forever(
                     if let Err(error) = client_tx
                         .send(IncomingClientMessage {
                             from,
+                            received_at,
                             header,
                             message,
                         })

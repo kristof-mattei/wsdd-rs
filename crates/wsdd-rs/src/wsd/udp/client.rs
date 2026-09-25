@@ -7,8 +7,10 @@ use color_eyre::eyre;
 use hashbrown::HashMap;
 use hashbrown::hash_map::Entry;
 use ipnet::IpNet;
-use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::oneshot::error::TryRecvError;
+use tokio::sync::{RwLock, oneshot};
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument as _, Level, event, span};
 use url::Host;
@@ -16,7 +18,7 @@ use uuid::fmt::Urn;
 
 use crate::config::Config;
 use crate::constants;
-use crate::multicast_handler::IncomingClientMessage;
+use crate::multicast_handler::{IncomingClientMessage, OutgoingMulticastMessage};
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::Builder;
 use crate::soap::parser::bye::Bye;
@@ -35,8 +37,47 @@ pub(crate) struct WSDClient {
     _bound_to: NetworkAddress,
     _devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     handle: tokio::task::JoinHandle<()>,
-    mc_local_port_tx: Sender<MulticastMessage>,
-    probes: Arc<RwLock<HashMap<MessageId, Duration>>>,
+    mc_local_port_tx: Sender<OutgoingMulticastMessage>,
+    probes: Arc<RwLock<HashMap<MessageId, LastCopy>>>,
+}
+
+/// The send time of the last copy of a repeated `Probe` or `Resolve`.
+enum LastCopy {
+    Sending(oneshot::Receiver<Instant>),
+    Sent(Instant),
+}
+
+impl LastCopy {
+    fn track(message: MulticastMessage) -> (OutgoingMulticastMessage, Self) {
+        let (last_copy_tx, last_copy_rx) = oneshot::channel();
+
+        let message = OutgoingMulticastMessage {
+            message,
+            last_copy_tx: Some(last_copy_tx),
+        };
+
+        (message, LastCopy::Sending(last_copy_rx))
+    }
+
+    /// A match received `MATCH_TIMEOUT` or more after the last copy is discarded, see WS-Discovery, Section 7.
+    fn accepts(&mut self, received_at: Instant) -> bool {
+        let sent_at = match *self {
+            LastCopy::Sent(sent_at) => sent_at,
+            LastCopy::Sending(ref mut last_copy_rx) => match last_copy_rx.try_recv() {
+                Ok(sent_at) => {
+                    *self = LastCopy::Sent(sent_at);
+
+                    sent_at
+                },
+                // the last copy is not sent yet
+                Err(TryRecvError::Empty) => return true,
+                // the last copy was never sent
+                Err(TryRecvError::Closed) => return false,
+            },
+        };
+
+        received_at < sent_at + constants::MATCH_TIMEOUT
+    }
 }
 
 impl WSDClient {
@@ -50,9 +91,9 @@ impl WSDClient {
         devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
         bound_to: NetworkAddress,
         incoming_rx: Receiver<IncomingClientMessage>,
-        mc_local_port_tx: Sender<MulticastMessage>,
+        mc_local_port_tx: Sender<OutgoingMulticastMessage>,
     ) -> Self {
-        let probes = Arc::new(RwLock::new(HashMap::<MessageId, Duration>::new()));
+        let probes = Arc::new(RwLock::new(HashMap::<MessageId, LastCopy>::new()));
 
         let handle = {
             let cancellation_token = cancellation_token.clone();
@@ -140,15 +181,17 @@ impl WSDClient {
 async fn send_probe(
     cancellation_token: &CancellationToken,
     config: &Arc<Config>,
-    probes: &Arc<RwLock<HashMap<MessageId, Duration>>>,
-    mc_local_port_tx: &Sender<MulticastMessage>,
+    probes: &Arc<RwLock<HashMap<MessageId, LastCopy>>>,
+    mc_local_port_tx: &Sender<OutgoingMulticastMessage>,
 ) -> Result<(), eyre::Report> {
     let future = async move {
         remove_outdated_probes(probes).await;
 
         let (probe, message_id) = Builder::build_probe(config)?;
 
-        probes.write().await.insert(message_id.into(), now());
+        let (probe, last_copy) = LastCopy::track(probe);
+
+        probes.write().await.insert(message_id.into(), last_copy);
 
         mc_local_port_tx
             .send(probe)
@@ -162,38 +205,29 @@ async fn send_probe(
         .unwrap_or(Ok(()))
 }
 
-async fn remove_outdated_probes(probes: &Arc<RwLock<HashMap<MessageId, Duration>>>) {
-    let now = now();
+async fn remove_outdated_probes(probes: &Arc<RwLock<HashMap<MessageId, LastCopy>>>) {
+    let now = Instant::now();
 
-    probes.write().await.retain(|_, sent| is_fresh(*sent, now));
+    probes
+        .write()
+        .await
+        .retain(|_, last_copy| last_copy.accepts(now));
 }
 
-fn record_resolve(resolves: &mut HashMap<MessageId, Duration>, message_id: Urn) {
-    let now = now();
+fn record_resolve(
+    resolves: &mut HashMap<MessageId, LastCopy>,
+    message_id: Urn,
+    resolve: MulticastMessage,
+) -> OutgoingMulticastMessage {
+    let now = Instant::now();
 
-    resolves.retain(|_, sent| is_fresh(*sent, now));
+    resolves.retain(|_, last_copy| last_copy.accepts(now));
 
-    resolves.insert(message_id.into(), now);
-}
+    let (resolve, last_copy) = LastCopy::track(resolve);
 
-fn is_fresh(sent: Duration, now: Duration) -> bool {
-    sent + constants::MATCH_TIMEOUT > now
-}
+    resolves.insert(message_id.into(), last_copy);
 
-fn now() -> Duration {
-    #[cfg(miri)]
-    {
-        Duration::from_secs(1_762_802_693)
-    }
-
-    #[cfg(not(miri))]
-    {
-        use std::time::SystemTime;
-
-        SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("Before epoch? Time travel?")
-    }
+    resolve
 }
 
 //     def cleanup(self) -> None:
@@ -255,8 +289,8 @@ async fn handle_hello(
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
-    multicast: &Sender<MulticastMessage>,
-    resolves: &mut HashMap<MessageId, Duration>,
+    multicast: &Sender<OutgoingMulticastMessage>,
+    resolves: &mut HashMap<MessageId, LastCopy>,
     Hello {
         endpoint,
         raw_xaddrs,
@@ -267,7 +301,7 @@ async fn handle_hello(
 
         let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
 
-        record_resolve(resolves, message_id);
+        let message = record_resolve(resolves, message_id, message);
 
         multicast.send(message).await?;
 
@@ -313,9 +347,10 @@ async fn handle_probe_match(
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
     relates_to: Option<MessageId>,
-    probes: Arc<RwLock<HashMap<MessageId, Duration>>>,
-    mc_local_port_tx: &Sender<MulticastMessage>,
-    resolves: &mut HashMap<MessageId, Duration>,
+    received_at: Instant,
+    probes: Arc<RwLock<HashMap<MessageId, LastCopy>>>,
+    mc_local_port_tx: &Sender<OutgoingMulticastMessage>,
+    resolves: &mut HashMap<MessageId, LastCopy>,
     ProbeMatch {
         endpoint,
         raw_xaddrs,
@@ -328,10 +363,10 @@ async fn handle_probe_match(
 
     // only accept probe matches for probes we sent recently
     let fresh = probes
-        .read()
+        .write()
         .await
-        .get(&relates_to)
-        .is_some_and(|sent| is_fresh(*sent, now()));
+        .get_mut(&relates_to)
+        .is_some_and(|last_copy| last_copy.accepts(received_at));
 
     if !fresh {
         event!(Level::DEBUG, %relates_to, "unknown or outdated probe");
@@ -345,7 +380,7 @@ async fn handle_probe_match(
 
         let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
 
-        record_resolve(resolves, message_id);
+        let message = record_resolve(resolves, message_id, message);
 
         mc_local_port_tx.send(message).await?;
 
@@ -367,13 +402,15 @@ async fn handle_probe_match(
     Ok(())
 }
 
+#[expect(clippy::too_many_arguments, reason = "WIP")]
 async fn handle_resolve_match(
     client: &reqwest::Client,
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     bound_to: &NetworkAddress,
     relates_to: Option<MessageId>,
-    resolves: &HashMap<MessageId, Duration>,
+    received_at: Instant,
+    resolves: &mut HashMap<MessageId, LastCopy>,
     ResolveMatch {
         endpoint,
         raw_xaddrs,
@@ -386,8 +423,8 @@ async fn handle_resolve_match(
 
     // only accept resolve matches for resolves we sent recently
     let fresh = resolves
-        .get(&relates_to)
-        .is_some_and(|sent| is_fresh(*sent, now()));
+        .get_mut(&relates_to)
+        .is_some_and(|last_copy| last_copy.accepts(received_at));
 
     if !fresh {
         event!(Level::DEBUG, %relates_to, "unknown or outdated resolve");
@@ -501,8 +538,8 @@ async fn listen_forever(
     config: Arc<Config>,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     mut incoming_rx: Receiver<IncomingClientMessage>,
-    mc_local_port_tx: Sender<MulticastMessage>,
-    probes: Arc<RwLock<HashMap<MessageId, Duration>>>,
+    mc_local_port_tx: Sender<OutgoingMulticastMessage>,
+    probes: Arc<RwLock<HashMap<MessageId, LastCopy>>>,
 ) {
     // Note: we bind on the interface's name.
     // This is to ensure we send out requests via the interface that we received the XML message on
@@ -528,6 +565,7 @@ async fn listen_forever(
 
         let Some(IncomingClientMessage {
             from: _from,
+            received_at,
             header,
             message,
         }) = message
@@ -558,6 +596,7 @@ async fn listen_forever(
                     Arc::clone(&devices),
                     &bound_to,
                     header.relates_to,
+                    received_at,
                     Arc::clone(&probes),
                     &mc_local_port_tx,
                     &mut resolves,
@@ -572,7 +611,8 @@ async fn listen_forever(
                     Arc::clone(&devices),
                     &bound_to,
                     header.relates_to,
-                    &resolves,
+                    received_at,
+                    &mut resolves,
                     resolve_match,
                 )
                 .await
@@ -606,11 +646,13 @@ mod tests {
     use libc::RT_SCOPE_SITE;
     use mockito::ServerOpts;
     use pretty_assertions::{assert_eq, assert_matches};
-    use tokio::sync::RwLock;
     use tokio::sync::mpsc::error::TryRecvError;
+    use tokio::sync::{RwLock, oneshot};
+    use tokio::time::Instant;
     use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
 
+    use crate::constants;
     use crate::network_interface::NetworkInterface;
     use crate::soap::MessageId;
     use crate::soap::parser::xaddrs::XAddr;
@@ -618,9 +660,53 @@ mod tests {
     use crate::test_utils::{build_config, build_message_handler_with_network_address};
     use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
     use crate::wsd::udp::client::{
-        WSDClient, handle_bye, handle_hello, handle_metadata, handle_probe_match,
-        handle_resolve_match, now, parse_xaddrs,
+        LastCopy, WSDClient, handle_bye, handle_hello, handle_metadata, handle_probe_match,
+        handle_resolve_match, parse_xaddrs,
     };
+
+    #[test]
+    fn last_copy_accepts_match_until_match_timeout() {
+        let sent_at = Instant::now();
+
+        let mut last_copy = LastCopy::Sent(sent_at);
+
+        assert!(last_copy.accepts(sent_at + constants::MATCH_TIMEOUT - Duration::from_millis(1)));
+        assert!(!last_copy.accepts(sent_at + constants::MATCH_TIMEOUT));
+    }
+
+    #[test]
+    fn last_copy_accepts_match_while_sending() {
+        let (_last_copy_tx, last_copy_rx) = oneshot::channel();
+
+        let mut last_copy = LastCopy::Sending(last_copy_rx);
+
+        assert!(last_copy.accepts(Instant::now() + Duration::from_secs(10)));
+    }
+
+    #[test]
+    fn last_copy_measures_from_reported_send_time() {
+        let (last_copy_tx, last_copy_rx) = oneshot::channel();
+
+        let mut last_copy = LastCopy::Sending(last_copy_rx);
+
+        let sent_at = Instant::now() + constants::MATCH_TIMEOUT * 2;
+
+        last_copy_tx.send(sent_at).unwrap();
+
+        assert!(last_copy.accepts(sent_at + constants::MATCH_TIMEOUT - Duration::from_millis(1)));
+        assert!(!last_copy.accepts(sent_at + constants::MATCH_TIMEOUT));
+    }
+
+    #[test]
+    fn last_copy_rejects_match_when_message_was_dropped() {
+        let (last_copy_tx, last_copy_rx) = oneshot::channel();
+
+        let mut last_copy = LastCopy::Sending(last_copy_rx);
+
+        drop(last_copy_tx);
+
+        assert!(!last_copy.accepts(Instant::now()));
+    }
 
     fn setup_client() -> (
         Arc<crate::config::Config>,
@@ -692,7 +778,7 @@ mod tests {
         let response = {
             let response = multicast_rx.try_recv().unwrap();
 
-            to_string_pretty(response.as_ref()).unwrap()
+            to_string_pretty(response.message.as_ref()).unwrap()
         };
 
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
@@ -1027,7 +1113,7 @@ mod tests {
             Uuid::nil()
         );
 
-        let response = to_string_pretty(probe.as_ref()).unwrap();
+        let response = to_string_pretty(probe.message.as_ref()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(response, expected);
@@ -1246,7 +1332,10 @@ mod tests {
         let probes = {
             let mut hash_map = HashMap::new();
 
-            hash_map.insert(MessageId::from(host_message_id.urn()), now());
+            hash_map.insert(
+                MessageId::from(host_message_id.urn()),
+                LastCopy::Sent(Instant::now()),
+            );
 
             Arc::new(RwLock::new(hash_map))
         };
@@ -1261,6 +1350,7 @@ mod tests {
             Arc::clone(&client_devices),
             &client_network_address,
             header.relates_to,
+            Instant::now(),
             probes,
             &multicast_tx,
             &mut resolves,
@@ -1282,7 +1372,7 @@ mod tests {
         let response = {
             let response = multicast_rx.try_recv().unwrap();
 
-            to_string_pretty(response.as_ref()).unwrap()
+            to_string_pretty(response.message.as_ref()).unwrap()
         };
 
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
@@ -1323,13 +1413,14 @@ mod tests {
             .await
             .unwrap();
 
-        // the probe was sent, but longer ago than the validity window
+        let last_copy_sent_at = Instant::now();
+
         let probes = {
             let mut hash_map = HashMap::new();
 
             hash_map.insert(
                 MessageId::from(host_message_id.urn()),
-                Duration::from_secs(100),
+                LastCopy::Sent(last_copy_sent_at),
             );
 
             Arc::new(RwLock::new(hash_map))
@@ -1345,6 +1436,7 @@ mod tests {
             Arc::clone(&client_devices),
             &client_network_address,
             header.relates_to,
+            last_copy_sent_at + constants::MATCH_TIMEOUT,
             probes,
             &multicast_tx,
             &mut resolves,
@@ -1431,7 +1523,10 @@ mod tests {
         let probes = {
             let mut hash_map = HashMap::new();
 
-            hash_map.insert(MessageId::from(host_message_id.urn()), now());
+            hash_map.insert(
+                MessageId::from(host_message_id.urn()),
+                LastCopy::Sent(Instant::now()),
+            );
 
             Arc::new(RwLock::new(hash_map))
         };
@@ -1446,6 +1541,7 @@ mod tests {
             Arc::clone(&client_devices),
             &client_network_address,
             header.relates_to,
+            Instant::now(),
             probes,
             &multicast_tx,
             &mut resolves,
@@ -1533,10 +1629,13 @@ mod tests {
             .await
             .unwrap();
 
-        let resolves = {
+        let mut resolves = {
             let mut hash_map = HashMap::new();
 
-            hash_map.insert(MessageId::from(host_message_id.urn()), now());
+            hash_map.insert(
+                MessageId::from(host_message_id.urn()),
+                LastCopy::Sent(Instant::now()),
+            );
 
             hash_map
         };
@@ -1549,7 +1648,8 @@ mod tests {
             Arc::clone(&client_devices),
             &client_network_address,
             header.relates_to,
-            &resolves,
+            Instant::now(),
+            &mut resolves,
             resolve_match,
         )
         .await;
@@ -1621,7 +1721,8 @@ mod tests {
             Arc::clone(&client_devices),
             &client_network_address,
             header.relates_to,
-            &HashMap::new(),
+            Instant::now(),
+            &mut HashMap::new(),
             resolve_match,
         )
         .await;
@@ -1682,13 +1783,14 @@ mod tests {
             .await
             .unwrap();
 
-        // the resolve was sent, but longer ago than the validity window
-        let resolves = {
+        let last_copy_sent_at = Instant::now();
+
+        let mut resolves = {
             let mut hash_map = HashMap::new();
 
             hash_map.insert(
                 MessageId::from(host_message_id.urn()),
-                Duration::from_secs(100),
+                LastCopy::Sent(last_copy_sent_at),
             );
 
             hash_map
@@ -1702,7 +1804,8 @@ mod tests {
             Arc::clone(&client_devices),
             &client_network_address,
             header.relates_to,
-            &resolves,
+            last_copy_sent_at + constants::MATCH_TIMEOUT,
+            &mut resolves,
             resolve_match,
         )
         .await;
