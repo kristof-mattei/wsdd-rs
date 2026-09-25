@@ -8,12 +8,12 @@ use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
 use crate::config::Config;
-use crate::multicast_handler::{IncomingHostMessage, OutgoingMessage};
+use crate::multicast_handler::{IncomingHostMessage, OutgoingMessage, OutgoingMulticastMessage};
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::{self, Builder};
 use crate::soap::parser::probe::Probe;
 use crate::soap::parser::resolve::Resolve;
-use crate::soap::{HostMessage, MessageId, MulticastMessage, UnicastMessage};
+use crate::soap::{HostMessage, MessageId, UnicastMessage};
 use crate::utils::task::spawn_with_name;
 
 /// handles WSD requests coming from UDP datagrams.
@@ -22,7 +22,7 @@ pub struct WSDHost {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     messages_built: Arc<AtomicU64>,
-    mc_local_port_tx: Sender<MulticastMessage>,
+    mc_local_port_tx: Sender<OutgoingMulticastMessage>,
 }
 
 impl WSDHost {
@@ -32,7 +32,7 @@ impl WSDHost {
         messages_built: Arc<AtomicU64>,
         bound_to: NetworkAddress,
         incoming_rx: Receiver<IncomingHostMessage>,
-        mc_local_port_tx: Sender<MulticastMessage>,
+        mc_local_port_tx: Sender<OutgoingMulticastMessage>,
         uc_wsd_port_tx: Sender<OutgoingMessage>,
     ) -> Self {
         let address = bound_to.address;
@@ -121,7 +121,7 @@ impl WSDHost {
     async fn send_bye(&self, messages_built: &AtomicU64) -> Result<(), eyre::Report> {
         let bye = Builder::build_bye(&self.config, messages_built)?;
 
-        Ok(self.mc_local_port_tx.send(bye).await?)
+        Ok(self.mc_local_port_tx.send(bye.into()).await?)
     }
 }
 
@@ -130,13 +130,13 @@ async fn send_hello(
     config: &Config,
     address: IpAddr,
     messages_built: &AtomicU64,
-    mc_local_port_tx: &Sender<MulticastMessage>,
+    mc_local_port_tx: &Sender<OutgoingMulticastMessage>,
 ) -> Result<(), eyre::Report> {
     let future = async move {
         let hello = Builder::build_hello(config, messages_built, address)?;
 
         mc_local_port_tx
-            .send(hello)
+            .send(hello.into())
             .await
             .map_err(|_| eyre::Report::msg("Receiver gone, failed to send hello"))
     };
@@ -335,7 +335,7 @@ mod tests {
             host_config.uuid,
         );
 
-        let response = to_string_pretty(hello.as_ref()).unwrap();
+        let response = to_string_pretty(hello.message.as_ref()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(response, expected);
@@ -383,7 +383,7 @@ mod tests {
             host_config.uuid_as_device_uri,
         );
 
-        let response = to_string_pretty(bye.as_ref()).unwrap();
+        let response = to_string_pretty(bye.message.as_ref()).unwrap();
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(response, expected);

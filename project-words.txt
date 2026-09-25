@@ -129,6 +129,7 @@ notifcation
 notready
 ntop
 oldact
+oneshot
 optlen
 oras
 pathbuf
