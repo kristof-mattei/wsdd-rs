@@ -1,4 +1,13 @@
 <!-- header goes here -->
+## [0.6.5](https://github.com/kristof-mattei/wsdd-rs/compare/v0.6.4..v0.6.5) - 2026-09-26
+
+### 🐛 Bug Fixes
+
+- *(client)* Start `MATCH_TIMEOUT` at the last copy by [@kristof-mattei](https://github.com/kristof-mattei) ([`5d2b1b4`](https://github.com/kristof-mattei/wsdd-rs/commit/5d2b1b494007fcb91e2878232a68bc7999a932a2))
+
+### 🚜 Refactor
+
+- *(xml)* Add `find_optional_child` by [@kristof-mattei](https://github.com/kristof-mattei) ([`cbf9c2a`](https://github.com/kristof-mattei/wsdd-rs/commit/cbf9c2aa407cd58f55dff493e67dd8731f56bc9d))
 ## [0.6.4](https://github.com/kristof-mattei/wsdd-rs/compare/v0.6.3..v0.6.4) - 2026-09-21
 
 ### 💼 Other
