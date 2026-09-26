@@ -3,7 +3,6 @@ mod header;
 
 use std::io::Write;
 use std::net::IpAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use tracing::{Level, event};
 use uuid::Uuid;
@@ -23,7 +22,7 @@ use crate::soap::builder::body::probe_matches::ProbeMatches;
 use crate::soap::builder::body::resolve::Resolve;
 use crate::soap::builder::body::resolve_matches::ResolveMatches;
 use crate::soap::builder::header::WriteExtraHeaders;
-use crate::soap::builder::header::app_sequence::AppSequence;
+use crate::soap::builder::header::app_sequence::AppSequenceHeader;
 use crate::soap::builder::header::none::NoExtraHeaders;
 use crate::soap::builder::header::reply_to_from::ReplyToFrom;
 use crate::soap::{MessageId, MulticastMessage, UnicastMessage};
@@ -177,7 +176,6 @@ impl<'config> Builder<'config> {
     /// WS-Discovery, Section 4.1, Hello message.
     pub fn build_hello(
         config: &Config,
-        messages_built: &AtomicU64,
         xaddr: IpAddr,
     ) -> Result<MulticastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
@@ -186,11 +184,7 @@ impl<'config> Builder<'config> {
             constants::WSA_DISCOVERY,
             constants::WSD_HELLO,
             None,
-            AppSequence::new(
-                &config.wsd_instance_id,
-                &config.sequence_id,
-                messages_built.fetch_add(1, Ordering::Relaxed),
-            ),
+            AppSequenceHeader::next(&config.app_sequence),
             Hello::new(xaddr),
         )?;
 
@@ -198,21 +192,14 @@ impl<'config> Builder<'config> {
     }
 
     /// WS-Discovery, Section 4.2, Bye message.
-    pub fn build_bye(
-        config: &Config,
-        messages_built: &AtomicU64,
-    ) -> Result<MulticastMessage, xml::writer::Error> {
+    pub fn build_bye(config: &Config) -> Result<MulticastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
         let (message, _): (Vec<_>, _) = builder.build_message(
             constants::WSA_DISCOVERY,
             constants::WSD_BYE,
             None,
-            AppSequence::new(
-                &config.wsd_instance_id,
-                &config.sequence_id,
-                messages_built.fetch_add(1, Ordering::Relaxed),
-            ),
+            AppSequenceHeader::next(&config.app_sequence),
             Bye::new(),
         )?;
 
@@ -255,7 +242,6 @@ impl<'config> Builder<'config> {
     pub fn build_resolve_matches(
         config: &Config,
         address: IpAddr,
-        messages_built: &AtomicU64,
         relates_to: &MessageId,
     ) -> Result<UnicastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
@@ -264,11 +250,7 @@ impl<'config> Builder<'config> {
             constants::WSA_ANON,
             constants::WSD_RESOLVE_MATCH,
             Some(relates_to),
-            AppSequence::new(
-                &config.wsd_instance_id,
-                &config.sequence_id,
-                messages_built.fetch_add(1, Ordering::Relaxed),
-            ),
+            AppSequenceHeader::next(&config.app_sequence),
             ResolveMatches::new(address),
         )?;
 
@@ -277,7 +259,6 @@ impl<'config> Builder<'config> {
 
     pub fn build_probe_matches(
         config: &Config,
-        messages_built: &AtomicU64,
         relates_to: &MessageId,
     ) -> Result<UnicastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
@@ -286,11 +267,7 @@ impl<'config> Builder<'config> {
             constants::WSA_ANON,
             constants::WSD_PROBE_MATCH,
             Some(relates_to),
-            AppSequence::new(
-                &config.wsd_instance_id,
-                &config.sequence_id,
-                messages_built.fetch_add(1, Ordering::Relaxed),
-            ),
+            AppSequenceHeader::next(&config.app_sequence),
             ProbeMatches::new(),
         )?;
 

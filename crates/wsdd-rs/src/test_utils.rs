@@ -10,7 +10,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::cli;
-use crate::config::Config;
+use crate::config::{AppSequence, Config};
 use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::{NetworkInterface, if_nametoindex};
@@ -72,7 +72,10 @@ pub fn build_config(endpoint_uuid: Uuid, instance_id: &str) -> Config {
     .unwrap();
 
     // instance ID is not settable with commandline
-    config.wsd_instance_id = Box::from(instance_id);
+    config.app_sequence = AppSequence::new(
+        Box::from(instance_id),
+        Box::from(config.app_sequence.sequence_id()),
+    );
 
     config
 }

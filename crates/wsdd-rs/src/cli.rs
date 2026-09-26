@@ -11,7 +11,7 @@ use tracing::{Level, event};
 use uuid::Uuid;
 use uuid::fmt::Urn;
 
-use crate::config::{BindTo, Config, InterfaceFilter, PortOrSocket};
+use crate::config::{AppSequence, BindTo, Config, InterfaceFilter, PortOrSocket};
 use crate::ffi::listen_fds;
 use crate::network_interface::DevName;
 use crate::security::parse_userspec;
@@ -219,8 +219,10 @@ pub fn to_config(args: CliArgs) -> Result<Config, eyre::Report> {
         no_host: args.no_host,
         metadata_timeout: args.metadata_timeout,
         source_port: args.source_port,
-        wsd_instance_id: now().as_secs().to_string().into_boxed_str(),
-        sequence_id: sequence_id().to_string().into_boxed_str(),
+        app_sequence: AppSequence::new(
+            now().as_secs().to_string().into_boxed_str(),
+            sequence_id().to_string().into_boxed_str(),
+        ),
     };
 
     Ok(config)

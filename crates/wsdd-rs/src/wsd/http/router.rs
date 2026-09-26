@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 
 use axum::extract::State;
 use axum::handler::HandlerWithoutStateExt as _;
@@ -21,11 +20,7 @@ use crate::soap::parser::{MessageHandler, MessageHandlerError};
 use crate::soap::{HostMessage, UnicastMessage, WSDMessage, builder};
 use crate::span::MakeSpanWithUuid;
 
-pub fn build_router(
-    config: Arc<Config>,
-    messages_built: Arc<AtomicU64>,
-    message_handler: MessageHandler,
-) -> Router {
+pub fn build_router(config: Arc<Config>, message_handler: MessageHandler) -> Router {
     let post_path = format!("/{}", config.uuid);
 
     let router = Router::new()
@@ -42,7 +37,7 @@ pub fn build_router(
                 .on_request(DefaultOnRequest::new().level(Level::TRACE))
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
-        .with_state((config, messages_built, Arc::new(message_handler)));
+        .with_state((config, Arc::new(message_handler)));
 
     router
 }
@@ -58,11 +53,7 @@ async fn handler_404() -> impl IntoResponse {
 #[debug_handler]
 async fn handle_post(
     headers: HeaderMap,
-    State((config, messages_built, message_handler)): State<(
-        Arc<Config>,
-        Arc<AtomicU64>,
-        Arc<MessageHandler>,
-    )>,
+    State((config, message_handler)): State<(Arc<Config>, Arc<MessageHandler>)>,
     body: Bytes,
 ) -> Response {
     let valid_content_type = headers
@@ -74,7 +65,7 @@ async fn handle_post(
         return (StatusCode::BAD_REQUEST, "Invalid Content-Type").into_response();
     }
 
-    match build_response(&config, &message_handler, &body, &messages_built).await {
+    match build_response(&config, &message_handler, &body).await {
         Ok(Some(message)) => (
             StatusCode::OK,
             [(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)],
@@ -98,7 +89,6 @@ async fn build_response(
     config: &Config,
     message_handler: &MessageHandler,
     buffer: &[u8],
-    messages_built: &AtomicU64,
 ) -> Result<Option<UnicastMessage>, eyre::Report> {
     let (header, message) = match message_handler.deconstruct_http_message(buffer).await {
         Ok(pieces) => pieces,
@@ -135,7 +125,6 @@ async fn build_response(
             if probe.types.is_empty() || probe.requested_type_match() {
                 return Ok(Some(builder::Builder::build_probe_matches(
                     config,
-                    messages_built,
                     &header.message_id,
                 )?));
             }

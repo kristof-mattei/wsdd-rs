@@ -837,7 +837,7 @@ mod tests {
         let hello = format!(
             include_str!("../../test/hello-with-xaddrs-template.xml"),
             host_message_id.urn(),
-            host_config.wsd_instance_id,
+            host_config.app_sequence.instance_id(),
             Uuid::now_v7(),
             host_config.uuid_as_device_uri,
             server.socket_address().ip(),
@@ -926,7 +926,7 @@ mod tests {
         let bye = format!(
             include_str!("../../test/bye-template.xml"),
             Uuid::now_v7(),
-            host_config.wsd_instance_id,
+            host_config.app_sequence.instance_id(),
             Uuid::now_v7(),
             0,
             host_config.uuid_as_device_uri,
@@ -997,7 +997,7 @@ mod tests {
         let hello = format!(
             include_str!("../../test/hello-with-xaddrs-template.xml"),
             Uuid::now_v7(),
-            host_config.wsd_instance_id,
+            host_config.app_sequence.instance_id(),
             Uuid::now_v7(),
             host_config.uuid_as_device_uri,
             server.socket_address().ip(),
@@ -1050,7 +1050,7 @@ mod tests {
         let bye = format!(
             include_str!("../../test/bye-template.xml"),
             Uuid::now_v7(),
-            host_config.wsd_instance_id,
+            host_config.app_sequence.instance_id(),
             Uuid::now_v7(),
             0,
             host_config.uuid_as_device_uri
@@ -1314,7 +1314,7 @@ mod tests {
         let probe_matches = format!(
             include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
             host_message_id.urn(),
-            host_config.wsd_instance_id,
+            host_config.app_sequence.instance_id(),
             0,
             host_config.uuid_as_device_uri
         );
@@ -1398,7 +1398,7 @@ mod tests {
         let probe_matches = format!(
             include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
             host_message_id.urn(),
-            host_config.wsd_instance_id,
+            host_config.app_sequence.instance_id(),
             0,
             host_config.uuid_as_device_uri
         );
@@ -1502,7 +1502,7 @@ mod tests {
         let probe_matches = format!(
             include_str!("../../test/probe-matches-with-xaddrs-template.xml"),
             host_message_id.urn(),
-            host_config.wsd_instance_id,
+            host_config.app_sequence.instance_id(),
             0,
             host_config.uuid_as_device_uri,
             server.socket_address().ip(),
@@ -1613,7 +1613,7 @@ mod tests {
         let resolve_matches = format!(
             include_str!("../../test/resolve-matches-template.xml"),
             host_message_id.urn(),
-            host_config.wsd_instance_id,
+            host_config.app_sequence.instance_id(),
             0,
             host_config.uuid_as_device_uri,
             server.socket_address().ip(),
@@ -1696,7 +1696,7 @@ mod tests {
         let resolve_matches = format!(
             include_str!("../../test/resolve-matches-template.xml"),
             host_message_id.urn(),
-            host_config.wsd_instance_id,
+            host_config.app_sequence.instance_id(),
             0,
             host_config.uuid_as_device_uri,
             server.socket_address().ip(),
@@ -1767,7 +1767,7 @@ mod tests {
         let resolve_matches = format!(
             include_str!("../../test/resolve-matches-template.xml"),
             host_message_id.urn(),
-            host_config.wsd_instance_id,
+            host_config.app_sequence.instance_id(),
             0,
             host_config.uuid_as_device_uri,
             server.socket_address().ip(),
