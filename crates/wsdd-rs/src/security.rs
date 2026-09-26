@@ -1,8 +1,10 @@
 use std::ffi::CString;
 use std::io::Error;
+use std::os::unix::ffi::OsStrExt as _;
 use std::path::Path;
 
 use color_eyre::eyre;
+use color_eyre::eyre::WrapErr as _;
 use libc::{setegid, seteuid, setgid, setuid};
 use tracing::{Level, event};
 
@@ -132,10 +134,7 @@ pub fn drop_privileges(uid: u32, gid: u32) -> Result<(), String> {
 
 /// Chroot into a separate directory to isolate ourself for increased security.
 pub fn chroot(root: &Path) -> Result<(), eyre::Report> {
-    let path = root
-        .to_str()
-        .map(|root| CString::new(root).expect("Couldn't convert path to string"))
-        .expect("Couldn't convert string to CString");
+    let path = CString::new(root.as_os_str().as_bytes()).wrap_err("invalid chroot path")?;
 
     // SAFETY: libc call
     let result = unsafe { libc::chroot(path.as_ptr()) };
@@ -156,9 +155,28 @@ pub fn chroot(root: &Path) -> Result<(), eyre::Report> {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt as _;
+    use std::path::Path;
+
     use pretty_assertions::assert_matches;
 
-    use crate::security::{I_DO_NOT_EXIST, parse_userspec};
+    use crate::security::{I_DO_NOT_EXIST, chroot, parse_userspec};
+
+    #[test]
+    fn chroot_path_with_nul_byte() {
+        let result = chroot(Path::new(OsStr::from_bytes(b"/a\0b")));
+
+        assert_matches!(result, Err(error) if error.to_string() == "invalid chroot path");
+    }
+
+    #[cfg_attr(not(miri), test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    fn chroot_non_utf8_path_reaches_syscall() {
+        let result = chroot(Path::new(OsStr::from_bytes(b"/I_DO_NOT_EXIST_\xff")));
+
+        assert_matches!(result, Err(error) if error.to_string() == "chroot failed");
+    }
 
     #[test]
     fn parse_userspec_root_root() {
