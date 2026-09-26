@@ -60,8 +60,6 @@ where
                         let raw_types = read_text(reader)?.unwrap_or_default();
 
                         types = Some(parse_types(&raw_types, &namespace)?);
-
-                        break;
                     },
                     _ => {},
                 }
@@ -135,6 +133,7 @@ mod tests {
     use hashbrown::HashSet;
     use pretty_assertions::{assert_eq, assert_matches};
     use xml::ParserConfig;
+    use xml::reader::XmlEvent;
 
     use crate::constants;
     use crate::soap::parser::BodyParsingError;
@@ -318,5 +317,28 @@ mod tests {
         let result = parse("<wsd:Types>wsdp:</wsd:Types>");
 
         assert_matches!(result.err(), Some(BodyParsingError::InvalidQName(raw_type)) if &*raw_type == "wsdp:");
+    }
+
+    #[test]
+    fn parses_types_after_scopes() {
+        let probe = parse(
+            "<wsd:Scopes>http://example.com/scope</wsd:Scopes><wsd:Types>wsdp:Device</wsd:Types>",
+        )
+        .unwrap();
+
+        assert!(probe.types.is_some());
+    }
+
+    #[test]
+    fn consumes_scopes_after_types() {
+        let xml = probe_xml(
+            "<wsd:Types>wsdp:Device</wsd:Types><wsd:Scopes>http://example.com/scope</wsd:Scopes>",
+        );
+        let mut reader = make_reader(&xml);
+
+        let probe = parse_probe(&mut reader).unwrap();
+
+        assert!(probe.types.is_some());
+        assert_matches!(reader.next(), Ok(XmlEvent::EndDocument));
     }
 }
