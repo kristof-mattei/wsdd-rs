@@ -1,6 +1,5 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 
 use axum::Router;
 use color_eyre::eyre;
@@ -29,7 +28,6 @@ impl WSDHttpServer {
         bound_to: NetworkAddress,
         cancellation_token: CancellationToken,
         config: Arc<Config>,
-        messages_built: Arc<AtomicU64>,
         http_listen_address: SocketAddr,
         recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
     ) -> Result<WSDHttpServer, std::io::Error> {
@@ -49,7 +47,7 @@ impl WSDHttpServer {
         let handle = tokio::task::spawn(launch_http_server(
             cancellation_token.clone(),
             listener,
-            build_router(Arc::clone(&config), messages_built, message_handler),
+            build_router(Arc::clone(&config), message_handler),
         ));
 
         Ok(Self {
@@ -90,7 +88,6 @@ pub async fn launch_http_server(
 mod tests {
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicU64, Ordering};
 
     use http::StatusCode;
     use ipnet::IpNet;
@@ -115,7 +112,6 @@ mod tests {
         let host_ip = Ipv4Addr::LOCALHOST;
         let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
         let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
-        let host_messages_built = Arc::new(AtomicU64::new(0));
 
         let cancellation_token = CancellationToken::new();
 
@@ -126,7 +122,6 @@ mod tests {
             ),
             cancellation_token.child_token(),
             Arc::clone(&host_config),
-            host_messages_built,
             host_http_listening_address,
             Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES))),
         )
@@ -179,7 +174,6 @@ mod tests {
         let host_ip = Ipv4Addr::LOCALHOST;
         let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
         let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
-        let host_messages_built = Arc::new(AtomicU64::new(0));
 
         let cancellation_token = CancellationToken::new();
 
@@ -190,7 +184,6 @@ mod tests {
             ),
             cancellation_token.child_token(),
             Arc::clone(&host_config),
-            host_messages_built,
             host_http_listening_address,
             Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES))),
         )
@@ -277,7 +270,6 @@ mod tests {
         let host_ip = Ipv4Addr::LOCALHOST;
         let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
         let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
-        let host_messages_built = Arc::new(AtomicU64::new(0));
 
         let cancellation_token = CancellationToken::new();
 
@@ -288,7 +280,6 @@ mod tests {
             ),
             cancellation_token.child_token(),
             Arc::clone(&host_config),
-            Arc::clone(&host_messages_built),
             host_http_listening_address,
             Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES))),
         )
@@ -312,11 +303,13 @@ mod tests {
             .await
             .unwrap();
 
+        let expected_message_number = 0_usize;
+
         let expected = format!(
             include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
             client_message_id.urn(),
-            host_config.wsd_instance_id,
-            host_messages_built.load(Ordering::Relaxed) - 1,
+            host_config.app_sequence.instance_id(),
+            expected_message_number,
             host_config.uuid_as_device_uri,
         );
 
@@ -339,7 +332,6 @@ mod tests {
         let host_ip = Ipv4Addr::LOCALHOST;
         let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
         let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
-        let host_messages_built = Arc::new(AtomicU64::new(0));
 
         let cancellation_token = CancellationToken::new();
 
@@ -350,7 +342,6 @@ mod tests {
             ),
             cancellation_token.child_token(),
             Arc::clone(&host_config),
-            Arc::clone(&host_messages_built),
             host_http_listening_address,
             Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES))),
         )

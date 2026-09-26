@@ -1,6 +1,7 @@
 use std::net::IpAddr;
 use std::os::fd::RawFd;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use tracing::{Level, event};
@@ -27,9 +28,38 @@ pub struct Config {
     pub no_host: bool,
     pub metadata_timeout: Duration,
     pub source_port: u16,
-    pub wsd_instance_id: Box<str>,
-    pub sequence_id: Box<str>,
+    pub app_sequence: AppSequence,
     pub bind_to: BindTo,
+}
+
+/// WS-Discovery, Appendix I. `MessageNumber` orders every message of the Target Service, so all interfaces share this counter.
+#[derive(Debug)]
+pub struct AppSequence {
+    instance_id: Box<str>,
+    sequence_id: Box<str>,
+    message_number: AtomicU64,
+}
+
+impl AppSequence {
+    pub fn new(instance_id: Box<str>, sequence_id: Box<str>) -> Self {
+        Self {
+            instance_id,
+            sequence_id,
+            message_number: AtomicU64::new(0),
+        }
+    }
+
+    pub fn instance_id(&self) -> &str {
+        &self.instance_id
+    }
+
+    pub fn sequence_id(&self) -> &str {
+        &self.sequence_id
+    }
+
+    pub fn next_message_number(&self) -> u64 {
+        self.message_number.fetch_add(1, Ordering::Relaxed)
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]

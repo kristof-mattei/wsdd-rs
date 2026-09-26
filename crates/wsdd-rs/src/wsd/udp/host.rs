@@ -1,6 +1,5 @@
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 
 use color_eyre::eyre;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -21,7 +20,6 @@ pub struct WSDHost {
     address: IpAddr,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    messages_built: Arc<AtomicU64>,
     mc_local_port_tx: Sender<OutgoingMulticastMessage>,
 }
 
@@ -29,7 +27,6 @@ impl WSDHost {
     pub fn init(
         cancellation_token: CancellationToken,
         config: Arc<Config>,
-        messages_built: Arc<AtomicU64>,
         bound_to: NetworkAddress,
         incoming_rx: Receiver<IncomingHostMessage>,
         mc_local_port_tx: Sender<OutgoingMulticastMessage>,
@@ -40,7 +37,6 @@ impl WSDHost {
         {
             let cancellation_token = cancellation_token.clone();
             let config = Arc::clone(&config);
-            let messages_built = Arc::clone(&messages_built);
 
             spawn_with_name(
                 format!("wsd host ({})", bound_to.address).as_str(),
@@ -49,7 +45,6 @@ impl WSDHost {
                         bound_to,
                         cancellation_token,
                         config,
-                        messages_built,
                         incoming_rx,
                         uc_wsd_port_tx,
                     )
@@ -62,7 +57,6 @@ impl WSDHost {
             address: address.addr(),
             cancellation_token,
             config,
-            messages_built,
             mc_local_port_tx,
         };
 
@@ -78,7 +72,7 @@ impl WSDHost {
         self.cancellation_token.cancel();
 
         if graceful {
-            if let Err(error) = self.send_bye(&self.messages_built).await {
+            if let Err(error) = self.send_bye().await {
                 event!(Level::DEBUG, ?error, "Failed to schedule bye message");
             }
         } else {
@@ -91,18 +85,11 @@ impl WSDHost {
         let cancellation_token = self.cancellation_token.clone();
         let config = Arc::clone(&self.config);
         let address = self.address;
-        let messages_built = Arc::clone(&self.messages_built);
         let mc_local_port_tx = self.mc_local_port_tx.clone();
 
         tokio::task::spawn(async move {
-            if let Err(error) = send_hello(
-                &cancellation_token,
-                &config,
-                address,
-                &messages_built,
-                &mc_local_port_tx,
-            )
-            .await
+            if let Err(error) =
+                send_hello(&cancellation_token, &config, address, &mc_local_port_tx).await
             {
                 if cancellation_token.is_cancelled() {
                     // we're being cancelled, no need to pollute the shutdown log
@@ -118,8 +105,8 @@ impl WSDHost {
     }
 
     /// WS-Discovery, Section 4.2, Bye message.
-    async fn send_bye(&self, messages_built: &AtomicU64) -> Result<(), eyre::Report> {
-        let bye = Builder::build_bye(&self.config, messages_built)?;
+    async fn send_bye(&self) -> Result<(), eyre::Report> {
+        let bye = Builder::build_bye(&self.config)?;
 
         Ok(self.mc_local_port_tx.send(bye.into()).await?)
     }
@@ -129,11 +116,10 @@ async fn send_hello(
     cancellation_token: &CancellationToken,
     config: &Config,
     address: IpAddr,
-    messages_built: &AtomicU64,
     mc_local_port_tx: &Sender<OutgoingMulticastMessage>,
 ) -> Result<(), eyre::Report> {
     let future = async move {
-        let hello = Builder::build_hello(config, messages_built, address)?;
+        let hello = Builder::build_hello(config, address)?;
 
         mc_local_port_tx
             .send(hello.into())
@@ -149,15 +135,12 @@ async fn send_hello(
 
 pub fn handle_probe(
     config: &Config,
-    messages_built: &AtomicU64,
     relates_to: &MessageId,
     probe: &Probe,
 ) -> Result<Option<UnicastMessage>, eyre::Report> {
     if probe.types.is_empty() || probe.requested_type_match() {
         Ok(Some(builder::Builder::build_probe_matches(
-            config,
-            messages_built,
-            relates_to,
+            config, relates_to,
         )?))
     } else {
         event!(
@@ -173,17 +156,13 @@ pub fn handle_probe(
 fn handle_resolve(
     address: IpAddr,
     config: &Config,
-    messages_built: &AtomicU64,
     target_uuid: uuid::Uuid,
     relates_to: &MessageId,
     resolve: &Resolve,
 ) -> Result<Option<UnicastMessage>, eyre::Report> {
     if resolve.addr_urn == target_uuid.urn() {
         Ok(Some(builder::Builder::build_resolve_matches(
-            config,
-            address,
-            messages_built,
-            relates_to,
+            config, address, relates_to,
         )?))
     } else {
         event!(
@@ -201,7 +180,6 @@ async fn listen_forever(
     bound_to: NetworkAddress,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    messages_built: Arc<AtomicU64>,
     mut incoming_rx: Receiver<IncomingHostMessage>,
     uc_wsd_port_tx: Sender<OutgoingMessage>,
 ) {
@@ -229,17 +207,10 @@ async fn listen_forever(
 
         // dispatch based on the SOAP Action header
         let response = match message {
-            HostMessage::Probe(probe) => {
-                handle_probe(&config, &messages_built, &header.message_id, &probe)
+            HostMessage::Probe(probe) => handle_probe(&config, &header.message_id, &probe),
+            HostMessage::Resolve(resolve) => {
+                handle_resolve(address, &config, config.uuid, &header.message_id, &resolve)
             },
-            HostMessage::Resolve(resolve) => handle_resolve(
-                address,
-                &config,
-                &messages_built,
-                config.uuid,
-                &header.message_id,
-                &resolve,
-            ),
             HostMessage::Get(_) => {
                 event!(
                     Level::DEBUG,
@@ -282,7 +253,6 @@ async fn listen_forever(
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicU64, Ordering};
 
     use ipnet::IpNet;
     use libc::RT_SCOPE_SITE;
@@ -302,7 +272,6 @@ mod tests {
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
         let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
-        let host_messages_built = Arc::new(AtomicU64::new(0));
 
         let cancellation_token = CancellationToken::new();
         let (_incoming_tx, incoming_rx) = tokio::sync::mpsc::channel(10);
@@ -312,7 +281,6 @@ mod tests {
         let _wsd_host = WSDHost::init(
             cancellation_token.child_token(),
             Arc::clone(&host_config),
-            Arc::clone(&host_messages_built),
             NetworkAddress::new(
                 IpNet::new(host_ip.into(), 24).unwrap(),
                 Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
@@ -327,7 +295,7 @@ mod tests {
         let expected = format!(
             include_str!("../../test/hello-with-xaddrs-template.xml"),
             Uuid::nil(),
-            host_config.wsd_instance_id,
+            host_config.app_sequence.instance_id(),
             Uuid::nil(),
             host_config.uuid_as_device_uri,
             host_ip,
@@ -342,11 +310,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn hellos_on_two_addresses_get_distinct_message_numbers() {
+        fn message_number(message: &[u8]) -> u64 {
+            let message = std::str::from_utf8(message).unwrap();
+            let (_, rest) = message.split_once("MessageNumber=\"").unwrap();
+            let (message_number, _) = rest.split_once('"').unwrap();
+
+            message_number.parse().unwrap()
+        }
+
+        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+
+        let cancellation_token = CancellationToken::new();
+        let (_eth0_incoming_tx, eth0_incoming_rx) = tokio::sync::mpsc::channel(10);
+        let (_eth1_incoming_tx, eth1_incoming_rx) = tokio::sync::mpsc::channel(10);
+        let (mc_local_port_tx, mut mc_local_port_rx) = tokio::sync::mpsc::channel(10);
+        let (uc_wsd_port_tx, _uc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
+
+        let _eth0_wsd_host = WSDHost::init(
+            cancellation_token.child_token(),
+            Arc::clone(&host_config),
+            NetworkAddress::new(
+                IpNet::new(Ipv4Addr::new(192, 168, 100, 5).into(), 24).unwrap(),
+                Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+            ),
+            eth0_incoming_rx,
+            mc_local_port_tx.clone(),
+            uc_wsd_port_tx.clone(),
+        );
+
+        let _eth1_wsd_host = WSDHost::init(
+            cancellation_token.child_token(),
+            Arc::clone(&host_config),
+            NetworkAddress::new(
+                IpNet::new(Ipv4Addr::new(10, 0, 0, 5).into(), 24).unwrap(),
+                Arc::new(NetworkInterface::new_with_index("eth1", RT_SCOPE_SITE, 6)),
+            ),
+            eth1_incoming_rx,
+            mc_local_port_tx,
+            uc_wsd_port_tx,
+        );
+
+        let first = mc_local_port_rx.recv().await.unwrap();
+        let second = mc_local_port_rx.recv().await.unwrap();
+
+        let mut message_numbers = [
+            message_number(first.message.as_ref()),
+            message_number(second.message.as_ref()),
+        ];
+        message_numbers.sort_unstable();
+
+        assert_eq!(message_numbers, [0, 1]);
+    }
+
+    #[tokio::test]
     async fn sends_bye() {
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
         let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
-        let host_messages_built = Arc::new(AtomicU64::new(0));
 
         let cancellation_token = CancellationToken::new();
         let (_incoming_tx, incoming_rx) = tokio::sync::mpsc::channel(10);
@@ -356,7 +377,6 @@ mod tests {
         let wsd_host = WSDHost::init(
             cancellation_token.child_token(),
             Arc::clone(&host_config),
-            Arc::clone(&host_messages_built),
             NetworkAddress::new(
                 IpNet::new(host_ip.into(), 24).unwrap(),
                 Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
@@ -377,7 +397,7 @@ mod tests {
         let expected = format!(
             include_str!("../../test/bye-template.xml"),
             Uuid::nil(),
-            host_config.wsd_instance_id,
+            host_config.app_sequence.instance_id(),
             Uuid::nil(),
             expected_message_number,
             host_config.uuid_as_device_uri,
@@ -396,7 +416,6 @@ mod tests {
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
         let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
-        let host_messages_built = Arc::new(AtomicU64::new(0));
 
         // client
         let client_message_id = Uuid::now_v7();
@@ -420,7 +439,6 @@ mod tests {
         let response = handle_resolve(
             IpAddr::from(host_ip),
             &host_config,
-            &host_messages_built,
             host_config.uuid,
             &header.message_id,
             &resolve,
@@ -428,11 +446,13 @@ mod tests {
         .unwrap()
         .unwrap();
 
+        let expected_message_number = 0_usize;
+
         let expected = format!(
             include_str!("../../test/resolve-matches-template.xml"),
             client_message_id.urn(),
-            host_config.wsd_instance_id,
-            host_messages_built.load(Ordering::Relaxed) - 1,
+            host_config.app_sequence.instance_id(),
+            expected_message_number,
             host_config.uuid_as_device_uri,
             host_ip,
             constants::WSD_HTTP_PORT,
@@ -498,7 +518,6 @@ mod tests {
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
         let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
-        let host_messages_built = Arc::new(AtomicU64::new(0));
 
         // host receives client's probe
         let (header, message) = host_message_handler
@@ -512,20 +531,17 @@ mod tests {
         let probe = message.into_probe().unwrap();
 
         // host produces answer
-        let response = handle_probe(
-            &host_config,
-            &host_messages_built,
-            &header.message_id,
-            &probe,
-        )
-        .unwrap()
-        .unwrap();
+        let response = handle_probe(&host_config, &header.message_id, &probe)
+            .unwrap()
+            .unwrap();
+
+        let expected_message_number = 0_usize;
 
         let expected = format!(
             include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
             client_message_id,
-            host_config.wsd_instance_id,
-            host_messages_built.load(Ordering::Relaxed) - 1,
+            host_config.app_sequence.instance_id(),
+            expected_message_number,
             host_config.uuid_as_device_uri,
         );
 

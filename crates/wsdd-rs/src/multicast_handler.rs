@@ -1,6 +1,5 @@
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 
 use color_eyre::eyre::{self, Context as _};
 use hashbrown::HashMap;
@@ -46,8 +45,6 @@ pub struct MulticastHandler {
 
     recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
 
-    /// Shared reference for global message counter.
-    messages_built: Arc<AtomicU64>,
     /// The address and interface we're bound on.
     network_address: NetworkAddress,
 
@@ -202,7 +199,6 @@ impl MulticastHandler {
             network_address,
             devices,
             recent_messages,
-            messages_built: Arc::new(AtomicU64::new(0)),
             multicast_address,
             http_listen_address,
             wsd_client: OnceCell::new(),
@@ -453,7 +449,6 @@ impl MulticastHandler {
                 WSDHost::init(
                     self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
-                    Arc::clone(&self.messages_built),
                     self.network_address.clone(),
                     host_rx,
                     self.mc_local_port_tx.get_tx(),
@@ -502,7 +497,6 @@ impl MulticastHandler {
                     self.network_address.clone(),
                     self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
-                    Arc::clone(&self.messages_built),
                     self.http_listen_address,
                     Arc::clone(&self.recent_messages),
                 )
