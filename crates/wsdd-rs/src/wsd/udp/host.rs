@@ -138,7 +138,7 @@ pub fn handle_probe(
     relates_to: &MessageId,
     probe: &Probe,
 ) -> Result<Option<UnicastMessage>, eyre::Report> {
-    if probe.types.is_empty() || probe.requested_type_match() {
+    if probe.matches() {
         Ok(Some(builder::Builder::build_probe_matches(
             config, relates_to,
         )?))

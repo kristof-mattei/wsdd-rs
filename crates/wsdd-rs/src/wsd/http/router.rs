@@ -122,7 +122,7 @@ async fn build_response(
             }
         },
         WSDMessage::HostMessage(HostMessage::Probe(probe)) => {
-            if probe.types.is_empty() || probe.requested_type_match() {
+            if probe.matches() {
                 return Ok(Some(builder::Builder::build_probe_matches(
                     config,
                     &header.message_id,
