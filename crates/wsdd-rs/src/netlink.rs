@@ -57,10 +57,8 @@ pub const fn RTA_NEXT(rta: *const rtattr, attrlen: &mut usize) -> *const rtattr 
     // well-formed netlink pads every attribute, but a malformed buffer can end before the final attribute's padding, then saturating to 0 lets `RTA_OK` end the walk
     *attrlen = attrlen.saturating_sub(aligned_len);
 
-    let offset = aligned_len;
-
-    // SAFETY: This is how we walk through the buffer received from the kernel
-    unsafe { rta.byte_add(offset) }
+    // well-formed netlink leaves the next pointer exactly at the end of the data, but a malformed final attribute can put it past the end of the allocation, where computing it with `byte_add` would be undefined behavior even though `RTA_OK` rejects it before any read
+    rta.wrapping_byte_add(aligned_len)
 }
 
 #[expect(non_snake_case, reason = "Mirror the macros")]
@@ -138,10 +136,8 @@ pub const fn NLMSG_NEXT(nlh: *const nlmsghdr, len: &mut usize) -> *const nlmsghd
     // well-formed netlink pads every message, but a malformed buffer can end before the final message's padding, then saturating to 0 lets `NLMSG_OK` end the walk
     *len = len.saturating_sub(aligned_len);
 
-    let offset = aligned_len;
-
-    // SAFETY: This is how we walk through the buffer received from the kernel
-    unsafe { nlh.byte_add(offset) }
+    // well-formed netlink leaves the next pointer exactly at the end of the data, but a malformed final message can put it past the end of the allocation, where computing it with `byte_add` would be undefined behavior even though `NLMSG_OK` rejects it before any read
+    nlh.wrapping_byte_add(aligned_len)
 }
 
 #[expect(non_snake_case, reason = "Mirror the macros")]
@@ -167,6 +163,8 @@ pub const fn NLMSG_PAYLOAD(nlh: *const nlmsghdr, len: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use std::alloc::{Layout, alloc_zeroed, dealloc};
+
     use pretty_assertions::assert_eq;
     use shared::netlink::{ifaddrmsg, nlmsghdr, rtattr};
 
@@ -174,8 +172,8 @@ mod tests {
 
     #[test]
     fn attribute_walk_stops_after_unpadded_final_attribute() {
-        // `rta_len`, `rta_type` and payload of a padded 8-byte attribute, then of an unpadded 5-byte one, then 3 spare bytes
-        let buffer: &[u16] = &[8, 1, 0, 0, 5, 2, 0, 0];
+        // `rta_len`, `rta_type` and payload of a padded 8-byte attribute, then of an unpadded 5-byte one, and the buffer ends 1 byte later
+        let buffer: &[u16] = &[8, 1, 0, 0, 5, 2, 0];
 
         let mut rta = buffer.as_ptr().cast::<rtattr>();
         let mut remaining = 13;
@@ -194,17 +192,38 @@ mod tests {
 
     #[test]
     fn message_walk_stops_after_unpadded_final_message() {
-        // a 16-byte `nlmsghdr` with `nlmsg_len` 17, then 1 payload byte, then 3 spare bytes
-        let buffer: &[u32] = &[17, 0, 0, 0, 0];
+        // a 16-byte `nlmsghdr` with `nlmsg_len` 17, then 1 payload byte, in an allocation that ends right after it
+        let layout = Layout::from_size_align(17, align_of::<nlmsghdr>()).unwrap();
 
-        let mut nlh = buffer.as_ptr().cast::<nlmsghdr>();
-        let mut remaining = 17;
+        // SAFETY: `layout` has a non-zero size
+        let buffer = unsafe { alloc_zeroed(layout) };
+
+        assert!(!buffer.is_null(), "allocation failed");
+
+        #[expect(
+            clippy::cast_ptr_alignment,
+            reason = "`layout` has the alignment of `nlmsghdr`"
+        )]
+        let first = buffer.cast::<nlmsghdr>();
+
+        // SAFETY: `buffer` holds 17 zeroed bytes aligned for `nlmsghdr`
+        unsafe {
+            (*first).nlmsg_len = 17;
+        }
+
+        let mut nlh = first.cast_const();
+        let mut remaining = layout.size();
         let mut messages = 0_usize;
 
         while NLMSG_OK(nlh, remaining) {
             messages += 1;
 
             nlh = NLMSG_NEXT(nlh, &mut remaining);
+        }
+
+        // SAFETY: allocated above with `layout`
+        unsafe {
+            dealloc(buffer, layout);
         }
 
         assert_eq!(messages, 1);
