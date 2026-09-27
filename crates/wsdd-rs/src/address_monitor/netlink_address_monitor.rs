@@ -345,17 +345,21 @@ async fn parse_netlink_response(
             // SAFETY: `nlh.nlmsg_type` guarantees
             let error = unsafe { &*NLMSG_DATA::<nlmsgerr>(*nlh_wrapper) };
 
-            event!(Level::ERROR, "NLMSG_ERROR");
-
             if error.error == 0 {
-                event!(Level::ERROR, "ACK");
+                event!(Level::DEBUG, "ACK");
 
                 break;
             }
 
+            event!(
+                Level::ERROR,
+                error = %std::io::Error::from_raw_os_error(error.error.wrapping_neg()),
+                "NLMSG_ERROR"
+            );
+
             None
         } else if i32::from(nlh.nlmsg_type) == NLMSG_NOOP {
-            event!(Level::ERROR, "NLMSG_ERROR");
+            event!(Level::DEBUG, "NLMSG_NOOP");
 
             None
         } else if nlh.nlmsg_type == RTM_NEWADDR {
