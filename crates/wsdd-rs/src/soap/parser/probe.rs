@@ -19,6 +19,14 @@ pub struct Probe {
     pub types: Option<HashSet<QName>>,
 }
 
+/// The children of `wsd:Probe` in `ProbeType` sequence order (WS-Discovery, Appendix II).
+#[derive(PartialEq, PartialOrd)]
+enum ProbeChild {
+    Types,
+    Scopes,
+    Extension,
+}
+
 /// This takes in a reader that is stopped at the body tag.
 /// This function makes NO claims about the position of the reader
 /// should the structure XML be invalid (e.g. missing `Address`).
@@ -34,6 +42,7 @@ where
     find_child(reader, Some(constants::XML_WSD_NAMESPACE), "Probe")?;
 
     let mut types = None;
+    let mut last_child = None;
 
     let entry_depth = reader.depth();
 
@@ -42,11 +51,26 @@ where
         match reader.next()? {
             XmlEvent::StartElement {
                 name, namespace, ..
-            } if reader.depth() == entry_depth + 1
-                && name.namespace_ref() == Some(constants::XML_WSD_NAMESPACE) =>
-            {
-                match &*name.local_name {
-                    "Scopes" => {
+            } if reader.depth() == entry_depth + 1 => {
+                match (name.namespace_ref(), &*name.local_name) {
+                    (Some(constants::XML_WSD_NAMESPACE), "Types") => {
+                        if last_child >= Some(ProbeChild::Types) {
+                            return Err(BodyParsingError::InvalidElementOrder);
+                        }
+
+                        last_child = Some(ProbeChild::Types);
+
+                        let raw_types = read_text(reader)?.unwrap_or_default();
+
+                        types = Some(parse_types(&raw_types, &namespace)?);
+                    },
+                    (Some(constants::XML_WSD_NAMESPACE), "Scopes") => {
+                        if last_child >= Some(ProbeChild::Scopes) {
+                            return Err(BodyParsingError::InvalidElementOrder);
+                        }
+
+                        last_child = Some(ProbeChild::Scopes);
+
                         let text = read_text(reader)?;
                         let raw_scopes = text.unwrap_or_default();
 
@@ -56,12 +80,12 @@ where
                             "Ignoring unsupported scopes in probe request"
                         );
                     },
-                    "Types" => {
-                        let raw_types = read_text(reader)?.unwrap_or_default();
-
-                        types = Some(parse_types(&raw_types, &namespace)?);
+                    (Some(constants::XML_WSD_NAMESPACE) | None, _) => {
+                        // not part of `ProbeType`, ignored
                     },
-                    _ => {},
+                    (Some(_), _) => {
+                        last_child = Some(ProbeChild::Extension);
+                    },
                 }
             },
             XmlEvent::EndElement { .. } if reader.depth() < entry_depth => {
@@ -320,16 +344,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_types_after_scopes() {
-        let probe = parse(
-            "<wsd:Scopes>http://example.com/scope</wsd:Scopes><wsd:Types>wsdp:Device</wsd:Types>",
-        )
-        .unwrap();
-
-        assert!(probe.types.is_some());
-    }
-
-    #[test]
     fn consumes_scopes_after_types() {
         let xml = probe_xml(
             "<wsd:Types>wsdp:Device</wsd:Types><wsd:Scopes>http://example.com/scope</wsd:Scopes>",
@@ -340,5 +354,57 @@ mod tests {
 
         assert!(probe.types.is_some());
         assert_matches!(reader.next(), Ok(XmlEvent::EndDocument));
+    }
+
+    #[test]
+    fn parses_extension_after_scopes() {
+        let probe = parse(
+            r#"<wsd:Types>wsdp:Device</wsd:Types><wsd:Scopes>http://example.com/scope</wsd:Scopes><ext:Extension xmlns:ext="urn:ext" />"#,
+        )
+        .unwrap();
+
+        assert!(probe.types.is_some());
+    }
+
+    #[test]
+    fn rejects_second_types() {
+        let result = parse("<wsd:Types>wsdp:Printer</wsd:Types><wsd:Types>wsdp:Device</wsd:Types>");
+
+        assert_matches!(result.err(), Some(BodyParsingError::InvalidElementOrder));
+    }
+
+    #[test]
+    fn rejects_second_scopes() {
+        let result = parse(
+            "<wsd:Scopes>http://example.com/a</wsd:Scopes><wsd:Scopes>http://example.com/b</wsd:Scopes>",
+        );
+
+        assert_matches!(result.err(), Some(BodyParsingError::InvalidElementOrder));
+    }
+
+    #[test]
+    fn rejects_types_after_scopes() {
+        let result = parse(
+            "<wsd:Scopes>http://example.com/scope</wsd:Scopes><wsd:Types>wsdp:Device</wsd:Types>",
+        );
+
+        assert_matches!(result.err(), Some(BodyParsingError::InvalidElementOrder));
+    }
+
+    #[test]
+    fn rejects_types_after_extension() {
+        let result =
+            parse(r#"<ext:Extension xmlns:ext="urn:ext" /><wsd:Types>wsdp:Device</wsd:Types>"#);
+
+        assert_matches!(result.err(), Some(BodyParsingError::InvalidElementOrder));
+    }
+
+    #[test]
+    fn rejects_scopes_after_extension() {
+        let result = parse(
+            r#"<ext:Extension xmlns:ext="urn:ext" /><wsd:Scopes>http://example.com/scope</wsd:Scopes>"#,
+        );
+
+        assert_matches!(result.err(), Some(BodyParsingError::InvalidElementOrder));
     }
 }
