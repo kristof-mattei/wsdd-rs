@@ -23,7 +23,7 @@ use crate::wsd::device::DeviceUri;
     about,
     version = concat!("v", env!("CARGO_PKG_VERSION")),
     long_version = concat!("- Web Service Discovery Daemon, v", env!("CARGO_PKG_VERSION")),
-    color = clap::ColorChoice::Always
+    color = clap::ColorChoice::Auto
 )]
 pub struct CliArgs {
     #[arg(short, long, help = "interface or address to use")]
