@@ -252,7 +252,7 @@ fn parse_message_body(
         constants::WSD_HELLO => Ok(soap::parser::hello::parse_hello(&mut reader)?.into()),
         constants::WSD_BYE => Ok(soap::parser::bye::parse_bye(&mut reader)?.into()),
         constants::WSD_PROBE_MATCH => {
-            Ok(soap::parser::probe_match::parse_probe_match(&mut reader)?.into())
+            Ok(soap::parser::probe_match::parse_probe_matches(&mut reader)?.into())
         },
         constants::WSD_RESOLVE_MATCH => {
             Ok(soap::parser::resolve_match::parse_resolve_match(&mut reader)?.into())
