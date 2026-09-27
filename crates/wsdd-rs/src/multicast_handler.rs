@@ -266,10 +266,6 @@ impl MulticastHandler {
         // sent, or failed to send, but we avoided the 'schedule but shut down too soon' situation.
     }
 
-    pub fn handles_address(&self, network_address: &NetworkAddress) -> bool {
-        &self.network_address == network_address
-    }
-
     fn init_v6(
         ipv6_net: Ipv6Net,
         interface: Arc<NetworkInterface>,
