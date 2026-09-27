@@ -60,7 +60,7 @@ pub const fn RTA_NEXT(rta: *const rtattr, attrlen: &mut usize) -> *const rtattr 
     let offset = aligned_len;
 
     // SAFETY: This is how we walk through the buffer received from the kernel
-    unsafe { rta.byte_add(offset).cast::<rtattr>() }
+    unsafe { rta.byte_add(offset) }
 }
 
 #[expect(non_snake_case, reason = "Mirror the macros")]
@@ -124,7 +124,7 @@ pub const fn NLMSG_DATA<T>(nlh: *const nlmsghdr) -> *const T {
     unsafe { nlh.byte_add(offset).cast::<T>() }
 }
 
-#[expect(non_snake_case, unused, reason = "Mirror the macros")]
+#[expect(non_snake_case, reason = "Mirror the macros")]
 /// Advance to the next `nlmsghdr` in a contiguous netlink message buffer.
 /// Validate the returned pointer with `NLMSG_OK`.
 pub const fn NLMSG_NEXT(nlh: *const nlmsghdr, len: &mut usize) -> *const nlmsghdr {
@@ -141,7 +141,7 @@ pub const fn NLMSG_NEXT(nlh: *const nlmsghdr, len: &mut usize) -> *const nlmsghd
     let offset = aligned_len;
 
     // SAFETY: This is how we walk through the buffer received from the kernel
-    unsafe { (nlh.byte_add(offset).cast::<nlmsghdr>()) }
+    unsafe { nlh.byte_add(offset) }
 }
 
 #[expect(non_snake_case, reason = "Mirror the macros")]
