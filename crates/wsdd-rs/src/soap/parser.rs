@@ -69,6 +69,8 @@ pub enum BodyParsingError {
     InvalidElementOrder,
     #[error("Invalid UUID: {}", .0)]
     InvalidUrnUuid(uuid::Error),
+    #[error("Invalid QName: {}", .0)]
+    InvalidQName(Box<str>),
 }
 
 impl From<xml::reader::Error> for BodyParsingError {
