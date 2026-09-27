@@ -47,6 +47,8 @@ pub enum HeaderParsingError {
     MissingMessageId,
     #[error("Missing Action")]
     MissingAction,
+    #[error("Duplicate soap:Header")]
+    DuplicateHeader,
 }
 
 impl From<xml::reader::Error> for HeaderParsingError {
@@ -172,6 +174,10 @@ where
                 if name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE) =>
             {
                 if name.local_name == "Header" {
+                    if header.is_some() {
+                        return Err(HeaderParsingError::DuplicateHeader.into());
+                    }
+
                     header = Some(parse_header(&mut reader)?);
                 } else if name.local_name == "Body" {
                     has_body = true;
@@ -431,15 +437,19 @@ mod tests {
 
     use ipnet::IpNet;
     use libc::RT_SCOPE_SITE;
+    use pretty_assertions::assert_matches;
     use tokio::sync::RwLock;
     use tokio::time::{Duration, timeout};
     use uuid::Uuid;
 
+    use crate::constants;
     use crate::max_size_deque::MaxSizeDeque;
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
     use crate::soap::MessageId;
-    use crate::soap::parser::MessageHandler;
+    use crate::soap::parser::{
+        HeaderParsingError, MessageHandler, MessageHandlerError, deconstruct_raw,
+    };
 
     fn handler_for_tests(history: usize) -> MessageHandler {
         MessageHandler::new(
@@ -473,6 +483,31 @@ mod tests {
         assert!(
             second_hit,
             "the message id must be seen as duplicate after it is stored"
+        );
+    }
+
+    #[test]
+    fn rejects_second_soap_header() {
+        let header = format!(
+            "<soap:Header><wsa:Action>{}</wsa:Action><wsa:MessageID>{}</wsa:MessageID></soap:Header>",
+            constants::WSD_PROBE,
+            Uuid::now_v7().urn()
+        );
+        let message = format!(
+            r#"<soap:Envelope xmlns:soap="{}" xmlns:wsa="{}">{}{}<soap:Body /></soap:Envelope>"#,
+            constants::XML_SOAP_NAMESPACE,
+            constants::WSA_URI,
+            header,
+            header
+        );
+
+        let result = deconstruct_raw(message.as_bytes());
+
+        assert_matches!(
+            result.err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::DuplicateHeader
+            ))
         );
     }
 }
