@@ -23,7 +23,7 @@ use crate::network_address::NetworkAddress;
 use crate::soap::builder::Builder;
 use crate::soap::parser::bye::Bye;
 use crate::soap::parser::hello::Hello;
-use crate::soap::parser::probe_match::ProbeMatch;
+use crate::soap::parser::probe_match::{ProbeMatch, ProbeMatches};
 use crate::soap::parser::resolve_match::ResolveMatch;
 use crate::soap::parser::xaddrs::XAddr;
 use crate::soap::{ClientMessage, MessageId, MulticastMessage};
@@ -341,7 +341,7 @@ async fn handle_bye(
 }
 
 #[expect(clippy::too_many_arguments, reason = "WIP")]
-async fn handle_probe_match(
+async fn handle_probe_matches(
     client: &reqwest::Client,
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
@@ -351,10 +351,7 @@ async fn handle_probe_match(
     probes: Arc<RwLock<HashMap<MessageId, LastCopy>>>,
     mc_local_port_tx: &Sender<OutgoingMulticastMessage>,
     resolves: &mut HashMap<MessageId, LastCopy>,
-    ProbeMatch {
-        endpoint,
-        raw_xaddrs,
-    }: ProbeMatch,
+    ProbeMatches { matches }: ProbeMatches,
 ) -> Result<(), eyre::Report> {
     let Some(relates_to) = relates_to else {
         event!(Level::DEBUG, "missing `RelatesTo`");
@@ -373,6 +370,38 @@ async fn handle_probe_match(
         return Ok(());
     }
 
+    for probe_match in matches {
+        // one failed match must not drop the others in the same message
+        if let Err(error) = handle_probe_match(
+            client,
+            config,
+            Arc::clone(&devices),
+            bound_to,
+            mc_local_port_tx,
+            resolves,
+            probe_match,
+        )
+        .await
+        {
+            event!(Level::ERROR, ?error, "Failure to handle ProbeMatch");
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_probe_match(
+    client: &reqwest::Client,
+    config: &Config,
+    devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+    bound_to: &NetworkAddress,
+    mc_local_port_tx: &Sender<OutgoingMulticastMessage>,
+    resolves: &mut HashMap<MessageId, LastCopy>,
+    ProbeMatch {
+        endpoint,
+        raw_xaddrs,
+    }: ProbeMatch,
+) -> Result<(), eyre::Report> {
     //  If no XAddrs are included in the ProbeMatches message, then the client may send a
     //  Resolve message by UDP multicast to port 3702.
     let Some(raw_xaddrs) = raw_xaddrs else {
@@ -589,8 +618,8 @@ async fn listen_forever(
                 .await
             },
             ClientMessage::Bye(bye) => handle_bye(Arc::clone(&devices), bye).await,
-            ClientMessage::ProbeMatch(probe_match) => {
-                handle_probe_match(
+            ClientMessage::ProbeMatches(probe_matches) => {
+                handle_probe_matches(
                     &client,
                     &config,
                     Arc::clone(&devices),
@@ -600,7 +629,7 @@ async fn listen_forever(
                     Arc::clone(&probes),
                     &mc_local_port_tx,
                     &mut resolves,
-                    probe_match,
+                    probe_matches,
                 )
                 .await
             },
@@ -660,7 +689,7 @@ mod tests {
     use crate::test_utils::{build_config, build_message_handler_with_network_address};
     use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
     use crate::wsd::udp::client::{
-        LastCopy, WSDClient, handle_bye, handle_hello, handle_metadata, handle_probe_match,
+        LastCopy, WSDClient, handle_bye, handle_hello, handle_metadata, handle_probe_matches,
         handle_resolve_match, parse_xaddrs,
     };
 
@@ -1340,11 +1369,11 @@ mod tests {
             Arc::new(RwLock::new(hash_map))
         };
 
-        let probe_match = message.into_probe_match().unwrap();
+        let probe_matches = message.into_probe_matches().unwrap();
 
         let mut resolves = HashMap::new();
 
-        let result = handle_probe_match(
+        let result = handle_probe_matches(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
@@ -1354,7 +1383,7 @@ mod tests {
             probes,
             &multicast_tx,
             &mut resolves,
-            probe_match,
+            probe_matches,
         )
         .await;
 
@@ -1378,6 +1407,89 @@ mod tests {
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(response, expected);
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn handles_every_probe_match() {
+        let (message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // hosts
+        let host_message_id = Uuid::now_v7();
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let first_endpoint = Uuid::now_v7().urn().to_string();
+        let second_endpoint = Uuid::now_v7().urn().to_string();
+
+        let probe_matches = format!(
+            include_str!("../../test/probe-matches-multiple-without-xaddrs-template.xml"),
+            host_message_id.urn(),
+            first_endpoint,
+            second_endpoint,
+        );
+
+        let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(2);
+
+        let (header, message) = message_handler
+            .deconstruct_message(
+                probe_matches.as_bytes(),
+                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
+            )
+            .await
+            .unwrap();
+
+        let probes = {
+            let mut hash_map = HashMap::new();
+
+            hash_map.insert(
+                MessageId::from(host_message_id.urn()),
+                LastCopy::Sent(Instant::now()),
+            );
+
+            Arc::new(RwLock::new(hash_map))
+        };
+
+        let probe_matches = message.into_probe_matches().unwrap();
+
+        let mut resolves = HashMap::new();
+
+        let result = handle_probe_matches(
+            &reqwest::ClientBuilder::new().build().unwrap(),
+            &client_config,
+            Arc::clone(&client_devices),
+            &client_network_address,
+            header.relates_to,
+            Instant::now(),
+            probes,
+            &multicast_tx,
+            &mut resolves,
+            probe_matches,
+        )
+        .await;
+
+        assert_matches!(result, Ok(()));
+
+        for endpoint in [first_endpoint, second_endpoint] {
+            let expected = format!(
+                include_str!("../../test/resolve-template.xml"),
+                Uuid::nil(),
+                endpoint,
+            );
+
+            let response = {
+                let response = multicast_rx.try_recv().unwrap();
+
+                to_string_pretty(response.message.as_ref()).unwrap()
+            };
+
+            let expected = to_string_pretty(expected.as_bytes()).unwrap();
+
+            assert_eq!(response, expected);
+        }
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1426,11 +1538,11 @@ mod tests {
             Arc::new(RwLock::new(hash_map))
         };
 
-        let probe_match = message.into_probe_match().unwrap();
+        let probe_matches = message.into_probe_matches().unwrap();
 
         let mut resolves = HashMap::new();
 
-        let result = handle_probe_match(
+        let result = handle_probe_matches(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
@@ -1440,7 +1552,7 @@ mod tests {
             probes,
             &multicast_tx,
             &mut resolves,
-            probe_match,
+            probe_matches,
         )
         .await;
 
@@ -1531,11 +1643,11 @@ mod tests {
             Arc::new(RwLock::new(hash_map))
         };
 
-        let probe_match = message.into_probe_match().unwrap();
+        let probe_matches = message.into_probe_matches().unwrap();
 
         let mut resolves = HashMap::new();
 
-        let result = handle_probe_match(
+        let result = handle_probe_matches(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
@@ -1545,7 +1657,7 @@ mod tests {
             probes,
             &multicast_tx,
             &mut resolves,
-            probe_match,
+            probe_matches,
         )
         .await;
 
