@@ -24,7 +24,7 @@ use crate::soap::builder::Builder;
 use crate::soap::parser::bye::Bye;
 use crate::soap::parser::hello::Hello;
 use crate::soap::parser::probe_match::{ProbeMatch, ProbeMatches};
-use crate::soap::parser::resolve_match::ResolveMatch;
+use crate::soap::parser::resolve_match::{ResolveMatch, ResolveMatches};
 use crate::soap::parser::xaddrs::XAddr;
 use crate::soap::{ClientMessage, MessageId, MulticastMessage};
 use crate::utils::SliceDisplay;
@@ -432,7 +432,7 @@ async fn handle_probe_match(
 }
 
 #[expect(clippy::too_many_arguments, reason = "WIP")]
-async fn handle_resolve_match(
+async fn handle_resolve_matches(
     client: &reqwest::Client,
     config: &Config,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
@@ -440,10 +440,7 @@ async fn handle_resolve_match(
     relates_to: Option<MessageId>,
     received_at: Instant,
     resolves: &mut HashMap<MessageId, LastCopy>,
-    ResolveMatch {
-        endpoint,
-        raw_xaddrs,
-    }: ResolveMatch,
+    ResolveMatches { resolve_match }: ResolveMatches,
 ) -> Result<(), eyre::Report> {
     let Some(relates_to) = relates_to else {
         event!(Level::DEBUG, "missing `RelatesTo`");
@@ -459,6 +456,16 @@ async fn handle_resolve_match(
         event!(Level::DEBUG, %relates_to, "unknown or outdated resolve");
         return Ok(());
     }
+
+    let Some(ResolveMatch {
+        endpoint,
+        raw_xaddrs,
+    }) = resolve_match
+    else {
+        event!(Level::DEBUG, %relates_to, "ResolveMatches without a match, nothing to do");
+
+        return Ok(());
+    };
 
     let Some(raw_xaddrs) = raw_xaddrs else {
         event!(Level::DEBUG, "ResolveMatch without xaddr, nothing to do");
@@ -633,8 +640,8 @@ async fn listen_forever(
                 )
                 .await
             },
-            ClientMessage::ResolveMatch(resolve_match) => {
-                handle_resolve_match(
+            ClientMessage::ResolveMatches(resolve_matches) => {
+                handle_resolve_matches(
                     &client,
                     &config,
                     Arc::clone(&devices),
@@ -642,7 +649,7 @@ async fn listen_forever(
                     header.relates_to,
                     received_at,
                     &mut resolves,
-                    resolve_match,
+                    resolve_matches,
                 )
                 .await
             },
@@ -690,7 +697,7 @@ mod tests {
     use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
     use crate::wsd::udp::client::{
         LastCopy, WSDClient, handle_bye, handle_hello, handle_metadata, handle_probe_matches,
-        handle_resolve_match, parse_xaddrs,
+        handle_resolve_matches, parse_xaddrs,
     };
 
     #[test]
@@ -1752,9 +1759,9 @@ mod tests {
             hash_map
         };
 
-        let resolve_match = message.into_resolve_match().unwrap();
+        let resolve_matches = message.into_resolve_matches().unwrap();
 
-        let result = handle_resolve_match(
+        let result = handle_resolve_matches(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
@@ -1762,7 +1769,7 @@ mod tests {
             header.relates_to,
             Instant::now(),
             &mut resolves,
-            resolve_match,
+            resolve_matches,
         )
         .await;
 
@@ -1774,6 +1781,55 @@ mod tests {
         let client_devices = client_devices.read().await;
 
         assert_matches!(client_devices.get(&host_config.uuid_as_device_uri), Some(_));
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn handles_resolve_matches_without_match() {
+        let (message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        let resolve_message_id = Uuid::now_v7();
+
+        let resolve_matches = format!(
+            include_str!("../../test/resolve-matches-without-match-template.xml"),
+            resolve_message_id.urn(),
+        );
+
+        let (header, message) = message_handler
+            .deconstruct_message(
+                resolve_matches.as_bytes(),
+                SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(192, 168, 100, 5), 5000)),
+            )
+            .await
+            .unwrap();
+
+        let resolve_matches = message.into_resolve_matches().unwrap();
+
+        let mut resolves = HashMap::from([(
+            MessageId::from(resolve_message_id.urn()),
+            LastCopy::Sent(Instant::now()),
+        )]);
+
+        let result = handle_resolve_matches(
+            &reqwest::ClientBuilder::new().build().unwrap(),
+            &client_config,
+            Arc::clone(&client_devices),
+            &client_network_address,
+            header.relates_to,
+            Instant::now(),
+            &mut resolves,
+            resolve_matches,
+        )
+        .await;
+
+        assert_matches!(result, Ok(()));
+
+        assert!(client_devices.read().await.is_empty());
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1824,10 +1880,10 @@ mod tests {
             .await
             .unwrap();
 
-        let resolve_match = message.into_resolve_match().unwrap();
+        let resolve_matches = message.into_resolve_matches().unwrap();
 
         // no resolve with the message's `RelatesTo` was sent by us
-        let result = handle_resolve_match(
+        let result = handle_resolve_matches(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
@@ -1835,7 +1891,7 @@ mod tests {
             header.relates_to,
             Instant::now(),
             &mut HashMap::new(),
-            resolve_match,
+            resolve_matches,
         )
         .await;
 
@@ -1908,9 +1964,9 @@ mod tests {
             hash_map
         };
 
-        let resolve_match = message.into_resolve_match().unwrap();
+        let resolve_matches = message.into_resolve_matches().unwrap();
 
-        let result = handle_resolve_match(
+        let result = handle_resolve_matches(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
@@ -1918,7 +1974,7 @@ mod tests {
             header.relates_to,
             last_copy_sent_at + constants::MATCH_TIMEOUT,
             &mut resolves,
-            resolve_match,
+            resolve_matches,
         )
         .await;
 

@@ -7,7 +7,7 @@ use crate::soap::parser::hello::Hello;
 use crate::soap::parser::probe::Probe;
 use crate::soap::parser::probe_match::ProbeMatches;
 use crate::soap::parser::resolve::Resolve;
-use crate::soap::parser::resolve_match::ResolveMatch;
+use crate::soap::parser::resolve_match::ResolveMatches;
 
 pub mod builder;
 pub mod parser;
@@ -114,7 +114,7 @@ pub enum ClientMessage {
     Hello(Hello),
     Bye(Bye),
     ProbeMatches(ProbeMatches),
-    ResolveMatch(ResolveMatch),
+    ResolveMatches(ResolveMatches),
 }
 
 impl From<ClientMessage> for WSDMessage {
@@ -212,15 +212,15 @@ impl From<ProbeMatches> for WSDMessage {
     }
 }
 
-impl From<ResolveMatch> for ClientMessage {
-    fn from(value: ResolveMatch) -> Self {
-        ClientMessage::ResolveMatch(value)
+impl From<ResolveMatches> for ClientMessage {
+    fn from(value: ResolveMatches) -> Self {
+        ClientMessage::ResolveMatches(value)
     }
 }
 
-impl From<ResolveMatch> for WSDMessage {
-    fn from(value: ResolveMatch) -> Self {
-        ClientMessage::ResolveMatch(value).into()
+impl From<ResolveMatches> for WSDMessage {
+    fn from(value: ResolveMatches) -> Self {
+        ClientMessage::ResolveMatches(value).into()
     }
 }
 
@@ -275,11 +275,11 @@ impl WSDMessage {
         Some(probe_matches)
     }
 
-    pub fn into_resolve_match(self) -> Option<ResolveMatch> {
-        let WSDMessage::ClientMessage(ClientMessage::ResolveMatch(resolve_match)) = self else {
+    pub fn into_resolve_matches(self) -> Option<ResolveMatches> {
+        let WSDMessage::ClientMessage(ClientMessage::ResolveMatches(resolve_matches)) = self else {
             return None;
         };
 
-        Some(resolve_match)
+        Some(resolve_matches)
     }
 }

@@ -255,7 +255,7 @@ fn parse_message_body(
             Ok(soap::parser::probe_match::parse_probe_matches(&mut reader)?.into())
         },
         constants::WSD_RESOLVE_MATCH => {
-            Ok(soap::parser::resolve_match::parse_resolve_match(&mut reader)?.into())
+            Ok(soap::parser::resolve_match::parse_resolve_matches(&mut reader)?.into())
         },
         constants::WSD_PROBE => Ok(soap::parser::probe::parse_probe(&mut reader)?.into()),
         constants::WSD_RESOLVE => Ok(soap::parser::resolve::parse_resolve(&mut reader)?.into()),
