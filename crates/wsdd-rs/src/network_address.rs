@@ -88,7 +88,7 @@ mod tests {
     }
 
     #[test]
-    fn ipv6_link_local_multicastable() {
+    fn ipv6_unique_local_not_multicastable() {
         let network_address = NetworkAddress::new(
             Ipv6Net::new(
                 Ipv6Addr::new(
@@ -102,6 +102,21 @@ mod tests {
         );
 
         assert!(!network_address.is_multicastable());
+    }
+
+    #[test]
+    fn ipv6_link_local_multicastable() {
+        let network_address = NetworkAddress::new(
+            Ipv6Net::new(
+                Ipv6Addr::new(0xfe80, 0, 0, 0, 0x1c2d, 0x3e4f, 0x5a6b, 0x7c8d),
+                64,
+            )
+            .unwrap()
+            .into(),
+            Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+        );
+
+        assert!(network_address.is_multicastable());
     }
 
     #[test]
