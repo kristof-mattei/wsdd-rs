@@ -511,7 +511,7 @@ async fn perform_metadata_exchange(
             .instrument(span!(Level::DEBUG, "http", host = %xaddr.host_str()))
             .await;
 
-        let response = match response {
+        let response = match response.and_then(reqwest::Response::error_for_status) {
             Ok(response) => response.bytes().await,
             Err(error) => Err(error),
         };
@@ -532,6 +532,8 @@ async fn perform_metadata_exchange(
             },
         }
     }
+
+    event!(Level::WARN, %endpoint, "could not fetch metadata from any XAddr");
 
     Ok(())
 }
@@ -697,7 +699,7 @@ mod tests {
     use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
     use crate::wsd::udp::client::{
         LastCopy, WSDClient, handle_bye, handle_hello, handle_metadata, handle_probe_matches,
-        handle_resolve_matches, parse_xaddrs,
+        handle_resolve_matches, parse_xaddrs, perform_metadata_exchange,
     };
 
     #[test]
@@ -1153,6 +1155,128 @@ mod tests {
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(response, expected);
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn metadata_exchange_tries_next_xaddr_after_http_error() {
+        let (_message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // host
+        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
+            // a host in IPv4 form ensures we bind to an IPv4 address
+            host: "127.0.0.1",
+            // random port
+            port: 0,
+            assert_on_drop: true,
+        })
+        .await;
+
+        let failing = server
+            .mock("POST", "/failing")
+            .with_status(500)
+            .with_header("Content-Type", constants::MIME_TYPE_SOAP_XML)
+            .with_body(
+                r#"<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Body><soap:Fault><soap:Code><soap:Value>soap:Receiver</soap:Value></soap:Code></soap:Fault></soap:Body></soap:Envelope>"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+
+        let working = server
+            .mock("POST", "/working")
+            .with_header("Content-Type", constants::MIME_TYPE_SOAP_XML)
+            .with_body(format!(
+                include_str!("../../test/get-response-synology.xml"),
+                Uuid::now_v7().urn(),
+                Uuid::now_v7().urn(),
+            ))
+            .expect(1)
+            .create_async()
+            .await;
+
+        let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
+
+        let xaddrs = ["failing", "working"]
+            .into_iter()
+            .map(|path| {
+                XAddr::try_from(format!("http://{}/{}", server.socket_address(), path).as_str())
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        let result = perform_metadata_exchange(
+            &reqwest::ClientBuilder::new().build().unwrap(),
+            &client_config,
+            Arc::clone(&client_devices),
+            &client_network_address,
+            device_uri.clone(),
+            xaddrs,
+        )
+        .await;
+
+        assert_matches!(result, Ok(()));
+
+        failing.assert_async().await;
+        working.assert_async().await;
+
+        assert!(client_devices.read().await.contains_key(&device_uri));
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn metadata_exchange_stores_nothing_when_every_xaddr_fails() {
+        let (_message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // host
+        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
+            // a host in IPv4 form ensures we bind to an IPv4 address
+            host: "127.0.0.1",
+            // random port
+            port: 0,
+            assert_on_drop: true,
+        })
+        .await;
+
+        let failing = server
+            .mock("POST", "/failing")
+            .with_status(500)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
+
+        let xaddrs = vec![
+            XAddr::try_from(format!("http://{}/failing", server.socket_address()).as_str())
+                .unwrap(),
+        ];
+
+        let result = perform_metadata_exchange(
+            &reqwest::ClientBuilder::new().build().unwrap(),
+            &client_config,
+            Arc::clone(&client_devices),
+            &client_network_address,
+            device_uri,
+            xaddrs,
+        )
+        .await;
+
+        assert_matches!(result, Ok(()));
+
+        failing.assert_async().await;
+
+        assert!(client_devices.read().await.is_empty());
     }
 
     #[tokio::test]
