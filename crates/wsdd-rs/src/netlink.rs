@@ -54,7 +54,8 @@ pub const fn RTA_NEXT(rta: *const rtattr, attrlen: &mut usize) -> *const rtattr 
         RTA_ALIGN(rtattr_len)
     };
 
-    *attrlen -= aligned_len;
+    // well-formed netlink pads every attribute, but a malformed buffer can end before the final attribute's padding, then saturating to 0 lets `RTA_OK` end the walk
+    *attrlen = attrlen.saturating_sub(aligned_len);
 
     let offset = aligned_len;
 
@@ -85,7 +86,7 @@ pub const fn RTA_DATA<T>(rta: *const rtattr) -> *const T {
 #[expect(non_snake_case, unused, reason = "Mirror the macros")]
 // Calculates the length of the payload of the `rtattr`.
 pub const fn RTA_PAYLOAD(rta: &rtattr) -> usize {
-    u16_to_usize(rta.rta_len) - RTA_LENGTH(0)
+    u16_to_usize(rta.rta_len).saturating_sub(RTA_LENGTH(0))
 }
 
 pub const NLMSG_ALIGNTO: usize = 4;
@@ -134,7 +135,8 @@ pub const fn NLMSG_NEXT(nlh: *const nlmsghdr, len: &mut usize) -> *const nlmsghd
         NLMSG_ALIGN(nlmsg_len)
     };
 
-    *len -= aligned_len;
+    // well-formed netlink pads every message, but a malformed buffer can end before the final message's padding, then saturating to 0 lets `NLMSG_OK` end the walk
+    *len = len.saturating_sub(aligned_len);
 
     let offset = aligned_len;
 
@@ -159,5 +161,62 @@ pub const fn NLMSG_PAYLOAD(nlh: *const nlmsghdr, len: usize) -> usize {
     // SAFETY: This is how the macros work
     let nlmsg_len = u32_to_usize(unsafe { (*nlh).nlmsg_len });
 
-    nlmsg_len - NLMSG_SPACE(len)
+    // a well-formed message holds at least its header plus `len`, but a malformed one can be shorter, then it has no payload
+    nlmsg_len.saturating_sub(NLMSG_SPACE(len))
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+    use shared::netlink::{ifaddrmsg, nlmsghdr, rtattr};
+
+    use crate::netlink::{IFA_PAYLOAD, NLMSG_NEXT, NLMSG_OK, RTA_NEXT, RTA_OK};
+
+    #[test]
+    fn attribute_walk_stops_after_unpadded_final_attribute() {
+        // `rta_len`, `rta_type` and payload of a padded 8-byte attribute, then of an unpadded 5-byte one, then 3 spare bytes
+        let buffer: &[u16] = &[8, 1, 0, 0, 5, 2, 0, 0];
+
+        let mut rta = buffer.as_ptr().cast::<rtattr>();
+        let mut remaining = 13;
+        let mut types = Vec::new();
+
+        while RTA_OK(rta, remaining) {
+            // SAFETY: `RTA_OK`
+            types.push(unsafe { (*rta).rta_type });
+
+            rta = RTA_NEXT(rta, &mut remaining);
+        }
+
+        assert_eq!(types, [1, 2]);
+        assert_eq!(remaining, 0);
+    }
+
+    #[test]
+    fn message_walk_stops_after_unpadded_final_message() {
+        // a 16-byte `nlmsghdr` with `nlmsg_len` 17, then 1 payload byte, then 3 spare bytes
+        let buffer: &[u32] = &[17, 0, 0, 0, 0];
+
+        let mut nlh = buffer.as_ptr().cast::<nlmsghdr>();
+        let mut remaining = 17;
+        let mut messages = 0_usize;
+
+        while NLMSG_OK(nlh, remaining) {
+            messages += 1;
+
+            nlh = NLMSG_NEXT(nlh, &mut remaining);
+        }
+
+        assert_eq!(messages, 1);
+        assert_eq!(remaining, 0);
+    }
+
+    #[test]
+    fn ifa_payload_is_zero_for_message_without_room_for_ifaddrmsg() {
+        // `nlmsg_len` 16 covers the header only
+        let buffer: &[u32] = &[16, 0, 0, 0];
+
+        assert!(16 < size_of::<nlmsghdr>() + size_of::<ifaddrmsg>());
+        assert_eq!(IFA_PAYLOAD(buffer.as_ptr().cast::<nlmsghdr>()), 0);
+    }
 }
