@@ -262,7 +262,8 @@ fn parse_xaddrs(bound_to: IpNet, raw_xaddrs: &str) -> Vec<XAddr> {
         })
         .collect::<Vec<_>>();
 
-    xaddrs.sort_unstable_by_key(|parsed_url| {
+    // a stable sort keeps XAddrs of equal priority in the order the device listed them
+    xaddrs.sort_by_key(|parsed_url| {
         match bound_to {
             IpNet::V6(_) => {
                 // prefer link-local address for IPv6
@@ -2164,5 +2165,43 @@ mod tests {
 
         // link-local must be sorted first
         assert_eq!(raws.first().copied(), Some("https://[fe80::abcd]/local"));
+    }
+
+    #[test]
+    fn keeps_device_order_within_equal_priority() {
+        let bound =
+            IpNet::V6(Ipv6Net::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1), 64).unwrap());
+
+        // long enough that the sort does not take its small-slice path
+        let (global, link_local): (Vec<_>, Vec<_>) = (1..=32_u16)
+            .map(|index| {
+                (
+                    format!("https://[2001:db8::{:x}]/", index),
+                    format!("https://[fe80::{:x}]/", index),
+                )
+            })
+            .unzip();
+
+        let raw_xaddrs = global
+            .iter()
+            .zip(&link_local)
+            .flat_map(|(global, link_local)| [&**global, &**link_local])
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        let result = parse_xaddrs(bound, &raw_xaddrs);
+
+        let raws = result
+            .iter()
+            .map(|xaddr| xaddr.url().as_str())
+            .collect::<Vec<_>>();
+
+        let expected = link_local
+            .iter()
+            .chain(&global)
+            .map(|raw| &**raw)
+            .collect::<Vec<_>>();
+
+        assert_eq!(raws, expected);
     }
 }
