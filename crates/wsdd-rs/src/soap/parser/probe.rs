@@ -2,6 +2,7 @@ use std::io::Read;
 
 use hashbrown::HashSet;
 use tracing::{Level, event};
+use xml::name::OwnedName;
 use xml::namespace::{NS_EMPTY_URI, NS_NO_PREFIX, Namespace};
 use xml::reader::XmlEvent;
 
@@ -20,11 +21,26 @@ pub struct Probe {
 }
 
 /// The children of `wsd:Probe` in `ProbeType` sequence order (WS-Discovery, Appendix II).
-#[derive(PartialEq, PartialOrd)]
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
 enum ProbeChild {
     Types,
     Scopes,
     Extension,
+}
+
+impl ProbeChild {
+    /// `None` for a child outside the sequence: an unknown `wsd:` element or one without a namespace.
+    fn from_name(name: &OwnedName) -> Option<Self> {
+        match name.namespace_ref() {
+            Some(constants::XML_WSD_NAMESPACE) => match &*name.local_name {
+                "Types" => Some(Self::Types),
+                "Scopes" => Some(Self::Scopes),
+                _ => None,
+            },
+            Some(_) => Some(Self::Extension),
+            None => None,
+        }
+    }
 }
 
 /// This takes in a reader that is stopped at the body tag.
@@ -52,25 +68,25 @@ where
             XmlEvent::StartElement {
                 name, namespace, ..
             } if reader.depth() == entry_depth + 1 => {
-                match (name.namespace_ref(), &*name.local_name) {
-                    (Some(constants::XML_WSD_NAMESPACE), "Types") => {
-                        if last_child >= Some(ProbeChild::Types) {
-                            return Err(BodyParsingError::InvalidElementOrder);
-                        }
+                let Some(child) = ProbeChild::from_name(&name) else {
+                    // not part of `ProbeType`, ignored
+                    continue;
+                };
 
-                        last_child = Some(ProbeChild::Types);
+                // extension elements repeat, every other child appears at most once
+                if child != ProbeChild::Extension && last_child >= Some(child) {
+                    return Err(BodyParsingError::InvalidElementOrder);
+                }
 
+                last_child = Some(child);
+
+                match child {
+                    ProbeChild::Types => {
                         let raw_types = read_text(reader)?.unwrap_or_default();
 
                         types = Some(parse_types(&raw_types, &namespace)?);
                     },
-                    (Some(constants::XML_WSD_NAMESPACE), "Scopes") => {
-                        if last_child >= Some(ProbeChild::Scopes) {
-                            return Err(BodyParsingError::InvalidElementOrder);
-                        }
-
-                        last_child = Some(ProbeChild::Scopes);
-
+                    ProbeChild::Scopes => {
                         let text = read_text(reader)?;
                         let raw_scopes = text.unwrap_or_default();
 
@@ -80,12 +96,7 @@ where
                             "Ignoring unsupported scopes in probe request"
                         );
                     },
-                    (Some(constants::XML_WSD_NAMESPACE) | None, _) => {
-                        // not part of `ProbeType`, ignored
-                    },
-                    (Some(_), _) => {
-                        last_child = Some(ProbeChild::Extension);
-                    },
+                    ProbeChild::Extension => {},
                 }
             },
             XmlEvent::EndElement { .. } if reader.depth() < entry_depth => {
