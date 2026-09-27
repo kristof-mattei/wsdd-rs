@@ -48,7 +48,6 @@ where
         };
 
         if let &Ok(ref event) = &event {
-            #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
             match *event {
                 XmlEvent::StartElement { .. } => {
                     self.depth += 1;
@@ -56,7 +55,14 @@ where
                 XmlEvent::EndElement { .. } => {
                     self.depth -= 1;
                 },
-                _ => {},
+                XmlEvent::StartDocument { .. }
+                | XmlEvent::EndDocument
+                | XmlEvent::ProcessingInstruction { .. }
+                | XmlEvent::CData(_)
+                | XmlEvent::Comment(_)
+                | XmlEvent::Characters(_)
+                | XmlEvent::Whitespace(_)
+                | XmlEvent::Doctype { .. } => (),
             }
         }
 
