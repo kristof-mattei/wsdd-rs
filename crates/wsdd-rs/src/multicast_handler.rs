@@ -320,7 +320,12 @@ impl MulticastHandler {
         if let Err(error) = mc_wsd_port_socket.bind(&socket_addr.into()) {
             event!(Level::WARN, ?error, %socket_addr, "Failed to bind to socket");
 
-            let fallback = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, index);
+            let fallback = SocketAddrV6::new(
+                Ipv6Addr::UNSPECIFIED,
+                constants::WSD_UDP_PORT.into(),
+                0,
+                index,
+            );
 
             mc_wsd_port_socket
                 .bind(&fallback.into())
