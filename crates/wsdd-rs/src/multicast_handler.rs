@@ -77,6 +77,7 @@ struct Sockets {
 fn create_sockets(domain: Domain) -> Result<Sockets, eyre::Report> {
     let mc_wsd_port_socket = Socket::new(domain, Type::DGRAM, None)?;
     mc_wsd_port_socket.set_nonblocking(true)?;
+    // sharing port 3702 with other IPv4 handlers and other WS-Discovery clients on the wildcard address needs `SO_REUSEADDR`
     mc_wsd_port_socket.set_reuse_address(true)?;
 
     let mc_local_port_socket = Socket::new(domain, Type::DGRAM, None)?;
@@ -84,6 +85,7 @@ fn create_sockets(domain: Domain) -> Result<Sockets, eyre::Report> {
 
     let uc_wsd_port_socket = Socket::new(domain, Type::DGRAM, None)?;
     uc_wsd_port_socket.set_nonblocking(true)?;
+    // sharing port 3702 with other WS-Discovery clients on the wildcard address needs `SO_REUSEADDR`
     uc_wsd_port_socket.set_reuse_address(true)?;
 
     Ok(Sockets {
