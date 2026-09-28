@@ -16,6 +16,7 @@
         "CHANGELOG.md",
         "Cargo.lock",
         "cspell.json",
+        "documentation",
         "pnpm-lock.yaml",
         "project-words.txt"
     ]

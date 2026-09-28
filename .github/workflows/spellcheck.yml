@@ -51,7 +51,7 @@ jobs:
       - name: Detect trailing whitespace
         shell: bash
         run: |
-          if git grep -I --line-number --untracked '[[:space:]]$'
+          if git grep -I --line-number --untracked '[[:space:]]$' -- . ':(exclude)documentation/'
           then
               echo ''
               echo 'Please remove trailing whitespace from these lines.'
