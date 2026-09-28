@@ -37,6 +37,18 @@ XSD validation:
 
 - Online spec: <https://specs.xmlsoap.org/ws/2005/04/discovery/ws-discovery.pdf> (also stored in [./documentation/ws-discovery](./documentation/ws-discovery.pdf))
 
+- Devices Profile for Web Services (DPWS), February 2006: <https://specs.xmlsoap.org/ws/2006/02/devprof/devicesprofile.pdf> (also stored in [./documentation/devicesprofile](./documentation/devicesprofile.pdf))
+
+- Web Services Addressing (WS-Addressing), W3C Member Submission, 10 August 2004: <https://www.w3.org/Submission/2004/SUBM-ws-addressing-20040810/> (also stored in [./documentation/ws-addressing](./documentation/ws-addressing.pdf))
+
+- SOAP Version 1.2 Part 1: Messaging Framework (Second Edition), W3C Recommendation, 27 April 2007: <https://www.w3.org/TR/2007/REC-soap12-part1-20070427/> (also stored in [./documentation/soap12-part1](./documentation/soap12-part1.pdf))
+
+- SOAP Version 1.2 Part 2: Adjuncts (Second Edition), W3C Recommendation, 27 April 2007: <https://www.w3.org/TR/2007/REC-soap12-part2-20070427/> (also stored in [./documentation/soap12-part2](./documentation/soap12-part2.pdf))
+
+- Simple Object Access Protocol (SOAP) 1.1, W3C Note, 8 May 2000: <https://www.w3.org/TR/2000/NOTE-SOAP-20000508/> (also stored in [./documentation/soap11](./documentation/soap11.pdf))
+
+- RFC 2396, Uniform Resource Identifiers (URI): Generic Syntax, August 1998: <https://www.rfc-editor.org/rfc/rfc2396.txt> (also stored in [./documentation/rfc2396](./documentation/rfc2396.txt))
+
 - More definitions: <https://learn.microsoft.com/en-us/windows/win32/wsdapi/discovery-and-metadata-exchange-message-patterns>
 
 - Interoperability tool: <https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/wsdapi-basic-interoperability-tool>
