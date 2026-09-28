@@ -6,24 +6,27 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use color_eyre::eyre;
+use futures_util::StreamExt as _;
 use socket2::{Domain, Type};
 use time::format_description::well_known::Iso8601;
 use time::format_description::well_known::iso8601::{Config as Iso8601Config, TimePrecision};
-use tokio::io::{AsyncReadExt as _, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::UnixListener;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::timeout;
+use tokio_util::codec::{AnyDelimiterCodec, AnyDelimiterCodecError, FramedRead};
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
-use crate::api_server::generic::{GenericListener, GenericStream, Listeners};
+use crate::api_server::generic::{GenericListener, Listeners};
 use crate::config::PortOrSocket;
 use crate::network_handler::Command;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 
 const MAX_CONNECTION_BACKLOG: u32 = 100;
 const MAX_CONCURRENT_CONNECTIONS: usize = 10;
+const MAX_COMMAND_LENGTH: usize = 255;
 
 /// `Iso8601`, like `2026-01-14T17:37:29Z`, rounded on seconds (ergo no milliseconds / nanoseconds).
 const ISO8601_SECOND_PRECISION: Iso8601<
@@ -184,10 +187,13 @@ impl ApiServer {
 
                     let command_tx = self.command_tx.clone();
 
+                    let (reader, writer) = stream.into_split();
+
                     tokio::task::spawn(handle_single_connection(
                         cancellation_token,
                         command_tx,
-                        stream,
+                        reader,
+                        writer,
                         permit,
                     ));
                 },
@@ -216,35 +222,38 @@ fn bind_tcp_loopback(address: SocketAddr) -> Result<GenericListener, std::io::Er
     Ok(socket.listen(MAX_CONNECTION_BACKLOG)?.into())
 }
 
-async fn handle_single_connection(
+async fn handle_single_connection<R, W>(
     cancellation_token: CancellationToken,
     command_tx: Sender<Command>,
-    stream: GenericStream,
+    reader: R,
+    mut writer: W,
     _permit: OwnedSemaphorePermit,
-) {
-    const BUFFER_SIZE: usize = 255;
-
-    let mut buffer = vec![0_u8; BUFFER_SIZE];
-
-    let (mut reader, mut writer) = stream.into_split();
+) where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let mut commands = FramedRead::new(
+        reader,
+        AnyDelimiterCodec::new_with_max_length(b"\n".to_vec(), Vec::new(), MAX_COMMAND_LENGTH),
+    );
 
     loop {
-        let read = tokio::select! {
+        let command = tokio::select! {
             () = cancellation_token.cancelled() => {
                 break;
             },
-            read = reader.read(&mut buffer) => {
-                read
+            command = commands.next() => {
+                command
             },
         };
 
-        match read {
-            Ok(0) => {
+        match command {
+            None => {
                 event!(Level::INFO, "Stream closed");
                 break;
             },
-            Ok(bytes_read) => {
-                match process_command(&buffer[0..bytes_read], &command_tx, &mut writer).await {
+            Some(Ok(raw_command)) => {
+                match process_command(&raw_command, &command_tx, &mut writer).await {
                     Ok(true) => {
                         // all good
                         continue;
@@ -260,7 +269,15 @@ async fn handle_single_connection(
                     },
                 }
             },
-            Err(error) => {
+            Some(Err(AnyDelimiterCodecError::MaxChunkLengthExceeded)) => {
+                event!(
+                    Level::WARN,
+                    max_length = MAX_COMMAND_LENGTH,
+                    "Command too long, closing stream"
+                );
+                break;
+            },
+            Some(Err(AnyDelimiterCodecError::Io(error))) => {
                 event!(Level::INFO, ?error, "Stream gone");
                 break;
             },
@@ -272,9 +289,7 @@ async fn handle_single_connection(
     // `_permit` is released here
 }
 
-/// Process commands.
-///
-/// Remember, `raw_command` is newline terminated.
+/// Process a single command.
 async fn process_command<W>(
     raw_command: &[u8],
     command_tx: &Sender<Command>,
@@ -433,13 +448,90 @@ fn format_wsd_discovered_device(device_uri: &DeviceUri, device: &WSDDiscoveredDe
 #[cfg(test)]
 mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::sync::Arc;
 
     use pretty_assertions::assert_eq;
-    use tokio::io::AsyncReadExt as _;
+    use tokio::io::{AsyncRead, AsyncReadExt as _};
+    use tokio::sync::Semaphore;
     use tokio_util::sync::CancellationToken;
 
-    use crate::api_server::{ApiServer, MAX_CONCURRENT_CONNECTIONS};
+    use crate::api_server::{
+        ApiServer, MAX_COMMAND_LENGTH, MAX_CONCURRENT_CONNECTIONS, handle_single_connection,
+    };
     use crate::config::PortOrSocket;
+
+    /// Serves one connection until `reader` ends and returns everything written back. Every command is dropped unanswered, so `list` returns an empty list.
+    async fn serve<R>(reader: R) -> String
+    where
+        R: AsyncRead + Unpin,
+    {
+        let (command_tx, mut command_rx) = tokio::sync::mpsc::channel(1);
+
+        tokio::task::spawn(async move { while command_rx.recv().await.is_some() {} });
+
+        let permit = Arc::new(Semaphore::new(1))
+            .try_acquire_owned()
+            .expect("Semaphore has a permit");
+
+        let mut response = Vec::new();
+
+        handle_single_connection(
+            CancellationToken::new(),
+            command_tx,
+            reader,
+            &mut response,
+            permit,
+        )
+        .await;
+
+        String::from_utf8(response).expect("Response is UTF-8")
+    }
+
+    #[tokio::test]
+    async fn answers_every_command_in_one_read() {
+        let response = serve(&b"list\nlist\n"[..]).await;
+
+        assert_eq!(response, ".\n.\n");
+    }
+
+    #[tokio::test]
+    async fn answers_a_command_split_across_reads() {
+        let response = serve((&b"li"[..]).chain(&b"st\n"[..])).await;
+
+        assert_eq!(response, ".\n");
+    }
+
+    #[tokio::test]
+    async fn answers_a_final_command_without_a_newline() {
+        let response = serve(&b"list"[..]).await;
+
+        assert_eq!(response, ".\n");
+    }
+
+    #[tokio::test]
+    async fn answers_after_invalid_utf8() {
+        let response = serve(&b"\xff\nlist\n"[..]).await;
+
+        assert_eq!(response, "Invalid UTF-8.\n");
+    }
+
+    #[tokio::test]
+    async fn accepts_a_command_at_the_limit() {
+        let input = format!("{:<1$}\n", "list", MAX_COMMAND_LENGTH);
+
+        let response = serve(input.as_bytes()).await;
+
+        assert_eq!(response, ".\n");
+    }
+
+    #[tokio::test]
+    async fn closes_the_stream_on_a_command_over_the_limit() {
+        let input = format!("{:<1$}\nlist\n", "list", MAX_COMMAND_LENGTH + 1);
+
+        let response = serve(input.as_bytes()).await;
+
+        assert_eq!(response, "");
+    }
 
     #[cfg_attr(not(miri), tokio::test)]
     #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
