@@ -35,12 +35,14 @@ datagram
 datagrams
 deladdr
 deque
+devicesprofile
 dgram
 diskstation
 dladm
 doesnt
 dont
 dorny
+dpws
 dropguard
 dstaddr
 edff
