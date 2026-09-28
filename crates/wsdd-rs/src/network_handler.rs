@@ -5,6 +5,8 @@
 //             obj.enumerate()
 //         return obj
 
+mod address_handlers;
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -24,6 +26,7 @@ use crate::config::{Config, InterfaceFilter};
 use crate::max_size_deque::MaxSizeDeque;
 use crate::multicast_handler::MulticastHandler;
 use crate::network_address::NetworkAddress;
+use crate::network_handler::address_handlers::AddressHandlers;
 use crate::network_interface::{LibcInterfaceNameResolver, NetworkInterface, ResolveInterfaceName};
 use crate::soap::MessageId;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
@@ -73,7 +76,7 @@ pub struct NetworkHandler<R = LibcInterfaceNameResolver> {
     config: Arc<Config>,
     devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
-    multicast_handlers: Vec<MulticastHandler>,
+    multicast_handlers: AddressHandlers<MulticastHandler>,
     command_rx: Receiver<Command>,
     start_tx: StartSender<()>,
     recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
@@ -123,7 +126,7 @@ where
             cancellation_token,
             devices: Arc::new(RwLock::new(HashMap::new())),
             interfaces: HashMap::new(),
-            multicast_handlers: vec![],
+            multicast_handlers: AddressHandlers::default(),
             command_rx,
             start_tx,
             recent_messages,
@@ -261,7 +264,7 @@ where
     async fn send_probes(&self, interface_filter: Option<Box<str>>) {
         let interface_filter = interface_filter.as_ref();
 
-        for multicast_handler in &self.multicast_handlers {
+        for multicast_handler in self.multicast_handlers.handlers() {
             let Some(wsd_client) = multicast_handler.wsd_client() else {
                 continue;
             };
@@ -356,13 +359,12 @@ where
             return;
         }
 
-        // filter out what is not wanted
-        // Ignore addresses or interfaces we already handle. There can only be
-        // one multicast handler per address family and network interface
-        for handler in &self.multicast_handlers {
-            if handler.handles_address(&network_address) {
-                return;
-            }
+        // the address may already have a handler under another prefix length
+        if self
+            .multicast_handlers
+            .add_prefix_if_handled(&network_address)
+        {
+            return;
         }
 
         event!(Level::DEBUG, address = %network_address.address, interface = %network_address.interface.name(), "handling traffic");
@@ -397,7 +399,8 @@ where
             multicast_handler.enable_wsd_client().await;
         }
 
-        self.multicast_handlers.push(multicast_handler);
+        self.multicast_handlers
+            .insert(&network_address, multicast_handler);
     }
 
     pub async fn handle_deleted_address(&mut self, network_address: NetworkAddress) {
@@ -407,7 +410,7 @@ where
             return;
         }
 
-        let Some(handler) = self.take_mch_by_address(&network_address) else {
+        let Some(handler) = self.multicast_handlers.remove_prefix(&network_address) else {
             return;
         };
 
@@ -439,7 +442,7 @@ where
 
         let tasks = TaskTracker::new();
 
-        while let Some(mch) = self.multicast_handlers.pop() {
+        for mch in self.multicast_handlers.drain() {
             tasks.spawn(async move {
                 mch.teardown(true).await;
             });
@@ -486,28 +489,6 @@ where
 
     // def cleanup(self) -> None:
     //     self.teardown()
-
-    /// Get the MCI for the address, its family and the interface.
-    #[expect(unused, reason = "WIP")]
-    fn get_mch_by_address(&mut self, address: &NetworkAddress) -> Option<&MulticastHandler> {
-        self.multicast_handlers
-            .iter()
-            .find(|multicast_handler| multicast_handler.handles_address(address))
-    }
-
-    /// Takes the MCI for the address, its family and the interface.
-    fn take_mch_by_address(&mut self, address: &NetworkAddress) -> Option<MulticastHandler> {
-        let position = self
-            .multicast_handlers
-            .iter()
-            .position(|multicast_handler| multicast_handler.handles_address(address));
-
-        if let Some(position) = position {
-            Some(self.multicast_handlers.swap_remove(position))
-        } else {
-            None
-        }
-    }
 
     pub fn set_active(&mut self) -> Result<(), eyre::Report> {
         let mut was_active = self.active.load(Ordering::Relaxed);
