@@ -8,9 +8,7 @@ use crate::network_interface::NetworkInterface;
 
 pub struct UdpAddress {
     _network_address: NetworkAddress,
-    // _transport_address: Tuple
     transport_address: SocketAddr,
-    // _port: int
 }
 
 impl UdpAddress {

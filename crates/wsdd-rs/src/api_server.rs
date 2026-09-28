@@ -438,13 +438,6 @@ fn format_wsd_discovered_device(device_uri: &DeviceUri, device: &WSDDiscoveredDe
     )
 }
 
-//     async def cleanup(self) -> None:
-//         # ensure the server is not created after we have teared down
-//         await self.create_task
-//         if self.server:
-//             self.server.close()
-//             await self.server.wait_closed()
-
 #[cfg(test)]
 mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};

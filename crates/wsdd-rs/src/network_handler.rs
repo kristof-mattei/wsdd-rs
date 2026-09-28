@@ -1,10 +1,3 @@
-// class MetaEnumAfterInit(type):
-//     def __call__(cls, *cargs, **kwargs):
-//         obj = super().__call__(*cargs, **kwargs)
-//         if not args.no_autostart:
-//             obj.enumerate()
-//         return obj
-
 mod address_handlers;
 
 use std::sync::Arc;
@@ -450,45 +443,7 @@ where
 
         tasks.close();
         tasks.wait().await;
-
-        //     for h in WSDHost.instances:
-        //         h.teardown()
-        //         h.cleanup()
-        //         self.teardown_tasks.extend(h.pending_tasks)
-
-        //     for c in WSDClient.instances:
-        //         c.teardown()
-        //         c.cleanup()
-        //         self.teardown_tasks.extend(c.pending_tasks)
-
-        //     for s in self.http_servers:
-        //         s.server_close()
-
-        //     self.http_servers.clear()
-
-        //     if not self.teardown_tasks:
-        //         return
-
-        //     if not self.aio_loop.is_running():
-        //         # Wait here for all pending tasks so that the main loop can be finished on termination.
-        //         self.aio_loop.run_until_complete(asyncio.gather(*self.teardown_tasks))
-        //     else:
-        //         for t in self.teardown_tasks:
-        //             t.add_done_callback(self.mch_teardown)
     }
-
-    // def mch_teardown(self, task) -> None:
-    //     if any([not t.done() for t in self.teardown_tasks]):
-    //         return
-
-    //     self.teardown_tasks.clear()
-
-    //     for mch in self.mchs:
-    //         mch.cleanup()
-    //     self.mchs.clear()
-
-    // def cleanup(self) -> None:
-    //     self.teardown()
 
     pub fn set_active(&mut self) -> Result<(), eyre::Report> {
         let mut was_active = self.active.load(Ordering::Relaxed);

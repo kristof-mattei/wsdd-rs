@@ -230,13 +230,6 @@ fn record_resolve(
     resolve
 }
 
-//     def cleanup(self) -> None:
-//         super().cleanup()
-//         WSDClient.instances.remove(self)
-
-//         self.mch.remove_handler(self.mch.mc_send_socket, self)
-//         self.mch.remove_handler(self.mch.recv_socket, self)
-
 fn parse_xaddrs(bound_to: IpNet, raw_xaddrs: &str) -> Vec<XAddr> {
     #[derive(Ord, PartialOrd, PartialEq, Eq)]
     enum XAddrPriority {
