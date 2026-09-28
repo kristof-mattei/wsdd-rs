@@ -6,7 +6,7 @@ use std::io::Error;
 use color_eyre::eyre;
 use libc::IF_NAMESIZE;
 
-#[derive(Debug, Eq, Clone)]
+#[derive(Debug, Clone)]
 pub struct NetworkInterface {
     name: Box<str>,
     index: u32,
@@ -48,12 +48,6 @@ impl NetworkInterface {
 impl std::fmt::Display for NetworkInterface {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)
-    }
-}
-
-impl PartialEq for NetworkInterface {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
     }
 }
 
@@ -139,14 +133,6 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::network_interface::NetworkInterface;
-
-    #[test]
-    fn equality() {
-        let first = NetworkInterface::new_with_index("eth0", 0, 1);
-        let second = NetworkInterface::new_with_index("eth0", 0, 1);
-
-        assert_eq!(first, second);
-    }
 
     #[test]
     fn display_only_prints_name() {
