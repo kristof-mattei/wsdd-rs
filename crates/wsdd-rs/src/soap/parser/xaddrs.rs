@@ -1,6 +1,7 @@
 use thiserror::Error;
 use url::Url;
 
+#[derive(Debug)]
 pub struct XAddr {
     url: Url,
 }
