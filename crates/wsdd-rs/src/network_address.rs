@@ -21,10 +21,7 @@ impl NetworkAddress {
     // # (https://tools.ietf.org/html/rfc5735#page-3)
     pub fn is_multicastable(&self) -> bool {
         match self.address {
-            IpNet::V4(ipv4_net) => {
-                // TODO add `https://doc.rust-lang.org/std/net/enum.IpAddr.html#method.is_global` once stabilized
-                !ipv4_net.addr().is_loopback()
-            },
+            IpNet::V4(ipv4_net) => !ipv4_net.addr().is_loopback(),
             IpNet::V6(ipv6_net) => ipv6_net.addr().is_unicast_link_local(),
         }
     }

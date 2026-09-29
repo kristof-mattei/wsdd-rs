@@ -44,10 +44,12 @@ where
         // element order is the `HelloType` sequence, see documentation/ws-discovery.pdf, Appendix II
         add_endpoint_reference(writer, &config.uuid_as_device_uri)?;
 
-        // TODO: make this optional, like adding `xaddr`
+        // Technically `Types` are optional in `Hello`, but omitted `Types` have no implied value, so a client could only match us by Type after a `Probe` or `Resolve`, see documentation/ws-discovery.pdf, Section 4.1
+        // omitting them hides nothing, because `ProbeMatch` and `ResolveMatch` return the same `Types`
         add_types(writer, constants::WSDP_TYPE_DEVICE_COMPUTER)?;
 
-        // THINK: Microsoft does not send the transport address here due to privacy reasons. Could make this optional.
+        // WSDAPI sends one identical `Hello` on every interface, so `XAddrs` in it would list the addresses of every network the host is on, on each of those networks, and WSDAPI omits `XAddrs` instead, see documentation/windows-win32-wsdapi.pdf, "Hello and XAddrs" and "Discovery in a multi-homed environment"
+        // each address here sends its own `Hello` from that address, so the datagram's source address already reveals the address in `XAddrs`, and omitting it would only cost clients a `Resolve` round trip
         add_xaddr(writer, config, self.xaddr)?;
 
         add_metadata_version(writer)?;

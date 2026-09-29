@@ -298,12 +298,9 @@ impl MulticastHandler {
             .set_only_v6(true)
             .wrap_err("Failed to set IPV6_V6ONLY")?;
 
-        // TODO when this fails we need to filter ourselves
-        // https://github.com/torvalds/linux/commit/15033f0457dca569b284bef0c8d3ad55fb37eacb
+        // the scoped group bind below already limits delivery to `ff02::c` on this interface, so this only keeps other groups on this port out of the fallback bind (Linux 4.20+, https://github.com/torvalds/linux/commit/15033f0457dca569b284bef0c8d3ad55fb37eacb)
         if let Err(error) = mc_wsd_port_socket.set_multicast_all_v6(false) {
-            // if this fails we will see a larger amount of traffic
-            // what should we do? Do we support kernels < 4.20?
-            event!(Level::WARN, ?error, "cannot unset IPV6_MULTICAST_ALL");
+            event!(Level::DEBUG, ?error, "cannot unset IPV6_MULTICAST_ALL");
         }
 
         // bind to network interface, i.e. scope and handle OS differences,
@@ -318,6 +315,8 @@ impl MulticastHandler {
         if let Err(error) = mc_wsd_port_socket.bind(&socket_addr.into()) {
             event!(Level::WARN, ?error, %socket_addr, "Failed to bind to socket");
 
+            // the scope id limits a link-local address such as `ff02::c` to its interface, Linux ignores it for the unspecified address
+            // this socket therefore receives `ff02::c` from every interface that joined it
             let fallback = SocketAddrV6::new(
                 Ipv6Addr::UNSPECIFIED,
                 constants::WSD_UDP_PORT.into(),
@@ -385,6 +384,7 @@ impl MulticastHandler {
             )
             .wrap_err("Failed to join IPv4 multicast group")?;
 
+        // IPv4 binds have no scope, so without this the socket also receives the group from every other interface that joined it
         mc_wsd_port_socket
             .set_multicast_all_v4(false)
             .wrap_err("Failed to disable IP_MULTICAST_ALL")?;
