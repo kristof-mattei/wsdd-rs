@@ -18,18 +18,8 @@ The packages are also published to `ghcr.io/kristof-mattei/wsdd-rs-deb`, tagged 
 # TODO
 
 - TODOs in the code
-- Support SOAP 1.2: `http://www.w3.org/2003/05/soap-envelope` & SOAP 1.1: `http://schemas.xmlsoap.org/soap/envelope/` (Notice trailing slash)
 - Validate UDP flows (see https://learn.microsoft.com/pdf?url=https%3A%2F%2Flearn.microsoft.com%2Fen-us%2Fwindows%2Fwin32%2Fwsdapi%2Ftoc.json), also stored in [./documentation/windows-win32-wsdapi.pdf](./documentation/windows-win32-wsdapi.pdf), move to docs when done
-
-XSD validation:
-
-```
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://www.w3.org/2003/05/soap-envelope http://www.w3.org/2003/05/soap-envelope
-                        http://schemas.xmlsoap.org/ws/2005/04/discovery http://schemas.xmlsoap.org/ws/2005/04/discovery/ws-discovery.xsd"
-```
-
-- Backport code since `147c9039630afd2bc6a73f1a04d5e6526947d90b` (<https://github.com/christgau/wsdd/commits/master/>)
+- Backport code since `be083d4bbb8afc3aa7af1bf77ed9ca91254a1b35` (<https://github.com/christgau/wsdd/commits/master/>)
 
 # Information, docs
 
