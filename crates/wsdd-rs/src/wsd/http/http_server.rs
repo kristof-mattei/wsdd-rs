@@ -59,6 +59,11 @@ impl WSDHttpServer {
         })
     }
 
+    #[cfg(test)]
+    pub fn http_bound_to(&self) -> SocketAddr {
+        self.http_bound_to
+    }
+
     pub async fn teardown(self) {
         self.cancellation_token.cancel();
 
