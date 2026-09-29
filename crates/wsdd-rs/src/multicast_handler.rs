@@ -282,7 +282,7 @@ impl MulticastHandler {
             SocketAddrV6::new(
                 constants::WSD_MCAST_GRP_V6,
                 constants::WSD_UDP_PORT.into(),
-                0x575C_u32,
+                0,
                 index,
             )
             .into(),
