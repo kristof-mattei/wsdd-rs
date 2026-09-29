@@ -1,3 +1,4 @@
+pub mod app_sequence;
 pub mod bye;
 pub mod generic;
 pub mod get;
@@ -22,6 +23,7 @@ use crate::constants;
 use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
+use crate::soap::parser::app_sequence::AppSequence;
 use crate::soap::parser::get::Get;
 use crate::soap::{self, MessageId, WSDMessage};
 use crate::wsd::device::DeviceUri;
@@ -37,6 +39,8 @@ pub struct Header {
     pub action: Box<str>,
     pub message_id: MessageId,
     pub relates_to: Option<MessageId>,
+    /// `None` when the block is absent or malformed.
+    pub app_sequence: Option<AppSequence>,
 }
 
 #[derive(Error, Debug)]
@@ -47,6 +51,8 @@ pub enum HeaderParsingError {
     MissingMessageId,
     #[error("Missing Action")]
     MissingAction,
+    #[error("Missing or invalid wsd:AppSequence")]
+    MissingAppSequence,
     #[error("Duplicate soap:Header")]
     DuplicateHeader,
 }
@@ -249,18 +255,39 @@ fn validate_action_body(
     Ok(header)
 }
 
+/// A Target Service MUST include `wsd:AppSequence`, see documentation/ws-discovery.pdf, 4.1 and 5.3.
+fn require_app_sequence(header: &Header) -> Result<(), HeaderParsingError> {
+    if header.app_sequence.is_none() {
+        return Err(HeaderParsingError::MissingAppSequence);
+    }
+
+    Ok(())
+}
+
 fn parse_message_body(
     header: &Header,
     mut reader: XmlReader<&[u8]>,
 ) -> Result<WSDMessage, MessageHandlerError> {
     let response = match &*header.action {
         constants::WSD_GET => Ok(Get {}.into()),
-        constants::WSD_HELLO => Ok(soap::parser::hello::parse_hello(&mut reader)?.into()),
-        constants::WSD_BYE => Ok(soap::parser::bye::parse_bye(&mut reader)?.into()),
+        constants::WSD_HELLO => {
+            require_app_sequence(header)?;
+
+            Ok(soap::parser::hello::parse_hello(&mut reader)?.into())
+        },
+        constants::WSD_BYE => {
+            require_app_sequence(header)?;
+
+            Ok(soap::parser::bye::parse_bye(&mut reader)?.into())
+        },
         constants::WSD_PROBE_MATCH => {
+            require_app_sequence(header)?;
+
             Ok(soap::parser::probe_match::parse_probe_matches(&mut reader)?.into())
         },
         constants::WSD_RESOLVE_MATCH => {
+            require_app_sequence(header)?;
+
             Ok(soap::parser::resolve_match::parse_resolve_matches(&mut reader)?.into())
         },
         constants::WSD_PROBE => Ok(soap::parser::probe::parse_probe(&mut reader)?.into()),
@@ -368,8 +395,8 @@ where
     let mut message_id = None;
     // <wsa:RelatesTo>urn:uuid:ff876786-d5fd-4cc5-825b-fc494834cf19</wsa:RelatesTo>
     let mut relates_to = None;
-    // TODO?
     // <wsd:AppSequence InstanceId="1742000334" SequenceId="urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9" MessageNumber="1" />
+    let mut app_sequence = None;
 
     let entry_depth = reader.depth();
 
@@ -401,6 +428,18 @@ where
                     },
                 }
             },
+            XmlEvent::StartElement {
+                name, attributes, ..
+            } if reader.depth() == entry_depth + 1
+                && name.namespace_ref() == Some(constants::XML_WSD_NAMESPACE)
+                && name.local_name == "AppSequence" =>
+            {
+                app_sequence = AppSequence::from_attributes(&attributes);
+
+                if app_sequence.is_none() {
+                    event!(Level::DEBUG, ?attributes, "Invalid wsd:AppSequence");
+                }
+            },
             XmlEvent::EndElement { .. } if reader.depth() < entry_depth => {
                 break;
             },
@@ -427,17 +466,18 @@ where
         action,
         message_id,
         relates_to,
+        app_sequence,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use std::net::Ipv4Addr;
+    use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
 
     use ipnet::IpNet;
     use libc::RT_SCOPE_SITE;
-    use pretty_assertions::assert_matches;
+    use pretty_assertions::{assert_eq, assert_matches};
     use tokio::sync::RwLock;
     use tokio::time::{Duration, timeout};
     use uuid::Uuid;
@@ -447,6 +487,7 @@ mod tests {
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
     use crate::soap::MessageId;
+    use crate::soap::parser::app_sequence::AppSequence;
     use crate::soap::parser::{
         HeaderParsingError, MessageHandler, MessageHandlerError, deconstruct_raw,
     };
@@ -509,5 +550,127 @@ mod tests {
                 HeaderParsingError::DuplicateHeader
             ))
         );
+    }
+
+    fn message(action: &str, app_sequence: &str, body: &str) -> String {
+        format!(
+            r#"<soap:Envelope xmlns:soap="{}" xmlns:wsa="{}" xmlns:wsd="{}"><soap:Header><wsa:To>{}</wsa:To><wsa:Action>{}</wsa:Action><wsa:MessageID>{}</wsa:MessageID>{}</soap:Header><soap:Body>{}</soap:Body></soap:Envelope>"#,
+            constants::XML_SOAP_NAMESPACE,
+            constants::WSA_URI,
+            constants::XML_WSD_NAMESPACE,
+            constants::WSA_DISCOVERY,
+            action,
+            Uuid::now_v7().urn(),
+            app_sequence,
+            body
+        )
+    }
+
+    const HELLO_BODY: &str = "<wsd:Hello><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:MetadataVersion>1</wsd:MetadataVersion></wsd:Hello>";
+
+    const SOURCE: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 1, 2, 4), 3702));
+
+    #[test]
+    fn parses_app_sequence() {
+        let hello = message(
+            constants::WSD_HELLO,
+            r#"<wsd:AppSequence InstanceId="3" SequenceId="urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9" MessageNumber="7" />"#,
+            "",
+        );
+
+        let (header, _, _) = deconstruct_raw(hello.as_bytes()).unwrap();
+
+        assert_eq!(
+            header.app_sequence,
+            Some(AppSequence::new(
+                3,
+                Some("urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9"),
+                7
+            ))
+        );
+    }
+
+    #[test]
+    fn reads_malformed_app_sequence_as_none() {
+        let hello = message(
+            constants::WSD_HELLO,
+            r#"<wsd:AppSequence InstanceId="x" MessageNumber="7" />"#,
+            "",
+        );
+
+        let (header, _, _) = deconstruct_raw(hello.as_bytes()).unwrap();
+
+        assert_eq!(header.app_sequence, None);
+    }
+
+    #[test]
+    fn reads_missing_app_sequence_as_none() {
+        let hello = message(constants::WSD_HELLO, "", "");
+
+        let (header, _, _) = deconstruct_raw(hello.as_bytes()).unwrap();
+
+        assert_eq!(header.app_sequence, None);
+    }
+
+    #[tokio::test]
+    async fn accepts_hello_with_app_sequence() {
+        let hello = message(
+            constants::WSD_HELLO,
+            r#"<wsd:AppSequence InstanceId="1" MessageNumber="2" />"#,
+            HELLO_BODY,
+        );
+
+        let result = handler_for_tests(8)
+            .deconstruct_message(hello.as_bytes(), SOURCE)
+            .await;
+
+        assert_matches!(result.map(|_| ()), Ok(()));
+    }
+
+    #[tokio::test]
+    async fn rejects_hello_without_app_sequence() {
+        let hello = message(constants::WSD_HELLO, "", HELLO_BODY);
+
+        let result = handler_for_tests(8)
+            .deconstruct_message(hello.as_bytes(), SOURCE)
+            .await;
+
+        assert_matches!(
+            result.err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::MissingAppSequence
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_hello_with_malformed_app_sequence() {
+        let hello = message(
+            constants::WSD_HELLO,
+            r#"<wsd:AppSequence InstanceId="x" MessageNumber="2" />"#,
+            HELLO_BODY,
+        );
+
+        let result = handler_for_tests(8)
+            .deconstruct_message(hello.as_bytes(), SOURCE)
+            .await;
+
+        assert_matches!(
+            result.err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::MissingAppSequence
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn accepts_probe_without_app_sequence() {
+        let probe = message(constants::WSD_PROBE, "", "<wsd:Probe />");
+
+        let result = handler_for_tests(8)
+            .deconstruct_message(probe.as_bytes(), SOURCE)
+            .await;
+
+        assert_matches!(result.map(|_| ()), Ok(()));
     }
 }
