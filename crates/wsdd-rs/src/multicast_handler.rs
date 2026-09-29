@@ -294,6 +294,7 @@ impl MulticastHandler {
             .join_multicast_v6(&constants::WSD_MCAST_GRP_V6, index)
             .wrap_err("Failed to join IPv6 multicast group")?;
 
+        // only the fallback bind needs this, `[::]` would otherwise also accept IPv4 datagrams on port 3702
         mc_wsd_port_socket
             .set_only_v6(true)
             .wrap_err("Failed to set IPV6_V6ONLY")?;
