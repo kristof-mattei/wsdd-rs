@@ -5,7 +5,6 @@ use std::time::Duration;
 use bytes::Bytes;
 use color_eyre::eyre;
 use hashbrown::HashMap;
-use hashbrown::hash_map::Entry;
 use ipnet::IpNet;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::oneshot::error::TryRecvError;
@@ -29,13 +28,14 @@ use crate::soap::parser::xaddrs::XAddr;
 use crate::soap::{ClientMessage, MessageId, MulticastMessage};
 use crate::utils::SliceDisplay;
 use crate::utils::task::spawn_with_name;
-use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
+use crate::wsd::device::DeviceUri;
+use crate::wsd::devices::Devices;
 
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     _bound_to: NetworkAddress,
-    _devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+    _devices: Arc<RwLock<Devices>>,
     handle: tokio::task::JoinHandle<()>,
     mc_local_port_tx: Sender<OutgoingMulticastMessage>,
     probes: Arc<RwLock<HashMap<MessageId, LastCopy>>>,
@@ -88,7 +88,7 @@ impl WSDClient {
     pub fn init(
         cancellation_token: CancellationToken,
         config: Arc<Config>,
-        devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+        devices: Arc<RwLock<Devices>>,
         bound_to: NetworkAddress,
         incoming_rx: Receiver<IncomingClientMessage>,
         mc_local_port_tx: Sender<OutgoingMulticastMessage>,
@@ -312,7 +312,7 @@ fn check_xaddrs(
 async fn handle_hello(
     client: &reqwest::Client,
     config: &Config,
-    devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+    devices: Arc<RwLock<Devices>>,
     bound_to: &NetworkAddress,
     multicast: &Sender<OutgoingMulticastMessage>,
     resolves: &mut HashMap<MessageId, LastCopy>,
@@ -343,7 +343,7 @@ async fn handle_hello(
 }
 
 async fn handle_bye(
-    devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+    devices: Arc<RwLock<Devices>>,
     Bye { endpoint }: Bye,
 ) -> Result<(), eyre::Report> {
     let mut guard = devices.write().await;
@@ -363,7 +363,7 @@ async fn handle_bye(
 async fn handle_probe_matches(
     client: &reqwest::Client,
     config: &Config,
-    devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+    devices: Arc<RwLock<Devices>>,
     bound_to: &NetworkAddress,
     relates_to: Option<MessageId>,
     received_at: Instant,
@@ -412,7 +412,7 @@ async fn handle_probe_matches(
 async fn handle_probe_match(
     client: &reqwest::Client,
     config: &Config,
-    devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+    devices: Arc<RwLock<Devices>>,
     bound_to: &NetworkAddress,
     mc_local_port_tx: &Sender<OutgoingMulticastMessage>,
     resolves: &mut HashMap<MessageId, LastCopy>,
@@ -448,7 +448,7 @@ async fn handle_probe_match(
 async fn handle_resolve_matches(
     client: &reqwest::Client,
     config: &Config,
-    devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+    devices: Arc<RwLock<Devices>>,
     bound_to: &NetworkAddress,
     relates_to: Option<MessageId>,
     received_at: Instant,
@@ -498,7 +498,7 @@ async fn handle_resolve_matches(
 async fn perform_metadata_exchange(
     client: &reqwest::Client,
     config: &Config,
-    devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+    devices: Arc<RwLock<Devices>>,
     bound_to: &NetworkAddress,
     endpoint: DeviceUri,
     xaddrs: Vec<XAddr>,
@@ -555,33 +555,23 @@ fn build_getmetadata_message(
 }
 
 async fn handle_metadata(
-    devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+    devices: Arc<RwLock<Devices>>,
     meta: &[u8],
     device_uri: DeviceUri,
     xaddr: &XAddr,
     bound_to: &NetworkAddress,
 ) -> Result<(), eyre::Report> {
-    match devices.write().await.entry(device_uri) {
-        Entry::Occupied(occupied_entry) => {
-            let (key, value) = occupied_entry.into_entry();
-
-            value.update(key, meta, xaddr, bound_to)?;
-        },
-        Entry::Vacant(vacant_entry) => {
-            let new = WSDDiscoveredDevice::new(vacant_entry.key(), meta, xaddr, bound_to)?;
-
-            vacant_entry.insert(new);
-        },
-    }
-
-    Ok(())
+    devices
+        .write()
+        .await
+        .store(device_uri, meta, xaddr, bound_to)
 }
 
 async fn listen_forever(
     bound_to: NetworkAddress,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+    devices: Arc<RwLock<Devices>>,
     mut incoming_rx: Receiver<IncomingClientMessage>,
     mc_local_port_tx: Sender<OutgoingMulticastMessage>,
     probes: Arc<RwLock<HashMap<MessageId, LastCopy>>>,
@@ -704,7 +694,8 @@ mod tests {
     use crate::soap::parser::xaddrs::XAddr;
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler_with_network_address};
-    use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
+    use crate::wsd::device::DeviceUri;
+    use crate::wsd::devices::Devices;
     use crate::wsd::http::http_server::WSDHttpServer;
     use crate::wsd::udp::client::{
         LastCopy, WSDClient, XAddrsCheck, check_xaddrs, handle_bye, handle_hello, handle_metadata,
@@ -755,12 +746,9 @@ mod tests {
         assert!(!last_copy.accepts(Instant::now()));
     }
 
-    fn setup_client() -> (
-        Arc<crate::config::Config>,
-        Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
-    ) {
+    fn setup_client() -> (Arc<crate::config::Config>, Arc<RwLock<Devices>>) {
         let client_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_335));
-        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+        let client_devices = Arc::new(RwLock::new(Devices::default()));
 
         (client_config, client_devices)
     }
@@ -964,7 +952,7 @@ mod tests {
         );
 
         // client
-        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+        let client_devices = Arc::new(RwLock::new(Devices::default()));
 
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
@@ -1374,7 +1362,7 @@ mod tests {
         );
 
         // client
-        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+        let client_devices = Arc::new(RwLock::new(Devices::default()));
 
         let metadata: String = format!(
             include_str!("../../test/get-response-synology.xml"),
@@ -1434,7 +1422,7 @@ mod tests {
         );
 
         // client
-        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+        let client_devices = Arc::new(RwLock::new(Devices::default()));
 
         let metadata: String = format!(
             include_str!("../../test/get-response-samsung-printer.xml"),
@@ -1491,7 +1479,7 @@ mod tests {
         );
 
         // client
-        let client_devices = Arc::new(RwLock::new(HashMap::new()));
+        let client_devices = Arc::new(RwLock::new(Devices::default()));
 
         let metadata: String = format!(
             include_str!("../../test/get-response-windows.xml"),
