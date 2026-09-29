@@ -32,11 +32,12 @@ where
         self,
         writer: &mut xml::EventWriter<W>,
     ) -> Result<(), xml::writer::Error> {
+        let instance_id = self.app_sequence.instance_id().to_string();
         let message_number = self.message_number.to_string();
 
         writer.write(
             XmlEvent::start_element("wsd:AppSequence")
-                .attr("InstanceId", self.app_sequence.instance_id())
+                .attr("InstanceId", &instance_id)
                 .attr("SequenceId", self.app_sequence.sequence_id())
                 .attr("MessageNumber", &message_number),
         )?;

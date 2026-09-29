@@ -219,10 +219,7 @@ pub fn to_config(args: CliArgs) -> Result<Config, eyre::Report> {
         no_host: args.no_host,
         metadata_timeout: args.metadata_timeout,
         source_port: args.source_port,
-        app_sequence: AppSequence::new(
-            now().as_secs().to_string().into_boxed_str(),
-            sequence_id().to_string().into_boxed_str(),
-        ),
+        app_sequence: AppSequence::new(now().as_secs(), sequence_id().to_string().into_boxed_str()),
     };
 
     Ok(config)

@@ -61,7 +61,7 @@ pub mod xml {
     }
 }
 
-pub fn build_config(endpoint_uuid: Uuid, instance_id: &str) -> Config {
+pub fn build_config(endpoint_uuid: Uuid, instance_id: u64) -> Config {
     let mut config = cli::parse_cli_from([
         "-4",
         "--uuid",
@@ -72,10 +72,8 @@ pub fn build_config(endpoint_uuid: Uuid, instance_id: &str) -> Config {
     .unwrap();
 
     // instance ID is not settable with commandline
-    config.app_sequence = AppSequence::new(
-        Box::from(instance_id),
-        Box::from(config.app_sequence.sequence_id()),
-    );
+    config.app_sequence =
+        AppSequence::new(instance_id, Box::from(config.app_sequence.sequence_id()));
 
     config
 }

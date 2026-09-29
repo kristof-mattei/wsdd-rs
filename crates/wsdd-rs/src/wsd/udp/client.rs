@@ -759,7 +759,7 @@ mod tests {
         Arc<crate::config::Config>,
         Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
     ) {
-        let client_config = Arc::new(build_config(Uuid::now_v7(), "client-instance-id"));
+        let client_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_335));
         let client_devices = Arc::new(RwLock::new(HashMap::new()));
 
         (client_config, client_devices)
@@ -854,7 +854,7 @@ mod tests {
         .await;
 
         let host_message_id = Uuid::now_v7();
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
 
         let expected_get = format!(
             include_str!("../../test/get-template.xml"),
@@ -968,7 +968,7 @@ mod tests {
 
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
 
         let bye = format!(
             include_str!("../../test/bye-template.xml"),
@@ -1014,7 +1014,7 @@ mod tests {
         })
         .await;
 
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
 
         let expected_get = format!(
             include_str!("../../test/get-template.xml"),
@@ -1299,7 +1299,7 @@ mod tests {
         let (client_config, client_devices) = setup_client();
 
         // host
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
 
         let http_server = WSDHttpServer::init(
             network_address.clone(),
@@ -1557,7 +1557,7 @@ mod tests {
         // host
         let host_message_id = Uuid::now_v7();
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
 
         let probe_matches = format!(
             include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
@@ -1724,7 +1724,7 @@ mod tests {
         // host
         let host_message_id = Uuid::now_v7();
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
 
         let probe_matches = format!(
             include_str!("../../test/probe-matches-without-xaddrs-template.xml"),
@@ -1803,7 +1803,7 @@ mod tests {
         .await;
 
         let host_message_id = Uuid::now_v7();
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
 
         let expected_get = format!(
             include_str!("../../test/get-template.xml"),
@@ -1914,7 +1914,7 @@ mod tests {
         .await;
 
         let host_message_id = Uuid::now_v7();
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
 
         let expected_get = format!(
             include_str!("../../test/get-template.xml"),
@@ -2065,7 +2065,7 @@ mod tests {
         .await;
 
         let host_message_id = Uuid::now_v7();
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
 
         let mock = server
             .mock("POST", &*format!("/{}", host_config.uuid))
@@ -2136,7 +2136,7 @@ mod tests {
         .await;
 
         let host_message_id = Uuid::now_v7();
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
 
         let mock = server
             .mock("POST", &*format!("/{}", host_config.uuid))

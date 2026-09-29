@@ -115,7 +115,7 @@ mod tests {
     async fn http_server_listens() {
         // host
         let host_ip = Ipv4Addr::LOCALHOST;
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
         let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
 
         let cancellation_token = CancellationToken::new();
@@ -177,7 +177,7 @@ mod tests {
     async fn drops_duplicate_get() {
         // host
         let host_ip = Ipv4Addr::LOCALHOST;
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
         let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
 
         let cancellation_token = CancellationToken::new();
@@ -273,7 +273,7 @@ mod tests {
     async fn handles_probe_generic(client_message_id: Uuid, probe: &str) {
         // host
         let host_ip = Ipv4Addr::LOCALHOST;
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
         let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
 
         let cancellation_token = CancellationToken::new();
@@ -335,7 +335,7 @@ mod tests {
 
         // host
         let host_ip = Ipv4Addr::LOCALHOST;
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
         let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
 
         let cancellation_token = CancellationToken::new();

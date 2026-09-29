@@ -505,7 +505,7 @@ mod tests {
 
     #[tokio::test]
     async fn failed_interface_lookup_does_not_stop_command_processing() {
-        let config = Arc::new(build_config(Uuid::now_v7(), "1"));
+        let config = Arc::new(build_config(Uuid::now_v7(), 1));
         let (command_tx, command_rx) = mpsc::channel(10);
         let (start_tx, mut start_rx) = watch::channel(());
 
@@ -557,7 +557,7 @@ mod tests {
 
     #[test]
     fn interface_lookup_caches_the_name() {
-        let config = Arc::new(build_config(Uuid::now_v7(), "1"));
+        let config = Arc::new(build_config(Uuid::now_v7(), 1));
         let (_command_tx, command_rx) = mpsc::channel(1);
         let (start_tx, _start_rx) = watch::channel(());
 
@@ -593,7 +593,7 @@ mod tests {
     #[cfg_attr(not(miri), test)]
     #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     fn interface_lookup_resolves_the_real_name() {
-        let config = Arc::new(build_config(Uuid::now_v7(), "1"));
+        let config = Arc::new(build_config(Uuid::now_v7(), 1));
         let (_command_tx, command_rx) = mpsc::channel(1);
         let (start_tx, _start_rx) = watch::channel(());
 
@@ -614,7 +614,7 @@ mod tests {
 
     #[test]
     fn interface_filter_matches_by_name() {
-        let mut config = build_config(Uuid::now_v7(), "1");
+        let mut config = build_config(Uuid::now_v7(), 1);
         config.interfaces = vec![InterfaceFilter::Name(
             DevName::try_from(Box::from("eth0")).unwrap(),
         )];
@@ -637,7 +637,7 @@ mod tests {
 
     #[test]
     fn interface_filter_matches_by_address() {
-        let mut config = build_config(Uuid::now_v7(), "1");
+        let mut config = build_config(Uuid::now_v7(), 1);
         config.interfaces = vec![InterfaceFilter::Address("192.168.100.5".parse().unwrap())];
 
         let network_handler = build_network_handler(config);
