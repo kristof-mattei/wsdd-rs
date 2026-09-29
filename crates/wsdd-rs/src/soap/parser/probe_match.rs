@@ -4,7 +4,9 @@ use xml::reader::XmlEvent;
 
 use crate::constants;
 use crate::soap::parser::BodyParsingError;
-use crate::soap::parser::generic::extract_endpoint_metadata;
+use crate::soap::parser::generic::{
+    EndpointMetadata, extract_endpoint_metadata, require_metadata_version,
+};
 use crate::wsd::device::DeviceUri;
 use crate::xml::{XmlError, XmlReader, find_child};
 
@@ -45,7 +47,13 @@ where
                             return Err(BodyParsingError::InvalidElementOrder);
                         }
 
-                        let (endpoint, raw_xaddrs) = extract_endpoint_metadata(reader)?;
+                        let EndpointMetadata {
+                            endpoint,
+                            raw_xaddrs,
+                            metadata_version,
+                        } = extract_endpoint_metadata(reader)?;
+
+                        require_metadata_version(metadata_version)?;
 
                         matches.push(ProbeMatch {
                             endpoint,
@@ -85,7 +93,7 @@ mod tests {
     use crate::constants;
     use crate::soap::parser::BodyParsingError;
     use crate::soap::parser::probe_match::{ProbeMatches, parse_probe_matches};
-    use crate::xml::XmlReader;
+    use crate::xml::{XmlError, XmlReader};
 
     const EXTENSION: &str = r#"<ext:Extension xmlns:ext="urn:ext" />"#;
 
@@ -165,5 +173,17 @@ mod tests {
         ]);
 
         assert_matches!(result.err(), Some(BodyParsingError::InvalidElementOrder));
+    }
+
+    #[test]
+    fn rejects_probe_match_without_metadata_version() {
+        let result = parse(&[
+            "<wsd:ProbeMatch><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference></wsd:ProbeMatch>",
+        ]);
+
+        assert_matches!(
+            result.map(|_| ()),
+            Err(BodyParsingError::Xml(XmlError::MissingElement(_)))
+        );
     }
 }

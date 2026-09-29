@@ -91,14 +91,30 @@ impl EndpointMetadataChild {
     }
 }
 
+pub struct EndpointMetadata {
+    pub endpoint: DeviceUri,
+    pub raw_xaddrs: Option<Box<str>>,
+    pub metadata_version: Option<u64>,
+}
+
+/// Hello, `ProbeMatch` and `ResolveMatch` require `MetadataVersion`, only Bye makes it optional, see documentation/ws-discovery.pdf, Appendix II.
+pub fn require_metadata_version(metadata_version: Option<u64>) -> Result<(), BodyParsingError> {
+    if metadata_version.is_none() {
+        return Err(XmlError::MissingElement("wsd:MetadataVersion".into()).into());
+    }
+
+    Ok(())
+}
+
 pub fn extract_endpoint_metadata<R>(
     reader: &mut XmlReader<R>,
-) -> Result<(DeviceUri, Option<Box<str>>), BodyParsingError>
+) -> Result<EndpointMetadata, BodyParsingError>
 where
     R: Read,
 {
     let mut endpoint = None;
     let mut xaddrs = None;
+    let mut metadata_version = None;
     let mut last_child = None;
 
     let entry_depth = reader.depth();
@@ -126,9 +142,15 @@ where
                     EndpointMetadataChild::XAddrs => {
                         xaddrs = read_text(reader)?;
                     },
+                    EndpointMetadataChild::MetadataVersion => {
+                        let text = read_text(reader)?.unwrap_or_default();
+
+                        metadata_version = Some(parse_unsigned_int(&text).ok_or_else(|| {
+                            BodyParsingError::InvalidMetadataVersion(text.into_boxed_str())
+                        })?);
+                    },
                     EndpointMetadataChild::Types
                     | EndpointMetadataChild::Scopes
-                    | EndpointMetadataChild::MetadataVersion
                     | EndpointMetadataChild::Extension => {},
                 }
             },
@@ -155,7 +177,11 @@ where
         return Err(XmlError::MissingElement("wsa:EndpointReference".into()).into());
     };
 
-    Ok((DeviceUri::new(endpoint), xaddrs.map(String::into_boxed_str)))
+    Ok(EndpointMetadata {
+        endpoint: DeviceUri::new(endpoint),
+        raw_xaddrs: xaddrs.map(String::into_boxed_str),
+        metadata_version,
+    })
 }
 
 #[cfg(test)]
@@ -165,9 +191,10 @@ mod tests {
 
     use crate::constants;
     use crate::soap::parser::BodyParsingError;
-    use crate::soap::parser::generic::extract_endpoint_metadata;
-    use crate::wsd::device::DeviceUri;
-    use crate::xml::{XmlReader, find_child};
+    use crate::soap::parser::generic::{
+        EndpointMetadata, extract_endpoint_metadata, require_metadata_version,
+    };
+    use crate::xml::{XmlError, XmlReader, find_child};
 
     const ENDPOINT_REFERENCE: &str = "<wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference>";
     const TYPES: &str = "<wsd:Types>wsdp:Device</wsd:Types>";
@@ -176,7 +203,7 @@ mod tests {
     const METADATA_VERSION: &str = "<wsd:MetadataVersion>1</wsd:MetadataVersion>";
     const EXTENSION: &str = r#"<ext:Extension xmlns:ext="urn:ext" />"#;
 
-    fn parse(children: &[&str]) -> Result<(DeviceUri, Option<Box<str>>), BodyParsingError> {
+    fn parse(children: &[&str]) -> Result<EndpointMetadata, BodyParsingError> {
         let xml = format!(
             r#"<wsd:Hello xmlns:wsa="{}" xmlns:wsd="{}">{}</wsd:Hello>"#,
             constants::XML_WSA_NAMESPACE,
@@ -200,7 +227,11 @@ mod tests {
 
     #[test]
     fn parses_full_sequence() {
-        let (endpoint, xaddrs) = parse(&[
+        let EndpointMetadata {
+            endpoint,
+            raw_xaddrs,
+            metadata_version,
+        } = parse(&[
             ENDPOINT_REFERENCE,
             TYPES,
             SCOPES,
@@ -212,14 +243,74 @@ mod tests {
         .unwrap();
 
         assert_eq!(&*endpoint, "urn:uuid:00000000-0000-0000-0000-000000000001");
-        assert_eq!(xaddrs.as_deref(), Some("http://192.168.100.5:5357/"));
+        assert_eq!(raw_xaddrs.as_deref(), Some("http://192.168.100.5:5357/"));
+        assert_eq!(metadata_version, Some(1));
     }
 
     #[test]
     fn parses_minimal_sequence() {
-        let (_, xaddrs) = parse(&[ENDPOINT_REFERENCE, METADATA_VERSION]).unwrap();
+        let EndpointMetadata {
+            raw_xaddrs,
+            metadata_version,
+            ..
+        } = parse(&[ENDPOINT_REFERENCE, METADATA_VERSION]).unwrap();
 
-        assert_eq!(xaddrs, None);
+        assert_eq!(raw_xaddrs, None);
+        assert_eq!(metadata_version, Some(1));
+    }
+
+    #[test]
+    fn parses_metadata_version_above_unsigned_int() {
+        let EndpointMetadata {
+            metadata_version, ..
+        } = parse(&[
+            ENDPOINT_REFERENCE,
+            "<wsd:MetadataVersion>4294967296</wsd:MetadataVersion>",
+        ])
+        .unwrap();
+
+        assert_eq!(metadata_version, Some(u64::from(u32::MAX) + 1));
+    }
+
+    #[test]
+    fn parses_without_metadata_version() {
+        let EndpointMetadata {
+            metadata_version, ..
+        } = parse(&[ENDPOINT_REFERENCE]).unwrap();
+
+        assert_eq!(metadata_version, None);
+    }
+
+    #[test]
+    fn rejects_malformed_metadata_version() {
+        let result = parse(&[
+            ENDPOINT_REFERENCE,
+            "<wsd:MetadataVersion>two</wsd:MetadataVersion>",
+        ]);
+
+        assert_matches!(
+            result.map(|_| ()),
+            Err(BodyParsingError::InvalidMetadataVersion(ref text)) if &**text == "two"
+        );
+    }
+
+    #[test]
+    fn rejects_empty_metadata_version() {
+        let result = parse(&[ENDPOINT_REFERENCE, "<wsd:MetadataVersion />"]);
+
+        assert_matches!(
+            result.map(|_| ()),
+            Err(BodyParsingError::InvalidMetadataVersion(ref text)) if text.is_empty()
+        );
+    }
+
+    #[test]
+    fn requires_metadata_version() {
+        assert_matches!(require_metadata_version(Some(1)), Ok(()));
+        assert_matches!(
+            require_metadata_version(None),
+            Err(BodyParsingError::Xml(XmlError::MissingElement(ref name))) if &**name == "wsd:MetadataVersion"
+        );
     }
 
     #[test]
