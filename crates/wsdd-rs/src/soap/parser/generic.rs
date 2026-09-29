@@ -55,6 +55,11 @@ where
     Ok(address.into_boxed_str())
 }
 
+/// Parses an `xs:unsignedInt` into a `u64`, see `config.rs::AppSequence` for why 64 bits.
+pub fn parse_unsigned_int(value: &str) -> Option<u64> {
+    value.trim().parse().ok()
+}
+
 /// The children of `wsd:Hello`, `wsd:Bye`, `wsd:ProbeMatch` and `wsd:ResolveMatch` in their shared sequence order (WS-Discovery, Appendix II).
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 enum EndpointMetadataChild {
