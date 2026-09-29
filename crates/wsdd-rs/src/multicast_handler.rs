@@ -2,7 +2,6 @@ use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
 
 use color_eyre::eyre::{self, Context as _};
-use hashbrown::HashMap;
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use rand::RngExt as _;
 use socket2::{Domain, InterfaceIndexOrAddress, Socket, Type};
@@ -29,7 +28,7 @@ use crate::udp_address::UdpAddress;
 use crate::udp_socket_with_addr::UdpSocketWithAddr;
 use crate::url_ip_addr::UrlIpAddr;
 use crate::utils::task::spawn_with_name;
-use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
+use crate::wsd::devices::Devices;
 use crate::wsd::http::http_server::WSDHttpServer;
 use crate::wsd::udp::client::WSDClient;
 use crate::wsd::udp::host::WSDHost;
@@ -41,7 +40,7 @@ pub struct MulticastHandler {
     config: Arc<Config>,
 
     /// Shared reference to all discovered devices.
-    devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+    devices: Arc<RwLock<Devices>>,
 
     recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
 
@@ -100,7 +99,7 @@ impl MulticastHandler {
         network_address: NetworkAddress,
         cancellation_token: CancellationToken,
         config: Arc<Config>,
-        devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+        devices: Arc<RwLock<Devices>>,
         recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
     ) -> Result<Self, eyre::Report> {
         let domain = match network_address.address {

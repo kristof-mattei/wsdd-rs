@@ -23,6 +23,7 @@ use crate::network_handler::address_handlers::AddressHandlers;
 use crate::network_interface::{LibcInterfaceNameResolver, NetworkInterface, ResolveInterfaceName};
 use crate::soap::MessageId;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
+use crate::wsd::devices::Devices;
 
 #[derive(Debug)]
 pub enum Command {
@@ -67,7 +68,7 @@ pub struct NetworkHandler<R = LibcInterfaceNameResolver> {
     active: AtomicBool,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    devices: Arc<RwLock<HashMap<DeviceUri, WSDDiscoveredDevice>>>,
+    devices: Arc<RwLock<Devices>>,
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
     multicast_handlers: AddressHandlers<MulticastHandler>,
     command_rx: Receiver<Command>,
@@ -117,7 +118,7 @@ where
             active: AtomicBool::new(false),
             config: Arc::clone(config),
             cancellation_token,
-            devices: Arc::new(RwLock::new(HashMap::new())),
+            devices: Arc::new(RwLock::new(Devices::default())),
             interfaces: HashMap::new(),
             multicast_handlers: AddressHandlers::default(),
             command_rx,
