@@ -673,7 +673,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use hashbrown::HashMap;
+    use hashbrown::{HashMap, HashSet};
     use ipnet::{IpNet, Ipv4Net, Ipv6Net};
     use libc::RT_SCOPE_SITE;
     use mockito::ServerOpts;
@@ -685,12 +685,14 @@ mod tests {
     use uuid::Uuid;
 
     use crate::constants;
+    use crate::max_size_deque::MaxSizeDeque;
     use crate::network_interface::NetworkInterface;
     use crate::soap::MessageId;
     use crate::soap::parser::xaddrs::XAddr;
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler_with_network_address};
     use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
+    use crate::wsd::http::http_server::WSDHttpServer;
     use crate::wsd::udp::client::{
         LastCopy, WSDClient, handle_bye, handle_hello, handle_metadata, handle_probe_matches,
         handle_resolve_matches, parse_xaddrs, perform_metadata_exchange,
@@ -1271,6 +1273,85 @@ mod tests {
         failing.assert_async().await;
 
         assert!(client_devices.read().await.is_empty());
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn metadata_exchange_stores_what_the_http_server_serves() {
+        let (_message_handler, network_address) = build_message_handler_with_network_address(
+            IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // host
+        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+
+        let http_server = WSDHttpServer::init(
+            network_address.clone(),
+            CancellationToken::new(),
+            Arc::clone(&host_config),
+            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)),
+            Arc::new(RwLock::new(MaxSizeDeque::new(
+                constants::WSD_MAX_KNOWN_MESSAGES,
+            ))),
+        )
+        .await
+        .unwrap();
+
+        let xaddrs = vec![
+            XAddr::try_from(
+                format!(
+                    "http://{}/{}",
+                    http_server.http_bound_to(),
+                    host_config.uuid
+                )
+                .as_str(),
+            )
+            .unwrap(),
+        ];
+
+        let result = perform_metadata_exchange(
+            &reqwest::ClientBuilder::new().build().unwrap(),
+            &client_config,
+            Arc::clone(&client_devices),
+            &network_address,
+            host_config.uuid_as_device_uri.clone(),
+            xaddrs,
+        )
+        .await;
+
+        http_server.teardown().await;
+
+        assert_matches!(result, Ok(()));
+
+        let client_devices = client_devices.read().await;
+
+        let device = client_devices.get(&host_config.uuid_as_device_uri).unwrap();
+
+        let expected_props = HashMap::from_iter([
+            ("BelongsTo", "Workgroup:WORKGROUP"),
+            ("DisplayName", "TEST-HOST-NAME"),
+            ("FirmwareVersion", "1.0"),
+            ("FriendlyName", "WSD Device test-host-name"),
+            ("Manufacturer", "wsdd"),
+            ("ModelName", "wsdd"),
+            ("SerialNumber", "1"),
+        ]);
+
+        let device_props = device
+            .props()
+            .iter()
+            .map(|(key, value)| (&**key, &**value))
+            .collect::<HashMap<_, _>>();
+
+        assert_eq!(device_props, expected_props);
+
+        assert_eq!(
+            device.types(),
+            &HashSet::from_iter([Box::from("pub:Computer")])
+        );
     }
 
     #[tokio::test]

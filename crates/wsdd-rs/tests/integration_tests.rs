@@ -21,5 +21,3 @@ fn ui() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/*.rs");
 }
-
-// TODO test that tests http server and client at the same time
