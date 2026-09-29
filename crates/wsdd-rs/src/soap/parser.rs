@@ -23,7 +23,7 @@ use crate::constants;
 use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
-use crate::soap::parser::app_sequence::AppSequence;
+use crate::soap::parser::app_sequence::{AppSequence, InvalidAppSequence};
 use crate::soap::parser::get::Get;
 use crate::soap::{self, MessageId, WSDMessage};
 use crate::wsd::device::DeviceUri;
@@ -39,8 +39,8 @@ pub struct Header {
     pub action: Box<str>,
     pub message_id: MessageId,
     pub relates_to: Option<MessageId>,
-    /// `None` when the block is absent or malformed.
-    pub app_sequence: Option<AppSequence>,
+    /// `None` when the block is absent.
+    pub app_sequence: Option<Result<AppSequence, InvalidAppSequence>>,
 }
 
 #[derive(Error, Debug)]
@@ -51,8 +51,10 @@ pub enum HeaderParsingError {
     MissingMessageId,
     #[error("Missing Action")]
     MissingAction,
-    #[error("Missing or invalid wsd:AppSequence")]
+    #[error("Missing wsd:AppSequence")]
     MissingAppSequence,
+    #[error("Invalid wsd:AppSequence: {}", .0)]
+    InvalidAppSequence(InvalidAppSequence),
     #[error("Duplicate soap:Header")]
     DuplicateHeader,
 }
@@ -257,11 +259,11 @@ fn validate_action_body(
 
 /// A Target Service MUST include `wsd:AppSequence`, see documentation/ws-discovery.pdf, 4.1 and 5.3.
 fn require_app_sequence(header: &Header) -> Result<(), HeaderParsingError> {
-    if header.app_sequence.is_none() {
-        return Err(HeaderParsingError::MissingAppSequence);
+    match header.app_sequence {
+        None => Err(HeaderParsingError::MissingAppSequence),
+        Some(Err(ref error)) => Err(HeaderParsingError::InvalidAppSequence(error.clone())),
+        Some(Ok(_)) => Ok(()),
     }
-
-    Ok(())
 }
 
 fn parse_message_body(
@@ -434,11 +436,7 @@ where
                 && name.namespace_ref() == Some(constants::XML_WSD_NAMESPACE)
                 && name.local_name == "AppSequence" =>
             {
-                app_sequence = AppSequence::from_attributes(&attributes);
-
-                if app_sequence.is_none() {
-                    event!(Level::DEBUG, ?attributes, "Invalid wsd:AppSequence");
-                }
+                app_sequence = Some(AppSequence::from_attributes(&attributes));
             },
             XmlEvent::EndElement { .. } if reader.depth() < entry_depth => {
                 break;
@@ -487,7 +485,7 @@ mod tests {
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
     use crate::soap::MessageId;
-    use crate::soap::parser::app_sequence::AppSequence;
+    use crate::soap::parser::app_sequence::{AppSequence, InvalidAppSequence};
     use crate::soap::parser::{
         HeaderParsingError, MessageHandler, MessageHandlerError, deconstruct_raw,
     };
@@ -582,16 +580,16 @@ mod tests {
 
         assert_eq!(
             header.app_sequence,
-            Some(AppSequence::new(
+            Some(Ok(AppSequence::new(
                 3,
                 Some("urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9"),
                 7
-            ))
+            )))
         );
     }
 
     #[test]
-    fn reads_malformed_app_sequence_as_none() {
+    fn reads_malformed_app_sequence_as_error() {
         let hello = message(
             constants::WSD_HELLO,
             r#"<wsd:AppSequence InstanceId="x" MessageNumber="7" />"#,
@@ -600,7 +598,10 @@ mod tests {
 
         let (header, _, _) = deconstruct_raw(hello.as_bytes()).unwrap();
 
-        assert_eq!(header.app_sequence, None);
+        assert_eq!(
+            header.app_sequence,
+            Some(Err(InvalidAppSequence::InvalidInstanceId(Box::from("x"))))
+        );
     }
 
     #[test]
@@ -658,7 +659,7 @@ mod tests {
         assert_matches!(
             result.err(),
             Some(MessageHandlerError::HeaderError(
-                HeaderParsingError::MissingAppSequence
+                HeaderParsingError::InvalidAppSequence(InvalidAppSequence::InvalidInstanceId(_))
             ))
         );
     }
