@@ -33,15 +33,19 @@ pub struct Config {
 }
 
 /// WS-Discovery, Appendix I. `MessageNumber` orders every message of the Target Service, so all interfaces share this counter.
+///
+/// Appendix I types `InstanceId` and `MessageNumber` as `xs:unsignedInt` (32 bits).
+/// The `InstanceId` in Unix seconds exceeds that on 2106-02-07, and `MessageNumber` after 2^32 messages.
+/// WSDAPI holds both as `ULONGLONG` (`WSD_APP_SEQUENCE`), so these are `u64`.
 #[derive(Debug)]
 pub struct AppSequence {
-    instance_id: Box<str>,
+    instance_id: u64,
     sequence_id: Box<str>,
     message_number: AtomicU64,
 }
 
 impl AppSequence {
-    pub fn new(instance_id: Box<str>, sequence_id: Box<str>) -> Self {
+    pub fn new(instance_id: u64, sequence_id: Box<str>) -> Self {
         Self {
             instance_id,
             sequence_id,
@@ -49,8 +53,8 @@ impl AppSequence {
         }
     }
 
-    pub fn instance_id(&self) -> &str {
-        &self.instance_id
+    pub fn instance_id(&self) -> u64 {
+        self.instance_id
     }
 
     pub fn sequence_id(&self) -> &str {

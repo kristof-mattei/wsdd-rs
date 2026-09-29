@@ -271,7 +271,7 @@ mod tests {
     async fn sends_hello() {
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
 
         let cancellation_token = CancellationToken::new();
         let (_incoming_tx, incoming_rx) = tokio::sync::mpsc::channel(10);
@@ -319,7 +319,7 @@ mod tests {
             message_number.parse().unwrap()
         }
 
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
 
         let cancellation_token = CancellationToken::new();
         let (_eth0_incoming_tx, eth0_incoming_rx) = tokio::sync::mpsc::channel(10);
@@ -367,7 +367,7 @@ mod tests {
     async fn sends_bye() {
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
 
         let cancellation_token = CancellationToken::new();
         let (_incoming_tx, incoming_rx) = tokio::sync::mpsc::channel(10);
@@ -415,7 +415,7 @@ mod tests {
 
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
 
         // client
         let client_message_id = Uuid::now_v7();
@@ -517,7 +517,7 @@ mod tests {
 
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
-        let host_config = Arc::new(build_config(Uuid::now_v7(), "host-instance-id"));
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
 
         // host receives client's probe
         let (header, message) = host_message_handler
