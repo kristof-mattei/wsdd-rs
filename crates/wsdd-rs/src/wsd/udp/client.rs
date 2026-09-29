@@ -278,6 +278,37 @@ fn parse_xaddrs(bound_to: IpNet, raw_xaddrs: &str) -> Vec<XAddr> {
     xaddrs
 }
 
+/// The result of checking the `XAddrs` of a Hello, `ProbeMatch` or `ResolveMatch`.
+#[derive(Debug)]
+enum XAddrsCheck {
+    /// The message has no `XAddrs`.
+    Missing,
+    /// None of the `XAddrs` is an HTTP or HTTPS URL with a host.
+    Unusable,
+    Usable(Vec<XAddr>),
+}
+
+fn check_xaddrs(
+    bound_to: IpNet,
+    kind: &str,
+    endpoint: &DeviceUri,
+    raw_xaddrs: Option<Box<str>>,
+) -> XAddrsCheck {
+    let Some(raw_xaddrs) = raw_xaddrs else {
+        return XAddrsCheck::Missing;
+    };
+
+    let xaddrs = parse_xaddrs(bound_to, &raw_xaddrs);
+
+    if xaddrs.is_empty() {
+        event!(Level::ERROR, %endpoint, kind, "No valid URL in xaddrs");
+
+        return XAddrsCheck::Unusable;
+    }
+
+    XAddrsCheck::Usable(xaddrs)
+}
+
 async fn handle_hello(
     client: &reqwest::Client,
     config: &Config,
@@ -290,31 +321,25 @@ async fn handle_hello(
         raw_xaddrs,
     }: Hello,
 ) -> Result<(), eyre::Report> {
-    let Some(raw_xaddrs) = raw_xaddrs else {
-        event!(Level::INFO, "Hello without XAddrs, sending resolve");
+    match check_xaddrs(bound_to.address, "Hello", &endpoint, raw_xaddrs) {
+        XAddrsCheck::Unusable => Ok(()),
+        XAddrsCheck::Missing => {
+            event!(Level::INFO, "Hello without XAddrs, sending resolve");
 
-        let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
+            let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
 
-        let message = record_resolve(resolves, message_id, message);
+            let message = record_resolve(resolves, message_id, message);
 
-        multicast.send(message).await?;
+            multicast.send(message).await?;
 
-        return Ok(());
-    };
+            Ok(())
+        },
+        XAddrsCheck::Usable(xaddrs) => {
+            event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "Hello");
 
-    let xaddrs = parse_xaddrs(bound_to.address, &raw_xaddrs);
-
-    if xaddrs.is_empty() {
-        event!(Level::ERROR, "No valid URL in xaddrs");
-
-        return Ok(());
+            perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddrs).await
+        },
     }
-
-    event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "Hello");
-
-    perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddrs).await?;
-
-    Ok(())
 }
 
 async fn handle_bye(
@@ -396,33 +421,27 @@ async fn handle_probe_match(
         raw_xaddrs,
     }: ProbeMatch,
 ) -> Result<(), eyre::Report> {
-    //  If no XAddrs are included in the ProbeMatches message, then the client may send a
-    //  Resolve message by UDP multicast to port 3702.
-    let Some(raw_xaddrs) = raw_xaddrs else {
-        event!(Level::INFO, "ProbeMatch without XAddrs, sending resolve");
+    match check_xaddrs(bound_to.address, "ProbeMatch", &endpoint, raw_xaddrs) {
+        XAddrsCheck::Unusable => Ok(()),
+        //  If no XAddrs are included in the ProbeMatches message, then the client may send a
+        //  Resolve message by UDP multicast to port 3702.
+        XAddrsCheck::Missing => {
+            event!(Level::INFO, "ProbeMatch without XAddrs, sending resolve");
 
-        let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
+            let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
 
-        let message = record_resolve(resolves, message_id, message);
+            let message = record_resolve(resolves, message_id, message);
 
-        mc_local_port_tx.send(message).await?;
+            mc_local_port_tx.send(message).await?;
 
-        return Ok(());
-    };
+            Ok(())
+        },
+        XAddrsCheck::Usable(xaddrs) => {
+            event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ProbeMatch");
 
-    let xaddrs = parse_xaddrs(bound_to.address, &raw_xaddrs);
-
-    if xaddrs.is_empty() {
-        event!(Level::ERROR, "No valid URL in xaddrs");
-
-        return Ok(());
+            perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddrs).await
+        },
     }
-
-    event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ProbeMatch");
-
-    perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddrs).await?;
-
-    Ok(())
 }
 
 #[expect(clippy::too_many_arguments, reason = "WIP")]
@@ -461,25 +480,19 @@ async fn handle_resolve_matches(
         return Ok(());
     };
 
-    let Some(raw_xaddrs) = raw_xaddrs else {
-        event!(Level::DEBUG, "ResolveMatch without xaddr, nothing to do");
+    match check_xaddrs(bound_to.address, "ResolveMatch", &endpoint, raw_xaddrs) {
+        XAddrsCheck::Unusable => Ok(()),
+        XAddrsCheck::Missing => {
+            event!(Level::DEBUG, "ResolveMatch without xaddr, nothing to do");
 
-        return Ok(());
-    };
+            Ok(())
+        },
+        XAddrsCheck::Usable(xaddrs) => {
+            event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ResolveMatch");
 
-    let xaddrs = parse_xaddrs(bound_to.address, &raw_xaddrs);
-
-    if xaddrs.is_empty() {
-        event!(Level::ERROR, "No valid URL in xaddrs");
-
-        return Ok(());
+            perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddrs).await
+        },
     }
-
-    event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ResolveMatch");
-
-    perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddrs).await?;
-
-    Ok(())
 }
 
 async fn perform_metadata_exchange(
@@ -694,8 +707,8 @@ mod tests {
     use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
     use crate::wsd::http::http_server::WSDHttpServer;
     use crate::wsd::udp::client::{
-        LastCopy, WSDClient, handle_bye, handle_hello, handle_metadata, handle_probe_matches,
-        handle_resolve_matches, parse_xaddrs, perform_metadata_exchange,
+        LastCopy, WSDClient, XAddrsCheck, check_xaddrs, handle_bye, handle_hello, handle_metadata,
+        handle_probe_matches, handle_resolve_matches, parse_xaddrs, perform_metadata_exchange,
     };
 
     #[test]
@@ -2183,6 +2196,45 @@ mod tests {
         mock.assert_async().await;
 
         assert!(client_devices.read().await.is_empty());
+    }
+
+    fn new_endpoint() -> DeviceUri {
+        DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str())
+    }
+
+    fn bound_to() -> IpNet {
+        IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap()
+    }
+
+    #[test]
+    fn message_with_a_valid_xaddr_is_usable() {
+        let check = check_xaddrs(
+            bound_to(),
+            "Hello",
+            &new_endpoint(),
+            Some(Box::from("http://192.168.100.5:5357/")),
+        );
+
+        assert_matches!(&check, XAddrsCheck::Usable(xaddrs) if xaddrs.len() == 1);
+    }
+
+    #[test]
+    fn message_without_xaddrs_is_missing() {
+        let check = check_xaddrs(bound_to(), "Hello", &new_endpoint(), None);
+
+        assert_matches!(check, XAddrsCheck::Missing);
+    }
+
+    #[test]
+    fn message_without_a_valid_xaddr_is_unusable() {
+        let check = check_xaddrs(
+            bound_to(),
+            "Hello",
+            &new_endpoint(),
+            Some(Box::from("ftp://192.168.100.5/")),
+        );
+
+        assert_matches!(check, XAddrsCheck::Unusable);
     }
 
     #[test]
