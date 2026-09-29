@@ -77,6 +77,8 @@ pub enum BodyParsingError {
     Xml(#[from] XmlError),
     #[error("Invalid element order")]
     InvalidElementOrder,
+    #[error("MetadataVersion is not an unsigned 64-bit number: {}", .0)]
+    InvalidMetadataVersion(Box<str>),
     #[error("Invalid UUID: {}", .0)]
     InvalidUrnUuid(uuid::Error),
     #[error("Invalid QName: {}", .0)]
@@ -487,8 +489,9 @@ mod tests {
     use crate::soap::MessageId;
     use crate::soap::parser::app_sequence::{AppSequence, InvalidAppSequence};
     use crate::soap::parser::{
-        HeaderParsingError, MessageHandler, MessageHandlerError, deconstruct_raw,
+        BodyParsingError, HeaderParsingError, MessageHandler, MessageHandlerError, deconstruct_raw,
     };
+    use crate::xml::XmlError;
 
     fn handler_for_tests(history: usize) -> MessageHandler {
         MessageHandler::new(
@@ -670,6 +673,43 @@ mod tests {
 
         let result = handler_for_tests(8)
             .deconstruct_message(probe.as_bytes(), SOURCE)
+            .await;
+
+        assert_matches!(result.map(|_| ()), Ok(()));
+    }
+
+    const APP_SEQUENCE: &str = r#"<wsd:AppSequence InstanceId="1" MessageNumber="2" />"#;
+
+    #[tokio::test]
+    async fn rejects_hello_without_metadata_version() {
+        let hello = message(
+            constants::WSD_HELLO,
+            APP_SEQUENCE,
+            "<wsd:Hello><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference></wsd:Hello>",
+        );
+
+        let result = handler_for_tests(8)
+            .deconstruct_message(hello.as_bytes(), SOURCE)
+            .await;
+
+        assert_matches!(
+            result.err(),
+            Some(MessageHandlerError::BodyError(BodyParsingError::Xml(
+                XmlError::MissingElement(_)
+            )))
+        );
+    }
+
+    #[tokio::test]
+    async fn accepts_bye_without_metadata_version() {
+        let bye = message(
+            constants::WSD_BYE,
+            APP_SEQUENCE,
+            "<wsd:Bye><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference></wsd:Bye>",
+        );
+
+        let result = handler_for_tests(8)
+            .deconstruct_message(bye.as_bytes(), SOURCE)
             .await;
 
         assert_matches!(result.map(|_| ()), Ok(()));

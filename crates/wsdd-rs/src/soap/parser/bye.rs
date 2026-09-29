@@ -2,7 +2,7 @@ use std::io::Read;
 
 use crate::constants;
 use crate::soap::parser::BodyParsingError;
-use crate::soap::parser::generic::extract_endpoint_metadata;
+use crate::soap::parser::generic::{EndpointMetadata, extract_endpoint_metadata};
 use crate::wsd::device::DeviceUri;
 use crate::xml::{XmlReader, find_child};
 
@@ -22,7 +22,7 @@ where
 {
     find_child(reader, Some(constants::XML_WSD_NAMESPACE), "Bye")?;
 
-    let (endpoint, _) = extract_endpoint_metadata(reader)?;
+    let EndpointMetadata { endpoint, .. } = extract_endpoint_metadata(reader)?;
 
     Ok(Bye { endpoint })
 }
