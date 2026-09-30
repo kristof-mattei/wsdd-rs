@@ -32,6 +32,7 @@ cttc
 dadfailed
 datagram
 datagrams
+datatypes
 deladdr
 deque
 devicesprofile
@@ -210,6 +211,7 @@ wsdp
 wsdudp
 xaddr
 xaddrs
+xmlschema
 xmlsoap
 zizmor
 zmiri

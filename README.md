@@ -39,6 +39,8 @@ The packages are also published to `ghcr.io/kristof-mattei/wsdd-rs-deb`, tagged 
 
 - RFC 2396, Uniform Resource Identifiers (URI): Generic Syntax, August 1998: <https://www.rfc-editor.org/rfc/rfc2396.txt> (also stored in [./documentation/rfc2396](./documentation/rfc2396.txt))
 
+- XML Schema Part 2: Datatypes Second Edition, W3C Recommendation, 28 October 2004: <https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/> (also stored in [./documentation/xmlschema-2](./documentation/xmlschema-2.pdf))
+
 - More definitions: <https://learn.microsoft.com/en-us/windows/win32/wsdapi/discovery-and-metadata-exchange-message-patterns>
 
 - Interoperability tool: <https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/wsdapi-basic-interoperability-tool>
