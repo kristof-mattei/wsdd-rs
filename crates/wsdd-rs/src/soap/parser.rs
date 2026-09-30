@@ -17,6 +17,7 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{Level, event};
 use xml::ParserConfig;
+use xml::common::XmlVersion;
 use xml::reader::XmlEvent;
 
 use crate::constants;
@@ -57,6 +58,8 @@ pub enum HeaderParsingError {
     InvalidAppSequence(InvalidAppSequence),
     #[error("Duplicate soap:Header")]
     DuplicateHeader,
+    #[error("Unsupported XML version: {}", .0)]
+    UnsupportedXmlVersion(XmlVersion),
 }
 
 impl From<xml::reader::Error> for HeaderParsingError {
@@ -180,6 +183,12 @@ where
         // this is the only loop that should hit `XmlEvent::StartDocument` and `XmlEvent::Doctype`
         // in all other parsing functions we could theoretically mark them as `unreachable!()`
         match reader.next().map_err(HeaderParsingError::from)? {
+            XmlEvent::StartDocument {
+                version: version @ XmlVersion::Version11,
+                ..
+            } => {
+                return Err(HeaderParsingError::UnsupportedXmlVersion(version).into());
+            },
             XmlEvent::StartElement { name, .. }
                 if name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE) =>
             {
@@ -481,6 +490,7 @@ mod tests {
     use tokio::sync::RwLock;
     use tokio::time::{Duration, timeout};
     use uuid::Uuid;
+    use xml::common::XmlVersion;
 
     use crate::constants;
     use crate::max_size_deque::MaxSizeDeque;
@@ -549,6 +559,31 @@ mod tests {
             result.err(),
             Some(MessageHandlerError::HeaderError(
                 HeaderParsingError::DuplicateHeader
+            ))
+        );
+    }
+
+    #[test]
+    fn accepts_message_declared_as_xml_1_0() {
+        let probe = format!(
+            r#"<?xml version="1.0" encoding="utf-8"?>{}"#,
+            message(constants::WSD_PROBE, "", "<wsd:Probe />")
+        );
+
+        assert_matches!(deconstruct_raw(probe.as_bytes()).map(|_| ()), Ok(()));
+    }
+
+    #[test]
+    fn rejects_message_declared_as_xml_1_1() {
+        let probe = format!(
+            r#"<?xml version="1.1" encoding="utf-8"?>{}"#,
+            message(constants::WSD_PROBE, "", "<wsd:Probe />")
+        );
+
+        assert_matches!(
+            deconstruct_raw(probe.as_bytes()).err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::UnsupportedXmlVersion(XmlVersion::Version11)
             ))
         );
     }
