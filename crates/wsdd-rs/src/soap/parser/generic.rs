@@ -56,8 +56,15 @@ where
 }
 
 /// Parses an `xs:unsignedInt` into a `u64`, see `config.rs::AppSequence` for why 64 bits.
+/// Its lexical space is decimal digits only, and its `whiteSpace` facet strips only #x20, #x9, #xA and #xD around them, see documentation/xmlschema-2.pdf, 3.3.22.1 and 4.3.6.
 pub fn parse_unsigned_int(value: &str) -> Option<u64> {
-    value.trim().parse().ok()
+    let digits = value.trim_matches([' ', '\t', '\n', '\r']);
+
+    if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+
+    digits.parse().ok()
 }
 
 /// The children of `wsd:Hello`, `wsd:Bye`, `wsd:ProbeMatch` and `wsd:ResolveMatch` in their shared sequence order (WS-Discovery, Appendix II).
@@ -192,7 +199,7 @@ mod tests {
     use crate::constants;
     use crate::soap::parser::BodyParsingError;
     use crate::soap::parser::generic::{
-        EndpointMetadata, extract_endpoint_metadata, require_metadata_version,
+        EndpointMetadata, extract_endpoint_metadata, parse_unsigned_int, require_metadata_version,
     };
     use crate::xml::{XmlError, XmlReader, find_child};
 
@@ -311,6 +318,22 @@ mod tests {
             require_metadata_version(None),
             Err(BodyParsingError::Xml(XmlError::MissingElement(ref name))) if &**name == "wsd:MetadataVersion"
         );
+    }
+
+    #[test]
+    fn parses_unsigned_int_between_xml_white_space() {
+        assert_eq!(parse_unsigned_int(" \t\n\r007 \t\n\r"), Some(7));
+    }
+
+    #[test]
+    fn rejects_signed_unsigned_int() {
+        assert_eq!(parse_unsigned_int("+2"), None);
+        assert_eq!(parse_unsigned_int("-0"), None);
+    }
+
+    #[test]
+    fn rejects_unsigned_int_between_other_white_space() {
+        assert_eq!(parse_unsigned_int("\u{a0}2"), None);
     }
 
     #[test]
