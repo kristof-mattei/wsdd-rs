@@ -56,6 +56,8 @@ pub enum HeaderParsingError {
     MissingAppSequence,
     #[error("Invalid wsd:AppSequence: {}", .0)]
     InvalidAppSequence(InvalidAppSequence),
+    #[error("Duplicate wsd:AppSequence")]
+    DuplicateAppSequence,
     #[error("Duplicate soap:Header")]
     DuplicateHeader,
     #[error("Unsupported XML version: {}", .0)]
@@ -447,6 +449,10 @@ where
                 && name.namespace_ref() == Some(constants::XML_WSD_NAMESPACE)
                 && name.local_name == "AppSequence" =>
             {
+                if app_sequence.is_some() {
+                    return Err(HeaderParsingError::DuplicateAppSequence);
+                }
+
                 app_sequence = Some(AppSequence::from_attributes(&attributes));
             },
             XmlEvent::EndElement { .. } if reader.depth() < entry_depth => {
@@ -649,6 +655,22 @@ mod tests {
         let (header, _, _) = deconstruct_raw(hello.as_bytes()).unwrap();
 
         assert_eq!(header.app_sequence, None);
+    }
+
+    #[test]
+    fn rejects_duplicate_app_sequence() {
+        let hello = message(
+            constants::WSD_HELLO,
+            r#"<wsd:AppSequence InstanceId="1" MessageNumber="2" /><wsd:AppSequence InstanceId="1" MessageNumber="2" />"#,
+            "",
+        );
+
+        assert_matches!(
+            deconstruct_raw(hello.as_bytes()).err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::DuplicateAppSequence
+            ))
+        );
     }
 
     #[tokio::test]
