@@ -101,16 +101,19 @@ impl EndpointMetadataChild {
 pub struct EndpointMetadata {
     pub endpoint: DeviceUri,
     pub raw_xaddrs: Option<Box<str>>,
-    pub metadata_version: Option<u64>,
+    /// `None` when absent, `Err` holds the text of a value that is not an `xs:unsignedInt`.
+    pub metadata_version: Option<Result<u64, Box<str>>>,
 }
 
-/// Hello, `ProbeMatch` and `ResolveMatch` require `MetadataVersion`, only Bye makes it optional, see documentation/ws-discovery.pdf, Appendix II.
-pub fn require_metadata_version(metadata_version: Option<u64>) -> Result<(), BodyParsingError> {
-    if metadata_version.is_none() {
-        return Err(XmlError::MissingElement("wsd:MetadataVersion".into()).into());
+/// Hello, `ProbeMatch` and `ResolveMatch` require a valid `MetadataVersion`, only Bye makes it optional, see documentation/ws-discovery.pdf, Appendix II.
+pub fn require_metadata_version(
+    metadata_version: Option<Result<u64, Box<str>>>,
+) -> Result<(), BodyParsingError> {
+    match metadata_version {
+        None => Err(XmlError::MissingElement("wsd:MetadataVersion".into()).into()),
+        Some(Err(text)) => Err(BodyParsingError::InvalidMetadataVersion(text)),
+        Some(Ok(_)) => Ok(()),
     }
-
-    Ok(())
 }
 
 pub fn extract_endpoint_metadata<R>(
@@ -152,9 +155,8 @@ where
                     EndpointMetadataChild::MetadataVersion => {
                         let text = read_text(reader)?.unwrap_or_default();
 
-                        metadata_version = Some(parse_unsigned_int(&text).ok_or_else(|| {
-                            BodyParsingError::InvalidMetadataVersion(text.into_boxed_str())
-                        })?);
+                        metadata_version =
+                            Some(parse_unsigned_int(&text).ok_or_else(|| text.into_boxed_str()));
                     },
                     EndpointMetadataChild::Types
                     | EndpointMetadataChild::Scopes
@@ -251,7 +253,7 @@ mod tests {
 
         assert_eq!(&*endpoint, "urn:uuid:00000000-0000-0000-0000-000000000001");
         assert_eq!(raw_xaddrs.as_deref(), Some("http://192.168.100.5:5357/"));
-        assert_eq!(metadata_version, Some(1));
+        assert_eq!(metadata_version, Some(Ok(1)));
     }
 
     #[test]
@@ -263,7 +265,7 @@ mod tests {
         } = parse(&[ENDPOINT_REFERENCE, METADATA_VERSION]).unwrap();
 
         assert_eq!(raw_xaddrs, None);
-        assert_eq!(metadata_version, Some(1));
+        assert_eq!(metadata_version, Some(Ok(1)));
     }
 
     #[test]
@@ -276,7 +278,7 @@ mod tests {
         ])
         .unwrap();
 
-        assert_eq!(metadata_version, Some(u64::from(u32::MAX) + 1));
+        assert_eq!(metadata_version, Some(Ok(u64::from(u32::MAX) + 1)));
     }
 
     #[test]
@@ -289,34 +291,41 @@ mod tests {
     }
 
     #[test]
-    fn rejects_malformed_metadata_version() {
-        let result = parse(&[
+    fn reads_malformed_metadata_version_as_error() {
+        let EndpointMetadata {
+            metadata_version, ..
+        } = parse(&[
             ENDPOINT_REFERENCE,
             "<wsd:MetadataVersion>two</wsd:MetadataVersion>",
-        ]);
+        ])
+        .unwrap();
 
-        assert_matches!(
-            result.map(|_| ()),
-            Err(BodyParsingError::InvalidMetadataVersion(ref text)) if &**text == "two"
-        );
+        assert_eq!(metadata_version, Some(Err(Box::from("two"))));
     }
 
     #[test]
-    fn rejects_empty_metadata_version() {
-        let result = parse(&[ENDPOINT_REFERENCE, "<wsd:MetadataVersion />"]);
+    fn reads_empty_metadata_version_as_error() {
+        let EndpointMetadata {
+            metadata_version, ..
+        } = parse(&[ENDPOINT_REFERENCE, "<wsd:MetadataVersion />"]).unwrap();
 
-        assert_matches!(
-            result.map(|_| ()),
-            Err(BodyParsingError::InvalidMetadataVersion(ref text)) if text.is_empty()
-        );
+        assert_eq!(metadata_version, Some(Err(Box::from(""))));
     }
 
     #[test]
     fn requires_metadata_version() {
-        assert_matches!(require_metadata_version(Some(1)), Ok(()));
+        assert_matches!(require_metadata_version(Some(Ok(1))), Ok(()));
         assert_matches!(
             require_metadata_version(None),
             Err(BodyParsingError::Xml(XmlError::MissingElement(ref name))) if &**name == "wsd:MetadataVersion"
+        );
+    }
+
+    #[test]
+    fn requires_valid_metadata_version() {
+        assert_matches!(
+            require_metadata_version(Some(Err(Box::from("two")))),
+            Err(BodyParsingError::InvalidMetadataVersion(ref text)) if &**text == "two"
         );
     }
 
