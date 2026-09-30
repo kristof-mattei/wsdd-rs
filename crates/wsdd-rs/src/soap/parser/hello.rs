@@ -37,6 +37,6 @@ where
 
     Ok(Hello {
         endpoint,
-        raw_xaddrs,
+        raw_xaddrs: raw_xaddrs.into_text(),
     })
 }

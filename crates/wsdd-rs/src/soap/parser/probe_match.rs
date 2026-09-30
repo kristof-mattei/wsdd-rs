@@ -59,7 +59,7 @@ where
 
                         matches.push(ProbeMatch {
                             endpoint,
-                            raw_xaddrs,
+                            raw_xaddrs: raw_xaddrs.into_text(),
                         });
                     },
                     Some(constants::XML_WSD_NAMESPACE) | None => {
@@ -165,6 +165,16 @@ mod tests {
         .unwrap();
 
         assert_eq!(probe_matches.matches.len(), 1);
+    }
+
+    #[test]
+    fn parses_probe_match_with_empty_xaddrs() {
+        let probe_matches = parse(&[
+            "<wsd:ProbeMatch><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:XAddrs /><wsd:MetadataVersion>1</wsd:MetadataVersion></wsd:ProbeMatch>",
+        ])
+        .unwrap();
+
+        assert_eq!(probe_matches.matches[0].raw_xaddrs, None);
     }
 
     #[test]

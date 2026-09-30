@@ -5,7 +5,8 @@ use xml::reader::XmlEvent;
 use crate::constants;
 use crate::soap::parser::BodyParsingError;
 use crate::soap::parser::generic::{
-    EndpointMetadata, extract_endpoint_metadata, require_metadata_version, require_valid_types,
+    EndpointMetadata, RawXAddrs, extract_endpoint_metadata, require_metadata_version,
+    require_valid_types,
 };
 use crate::wsd::device::DeviceUri;
 use crate::xml::{XmlError, XmlReader, find_child};
@@ -18,6 +19,7 @@ pub struct ResolveMatches {
 
 pub struct ResolveMatch {
     pub endpoint: DeviceUri,
+    /// `None` when the list is empty.
     pub raw_xaddrs: Option<Box<str>>,
 }
 
@@ -56,6 +58,15 @@ where
 
                         require_metadata_version(metadata_version)?;
                         require_valid_types(invalid_types)?;
+
+                        let raw_xaddrs = match raw_xaddrs {
+                            // `ResolveMatchType` requires `XAddrs`, see documentation/ws-discovery.pdf, Appendix II
+                            RawXAddrs::Absent => {
+                                return Err(XmlError::MissingElement("wsd:XAddrs".into()).into());
+                            },
+                            RawXAddrs::Empty => None,
+                            RawXAddrs::Text(raw_xaddrs) => Some(raw_xaddrs),
+                        };
 
                         resolve_match = Some(ResolveMatch {
                             endpoint,
@@ -185,6 +196,28 @@ mod tests {
         assert_matches!(
             result.map(|_| ()),
             Err(BodyParsingError::InvalidTypes(ref raw_types)) if &**raw_types == "nope:Device"
+        );
+    }
+
+    #[test]
+    fn parses_resolve_match_with_empty_xaddrs() {
+        let resolve_matches = parse(&[
+            "<wsd:ResolveMatch><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:XAddrs /><wsd:MetadataVersion>1</wsd:MetadataVersion></wsd:ResolveMatch>",
+        ])
+        .unwrap();
+
+        assert_eq!(resolve_matches.resolve_match.unwrap().raw_xaddrs, None);
+    }
+
+    #[test]
+    fn rejects_resolve_match_without_xaddrs() {
+        let result = parse(&[
+            "<wsd:ResolveMatch><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:MetadataVersion>1</wsd:MetadataVersion></wsd:ResolveMatch>",
+        ]);
+
+        assert_matches!(
+            result.map(|_| ()),
+            Err(BodyParsingError::Xml(XmlError::MissingElement(ref name))) if &**name == "wsd:XAddrs"
         );
     }
 }

@@ -133,9 +133,25 @@ impl EndpointMetadataChild {
     }
 }
 
+#[derive(Debug)]
+pub enum RawXAddrs {
+    Absent,
+    Empty,
+    Text(Box<str>),
+}
+
+impl RawXAddrs {
+    pub fn into_text(self) -> Option<Box<str>> {
+        match self {
+            RawXAddrs::Absent | RawXAddrs::Empty => None,
+            RawXAddrs::Text(raw_xaddrs) => Some(raw_xaddrs),
+        }
+    }
+}
+
 pub struct EndpointMetadata {
     pub endpoint: DeviceUri,
-    pub raw_xaddrs: Option<Box<str>>,
+    pub raw_xaddrs: RawXAddrs,
     /// `Err` holds the text of an invalid value.
     pub metadata_version: Option<Result<u64, Box<str>>>,
     /// A `wsd:Types` text with an unresolvable entry.
@@ -167,7 +183,7 @@ where
     R: Read,
 {
     let mut endpoint = None;
-    let mut xaddrs = None;
+    let mut xaddrs = RawXAddrs::Absent;
     let mut metadata_version = None;
     let mut invalid_types = None;
     let mut last_child = None;
@@ -197,7 +213,9 @@ where
                         endpoint = Some(extract_endpoint_reference_address(reader)?);
                     },
                     EndpointMetadataChild::XAddrs => {
-                        xaddrs = read_text(reader)?;
+                        xaddrs = read_text(reader)?.map_or(RawXAddrs::Empty, |text| {
+                            RawXAddrs::Text(text.into_boxed_str())
+                        });
                     },
                     EndpointMetadataChild::MetadataVersion => {
                         let text = read_text(reader)?.unwrap_or_default();
@@ -242,7 +260,7 @@ where
 
     Ok(EndpointMetadata {
         endpoint: DeviceUri::new(endpoint),
-        raw_xaddrs: xaddrs.map(String::into_boxed_str),
+        raw_xaddrs: xaddrs,
         metadata_version,
         invalid_types,
     })
@@ -257,7 +275,7 @@ mod tests {
     use crate::constants;
     use crate::soap::parser::BodyParsingError;
     use crate::soap::parser::generic::{
-        EndpointMetadata, extract_endpoint_metadata, list_items, parse_unsigned_int,
+        EndpointMetadata, RawXAddrs, extract_endpoint_metadata, list_items, parse_unsigned_int,
         require_metadata_version, require_valid_types, resolve_qname,
     };
     use crate::xml::{XmlError, XmlReader, find_child};
@@ -311,7 +329,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(&*endpoint, "urn:uuid:00000000-0000-0000-0000-000000000001");
-        assert_eq!(raw_xaddrs.as_deref(), Some("http://192.168.100.5:5357/"));
+        assert_matches!(
+            raw_xaddrs,
+            RawXAddrs::Text(ref raw_xaddrs) if &**raw_xaddrs == "http://192.168.100.5:5357/"
+        );
         assert_eq!(metadata_version, Some(Ok(1)));
         assert_eq!(invalid_types, None);
     }
@@ -414,8 +435,28 @@ mod tests {
             ..
         } = parse(&[ENDPOINT_REFERENCE, METADATA_VERSION]).unwrap();
 
-        assert_eq!(raw_xaddrs, None);
+        assert_matches!(raw_xaddrs, RawXAddrs::Absent);
         assert_eq!(metadata_version, Some(Ok(1)));
+    }
+
+    #[test]
+    fn parses_empty_xaddrs() {
+        let EndpointMetadata { raw_xaddrs, .. } =
+            parse(&[ENDPOINT_REFERENCE, "<wsd:XAddrs />", METADATA_VERSION]).unwrap();
+
+        assert_matches!(raw_xaddrs, RawXAddrs::Empty);
+    }
+
+    #[test]
+    fn parses_xaddrs_of_only_white_space_as_empty() {
+        let EndpointMetadata { raw_xaddrs, .. } = parse(&[
+            ENDPOINT_REFERENCE,
+            "<wsd:XAddrs> </wsd:XAddrs>",
+            METADATA_VERSION,
+        ])
+        .unwrap();
+
+        assert_matches!(raw_xaddrs, RawXAddrs::Empty);
     }
 
     #[test]
