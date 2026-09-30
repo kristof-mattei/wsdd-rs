@@ -60,7 +60,7 @@ where
 /// Parses an `xs:unsignedInt` into a `u64`, see `config.rs::AppSequence` for why 64 bits.
 /// Its lexical space is decimal digits only, and its `whiteSpace` facet strips only #x20, #x9, #xA and #xD around them, see documentation/xmlschema-2.pdf, 3.3.22.1 and 4.3.6.
 pub fn parse_unsigned_int(value: &str) -> Option<u64> {
-    let digits = value.trim_matches([' ', '\t', '\n', '\r']);
+    let digits = value.trim_matches(is_whitespace_char);
 
     if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
