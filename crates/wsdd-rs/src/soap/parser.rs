@@ -771,4 +771,37 @@ mod tests {
 
         assert_matches!(result.map(|_| ()), Ok(()));
     }
+
+    #[tokio::test]
+    async fn rejects_hello_with_malformed_metadata_version() {
+        let hello = message(
+            constants::WSD_HELLO,
+            APP_SEQUENCE,
+            "<wsd:Hello><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:MetadataVersion>x</wsd:MetadataVersion></wsd:Hello>",
+        );
+
+        let result = handler_for_tests(8)
+            .deconstruct_message(hello.as_bytes(), SOURCE)
+            .await;
+
+        assert_matches!(
+            result.err(),
+            Some(MessageHandlerError::BodyError(BodyParsingError::InvalidMetadataVersion(ref text))) if &**text == "x"
+        );
+    }
+
+    #[tokio::test]
+    async fn accepts_bye_with_malformed_metadata_version() {
+        let bye = message(
+            constants::WSD_BYE,
+            APP_SEQUENCE,
+            "<wsd:Bye><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:MetadataVersion>x</wsd:MetadataVersion></wsd:Bye>",
+        );
+
+        let result = handler_for_tests(8)
+            .deconstruct_message(bye.as_bytes(), SOURCE)
+            .await;
+
+        assert_matches!(result.map(|_| ()), Ok(()));
+    }
 }
