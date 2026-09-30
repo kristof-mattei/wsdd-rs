@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn parses_unsigned_int_lexical_forms() {
         let app_sequence = AppSequence::from_attributes(&attributes(&[
-            ("InstanceId", " +007 "),
+            ("InstanceId", " 007 "),
             ("MessageNumber", "18446744073709551615"),
         ]));
 
