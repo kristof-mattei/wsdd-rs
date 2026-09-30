@@ -513,16 +513,23 @@ async fn perform_metadata_exchange(
             .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
             .header("User-Agent", "wsdd-rs");
 
-        let response = builder
-            .body(body.clone())
-            .timeout(config.metadata_timeout)
-            .send()
-            .instrument(span!(Level::DEBUG, "http", host = %xaddr.host_str()))
-            .await;
+        let request = async {
+            let response = builder
+                .body(body.clone())
+                .timeout(config.metadata_timeout)
+                .send()
+                .instrument(span!(Level::DEBUG, "http", host = %xaddr.host_str()))
+                .await?;
 
-        let response = match response.and_then(reqwest::Response::error_for_status) {
-            Ok(response) => response.bytes().await,
-            Err(error) => Err(error),
+            response.error_for_status()?.bytes().await
+        };
+
+        let Some(response) = exchange.run_until_bye(request).await else {
+            devices.write().await.finish_exchange(&endpoint, exchange);
+
+            event!(Level::DEBUG, %endpoint, "Bye received during the metadata exchange, aborting it");
+
+            return Ok(());
         };
 
         match response {
@@ -693,6 +700,8 @@ mod tests {
     use libc::RT_SCOPE_SITE;
     use mockito::ServerOpts;
     use pretty_assertions::{assert_eq, assert_matches};
+    use tokio::io::AsyncReadExt as _;
+    use tokio::net::TcpListener;
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio::sync::{RwLock, oneshot};
     use tokio::time::Instant;
@@ -1236,6 +1245,73 @@ mod tests {
         working.assert_async().await;
 
         assert!(client_devices.read().await.contains_key(&device_uri));
+        assert!(!client_devices.read().await.has_running_exchanges());
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn metadata_exchange_aborts_when_a_bye_arrives() {
+        let (_message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
+        );
+
+        // client
+        let mut client_config = build_config(Uuid::now_v7(), 1_742_000_335);
+        client_config.metadata_timeout = Duration::from_secs(60);
+        let client_devices = Arc::new(RwLock::new(Devices::default()));
+
+        // host, which never answers
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let xaddr = XAddr::try_from(format!("http://{}/", listener.local_addr().unwrap()).as_str())
+            .unwrap();
+        let (received_tx, received_rx) = oneshot::channel();
+
+        let host = async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buffer = [0; 4096];
+
+            assert!(stream.read(&mut buffer).await.unwrap() > 0);
+            received_tx.send(()).unwrap();
+
+            // ends when the client closes the connection
+            while stream.read(&mut buffer).await.is_ok_and(|read| read > 0) {}
+        };
+
+        let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
+
+        let bye = async {
+            received_rx.await.unwrap();
+
+            handle_bye(
+                Arc::clone(&client_devices),
+                Bye {
+                    endpoint: device_uri.clone(),
+                },
+            )
+            .await
+        };
+
+        let client = reqwest::ClientBuilder::new().build().unwrap();
+
+        let exchange = Box::pin(perform_metadata_exchange(
+            &client,
+            &client_config,
+            Arc::clone(&client_devices),
+            &client_network_address,
+            device_uri.clone(),
+            vec![xaddr],
+        ));
+
+        let (result, bye_result, ()) = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(exchange, bye, host)
+        })
+        .await
+        .unwrap();
+
+        assert_matches!(result, Ok(()));
+        assert_matches!(bye_result, Ok(()));
+
+        assert!(client_devices.read().await.is_empty());
         assert!(!client_devices.read().await.has_running_exchanges());
     }
 
