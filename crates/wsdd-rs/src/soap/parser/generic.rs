@@ -1,7 +1,9 @@
 use std::io::Read;
 
 use tracing::{Level, event};
+use xml::common::{is_name_char, is_name_start_char, is_whitespace_char};
 use xml::name::OwnedName;
+use xml::namespace::{NS_EMPTY_URI, NS_NO_PREFIX, Namespace};
 use xml::reader::XmlEvent;
 
 use crate::constants;
@@ -67,6 +69,39 @@ pub fn parse_unsigned_int(value: &str) -> Option<u64> {
     digits.parse().ok()
 }
 
+/// Splits an `xs:list` value at XML white space, see documentation/xmlschema-2.pdf, 4.3.6.
+pub fn list_items(value: &str) -> impl Iterator<Item = &str> {
+    value
+        .split(is_whitespace_char)
+        .filter(|item| !item.is_empty())
+}
+
+/// Resolves an `xs:QName` to its namespace and local name, see documentation/xmlschema-2.pdf, 3.2.18.
+pub fn resolve_qname<'a>(raw: &'a str, namespaces: &'a Namespace) -> Option<(&'a str, &'a str)> {
+    match raw.split_once(':') {
+        None => is_ncname(raw).then(|| (namespaces.get(NS_NO_PREFIX).unwrap_or(NS_EMPTY_URI), raw)),
+        Some((prefix, local_name)) => {
+            if !is_ncname(prefix) || !is_ncname(local_name) {
+                return None;
+            }
+
+            namespaces
+                .get(prefix)
+                .map(|namespace| (namespace, local_name))
+        },
+    }
+}
+
+/// An XML name without a colon.
+fn is_ncname(value: &str) -> bool {
+    let mut chars = value.chars();
+
+    chars
+        .next()
+        .is_some_and(|first| first != ':' && is_name_start_char(first))
+        && chars.all(|c| c != ':' && is_name_char(c))
+}
+
 /// The children of `wsd:Hello`, `wsd:Bye`, `wsd:ProbeMatch` and `wsd:ResolveMatch` in their shared sequence order (WS-Discovery, Appendix II).
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 enum EndpointMetadataChild {
@@ -103,6 +138,15 @@ pub struct EndpointMetadata {
     pub raw_xaddrs: Option<Box<str>>,
     /// `None` when absent, `Err` holds the text of a value that is not an `xs:unsignedInt`.
     pub metadata_version: Option<Result<u64, Box<str>>>,
+    /// A `wsd:Types` text with an unresolvable entry.
+    pub invalid_types: Option<Box<str>>,
+}
+
+pub fn require_valid_types(invalid_types: Option<Box<str>>) -> Result<(), BodyParsingError> {
+    match invalid_types {
+        Some(raw_types) => Err(BodyParsingError::InvalidTypes(raw_types)),
+        None => Ok(()),
+    }
 }
 
 /// Hello, `ProbeMatch` and `ResolveMatch` require a valid `MetadataVersion`, only Bye makes it optional, see documentation/ws-discovery.pdf, Appendix II.
@@ -125,6 +169,7 @@ where
     let mut endpoint = None;
     let mut xaddrs = None;
     let mut metadata_version = None;
+    let mut invalid_types = None;
     let mut last_child = None;
 
     let entry_depth = reader.depth();
@@ -132,7 +177,9 @@ where
     loop {
         #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
-            XmlEvent::StartElement { name, .. } if reader.depth() == entry_depth + 1 => {
+            XmlEvent::StartElement {
+                name, namespace, ..
+            } if reader.depth() == entry_depth + 1 => {
                 let Some(child) = EndpointMetadataChild::from_name(&name) else {
                     // not part of the sequence, ignored
                     continue;
@@ -158,9 +205,16 @@ where
                         metadata_version =
                             Some(parse_unsigned_int(&text).ok_or_else(|| text.into_boxed_str()));
                     },
-                    EndpointMetadataChild::Types
-                    | EndpointMetadataChild::Scopes
-                    | EndpointMetadataChild::Extension => {},
+                    EndpointMetadataChild::Types => {
+                        let raw_types = read_text(reader)?.unwrap_or_default();
+
+                        if list_items(&raw_types)
+                            .any(|raw_type| resolve_qname(raw_type, &namespace).is_none())
+                        {
+                            invalid_types = Some(raw_types.into_boxed_str());
+                        }
+                    },
+                    EndpointMetadataChild::Scopes | EndpointMetadataChild::Extension => {},
                 }
             },
             XmlEvent::EndElement { .. } if reader.depth() < entry_depth => {
@@ -190,6 +244,7 @@ where
         endpoint: DeviceUri::new(endpoint),
         raw_xaddrs: xaddrs.map(String::into_boxed_str),
         metadata_version,
+        invalid_types,
     })
 }
 
@@ -197,11 +252,13 @@ where
 mod tests {
     use pretty_assertions::{assert_eq, assert_matches};
     use xml::ParserConfig;
+    use xml::namespace::Namespace;
 
     use crate::constants;
     use crate::soap::parser::BodyParsingError;
     use crate::soap::parser::generic::{
-        EndpointMetadata, extract_endpoint_metadata, parse_unsigned_int, require_metadata_version,
+        EndpointMetadata, extract_endpoint_metadata, list_items, parse_unsigned_int,
+        require_metadata_version, require_valid_types, resolve_qname,
     };
     use crate::xml::{XmlError, XmlReader, find_child};
 
@@ -214,9 +271,10 @@ mod tests {
 
     fn parse(children: &[&str]) -> Result<EndpointMetadata, BodyParsingError> {
         let xml = format!(
-            r#"<wsd:Hello xmlns:wsa="{}" xmlns:wsd="{}">{}</wsd:Hello>"#,
+            r#"<wsd:Hello xmlns:wsa="{}" xmlns:wsd="{}" xmlns:wsdp="{}">{}</wsd:Hello>"#,
             constants::XML_WSA_NAMESPACE,
             constants::XML_WSD_NAMESPACE,
+            constants::XML_WSDP_NAMESPACE,
             children.concat()
         );
 
@@ -240,6 +298,7 @@ mod tests {
             endpoint,
             raw_xaddrs,
             metadata_version,
+            invalid_types,
         } = parse(&[
             ENDPOINT_REFERENCE,
             TYPES,
@@ -254,6 +313,97 @@ mod tests {
         assert_eq!(&*endpoint, "urn:uuid:00000000-0000-0000-0000-000000000001");
         assert_eq!(raw_xaddrs.as_deref(), Some("http://192.168.100.5:5357/"));
         assert_eq!(metadata_version, Some(Ok(1)));
+        assert_eq!(invalid_types, None);
+    }
+
+    #[test]
+    fn reads_types_with_an_unresolvable_entry() {
+        let EndpointMetadata { invalid_types, .. } = parse(&[
+            ENDPOINT_REFERENCE,
+            "<wsd:Types>wsdp:Device nope:Device other:Device</wsd:Types>",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            invalid_types.as_deref(),
+            Some("wsdp:Device nope:Device other:Device")
+        );
+    }
+
+    #[test]
+    fn requires_valid_types() {
+        assert_matches!(require_valid_types(None), Ok(()));
+        assert_matches!(
+            require_valid_types(Some(Box::from("nope:Device"))),
+            Err(BodyParsingError::InvalidTypes(ref raw_types)) if &**raw_types == "nope:Device"
+        );
+    }
+
+    fn namespaces() -> Namespace {
+        let mut namespaces = Namespace::empty();
+        namespaces.put("wsdp", constants::XML_WSDP_NAMESPACE);
+        namespaces.put("x", "urn:x");
+
+        namespaces
+    }
+
+    #[test]
+    fn resolves_prefixed_qname() {
+        let namespaces = namespaces();
+
+        assert_eq!(
+            resolve_qname("wsdp:Device", &namespaces),
+            Some((constants::XML_WSDP_NAMESPACE, "Device"))
+        );
+        assert_eq!(
+            resolve_qname("x:D\u{e9}vice", &namespaces),
+            Some(("urn:x", "D\u{e9}vice"))
+        );
+    }
+
+    #[test]
+    fn resolves_unprefixed_qname_in_the_default_namespace() {
+        let mut namespaces = namespaces();
+        namespaces.put("", constants::XML_WSDP_NAMESPACE);
+
+        assert_eq!(
+            resolve_qname("Device", &namespaces),
+            Some((constants::XML_WSDP_NAMESPACE, "Device"))
+        );
+    }
+
+    #[test]
+    fn resolves_unprefixed_qname_without_a_default_namespace() {
+        assert_eq!(resolve_qname("Device", &namespaces()), Some(("", "Device")));
+    }
+
+    #[test]
+    fn rejects_qname_with_undeclared_prefix() {
+        assert_eq!(resolve_qname("nope:Device", &namespaces()), None);
+    }
+
+    #[test]
+    fn rejects_values_that_are_not_qnames() {
+        let namespaces = namespaces();
+
+        for raw in [
+            "wsdp:Device:x",
+            ":Device",
+            "wsdp:",
+            "1bad",
+            "wsdp:1bad",
+            "wsdp :Device",
+        ] {
+            assert_eq!(resolve_qname(raw, &namespaces), None, "{}", raw);
+        }
+    }
+
+    #[test]
+    fn splits_list_items_at_xml_white_space_only() {
+        assert_eq!(
+            list_items(" a\u{a0}b\tc\r\nd ").collect::<Vec<_>>(),
+            ["a\u{a0}b", "c", "d"]
+        );
     }
 
     #[test]

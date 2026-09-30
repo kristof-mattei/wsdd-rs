@@ -5,7 +5,7 @@ use xml::reader::XmlEvent;
 use crate::constants;
 use crate::soap::parser::BodyParsingError;
 use crate::soap::parser::generic::{
-    EndpointMetadata, extract_endpoint_metadata, require_metadata_version,
+    EndpointMetadata, extract_endpoint_metadata, require_metadata_version, require_valid_types,
 };
 use crate::wsd::device::DeviceUri;
 use crate::xml::{XmlError, XmlReader, find_child};
@@ -51,9 +51,11 @@ where
                             endpoint,
                             raw_xaddrs,
                             metadata_version,
+                            invalid_types,
                         } = extract_endpoint_metadata(reader)?;
 
                         require_metadata_version(metadata_version)?;
+                        require_valid_types(invalid_types)?;
 
                         resolve_match = Some(ResolveMatch {
                             endpoint,
@@ -171,6 +173,18 @@ mod tests {
         assert_matches!(
             result.map(|_| ()),
             Err(BodyParsingError::Xml(XmlError::MissingElement(_)))
+        );
+    }
+
+    #[test]
+    fn rejects_resolve_match_with_undeclared_type_prefix() {
+        let result = parse(&[
+            "<wsd:ResolveMatch><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:Types>nope:Device</wsd:Types><wsd:XAddrs>http://192.168.100.5:5357/</wsd:XAddrs><wsd:MetadataVersion>1</wsd:MetadataVersion></wsd:ResolveMatch>",
+        ]);
+
+        assert_matches!(
+            result.map(|_| ()),
+            Err(BodyParsingError::InvalidTypes(ref raw_types)) if &**raw_types == "nope:Device"
         );
     }
 }

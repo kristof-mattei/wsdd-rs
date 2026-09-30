@@ -119,6 +119,7 @@ mygroup
 mypc
 namesize
 nametoindex
+ncname
 netinet
 netlink
 newaddr
@@ -144,6 +145,8 @@ profraw
 pton
 pubpubpub
 pyflakes
+qname
+qnames
 rawfile
 recond
 recvmsg
