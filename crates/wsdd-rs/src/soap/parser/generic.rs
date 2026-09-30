@@ -58,7 +58,7 @@ where
 }
 
 /// Parses an `xs:unsignedInt` into a `u64`, see `config.rs::AppSequence` for why 64 bits.
-/// Its lexical space is decimal digits only, and its `whiteSpace` facet strips only #x20, #x9, #xA and #xD around them, see documentation/xmlschema-2.pdf, 3.3.22.1 and 4.3.6.
+/// Only decimal digits, between XML white space, see documentation/xmlschema-2.pdf, 3.3.22.1 and 4.3.6.
 pub fn parse_unsigned_int(value: &str) -> Option<u64> {
     let digits = value.trim_matches([' ', '\t', '\n', '\r']);
 
@@ -136,7 +136,7 @@ impl EndpointMetadataChild {
 pub struct EndpointMetadata {
     pub endpoint: DeviceUri,
     pub raw_xaddrs: Option<Box<str>>,
-    /// `None` when absent, `Err` holds the text of a value that is not an `xs:unsignedInt`.
+    /// `Err` holds the text of an invalid value.
     pub metadata_version: Option<Result<u64, Box<str>>>,
     /// A `wsd:Types` text with an unresolvable entry.
     pub invalid_types: Option<Box<str>>,
