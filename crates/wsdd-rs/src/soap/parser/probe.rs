@@ -3,11 +3,12 @@ use std::io::Read;
 use hashbrown::HashSet;
 use tracing::{Level, event};
 use xml::name::OwnedName;
-use xml::namespace::{NS_EMPTY_URI, NS_NO_PREFIX, Namespace};
+use xml::namespace::Namespace;
 use xml::reader::XmlEvent;
 
 use crate::constants;
 use crate::soap::parser::BodyParsingError;
+use crate::soap::parser::generic::{list_items, resolve_qname};
 use crate::xml::{XmlError, XmlReader, find_child, read_text};
 
 type ParsedProbeResult = Result<Probe, BodyParsingError>;
@@ -125,27 +126,13 @@ fn parse_types(
     raw_types: &str,
     namespaces: &Namespace,
 ) -> Result<HashSet<QName>, BodyParsingError> {
-    raw_types
-        .split_whitespace()
+    list_items(raw_types)
         .map(|raw_type| {
-            let resolved = match raw_type.split_once(':') {
-                None => Some((
-                    namespaces.get(NS_NO_PREFIX).unwrap_or(NS_EMPTY_URI),
-                    raw_type,
-                )),
-                Some(("", _) | (_, "")) => None,
-                Some((prefix, local_name)) => namespaces
-                    .get(prefix)
-                    .map(|namespace| (namespace, local_name)),
-            };
-
-            let Some((namespace, local_name)) = resolved else {
-                return Err(BodyParsingError::InvalidQName(Box::from(raw_type)));
-            };
-
-            Ok((Box::from(namespace), Box::from(local_name)))
+            resolve_qname(raw_type, namespaces)
+                .map(|(namespace, local_name)| (Box::from(namespace), Box::from(local_name)))
         })
-        .collect()
+        .collect::<Option<_>>()
+        .ok_or_else(|| BodyParsingError::InvalidTypes(Box::from(raw_types)))
 }
 
 impl Probe {
@@ -337,21 +324,28 @@ mod tests {
     fn rejects_type_with_undeclared_prefix() {
         let result = parse("<wsd:Types>wsdp:Device undeclared:Printer</wsd:Types>");
 
-        assert_matches!(result.err(), Some(BodyParsingError::InvalidQName(raw_type)) if &*raw_type == "undeclared:Printer");
+        assert_matches!(result.err(), Some(BodyParsingError::InvalidTypes(raw_types)) if &*raw_types == "wsdp:Device undeclared:Printer");
     }
 
     #[test]
     fn rejects_type_with_empty_prefix() {
         let result = parse("<wsd:Types>:Device</wsd:Types>");
 
-        assert_matches!(result.err(), Some(BodyParsingError::InvalidQName(raw_type)) if &*raw_type == ":Device");
+        assert_matches!(result.err(), Some(BodyParsingError::InvalidTypes(raw_types)) if &*raw_types == ":Device");
     }
 
     #[test]
     fn rejects_type_with_empty_local_name() {
         let result = parse("<wsd:Types>wsdp:</wsd:Types>");
 
-        assert_matches!(result.err(), Some(BodyParsingError::InvalidQName(raw_type)) if &*raw_type == "wsdp:");
+        assert_matches!(result.err(), Some(BodyParsingError::InvalidTypes(raw_types)) if &*raw_types == "wsdp:");
+    }
+
+    #[test]
+    fn rejects_type_with_two_colons() {
+        let result = parse("<wsd:Types>wsdp:Device:x</wsd:Types>");
+
+        assert_matches!(result.err(), Some(BodyParsingError::InvalidTypes(raw_types)) if &*raw_types == "wsdp:Device:x");
     }
 
     #[test]

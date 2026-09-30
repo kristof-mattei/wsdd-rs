@@ -3,7 +3,7 @@ use std::io::Read;
 use crate::constants;
 use crate::soap::parser::BodyParsingError;
 use crate::soap::parser::generic::{
-    EndpointMetadata, extract_endpoint_metadata, require_metadata_version,
+    EndpointMetadata, extract_endpoint_metadata, require_metadata_version, require_valid_types,
 };
 use crate::wsd::device::DeviceUri;
 use crate::xml::{XmlReader, find_child};
@@ -29,9 +29,11 @@ where
         endpoint,
         raw_xaddrs,
         metadata_version,
+        invalid_types,
     } = extract_endpoint_metadata(reader)?;
 
     require_metadata_version(metadata_version)?;
+    require_valid_types(invalid_types)?;
 
     Ok(Hello {
         endpoint,

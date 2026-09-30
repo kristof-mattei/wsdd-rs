@@ -86,8 +86,8 @@ pub enum BodyParsingError {
     InvalidMetadataVersion(Box<str>),
     #[error("Invalid UUID: {}", .0)]
     InvalidUrnUuid(uuid::Error),
-    #[error("Invalid QName: {}", .0)]
-    InvalidQName(Box<str>),
+    #[error("Invalid wsd:Types: {}", .0)]
+    InvalidTypes(Box<str>),
 }
 
 impl From<xml::reader::Error> for BodyParsingError {
@@ -796,6 +796,39 @@ mod tests {
             constants::WSD_BYE,
             APP_SEQUENCE,
             "<wsd:Bye><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:MetadataVersion>x</wsd:MetadataVersion></wsd:Bye>",
+        );
+
+        let result = handler_for_tests(8)
+            .deconstruct_message(bye.as_bytes(), SOURCE)
+            .await;
+
+        assert_matches!(result.map(|_| ()), Ok(()));
+    }
+
+    #[tokio::test]
+    async fn rejects_hello_with_undeclared_type_prefix() {
+        let hello = message(
+            constants::WSD_HELLO,
+            APP_SEQUENCE,
+            "<wsd:Hello><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:Types>nope:Device</wsd:Types><wsd:MetadataVersion>1</wsd:MetadataVersion></wsd:Hello>",
+        );
+
+        let result = handler_for_tests(8)
+            .deconstruct_message(hello.as_bytes(), SOURCE)
+            .await;
+
+        assert_matches!(
+            result.err(),
+            Some(MessageHandlerError::BodyError(BodyParsingError::InvalidTypes(ref raw_types))) if &**raw_types == "nope:Device"
+        );
+    }
+
+    #[tokio::test]
+    async fn accepts_bye_with_undeclared_type_prefix() {
+        let bye = message(
+            constants::WSD_BYE,
+            APP_SEQUENCE,
+            "<wsd:Bye><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:Types>nope:Device</wsd:Types></wsd:Bye>",
         );
 
         let result = handler_for_tests(8)
