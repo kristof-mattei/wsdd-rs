@@ -29,7 +29,7 @@ use crate::soap::{ClientMessage, MessageId, MulticastMessage};
 use crate::utils::SliceDisplay;
 use crate::utils::task::spawn_with_name;
 use crate::wsd::device::DeviceUri;
-use crate::wsd::devices::Devices;
+use crate::wsd::devices::{Devices, Exchange};
 
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
@@ -348,7 +348,7 @@ async fn handle_bye(
 ) -> Result<(), eyre::Report> {
     let mut guard = devices.write().await;
 
-    if guard.remove(&endpoint).is_none() {
+    if guard.depart(&endpoint).is_none() {
         event!(
             Level::INFO,
             endpoint = &*endpoint,
@@ -505,6 +505,8 @@ async fn perform_metadata_exchange(
 ) -> Result<(), eyre::Report> {
     let body = Bytes::from_owner(build_getmetadata_message(config, &endpoint)?);
 
+    let exchange = devices.write().await.start_exchange(&endpoint);
+
     for xaddr in xaddrs {
         let builder = client
             .post(xaddr.url().clone())
@@ -525,7 +527,8 @@ async fn perform_metadata_exchange(
 
         match response {
             Ok(response) => {
-                return handle_metadata(devices, &response, endpoint, &xaddr, bound_to).await;
+                return handle_metadata(devices, &response, endpoint, exchange, &xaddr, bound_to)
+                    .await;
             },
             Err(error) => {
                 let url = error.url().map(ToString::to_string);
@@ -539,6 +542,8 @@ async fn perform_metadata_exchange(
             },
         }
     }
+
+    devices.write().await.finish_exchange(&endpoint, exchange);
 
     event!(Level::WARN, %endpoint, "could not fetch metadata from any XAddr");
 
@@ -558,13 +563,20 @@ async fn handle_metadata(
     devices: Arc<RwLock<Devices>>,
     meta: &[u8],
     device_uri: DeviceUri,
+    exchange: Exchange,
     xaddr: &XAddr,
     bound_to: &NetworkAddress,
 ) -> Result<(), eyre::Report> {
-    devices
-        .write()
-        .await
-        .store(device_uri, meta, xaddr, bound_to)
+    let mut devices = devices.write().await;
+
+    // another interface's loop can handle a Bye while the exchange runs
+    if devices.finish_exchange(&device_uri, exchange) {
+        event!(Level::DEBUG, %device_uri, "Bye received during the metadata exchange, discarding the metadata");
+
+        return Ok(());
+    }
+
+    devices.store(device_uri, meta, xaddr, bound_to)
 }
 
 async fn listen_forever(
@@ -691,6 +703,7 @@ mod tests {
     use crate::max_size_deque::MaxSizeDeque;
     use crate::network_interface::NetworkInterface;
     use crate::soap::MessageId;
+    use crate::soap::parser::bye::Bye;
     use crate::soap::parser::xaddrs::XAddr;
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler_with_network_address};
@@ -1223,6 +1236,7 @@ mod tests {
         working.assert_async().await;
 
         assert!(client_devices.read().await.contains_key(&device_uri));
+        assert!(!client_devices.read().await.has_running_exchanges());
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1274,6 +1288,7 @@ mod tests {
         failing.assert_async().await;
 
         assert!(client_devices.read().await.is_empty());
+        assert!(!client_devices.read().await.has_running_exchanges());
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1356,6 +1371,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn discards_metadata_when_a_bye_arrived_during_the_exchange() {
+        let (_message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
+        );
+
+        // client
+        let client_devices = Arc::new(RwLock::new(Devices::default()));
+
+        let metadata: String = format!(
+            include_str!("../../test/get-response-synology.xml"),
+            Uuid::now_v7().urn(),
+            Uuid::now_v7().urn(),
+        );
+
+        let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
+
+        let exchange = client_devices.write().await.start_exchange(&device_uri);
+
+        // another interface's loop handles the Bye while this one awaits the metadata
+        let result = handle_bye(
+            Arc::clone(&client_devices),
+            Bye {
+                endpoint: device_uri.clone(),
+            },
+        )
+        .await;
+
+        assert_matches!(result, Ok(()));
+
+        let result = handle_metadata(
+            Arc::clone(&client_devices),
+            metadata.as_bytes(),
+            device_uri,
+            exchange,
+            &XAddr::try_from("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721")
+                .unwrap(),
+            &client_network_address,
+        )
+        .await;
+
+        assert_matches!(result, Ok(()));
+
+        assert!(client_devices.read().await.is_empty());
+    }
+
+    #[tokio::test]
     async fn handles_metadata_synology() {
         let (_message_handler, client_network_address) = build_message_handler_with_network_address(
             IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
@@ -1372,10 +1433,13 @@ mod tests {
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
+        let exchange = client_devices.write().await.start_exchange(&device_uri);
+
         let result = handle_metadata(
             Arc::clone(&client_devices),
             metadata.as_bytes(),
             device_uri.clone(),
+            exchange,
             &XAddr::try_from("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721")
                 .unwrap(),
             &client_network_address,
@@ -1432,10 +1496,13 @@ mod tests {
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
+        let exchange = client_devices.write().await.start_exchange(&device_uri);
+
         let result = handle_metadata(
             Arc::clone(&client_devices),
             metadata.as_bytes(),
             device_uri.clone(),
+            exchange,
             &XAddr::try_from("http://192.168.100.50:8018/wsd").unwrap(),
             &client_network_address,
         )
@@ -1489,10 +1556,13 @@ mod tests {
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
+        let exchange = client_devices.write().await.start_exchange(&device_uri);
+
         let result = handle_metadata(
             Arc::clone(&client_devices),
             metadata.as_bytes(),
             device_uri.clone(),
+            exchange,
             &XAddr::try_from("http://192.168.100.71:5357/18de7c97-6277-43fe-9552-cac98a7610f5/")
                 .unwrap(),
             &client_network_address,
