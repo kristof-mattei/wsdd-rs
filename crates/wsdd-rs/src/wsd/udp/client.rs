@@ -800,7 +800,7 @@ mod tests {
 
         let (_, message) = message_handler
             .deconstruct_message(
-                hello_without_xaddrs.as_bytes(),
+                &hello_without_xaddrs,
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
             )
             .await
@@ -905,10 +905,7 @@ mod tests {
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
         let (_, message) = message_handler
-            .deconstruct_message(
-                hello.as_bytes(),
-                SocketAddr::new(server.socket_address().ip(), 5000),
-            )
+            .deconstruct_message(&hello, SocketAddr::new(server.socket_address().ip(), 5000))
             .await
             .unwrap();
 
@@ -990,10 +987,7 @@ mod tests {
         );
 
         let (_, message) = message_handler
-            .deconstruct_message(
-                bye.as_bytes(),
-                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
-            )
+            .deconstruct_message(&bye, SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)))
             .await
             .unwrap();
 
@@ -1065,10 +1059,7 @@ mod tests {
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
         let (_, message) = message_handler
-            .deconstruct_message(
-                hello.as_bytes(),
-                SocketAddr::new(server.socket_address().ip(), 5000),
-            )
+            .deconstruct_message(&hello, SocketAddr::new(server.socket_address().ip(), 5000))
             .await
             .unwrap();
 
@@ -1114,10 +1105,7 @@ mod tests {
         );
 
         let (_, message) = message_handler
-            .deconstruct_message(
-                bye.as_bytes(),
-                SocketAddr::new(server.socket_address().ip(), 5000),
-            )
+            .deconstruct_message(&bye, SocketAddr::new(server.socket_address().ip(), 5000))
             .await
             .unwrap();
 
@@ -1705,7 +1693,7 @@ mod tests {
 
         let (header, message) = message_handler
             .deconstruct_message(
-                probe_matches.as_bytes(),
+                &probe_matches,
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
             )
             .await
@@ -1789,7 +1777,7 @@ mod tests {
 
         let (header, message) = message_handler
             .deconstruct_message(
-                probe_matches.as_bytes(),
+                &probe_matches,
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
             )
             .await
@@ -1872,7 +1860,7 @@ mod tests {
 
         let (header, message) = message_handler
             .deconstruct_message(
-                probe_matches.as_bytes(),
+                &probe_matches,
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
             )
             .await
@@ -1979,7 +1967,7 @@ mod tests {
 
         let (header, message) = message_handler
             .deconstruct_message(
-                probe_matches.as_bytes(),
+                &probe_matches,
                 SocketAddr::new(server.socket_address().ip(), 5000),
             )
             .await
@@ -2088,7 +2076,7 @@ mod tests {
 
         let (header, message) = message_handler
             .deconstruct_message(
-                resolve_matches.as_bytes(),
+                &resolve_matches,
                 SocketAddr::new(server.socket_address().ip(), 5000),
             )
             .await
@@ -2148,7 +2136,7 @@ mod tests {
 
         let (header, message) = message_handler
             .deconstruct_message(
-                resolve_matches.as_bytes(),
+                &resolve_matches,
                 SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(192, 168, 100, 5), 5000)),
             )
             .await
@@ -2220,7 +2208,7 @@ mod tests {
 
         let (header, message) = message_handler
             .deconstruct_message(
-                resolve_matches.as_bytes(),
+                &resolve_matches,
                 SocketAddr::new(server.socket_address().ip(), 5000),
             )
             .await
@@ -2291,7 +2279,7 @@ mod tests {
 
         let (header, message) = message_handler
             .deconstruct_message(
-                resolve_matches.as_bytes(),
+                &resolve_matches,
                 SocketAddr::new(server.socket_address().ip(), 5000),
             )
             .await

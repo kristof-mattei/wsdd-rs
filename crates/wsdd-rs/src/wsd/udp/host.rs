@@ -426,10 +426,7 @@ mod tests {
 
         // host receives client's probe
         let (header, message) = host_message_handler
-            .deconstruct_message(
-                resolve.as_bytes(),
-                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
-            )
+            .deconstruct_message(&resolve, SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)))
             .await
             .unwrap();
 
@@ -521,10 +518,7 @@ mod tests {
 
         // host receives client's probe
         let (header, message) = host_message_handler
-            .deconstruct_message(
-                probe.as_bytes(),
-                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
-            )
+            .deconstruct_message(&probe, SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)))
             .await
             .unwrap();
 

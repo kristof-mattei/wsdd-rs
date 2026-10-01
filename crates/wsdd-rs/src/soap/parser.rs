@@ -325,20 +325,26 @@ impl MessageHandler {
     }
 
     /// Handle a WSD message received over UDP.
-    pub async fn deconstruct_message(
+    pub async fn deconstruct_message<B>(
         &self,
-        raw: &[u8],
+        raw: B,
         source: SocketAddr,
-    ) -> Result<(Header, WSDMessage), MessageHandlerError> {
-        self.deconstruct(raw, Some(source)).await
+    ) -> Result<(Header, WSDMessage), MessageHandlerError>
+    where
+        B: AsRef<[u8]>,
+    {
+        self.deconstruct(raw.as_ref(), Some(source)).await
     }
 
     /// Handle a WSD message received over HTTP.
-    pub async fn deconstruct_http_message(
+    pub async fn deconstruct_http_message<B>(
         &self,
-        raw: &[u8],
-    ) -> Result<(Header, WSDMessage), MessageHandlerError> {
-        self.deconstruct(raw, None).await
+        raw: B,
+    ) -> Result<(Header, WSDMessage), MessageHandlerError>
+    where
+        B: AsRef<[u8]>,
+    {
+        self.deconstruct(raw.as_ref(), None).await
     }
 
     async fn deconstruct(
@@ -682,7 +688,7 @@ mod tests {
         );
 
         let result = handler_for_tests(8)
-            .deconstruct_message(hello.as_bytes(), SOURCE)
+            .deconstruct_message(&hello, SOURCE)
             .await;
 
         assert_matches!(result.map(|_| ()), Ok(()));
@@ -693,7 +699,7 @@ mod tests {
         let hello = message(constants::WSD_HELLO, "", HELLO_BODY);
 
         let result = handler_for_tests(8)
-            .deconstruct_message(hello.as_bytes(), SOURCE)
+            .deconstruct_message(&hello, SOURCE)
             .await;
 
         assert_matches!(
@@ -713,7 +719,7 @@ mod tests {
         );
 
         let result = handler_for_tests(8)
-            .deconstruct_message(hello.as_bytes(), SOURCE)
+            .deconstruct_message(&hello, SOURCE)
             .await;
 
         assert_matches!(
@@ -729,7 +735,7 @@ mod tests {
         let probe = message(constants::WSD_PROBE, "", "<wsd:Probe />");
 
         let result = handler_for_tests(8)
-            .deconstruct_message(probe.as_bytes(), SOURCE)
+            .deconstruct_message(&probe, SOURCE)
             .await;
 
         assert_matches!(result.map(|_| ()), Ok(()));
@@ -746,7 +752,7 @@ mod tests {
         );
 
         let result = handler_for_tests(8)
-            .deconstruct_message(hello.as_bytes(), SOURCE)
+            .deconstruct_message(&hello, SOURCE)
             .await;
 
         assert_matches!(
@@ -765,9 +771,7 @@ mod tests {
             "<wsd:Bye><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference></wsd:Bye>",
         );
 
-        let result = handler_for_tests(8)
-            .deconstruct_message(bye.as_bytes(), SOURCE)
-            .await;
+        let result = handler_for_tests(8).deconstruct_message(&bye, SOURCE).await;
 
         assert_matches!(result.map(|_| ()), Ok(()));
     }
@@ -781,7 +785,7 @@ mod tests {
         );
 
         let result = handler_for_tests(8)
-            .deconstruct_message(hello.as_bytes(), SOURCE)
+            .deconstruct_message(&hello, SOURCE)
             .await;
 
         assert_matches!(
@@ -798,9 +802,7 @@ mod tests {
             "<wsd:Bye><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:MetadataVersion>x</wsd:MetadataVersion></wsd:Bye>",
         );
 
-        let result = handler_for_tests(8)
-            .deconstruct_message(bye.as_bytes(), SOURCE)
-            .await;
+        let result = handler_for_tests(8).deconstruct_message(&bye, SOURCE).await;
 
         assert_matches!(result.map(|_| ()), Ok(()));
     }
@@ -814,7 +816,7 @@ mod tests {
         );
 
         let result = handler_for_tests(8)
-            .deconstruct_message(hello.as_bytes(), SOURCE)
+            .deconstruct_message(&hello, SOURCE)
             .await;
 
         assert_matches!(
@@ -831,9 +833,7 @@ mod tests {
             "<wsd:Bye><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:Types>nope:Device</wsd:Types></wsd:Bye>",
         );
 
-        let result = handler_for_tests(8)
-            .deconstruct_message(bye.as_bytes(), SOURCE)
-            .await;
+        let result = handler_for_tests(8).deconstruct_message(&bye, SOURCE).await;
 
         assert_matches!(result.map(|_| ()), Ok(()));
     }
