@@ -219,4 +219,18 @@ mod tests {
         let buf = AlignedBuffer::<4>::new(8);
         let _: MaybeUninit<u8> = buf[8];
     }
+
+    #[test]
+    fn written_bytes_read_back() {
+        let mut buf = AlignedBuffer::<4>::new(8);
+
+        buf.write_copy_of_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+
+        buf[0].write(0xAA);
+
+        // SAFETY: all 8 bytes were written above
+        let bytes = unsafe { buf.assume_init_ref() };
+
+        assert_eq!(bytes, [0xAA, 2, 3, 4, 5, 6, 7, 8]);
+    }
 }
