@@ -33,7 +33,7 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AlignedBuffer")
-            .field("buffer_len", &self.buffer.len())
+            .field("buffer_len", &self.len())
             .finish()
     }
 }
@@ -232,5 +232,12 @@ mod tests {
         let bytes = unsafe { buf.assume_init_ref() };
 
         assert_eq!(bytes, [0xAA, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn debug_reports_length_in_bytes() {
+        let buf = AlignedBuffer::<4>::new(4096);
+
+        assert_eq!(format!("{:?}", buf), "AlignedBuffer { buffer_len: 4096 }");
     }
 }
