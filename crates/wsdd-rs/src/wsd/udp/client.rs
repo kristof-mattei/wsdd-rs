@@ -331,7 +331,7 @@ async fn handle_hello(
     let next = {
         let mut guard = devices.write().await;
 
-        if guard.observe_announcement(&endpoint, &app_sequence) == Observation::Stale {
+        if guard.observe(&endpoint, &app_sequence) == Observation::Stale {
             event!(Level::DEBUG, %endpoint, ?app_sequence, "stale Hello, ignoring");
 
             return Ok(());
@@ -376,7 +376,7 @@ async fn handle_bye(
 ) -> Result<(), eyre::Report> {
     let mut guard = devices.write().await;
 
-    if guard.observe_announcement(&endpoint, &app_sequence) == Observation::Stale {
+    if guard.observe(&endpoint, &app_sequence) == Observation::Stale {
         event!(Level::DEBUG, %endpoint, ?app_sequence, "stale Bye, ignoring");
 
         return Ok(());
@@ -1323,7 +1323,7 @@ mod tests {
             client_devices
                 .write()
                 .await
-                .observe_announcement(&endpoint, &AppSequence::new(1, None, 5)),
+                .observe(&endpoint, &AppSequence::new(1, None, 5)),
             Observation::Stale
         );
     }
@@ -1346,7 +1346,7 @@ mod tests {
         client_devices
             .write()
             .await
-            .observe_announcement(&endpoint, &AppSequence::new(1, Some("urn:uuid:a"), 5));
+            .observe(&endpoint, &AppSequence::new(1, Some("urn:uuid:a"), 5));
 
         let result = bye(
             &client_devices,
@@ -1388,7 +1388,7 @@ mod tests {
         client_devices
             .write()
             .await
-            .observe_announcement(&endpoint, &AppSequence::new(1, None, 5));
+            .observe(&endpoint, &AppSequence::new(1, None, 5));
 
         let exchange = client_devices.write().await.start_exchange(&endpoint);
 
@@ -1419,7 +1419,7 @@ mod tests {
         client_devices
             .write()
             .await
-            .observe_announcement(&endpoint, &AppSequence::new(1, None, 5));
+            .observe(&endpoint, &AppSequence::new(1, None, 5));
 
         let exchange = client_devices.write().await.start_exchange(&endpoint);
 
@@ -1450,7 +1450,7 @@ mod tests {
         client_devices
             .write()
             .await
-            .observe_announcement(&endpoint, &AppSequence::new(1, None, 5));
+            .observe(&endpoint, &AppSequence::new(1, None, 5));
 
         let exchange = client_devices.write().await.start_exchange(&endpoint);
 
@@ -1482,7 +1482,7 @@ mod tests {
         client_devices
             .write()
             .await
-            .observe_announcement(&endpoint, &AppSequence::new(1, Some("urn:uuid:a"), 5));
+            .observe(&endpoint, &AppSequence::new(1, Some("urn:uuid:a"), 5));
 
         let exchange = client_devices.write().await.start_exchange(&endpoint);
 

@@ -139,12 +139,8 @@ impl Devices {
         departed
     }
 
-    /// Records a Hello or Bye of the Target Service at `endpoint`.
-    pub fn observe_announcement(
-        &mut self,
-        endpoint: &DeviceUri,
-        app_sequence: &AppSequence,
-    ) -> Observation {
+    /// Records the `AppSequence` of a message of the Target Service at `endpoint`, unless it is older than the recorded order.
+    pub fn observe(&mut self, endpoint: &DeviceUri, app_sequence: &AppSequence) -> Observation {
         let take_over = match self.targets.get_mut(endpoint) {
             None => false,
             Some(target) => match app_sequence.instance_id().cmp(&target.instance_id) {
@@ -340,7 +336,7 @@ mod tests {
         let mut devices = Devices::default();
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(1), &sequence(1, 5)),
+            devices.observe(&endpoint(1), &sequence(1, 5)),
             Observation::Current
         );
     }
@@ -349,10 +345,10 @@ mod tests {
     fn lower_message_number_is_stale() {
         let mut devices = Devices::default();
 
-        devices.observe_announcement(&endpoint(1), &sequence(1, 5));
+        devices.observe(&endpoint(1), &sequence(1, 5));
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(1), &sequence(1, 4)),
+            devices.observe(&endpoint(1), &sequence(1, 4)),
             Observation::Stale
         );
     }
@@ -361,10 +357,10 @@ mod tests {
     fn equal_message_is_current() {
         let mut devices = Devices::default();
 
-        devices.observe_announcement(&endpoint(1), &sequence(1, 5));
+        devices.observe(&endpoint(1), &sequence(1, 5));
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(1), &sequence(1, 5)),
+            devices.observe(&endpoint(1), &sequence(1, 5)),
             Observation::Current
         );
     }
@@ -373,12 +369,12 @@ mod tests {
     fn clear_discovered_keeps_the_order() {
         let mut devices = Devices::default();
 
-        devices.observe_announcement(&endpoint(1), &sequence(1, 5));
+        devices.observe(&endpoint(1), &sequence(1, 5));
 
         devices.clear_discovered();
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(1), &sequence(1, 4)),
+            devices.observe(&endpoint(1), &sequence(1, 4)),
             Observation::Stale
         );
     }
@@ -387,11 +383,11 @@ mod tests {
     fn stale_message_does_not_move_the_last_message() {
         let mut devices = Devices::default();
 
-        devices.observe_announcement(&endpoint(1), &sequence(1, 5));
-        devices.observe_announcement(&endpoint(1), &sequence(1, 3));
+        devices.observe(&endpoint(1), &sequence(1, 5));
+        devices.observe(&endpoint(1), &sequence(1, 3));
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(1), &sequence(1, 4)),
+            devices.observe(&endpoint(1), &sequence(1, 4)),
             Observation::Stale
         );
     }
@@ -400,10 +396,10 @@ mod tests {
     fn lower_instance_is_stale() {
         let mut devices = Devices::default();
 
-        devices.observe_announcement(&endpoint(1), &sequence(2, 0));
+        devices.observe(&endpoint(1), &sequence(2, 0));
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(1), &sequence(1, 9)),
+            devices.observe(&endpoint(1), &sequence(1, 9)),
             Observation::Stale
         );
     }
@@ -412,10 +408,10 @@ mod tests {
     fn different_sequences_are_current() {
         let mut devices = Devices::default();
 
-        devices.observe_announcement(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 5));
+        devices.observe(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 5));
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(1), &in_sequence(Some("urn:uuid:b"), 3)),
+            devices.observe(&endpoint(1), &in_sequence(Some("urn:uuid:b"), 3)),
             Observation::Current
         );
     }
@@ -424,11 +420,11 @@ mod tests {
     fn each_sequence_keeps_its_order() {
         let mut devices = Devices::default();
 
-        devices.observe_announcement(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 5));
-        devices.observe_announcement(&endpoint(1), &in_sequence(Some("urn:uuid:b"), 3));
+        devices.observe(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 5));
+        devices.observe(&endpoint(1), &in_sequence(Some("urn:uuid:b"), 3));
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 4)),
+            devices.observe(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 4)),
             Observation::Stale
         );
     }
@@ -437,21 +433,21 @@ mod tests {
     fn null_sequence_keeps_its_order() {
         let mut devices = Devices::default();
 
-        devices.observe_announcement(&endpoint(1), &in_sequence(None, 5));
-        devices.observe_announcement(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 3));
+        devices.observe(&endpoint(1), &in_sequence(None, 5));
+        devices.observe(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 3));
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(1), &in_sequence(None, 4)),
+            devices.observe(&endpoint(1), &in_sequence(None, 4)),
             Observation::Stale
         );
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(1), &in_sequence(Some("urn:uuid:b"), 1)),
+            devices.observe(&endpoint(1), &in_sequence(Some("urn:uuid:b"), 1)),
             Observation::Current
         );
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 2)),
+            devices.observe(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 2)),
             Observation::Stale
         );
     }
@@ -460,16 +456,16 @@ mod tests {
     fn newer_instance_restarts_the_sequences() {
         let mut devices = Devices::default();
 
-        devices.observe_announcement(&endpoint(1), &AppSequence::new(1, Some("urn:uuid:a"), 5));
-        devices.observe_announcement(&endpoint(1), &AppSequence::new(2, Some("urn:uuid:b"), 5));
+        devices.observe(&endpoint(1), &AppSequence::new(1, Some("urn:uuid:a"), 5));
+        devices.observe(&endpoint(1), &AppSequence::new(2, Some("urn:uuid:b"), 5));
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(1), &AppSequence::new(2, Some("urn:uuid:a"), 0)),
+            devices.observe(&endpoint(1), &AppSequence::new(2, Some("urn:uuid:a"), 0)),
             Observation::Current
         );
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(1), &AppSequence::new(1, Some("urn:uuid:a"), 9)),
+            devices.observe(&endpoint(1), &AppSequence::new(1, Some("urn:uuid:a"), 9)),
             Observation::Stale
         );
     }
@@ -478,28 +474,28 @@ mod tests {
     fn newer_instance_replaces_the_newest_entry_it_orders_after() {
         let mut devices = Devices::default();
 
-        devices.observe_announcement(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:a"), 5));
-        devices.observe_announcement(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:b"), 5));
+        devices.observe(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:a"), 5));
+        devices.observe(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:b"), 5));
 
         for id in 1..MAX_SEQUENCES - 1 {
-            devices.observe_announcement(&endpoint(id), &sequence(1, 5));
+            devices.observe(&endpoint(id), &sequence(1, 5));
         }
 
-        devices.observe_announcement(&endpoint(0), &AppSequence::new(2, Some("urn:uuid:c"), 0));
+        devices.observe(&endpoint(0), &AppSequence::new(2, Some("urn:uuid:c"), 0));
 
         // evicts the entry of sequence a
-        devices.observe_announcement(&endpoint(MAX_SEQUENCES - 1), &sequence(1, 5));
+        devices.observe(&endpoint(MAX_SEQUENCES - 1), &sequence(1, 5));
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:d"), 9)),
+            devices.observe(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:d"), 9)),
             Observation::Stale
         );
 
         // evicts the entry that sequence c replaced
-        devices.observe_announcement(&endpoint(MAX_SEQUENCES), &sequence(1, 5));
+        devices.observe(&endpoint(MAX_SEQUENCES), &sequence(1, 5));
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:d"), 9)),
+            devices.observe(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:d"), 9)),
             Observation::Current
         );
     }
@@ -508,24 +504,24 @@ mod tests {
     fn new_sequence_takes_over_an_older_instance_entry() {
         let mut devices = Devices::default();
 
-        devices.observe_announcement(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:a"), 5));
-        devices.observe_announcement(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:b"), 5));
+        devices.observe(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:a"), 5));
+        devices.observe(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:b"), 5));
 
         for id in 1..MAX_SEQUENCES - 1 {
-            devices.observe_announcement(&endpoint(id), &sequence(1, 5));
+            devices.observe(&endpoint(id), &sequence(1, 5));
         }
 
         // takes over the entry of sequence b
-        devices.observe_announcement(&endpoint(0), &AppSequence::new(2, Some("urn:uuid:c"), 5));
+        devices.observe(&endpoint(0), &AppSequence::new(2, Some("urn:uuid:c"), 5));
 
         // takes over the entry of sequence a, the first inserted
-        devices.observe_announcement(&endpoint(0), &AppSequence::new(2, Some("urn:uuid:d"), 0));
+        devices.observe(&endpoint(0), &AppSequence::new(2, Some("urn:uuid:d"), 0));
 
         // evicts the entry of sequence d
-        devices.observe_announcement(&endpoint(MAX_SEQUENCES - 1), &sequence(1, 5));
+        devices.observe(&endpoint(MAX_SEQUENCES - 1), &sequence(1, 5));
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(0), &AppSequence::new(2, Some("urn:uuid:c"), 4)),
+            devices.observe(&endpoint(0), &AppSequence::new(2, Some("urn:uuid:c"), 4)),
             Observation::Stale
         );
     }
@@ -535,16 +531,16 @@ mod tests {
         let mut devices = Devices::default();
 
         for id in 0..=MAX_SEQUENCES {
-            devices.observe_announcement(&endpoint(id), &sequence(1, 5));
+            devices.observe(&endpoint(id), &sequence(1, 5));
         }
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(1), &sequence(1, 4)),
+            devices.observe(&endpoint(1), &sequence(1, 4)),
             Observation::Stale
         );
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(0), &sequence(1, 4)),
+            devices.observe(&endpoint(0), &sequence(1, 4)),
             Observation::Current
         );
     }
@@ -554,15 +550,15 @@ mod tests {
         let mut devices = Devices::default();
 
         for id in 0..MAX_SEQUENCES {
-            devices.observe_announcement(&endpoint(id), &sequence(1, 5));
+            devices.observe(&endpoint(id), &sequence(1, 5));
         }
 
-        devices.observe_announcement(&endpoint(0), &sequence(1, 6));
+        devices.observe(&endpoint(0), &sequence(1, 6));
 
-        devices.observe_announcement(&endpoint(MAX_SEQUENCES), &sequence(1, 5));
+        devices.observe(&endpoint(MAX_SEQUENCES), &sequence(1, 5));
 
         assert_eq!(
-            devices.observe_announcement(&endpoint(0), &sequence(1, 5)),
+            devices.observe(&endpoint(0), &sequence(1, 5)),
             Observation::Current
         );
     }
