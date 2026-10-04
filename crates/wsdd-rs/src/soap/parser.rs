@@ -271,11 +271,11 @@ fn validate_action_body(
 }
 
 /// A Target Service MUST include `wsd:AppSequence`, see documentation/ws-discovery.pdf, 4.1 and 5.3.
-fn require_app_sequence(header: &Header) -> Result<(), HeaderParsingError> {
+fn require_app_sequence(header: &Header) -> Result<AppSequence, HeaderParsingError> {
     match header.app_sequence {
         None => Err(HeaderParsingError::MissingAppSequence),
         Some(Err(ref error)) => Err(HeaderParsingError::InvalidAppSequence(error.clone())),
-        Some(Ok(_)) => Ok(()),
+        Some(Ok(ref app_sequence)) => Ok(app_sequence.clone()),
     }
 }
 
@@ -286,14 +286,14 @@ fn parse_message_body(
     let response = match &*header.action {
         constants::WSD_GET => Ok(Get {}.into()),
         constants::WSD_HELLO => {
-            require_app_sequence(header)?;
+            let app_sequence = require_app_sequence(header)?;
 
-            Ok(soap::parser::hello::parse_hello(&mut reader)?.into())
+            Ok(soap::parser::hello::parse_hello(&mut reader, app_sequence)?.into())
         },
         constants::WSD_BYE => {
-            require_app_sequence(header)?;
+            let app_sequence = require_app_sequence(header)?;
 
-            Ok(soap::parser::bye::parse_bye(&mut reader)?.into())
+            Ok(soap::parser::bye::parse_bye(&mut reader, app_sequence)?.into())
         },
         constants::WSD_PROBE_MATCH => {
             require_app_sequence(header)?;
