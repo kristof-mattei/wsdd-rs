@@ -695,10 +695,11 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use color_eyre::eyre;
     use hashbrown::{HashMap, HashSet};
     use ipnet::{IpNet, Ipv4Net, Ipv6Net};
     use libc::RT_SCOPE_SITE;
-    use mockito::ServerOpts;
+    use mockito::{Server, ServerOpts};
     use pretty_assertions::{assert_eq, assert_matches};
     use tokio::io::AsyncReadExt as _;
     use tokio::net::TcpListener;
@@ -710,6 +711,7 @@ mod tests {
 
     use crate::constants;
     use crate::max_size_deque::MaxSizeDeque;
+    use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
     use crate::soap::MessageId;
     use crate::soap::parser::bye::Bye;
@@ -717,7 +719,7 @@ mod tests {
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler_with_network_address};
     use crate::wsd::device::DeviceUri;
-    use crate::wsd::devices::Devices;
+    use crate::wsd::devices::{Devices, Exchange};
     use crate::wsd::http::http_server::WSDHttpServer;
     use crate::wsd::udp::client::{
         LastCopy, WSDClient, XAddrsCheck, check_xaddrs, handle_bye, handle_hello, handle_metadata,
@@ -773,6 +775,53 @@ mod tests {
         let client_devices = Arc::new(RwLock::new(Devices::default()));
 
         (client_config, client_devices)
+    }
+
+    async fn mock_server() -> Server {
+        Server::new_with_opts_async(ServerOpts {
+            // a host in IPv4 form ensures we bind to an IPv4 address
+            host: "127.0.0.1",
+            // random port
+            port: 0,
+            assert_on_drop: true,
+        })
+        .await
+    }
+
+    fn synology_metadata() -> String {
+        format!(
+            include_str!("../../test/get-response-synology.xml"),
+            Uuid::now_v7().urn(),
+            Uuid::now_v7().urn(),
+        )
+    }
+
+    async fn bye(devices: &Arc<RwLock<Devices>>, endpoint: &DeviceUri) -> Result<(), eyre::Report> {
+        handle_bye(
+            Arc::clone(devices),
+            Bye {
+                endpoint: endpoint.clone(),
+            },
+        )
+        .await
+    }
+
+    async fn finish_exchange_with_synology(
+        devices: &Arc<RwLock<Devices>>,
+        endpoint: &DeviceUri,
+        exchange: Exchange,
+        bound_to: &NetworkAddress,
+    ) -> Result<(), eyre::Report> {
+        handle_metadata(
+            Arc::clone(devices),
+            synology_metadata().as_bytes(),
+            endpoint.clone(),
+            exchange,
+            &XAddr::try_from("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721")
+                .unwrap(),
+            bound_to,
+        )
+        .await
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -854,14 +903,7 @@ mod tests {
         let (client_config, client_devices) = setup_client();
 
         // host
-        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
-            // a host in IPv4 form ensures we bind to an IPv4 address
-            host: "127.0.0.1",
-            // random port
-            port: 0,
-            assert_on_drop: true,
-        })
-        .await;
+        let mut server = mock_server().await;
 
         let host_message_id = Uuid::now_v7();
         let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
@@ -875,11 +917,7 @@ mod tests {
             .mock("POST", &*format!("/{}", host_config.uuid))
             .with_status(200)
             .with_body_from_request(move |request| {
-                let metadata: String = format!(
-                    include_str!("../../test/get-response-synology.xml"),
-                    Uuid::now_v7().urn(),
-                    Uuid::now_v7().urn(),
-                );
+                let metadata = synology_metadata();
 
                 assert_eq!(
                     to_string_pretty(request.body().unwrap()).unwrap(),
@@ -1009,14 +1047,7 @@ mod tests {
         let (client_config, client_devices) = setup_client();
 
         // host
-        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
-            // a host in IPv4 form ensures we bind to an IPv4 address
-            host: "127.0.0.1",
-            // random port
-            port: 0,
-            assert_on_drop: true,
-        })
-        .await;
+        let mut server = mock_server().await;
 
         let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
 
@@ -1029,11 +1060,7 @@ mod tests {
             .mock("POST", &*format!("/{}", host_config.uuid))
             .with_status(200)
             .with_body_from_request(move |request| {
-                let metadata: String = format!(
-                    include_str!("../../test/get-response-synology.xml"),
-                    Uuid::now_v7().urn(),
-                    Uuid::now_v7().urn(),
-                );
+                let metadata = synology_metadata();
 
                 assert_eq!(
                     to_string_pretty(request.body().unwrap()).unwrap(),
@@ -1175,14 +1202,7 @@ mod tests {
         let (client_config, client_devices) = setup_client();
 
         // host
-        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
-            // a host in IPv4 form ensures we bind to an IPv4 address
-            host: "127.0.0.1",
-            // random port
-            port: 0,
-            assert_on_drop: true,
-        })
-        .await;
+        let mut server = mock_server().await;
 
         let failing = server
             .mock("POST", "/failing")
@@ -1198,11 +1218,7 @@ mod tests {
         let working = server
             .mock("POST", "/working")
             .with_header("Content-Type", constants::MIME_TYPE_SOAP_XML)
-            .with_body(format!(
-                include_str!("../../test/get-response-synology.xml"),
-                Uuid::now_v7().urn(),
-                Uuid::now_v7().urn(),
-            ))
+            .with_body(synology_metadata())
             .expect(1)
             .create_async()
             .await;
@@ -1270,13 +1286,7 @@ mod tests {
         let bye = async {
             received_rx.await.unwrap();
 
-            handle_bye(
-                Arc::clone(&client_devices),
-                Bye {
-                    endpoint: device_uri.clone(),
-                },
-            )
-            .await
+            bye(&client_devices, &device_uri).await
         };
 
         let client = reqwest::ClientBuilder::new().build().unwrap();
@@ -1314,14 +1324,7 @@ mod tests {
         let (client_config, client_devices) = setup_client();
 
         // host
-        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
-            // a host in IPv4 form ensures we bind to an IPv4 address
-            host: "127.0.0.1",
-            // random port
-            port: 0,
-            assert_on_drop: true,
-        })
-        .await;
+        let mut server = mock_server().await;
 
         let failing = server
             .mock("POST", "/failing")
@@ -1443,34 +1446,17 @@ mod tests {
         // client
         let client_devices = Arc::new(RwLock::new(Devices::default()));
 
-        let metadata: String = format!(
-            include_str!("../../test/get-response-synology.xml"),
-            Uuid::now_v7().urn(),
-            Uuid::now_v7().urn(),
-        );
-
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
         let exchange = client_devices.write().await.start_exchange(&device_uri);
 
         // another interface's loop handles the Bye while this one awaits the metadata
-        let result = handle_bye(
-            Arc::clone(&client_devices),
-            Bye {
-                endpoint: device_uri.clone(),
-            },
-        )
-        .await;
+        assert_matches!(bye(&client_devices, &device_uri).await, Ok(()));
 
-        assert_matches!(result, Ok(()));
-
-        let result = handle_metadata(
-            Arc::clone(&client_devices),
-            metadata.as_bytes(),
-            device_uri,
+        let result = finish_exchange_with_synology(
+            &client_devices,
+            &device_uri,
             exchange,
-            &XAddr::try_from("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721")
-                .unwrap(),
             &client_network_address,
         )
         .await;
@@ -1489,23 +1475,14 @@ mod tests {
         // client
         let client_devices = Arc::new(RwLock::new(Devices::default()));
 
-        let metadata: String = format!(
-            include_str!("../../test/get-response-synology.xml"),
-            Uuid::now_v7().urn(),
-            Uuid::now_v7().urn(),
-        );
-
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
         let exchange = client_devices.write().await.start_exchange(&device_uri);
 
-        let result = handle_metadata(
-            Arc::clone(&client_devices),
-            metadata.as_bytes(),
-            device_uri.clone(),
+        let result = finish_exchange_with_synology(
+            &client_devices,
+            &device_uri,
             exchange,
-            &XAddr::try_from("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721")
-                .unwrap(),
             &client_network_address,
         )
         .await;
@@ -1915,14 +1892,7 @@ mod tests {
         let (client_config, client_devices) = setup_client();
 
         // host
-        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
-            // a host in IPv4 form ensures we bind to an IPv4 address
-            host: "127.0.0.1",
-            // random port
-            port: 0,
-            assert_on_drop: true,
-        })
-        .await;
+        let mut server = mock_server().await;
 
         let host_message_id = Uuid::now_v7();
         let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
@@ -1936,11 +1906,7 @@ mod tests {
             .mock("POST", &*format!("/{}", host_config.uuid))
             .with_status(200)
             .with_body_from_request(move |request| {
-                let metadata: String = format!(
-                    include_str!("../../test/get-response-synology.xml"),
-                    Uuid::now_v7().urn(),
-                    Uuid::now_v7().urn(),
-                );
+                let metadata = synology_metadata();
 
                 assert_eq!(
                     to_string_pretty(request.body().unwrap()).unwrap(),
@@ -2026,14 +1992,7 @@ mod tests {
         let (client_config, client_devices) = setup_client();
 
         // host
-        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
-            // a host in IPv4 form ensures we bind to an IPv4 address
-            host: "127.0.0.1",
-            // random port
-            port: 0,
-            assert_on_drop: true,
-        })
-        .await;
+        let mut server = mock_server().await;
 
         let host_message_id = Uuid::now_v7();
         let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
@@ -2047,11 +2006,7 @@ mod tests {
             .mock("POST", &*format!("/{}", host_config.uuid))
             .with_status(200)
             .with_body_from_request(move |request| {
-                let metadata: String = format!(
-                    include_str!("../../test/get-response-synology.xml"),
-                    Uuid::now_v7().urn(),
-                    Uuid::now_v7().urn(),
-                );
+                let metadata = synology_metadata();
 
                 assert_eq!(
                     to_string_pretty(request.body().unwrap()).unwrap(),
@@ -2177,14 +2132,7 @@ mod tests {
         let (client_config, client_devices) = setup_client();
 
         // host
-        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
-            // a host in IPv4 form ensures we bind to an IPv4 address
-            host: "127.0.0.1",
-            // random port
-            port: 0,
-            assert_on_drop: true,
-        })
-        .await;
+        let mut server = mock_server().await;
 
         let host_message_id = Uuid::now_v7();
         let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
@@ -2248,14 +2196,7 @@ mod tests {
         let (client_config, client_devices) = setup_client();
 
         // host
-        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
-            // a host in IPv4 form ensures we bind to an IPv4 address
-            host: "127.0.0.1",
-            // random port
-            port: 0,
-            assert_on_drop: true,
-        })
-        .await;
+        let mut server = mock_server().await;
 
         let host_message_id = Uuid::now_v7();
         let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
