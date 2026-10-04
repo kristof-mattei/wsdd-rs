@@ -29,7 +29,7 @@ use crate::soap::{ClientMessage, MessageId, MulticastMessage};
 use crate::utils::SliceDisplay;
 use crate::utils::task::spawn_with_name;
 use crate::wsd::device::DeviceUri;
-use crate::wsd::devices::{Devices, Exchange};
+use crate::wsd::devices::{Devices, Exchange, Observation};
 
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
@@ -288,6 +288,12 @@ enum XAddrsCheck {
     Usable(Vec<XAddr>),
 }
 
+/// The work left after the ordering lock is released.
+enum Next {
+    Resolve,
+    Fetch(Exchange, Vec<XAddr>),
+}
+
 fn check_xaddrs(
     bound_to: IpNet,
     kind: &str,
@@ -317,13 +323,29 @@ async fn handle_hello(
     multicast: &Sender<OutgoingMulticastMessage>,
     resolves: &mut HashMap<MessageId, LastCopy>,
     Hello {
+        app_sequence,
         endpoint,
         raw_xaddrs,
     }: Hello,
 ) -> Result<(), eyre::Report> {
-    match check_xaddrs(bound_to.address, "Hello", &endpoint, raw_xaddrs) {
-        XAddrsCheck::Unusable => Ok(()),
-        XAddrsCheck::Missing => {
+    let next = {
+        let mut guard = devices.write().await;
+
+        if guard.observe_announcement(&endpoint, &app_sequence) == Observation::Stale {
+            event!(Level::DEBUG, %endpoint, ?app_sequence, "stale Hello, ignoring");
+
+            return Ok(());
+        }
+
+        match check_xaddrs(bound_to.address, "Hello", &endpoint, raw_xaddrs) {
+            XAddrsCheck::Unusable => return Ok(()),
+            XAddrsCheck::Missing => Next::Resolve,
+            XAddrsCheck::Usable(xaddrs) => Next::Fetch(guard.start_exchange(&endpoint), xaddrs),
+        }
+    };
+
+    match next {
+        Next::Resolve => {
             event!(Level::INFO, "Hello without XAddrs, sending resolve");
 
             let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
@@ -334,19 +356,31 @@ async fn handle_hello(
 
             Ok(())
         },
-        XAddrsCheck::Usable(xaddrs) => {
+        Next::Fetch(exchange, xaddrs) => {
             event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "Hello");
 
-            perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddrs).await
+            perform_metadata_exchange(
+                client, config, devices, bound_to, endpoint, exchange, xaddrs,
+            )
+            .await
         },
     }
 }
 
 async fn handle_bye(
     devices: Arc<RwLock<Devices>>,
-    Bye { endpoint }: Bye,
+    Bye {
+        app_sequence,
+        endpoint,
+    }: Bye,
 ) -> Result<(), eyre::Report> {
     let mut guard = devices.write().await;
+
+    if guard.observe_announcement(&endpoint, &app_sequence) == Observation::Stale {
+        event!(Level::DEBUG, %endpoint, ?app_sequence, "stale Bye, ignoring");
+
+        return Ok(());
+    }
 
     if guard.depart(&endpoint).is_none() {
         event!(
@@ -437,9 +471,14 @@ async fn handle_probe_match(
             Ok(())
         },
         XAddrsCheck::Usable(xaddrs) => {
+            let exchange = devices.write().await.start_exchange(&endpoint);
+
             event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ProbeMatch");
 
-            perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddrs).await
+            perform_metadata_exchange(
+                client, config, devices, bound_to, endpoint, exchange, xaddrs,
+            )
+            .await
         },
     }
 }
@@ -488,9 +527,14 @@ async fn handle_resolve_matches(
             Ok(())
         },
         XAddrsCheck::Usable(xaddrs) => {
+            let exchange = devices.write().await.start_exchange(&endpoint);
+
             event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ResolveMatch");
 
-            perform_metadata_exchange(client, config, devices, bound_to, endpoint, xaddrs).await
+            perform_metadata_exchange(
+                client, config, devices, bound_to, endpoint, exchange, xaddrs,
+            )
+            .await
         },
     }
 }
@@ -501,11 +545,17 @@ async fn perform_metadata_exchange(
     devices: Arc<RwLock<Devices>>,
     bound_to: &NetworkAddress,
     endpoint: DeviceUri,
+    exchange: Exchange,
     xaddrs: Vec<XAddr>,
 ) -> Result<(), eyre::Report> {
-    let body = Bytes::from_owner(build_getmetadata_message(config, &endpoint)?);
+    let body = match build_getmetadata_message(config, &endpoint) {
+        Ok(body) => Bytes::from_owner(body),
+        Err(error) => {
+            devices.write().await.finish_exchange(&endpoint, exchange);
 
-    let exchange = devices.write().await.start_exchange(&endpoint);
+            return Err(error.into());
+        },
+    };
 
     for xaddr in xaddrs {
         let builder = client
@@ -691,15 +741,18 @@ async fn listen_forever(
 
 #[cfg(test)]
 mod tests {
+    use std::future::poll_fn;
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4};
+    use std::pin::pin;
     use std::sync::Arc;
+    use std::task::Poll;
     use std::time::Duration;
 
     use color_eyre::eyre;
     use hashbrown::{HashMap, HashSet};
     use ipnet::{IpNet, Ipv4Net, Ipv6Net};
     use libc::RT_SCOPE_SITE;
-    use mockito::{Server, ServerOpts};
+    use mockito::{Mock, Server, ServerOpts};
     use pretty_assertions::{assert_eq, assert_matches};
     use tokio::io::AsyncReadExt as _;
     use tokio::net::TcpListener;
@@ -714,12 +767,14 @@ mod tests {
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
     use crate::soap::MessageId;
+    use crate::soap::parser::app_sequence::AppSequence;
     use crate::soap::parser::bye::Bye;
+    use crate::soap::parser::hello::Hello;
     use crate::soap::parser::xaddrs::XAddr;
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler_with_network_address};
     use crate::wsd::device::DeviceUri;
-    use crate::wsd::devices::{Devices, Exchange};
+    use crate::wsd::devices::{Devices, Exchange, Observation};
     use crate::wsd::http::http_server::WSDHttpServer;
     use crate::wsd::udp::client::{
         LastCopy, WSDClient, XAddrsCheck, check_xaddrs, handle_bye, handle_hello, handle_metadata,
@@ -796,10 +851,63 @@ mod tests {
         )
     }
 
-    async fn bye(devices: &Arc<RwLock<Devices>>, endpoint: &DeviceUri) -> Result<(), eyre::Report> {
+    /// Answers exactly `hits` requests with the Synology metadata.
+    async fn metadata_server(hits: usize) -> (Server, Mock) {
+        let mut server = mock_server().await;
+
+        let metadata_exchange = server
+            .mock("POST", mockito::Matcher::Any)
+            .with_status(200)
+            .with_body(synology_metadata())
+            .expect(hits)
+            .create_async()
+            .await;
+
+        (server, metadata_exchange)
+    }
+
+    fn xaddrs_of(server: &Server) -> Box<str> {
+        format!("http://{}/", server.socket_address()).into_boxed_str()
+    }
+
+    /// Returns whether the Hello sent a Resolve.
+    async fn hello(
+        config: &crate::config::Config,
+        devices: &Arc<RwLock<Devices>>,
+        bound_to: &NetworkAddress,
+        endpoint: &DeviceUri,
+        app_sequence: AppSequence,
+        raw_xaddrs: Option<Box<str>>,
+    ) -> Result<bool, eyre::Report> {
+        let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
+
+        handle_hello(
+            &reqwest::ClientBuilder::new().build().unwrap(),
+            config,
+            Arc::clone(devices),
+            bound_to,
+            &multicast_tx,
+            &mut HashMap::new(),
+            Hello {
+                app_sequence,
+                endpoint: endpoint.clone(),
+                raw_xaddrs,
+            },
+        )
+        .await?;
+
+        Ok(multicast_rx.try_recv().is_ok())
+    }
+
+    async fn bye(
+        devices: &Arc<RwLock<Devices>>,
+        endpoint: &DeviceUri,
+        app_sequence: AppSequence,
+    ) -> Result<(), eyre::Report> {
         handle_bye(
             Arc::clone(devices),
             Bye {
+                app_sequence,
                 endpoint: endpoint.clone(),
             },
         )
@@ -1153,6 +1261,318 @@ mod tests {
 
     #[cfg_attr(not(miri), tokio::test)]
     #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn ignores_hello_older_than_the_last_bye() {
+        let (_message_handler, network_address) = build_message_handler_with_network_address(
+            IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // host
+        let (server, metadata_exchange) = metadata_server(0).await;
+
+        let endpoint = new_endpoint();
+
+        let result = bye(&client_devices, &endpoint, AppSequence::new(1, None, 6)).await;
+
+        assert_matches!(result, Ok(()));
+
+        let result = hello(
+            &client_config,
+            &client_devices,
+            &network_address,
+            &endpoint,
+            AppSequence::new(1, None, 5),
+            Some(xaddrs_of(&server)),
+        )
+        .await;
+
+        assert_matches!(result, Ok(false));
+
+        metadata_exchange.assert_async().await;
+
+        assert!(client_devices.read().await.is_empty());
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn hello_with_unusable_xaddrs_advances_the_order() {
+        let (_message_handler, network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        let endpoint = new_endpoint();
+
+        let result = hello(
+            &client_config,
+            &client_devices,
+            &network_address,
+            &endpoint,
+            AppSequence::new(1, None, 6),
+            Some(Box::from("ftp://192.168.100.5/")),
+        )
+        .await;
+
+        assert_matches!(result, Ok(false));
+
+        assert_eq!(
+            client_devices
+                .write()
+                .await
+                .observe_announcement(&endpoint, &AppSequence::new(1, None, 5)),
+            Observation::Stale
+        );
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn adds_device_again_with_a_hello_in_another_sequence_after_a_bye() {
+        let (_message_handler, network_address) = build_message_handler_with_network_address(
+            IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // host
+        let (server, metadata_exchange) = metadata_server(1).await;
+
+        let endpoint = new_endpoint();
+
+        client_devices
+            .write()
+            .await
+            .observe_announcement(&endpoint, &AppSequence::new(1, Some("urn:uuid:a"), 5));
+
+        let result = bye(
+            &client_devices,
+            &endpoint,
+            AppSequence::new(1, Some("urn:uuid:a"), 6),
+        )
+        .await;
+
+        assert_matches!(result, Ok(()));
+
+        let result = hello(
+            &client_config,
+            &client_devices,
+            &network_address,
+            &endpoint,
+            AppSequence::new(1, Some("urn:uuid:b"), 1),
+            Some(xaddrs_of(&server)),
+        )
+        .await;
+
+        assert_matches!(result, Ok(false));
+
+        metadata_exchange.assert_async().await;
+
+        assert!(client_devices.read().await.contains_key(&endpoint));
+    }
+
+    #[tokio::test]
+    async fn keeps_device_after_a_bye_older_than_its_hello() {
+        let (_message_handler, network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
+        );
+
+        // client
+        let client_devices = Arc::new(RwLock::new(Devices::default()));
+
+        let endpoint = new_endpoint();
+
+        client_devices
+            .write()
+            .await
+            .observe_announcement(&endpoint, &AppSequence::new(1, None, 5));
+
+        let exchange = client_devices.write().await.start_exchange(&endpoint);
+
+        let result =
+            finish_exchange_with_synology(&client_devices, &endpoint, exchange, &network_address)
+                .await;
+
+        assert_matches!(result, Ok(()));
+
+        let result = bye(&client_devices, &endpoint, AppSequence::new(1, None, 4)).await;
+
+        assert_matches!(result, Ok(()));
+
+        assert!(client_devices.read().await.contains_key(&endpoint));
+    }
+
+    #[tokio::test]
+    async fn removes_device_with_a_bye_equal_to_its_hello() {
+        let (_message_handler, network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
+        );
+
+        // client
+        let client_devices = Arc::new(RwLock::new(Devices::default()));
+
+        let endpoint = new_endpoint();
+
+        client_devices
+            .write()
+            .await
+            .observe_announcement(&endpoint, &AppSequence::new(1, None, 5));
+
+        let exchange = client_devices.write().await.start_exchange(&endpoint);
+
+        let result =
+            finish_exchange_with_synology(&client_devices, &endpoint, exchange, &network_address)
+                .await;
+
+        assert_matches!(result, Ok(()));
+
+        let result = bye(&client_devices, &endpoint, AppSequence::new(1, None, 5)).await;
+
+        assert_matches!(result, Ok(()));
+
+        assert!(client_devices.read().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn keeps_metadata_when_a_stale_bye_arrived_during_the_exchange() {
+        let (_message_handler, network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
+        );
+
+        // client
+        let client_devices = Arc::new(RwLock::new(Devices::default()));
+
+        let endpoint = new_endpoint();
+
+        client_devices
+            .write()
+            .await
+            .observe_announcement(&endpoint, &AppSequence::new(1, None, 5));
+
+        let exchange = client_devices.write().await.start_exchange(&endpoint);
+
+        // another interface's loop handles the Bye while this one awaits the metadata
+        let result = bye(&client_devices, &endpoint, AppSequence::new(1, None, 4)).await;
+
+        assert_matches!(result, Ok(()));
+
+        let result =
+            finish_exchange_with_synology(&client_devices, &endpoint, exchange, &network_address)
+                .await;
+
+        assert_matches!(result, Ok(()));
+
+        assert!(client_devices.read().await.contains_key(&endpoint));
+    }
+
+    #[tokio::test]
+    async fn discards_metadata_when_a_bye_in_another_sequence_arrived_during_the_exchange() {
+        let (_message_handler, network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
+        );
+
+        // client
+        let client_devices = Arc::new(RwLock::new(Devices::default()));
+
+        let endpoint = new_endpoint();
+
+        client_devices
+            .write()
+            .await
+            .observe_announcement(&endpoint, &AppSequence::new(1, Some("urn:uuid:a"), 5));
+
+        let exchange = client_devices.write().await.start_exchange(&endpoint);
+
+        // another interface's loop handles the Bye while this one awaits the metadata
+        let result = bye(
+            &client_devices,
+            &endpoint,
+            AppSequence::new(1, Some("urn:uuid:b"), 0),
+        )
+        .await;
+
+        assert_matches!(result, Ok(()));
+
+        let result =
+            finish_exchange_with_synology(&client_devices, &endpoint, exchange, &network_address)
+                .await;
+
+        assert_matches!(result, Ok(()));
+
+        assert!(client_devices.read().await.is_empty());
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn newer_bye_queued_behind_a_hello_stops_its_exchange() {
+        let (_message_handler, network_address) = build_message_handler_with_network_address(
+            IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // host
+        let mut server = mock_server().await;
+
+        let metadata_exchange = server
+            .mock("POST", mockito::Matcher::Any)
+            .with_status(200)
+            .with_body(synology_metadata())
+            .expect_at_most(1)
+            .create_async()
+            .await;
+
+        let endpoint = new_endpoint();
+
+        let mut queued_hello = pin!(hello(
+            &client_config,
+            &client_devices,
+            &network_address,
+            &endpoint,
+            AppSequence::new(1, None, 5),
+            Some(xaddrs_of(&server)),
+        ));
+
+        let mut queued_bye = pin!(bye(
+            &client_devices,
+            &endpoint,
+            AppSequence::new(1, None, 6)
+        ));
+
+        // tokio's `RwLock` is fair: the Hello takes the lock first, the Bye right after
+        let guard = client_devices.write().await;
+
+        poll_fn(|context| {
+            assert!(queued_hello.as_mut().poll(context).is_pending());
+            assert!(queued_bye.as_mut().poll(context).is_pending());
+
+            Poll::Ready(())
+        })
+        .await;
+
+        drop(guard);
+
+        let (hello_result, bye_result) = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(queued_hello, queued_bye)
+        })
+        .await
+        .unwrap();
+
+        assert_matches!(hello_result, Ok(false));
+        assert_matches!(bye_result, Ok(()));
+
+        metadata_exchange.assert_async().await;
+
+        assert!(client_devices.read().await.is_empty());
+        assert!(!client_devices.read().await.has_running_exchanges());
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn sends_probe() {
         let cancellation_token = CancellationToken::new();
 
@@ -1233,12 +1653,15 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
+        let exchange = client_devices.write().await.start_exchange(&device_uri);
+
         let result = perform_metadata_exchange(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
             device_uri.clone(),
+            exchange,
             xaddrs,
         )
         .await;
@@ -1286,10 +1709,12 @@ mod tests {
         let bye = async {
             received_rx.await.unwrap();
 
-            bye(&client_devices, &device_uri).await
+            bye(&client_devices, &device_uri, AppSequence::new(1, None, 1)).await
         };
 
         let client = reqwest::ClientBuilder::new().build().unwrap();
+
+        let exchange = client_devices.write().await.start_exchange(&device_uri);
 
         let exchange = Box::pin(perform_metadata_exchange(
             &client,
@@ -1297,6 +1722,7 @@ mod tests {
             Arc::clone(&client_devices),
             &client_network_address,
             device_uri.clone(),
+            exchange,
             vec![xaddr],
         ));
 
@@ -1340,12 +1766,15 @@ mod tests {
                 .unwrap(),
         ];
 
+        let exchange = client_devices.write().await.start_exchange(&device_uri);
+
         let result = perform_metadata_exchange(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
             device_uri,
+            exchange,
             xaddrs,
         )
         .await;
@@ -1395,12 +1824,18 @@ mod tests {
             .unwrap(),
         ];
 
+        let exchange = client_devices
+            .write()
+            .await
+            .start_exchange(&host_config.uuid_as_device_uri);
+
         let result = perform_metadata_exchange(
             &reqwest::ClientBuilder::new().build().unwrap(),
             &client_config,
             Arc::clone(&client_devices),
             &network_address,
             host_config.uuid_as_device_uri.clone(),
+            exchange,
             xaddrs,
         )
         .await;
@@ -1451,7 +1886,10 @@ mod tests {
         let exchange = client_devices.write().await.start_exchange(&device_uri);
 
         // another interface's loop handles the Bye while this one awaits the metadata
-        assert_matches!(bye(&client_devices, &device_uri).await, Ok(()));
+        assert_matches!(
+            bye(&client_devices, &device_uri, AppSequence::new(1, None, 1)).await,
+            Ok(())
+        );
 
         let result = finish_exchange_with_synology(
             &client_devices,

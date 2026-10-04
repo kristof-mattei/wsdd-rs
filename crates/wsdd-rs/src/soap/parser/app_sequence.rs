@@ -1,12 +1,10 @@
-use std::cmp::Ordering;
-
 use thiserror::Error;
 use xml::attribute::OwnedAttribute;
 
 use crate::soap::parser::generic::parse_unsigned_int;
 
 /// The `wsd:AppSequence` header block of a received message, see documentation/ws-discovery.pdf, Appendix I.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AppSequence {
     instance_id: u64,
     sequence_id: Option<Box<str>>,
@@ -33,6 +31,18 @@ impl AppSequence {
             sequence_id: sequence_id.map(Box::from),
             message_number,
         }
+    }
+
+    pub fn instance_id(&self) -> u64 {
+        self.instance_id
+    }
+
+    pub fn sequence_id(&self) -> Option<&str> {
+        self.sequence_id.as_deref()
+    }
+
+    pub fn message_number(&self) -> u64 {
+        self.message_number
     }
 
     pub fn from_attributes(attributes: &[OwnedAttribute]) -> Result<Self, InvalidAppSequence> {
@@ -70,21 +80,8 @@ impl AppSequence {
     }
 }
 
-/// `MessageNumber` only orders messages that share `InstanceId` and `SequenceId`.
-impl PartialOrd for AppSequence {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        match self.instance_id.cmp(&other.instance_id) {
-            Ordering::Equal if self.sequence_id != other.sequence_id => None,
-            Ordering::Equal => Some(self.message_number.cmp(&other.message_number)),
-            ordering @ (Ordering::Less | Ordering::Greater) => Some(ordering),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::cmp::Ordering;
-
     use pretty_assertions::assert_eq;
     use xml::attribute::OwnedAttribute;
     use xml::name::OwnedName;
@@ -194,64 +191,5 @@ mod tests {
                 "18446744073709551616"
             )))
         );
-    }
-
-    #[test]
-    fn higher_instance_id_is_newer() {
-        let last = AppSequence::new(1, Some("urn:uuid:a"), 50);
-
-        assert_eq!(
-            AppSequence::new(2, Some("urn:uuid:b"), 0).partial_cmp(&last),
-            Some(Ordering::Greater)
-        );
-    }
-
-    #[test]
-    fn lower_instance_id_is_stale() {
-        let last = AppSequence::new(2, Some("urn:uuid:a"), 0);
-
-        assert_eq!(
-            AppSequence::new(1, Some("urn:uuid:a"), 50).partial_cmp(&last),
-            Some(Ordering::Less)
-        );
-    }
-
-    #[test]
-    fn message_number_orders_within_one_sequence() {
-        let last = AppSequence::new(1, Some("urn:uuid:a"), 5);
-
-        assert_eq!(
-            AppSequence::new(1, Some("urn:uuid:a"), 4).partial_cmp(&last),
-            Some(Ordering::Less)
-        );
-        assert_eq!(
-            AppSequence::new(1, Some("urn:uuid:a"), 5).partial_cmp(&last),
-            Some(Ordering::Equal)
-        );
-        assert_eq!(
-            AppSequence::new(1, Some("urn:uuid:a"), 6).partial_cmp(&last),
-            Some(Ordering::Greater)
-        );
-    }
-
-    #[test]
-    fn message_number_orders_within_the_null_sequence() {
-        let last = AppSequence::new(1, None, 5);
-
-        assert_eq!(
-            AppSequence::new(1, None, 4).partial_cmp(&last),
-            Some(Ordering::Less)
-        );
-    }
-
-    #[test]
-    fn different_sequence_ids_are_unordered() {
-        let last = AppSequence::new(1, Some("urn:uuid:a"), 5);
-
-        assert_eq!(
-            AppSequence::new(1, Some("urn:uuid:b"), 4).partial_cmp(&last),
-            None
-        );
-        assert_eq!(AppSequence::new(1, None, 4).partial_cmp(&last), None);
     }
 }

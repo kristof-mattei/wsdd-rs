@@ -271,11 +271,11 @@ fn validate_action_body(
 }
 
 /// A Target Service MUST include `wsd:AppSequence`, see documentation/ws-discovery.pdf, 4.1 and 5.3.
-fn require_app_sequence(header: &Header) -> Result<(), HeaderParsingError> {
+fn require_app_sequence(header: &Header) -> Result<AppSequence, HeaderParsingError> {
     match header.app_sequence {
         None => Err(HeaderParsingError::MissingAppSequence),
         Some(Err(ref error)) => Err(HeaderParsingError::InvalidAppSequence(error.clone())),
-        Some(Ok(_)) => Ok(()),
+        Some(Ok(ref app_sequence)) => Ok(app_sequence.clone()),
     }
 }
 
@@ -286,14 +286,14 @@ fn parse_message_body(
     let response = match &*header.action {
         constants::WSD_GET => Ok(Get {}.into()),
         constants::WSD_HELLO => {
-            require_app_sequence(header)?;
+            let app_sequence = require_app_sequence(header)?;
 
-            Ok(soap::parser::hello::parse_hello(&mut reader)?.into())
+            Ok(soap::parser::hello::parse_hello(&mut reader, app_sequence)?.into())
         },
         constants::WSD_BYE => {
-            require_app_sequence(header)?;
+            let app_sequence = require_app_sequence(header)?;
 
-            Ok(soap::parser::bye::parse_bye(&mut reader)?.into())
+            Ok(soap::parser::bye::parse_bye(&mut reader, app_sequence)?.into())
         },
         constants::WSD_PROBE_MATCH => {
             require_app_sequence(header)?;
@@ -616,26 +616,23 @@ mod tests {
 
     const HELLO_BODY: &str = "<wsd:Hello><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:MetadataVersion>1</wsd:MetadataVersion></wsd:Hello>";
 
+    const BYE_BODY: &str = "<wsd:Bye><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference></wsd:Bye>";
+
+    const FULL_APP_SEQUENCE: &str = r#"<wsd:AppSequence InstanceId="3" SequenceId="urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9" MessageNumber="7" />"#;
+
+    fn full_app_sequence() -> AppSequence {
+        AppSequence::new(3, Some("urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9"), 7)
+    }
+
     const SOURCE: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 1, 2, 4), 3702));
 
     #[test]
     fn parses_app_sequence() {
-        let hello = message(
-            constants::WSD_HELLO,
-            r#"<wsd:AppSequence InstanceId="3" SequenceId="urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9" MessageNumber="7" />"#,
-            "",
-        );
+        let hello = message(constants::WSD_HELLO, FULL_APP_SEQUENCE, "");
 
         let (header, _, _) = deconstruct_raw(hello.as_bytes()).unwrap();
 
-        assert_eq!(
-            header.app_sequence,
-            Some(Ok(AppSequence::new(
-                3,
-                Some("urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9"),
-                7
-            )))
-        );
+        assert_eq!(header.app_sequence, Some(Ok(full_app_sequence())));
     }
 
     #[test]
@@ -681,17 +678,32 @@ mod tests {
 
     #[tokio::test]
     async fn accepts_hello_with_app_sequence() {
-        let hello = message(
-            constants::WSD_HELLO,
-            r#"<wsd:AppSequence InstanceId="1" MessageNumber="2" />"#,
-            HELLO_BODY,
-        );
+        let hello = message(constants::WSD_HELLO, FULL_APP_SEQUENCE, HELLO_BODY);
 
-        let result = handler_for_tests(8)
+        let (_, message) = handler_for_tests(8)
             .deconstruct_message(&hello, SOURCE)
-            .await;
+            .await
+            .unwrap();
 
-        assert_matches!(result.map(|_| ()), Ok(()));
+        assert_eq!(
+            message.into_hello().map(|hello| hello.app_sequence),
+            Some(full_app_sequence())
+        );
+    }
+
+    #[tokio::test]
+    async fn accepts_bye_with_app_sequence() {
+        let bye = message(constants::WSD_BYE, FULL_APP_SEQUENCE, BYE_BODY);
+
+        let (_, message) = handler_for_tests(8)
+            .deconstruct_message(&bye, SOURCE)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            message.into_bye().map(|bye| bye.app_sequence),
+            Some(full_app_sequence())
+        );
     }
 
     #[tokio::test]
