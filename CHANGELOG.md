@@ -1,4 +1,43 @@
 <!-- header goes here -->
+## [0.7.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.6.4..v0.7.0) - 2026-10-04
+
+### 🐛 Bug Fixes
+
+- *(client)* Start `MATCH_TIMEOUT` at the last copy by [@kristof-mattei](https://github.com/kristof-mattei) ([`5d2b1b4`](https://github.com/kristof-mattei/wsdd-rs/commit/5d2b1b494007fcb91e2878232a68bc7999a932a2))
+- Pass non-UTF-8 `--chroot` paths to `chroot` instead of panicking by [@kristof-mattei](https://github.com/kristof-mattei) ([`551417a`](https://github.com/kristof-mattei/wsdd-rs/commit/551417a5182e7b2f33135308b10bcab27445a1c5))
+- Share one `AppSequence` counter across all interfaces by [@kristof-mattei](https://github.com/kristof-mattei) ([`e0fcf3c`](https://github.com/kristof-mattei/wsdd-rs/commit/e0fcf3cb8cc93dbb8b51c9a9bcc1cbf78c03468e))
+- Require every probed `Types` entry to match by [@kristof-mattei](https://github.com/kristof-mattei) ([`53f9831`](https://github.com/kristof-mattei/wsdd-rs/commit/53f983198c8a78fb06942a6a57e0bb8fc81341cb))
+- Reject `wsd:Probe` children out of `ProbeType` order by [@kristof-mattei](https://github.com/kristof-mattei) ([`4e7992f`](https://github.com/kristof-mattei/wsdd-rs/commit/4e7992f91e57cb8dee9e4082623b7631fd37c9d9))
+- Reject endpoint metadata children out of schema order by [@kristof-mattei](https://github.com/kristof-mattei) ([`81b98b4`](https://github.com/kristof-mattei/wsdd-rs/commit/81b98b4deb57723ff1b0c726fb87ff79c29b9655))
+- Handle every `wsd:ProbeMatch` in a `wsd:ProbeMatches` by [@kristof-mattei](https://github.com/kristof-mattei) ([`381d6bb`](https://github.com/kristof-mattei/wsdd-rs/commit/381d6bb7e26a075bba698b978644d0e1f31c4b55))
+- Accept a `wsd:ResolveMatches` without a match by [@kristof-mattei](https://github.com/kristof-mattei) ([`9407fdc`](https://github.com/kristof-mattei/wsdd-rs/commit/9407fdca21ba53670c39e855c9d2871bb3fc4a66))
+- Saturate netlink macro lengths instead of underflowing by [@kristof-mattei](https://github.com/kristof-mattei) ([`2372768`](https://github.com/kristof-mattei/wsdd-rs/commit/237276814a72c7be8efad47bcdc2b136155565d2))
+- Compute the next netlink element with `wrapping_byte_add` by [@kristof-mattei](https://github.com/kristof-mattei) ([`2a5546c`](https://github.com/kristof-mattei/wsdd-rs/commit/2a5546cf817b97fed52f21c34e789a3b13a95227))
+- Try the next XAddr when a metadata response has an HTTP error status by [@kristof-mattei](https://github.com/kristof-mattei) ([`c91c2ce`](https://github.com/kristof-mattei/wsdd-rs/commit/c91c2ce938fcffb8c4e8b224efd0bc76895fd774))
+- Stop forcing `ColorChoice::Always` on clap output by [@kristof-mattei](https://github.com/kristof-mattei) ([`4242b2a`](https://github.com/kristof-mattei/wsdd-rs/commit/4242b2a1cd7200a15b71ab312690c7f5a97e8838))
+- Log `NLMSG_NOOP` and netlink ACKs at debug, and the errno of an `NLMSG_ERROR` by [@kristof-mattei](https://github.com/kristof-mattei) ([`1c5cd88`](https://github.com/kristof-mattei/wsdd-rs/commit/1c5cd88af9cb6b3f786d474d2ae5232c87b02d97))
+- Keep the device order among XAddrs of equal priority by [@kristof-mattei](https://github.com/kristof-mattei) ([`20b746a`](https://github.com/kristof-mattei/wsdd-rs/commit/20b746ab1c7d69431384cb4529c5ee200a0a462f))
+- Reject a message with a second `soap:Header` by [@kristof-mattei](https://github.com/kristof-mattei) ([`90af636`](https://github.com/kristof-mattei/wsdd-rs/commit/90af6365ebd716bd75f13cc1b66404f40977527d))
+- Bind the IPv6 fallback socket to the WSD port instead of an ephemeral one by [@kristof-mattei](https://github.com/kristof-mattei) ([`b43b357`](https://github.com/kristof-mattei/wsdd-rs/commit/b43b3577f654c5032a1f31ad3603798261a0c711))
+- Run one handler for an IPv4 address with two masks by [@kristof-mattei](https://github.com/kristof-mattei) ([`b8f00ad`](https://github.com/kristof-mattei/wsdd-rs/commit/b8f00ad320d123f691fdc10b103bd524132d96f8))
+- Split API input into lines before parsing commands by [@kristof-mattei](https://github.com/kristof-mattei) ([`cbf79c0`](https://github.com/kristof-mattei/wsdd-rs/commit/cbf79c0c40a711bb8a09fe55fa3c8e45ccf35fd3))
+
+### 📚 Documentation
+
+- Explain `SO_REUSEADDR` on the WSD sockets by [@kristof-mattei](https://github.com/kristof-mattei) ([`ac1e5fe`](https://github.com/kristof-mattei/wsdd-rs/commit/ac1e5fe9294f1a21fc6d931db2f36b220832896e))
+
+### 🚜 Refactor
+
+- *(xml)* Add `find_optional_child` by [@kristof-mattei](https://github.com/kristof-mattei) ([`cbf9c2a`](https://github.com/kristof-mattei/wsdd-rs/commit/cbf9c2aa407cd58f55dff493e67dd8731f56bc9d))
+- Classify `wsd:Probe` children with `ProbeChild::from_name` by [@kristof-mattei](https://github.com/kristof-mattei) ([`37141d2`](https://github.com/kristof-mattei/wsdd-rs/commit/37141d2cb43e630ee999a536daa4776366d179a8))
+- Drop the redundant parentheses in `NLMSG_NEXT` by [@kristof-mattei](https://github.com/kristof-mattei) ([`f00ed9e`](https://github.com/kristof-mattei/wsdd-rs/commit/f00ed9e8cee12a5f217a6b9bfd0233dd33de3c0d))
+- Drop the identity casts in `RTA_NEXT` and `NLMSG_NEXT` by [@kristof-mattei](https://github.com/kristof-mattei) ([`25a6d3b`](https://github.com/kristof-mattei/wsdd-rs/commit/25a6d3bad8fdd1cda1d6b9b006f4cb94c1cbbc31))
+- Match every `XmlEvent` when tracking `XmlReader` depth by [@kristof-mattei](https://github.com/kristof-mattei) ([`65a8bd2`](https://github.com/kristof-mattei/wsdd-rs/commit/65a8bd2c9c7ed80d1d25c4e55ca5369e3b8619e9))
+- Drop unused equality on `NetworkAddress` and `NetworkInterface` by [@kristof-mattei](https://github.com/kristof-mattei) ([`7a9c62b`](https://github.com/kristof-mattei/wsdd-rs/commit/7a9c62b40e3856fed6ad13f1fc167e901b539a54))
+
+### 🧪 Testing
+
+- Separate the unique local and link-local `is_multicastable` cases by [@kristof-mattei](https://github.com/kristof-mattei) ([`cd0dce6`](https://github.com/kristof-mattei/wsdd-rs/commit/cd0dce617448fe6d342ce721708f422153bc93f4))
 ## [0.6.4](https://github.com/kristof-mattei/wsdd-rs/compare/v0.6.3..v0.6.4) - 2026-09-21
 
 ### 💼 Other
