@@ -4,6 +4,7 @@ use xml::reader::XmlEvent;
 
 use crate::constants;
 use crate::soap::parser::BodyParsingError;
+use crate::soap::parser::app_sequence::AppSequence;
 use crate::soap::parser::generic::{
     EndpointMetadata, extract_endpoint_metadata, require_metadata_version, require_valid_types,
 };
@@ -13,6 +14,7 @@ use crate::xml::{XmlError, XmlReader, find_child};
 type ParsedProbeMatchesResult = Result<ProbeMatches, BodyParsingError>;
 
 pub struct ProbeMatches {
+    pub app_sequence: AppSequence,
     pub matches: Vec<ProbeMatch>,
 }
 
@@ -25,7 +27,10 @@ pub struct ProbeMatch {
 ///
 /// This function makes NO claims about the position of the reader
 /// should the structure XML be invalid (e.g. missing `Address`).
-pub fn parse_probe_matches<R>(reader: &mut XmlReader<R>) -> ParsedProbeMatchesResult
+pub fn parse_probe_matches<R>(
+    reader: &mut XmlReader<R>,
+    app_sequence: AppSequence,
+) -> ParsedProbeMatchesResult
 where
     R: Read,
 {
@@ -84,7 +89,10 @@ where
         }
     }
 
-    Ok(ProbeMatches { matches })
+    Ok(ProbeMatches {
+        app_sequence,
+        matches,
+    })
 }
 
 #[cfg(test)]
@@ -94,6 +102,7 @@ mod tests {
 
     use crate::constants;
     use crate::soap::parser::BodyParsingError;
+    use crate::soap::parser::app_sequence::AppSequence;
     use crate::soap::parser::probe_match::{ProbeMatches, parse_probe_matches};
     use crate::xml::{XmlError, XmlReader};
 
@@ -123,7 +132,7 @@ mod tests {
                 .create_reader(xml.as_bytes()),
         );
 
-        parse_probe_matches(&mut reader)
+        parse_probe_matches(&mut reader, AppSequence::new(1, None, 0))
     }
 
     #[test]

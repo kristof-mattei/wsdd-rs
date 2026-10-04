@@ -296,14 +296,17 @@ fn parse_message_body(
             Ok(soap::parser::bye::parse_bye(&mut reader, app_sequence)?.into())
         },
         constants::WSD_PROBE_MATCH => {
-            require_app_sequence(header)?;
+            let app_sequence = require_app_sequence(header)?;
 
-            Ok(soap::parser::probe_match::parse_probe_matches(&mut reader)?.into())
+            Ok(soap::parser::probe_match::parse_probe_matches(&mut reader, app_sequence)?.into())
         },
         constants::WSD_RESOLVE_MATCH => {
-            require_app_sequence(header)?;
+            let app_sequence = require_app_sequence(header)?;
 
-            Ok(soap::parser::resolve_match::parse_resolve_matches(&mut reader)?.into())
+            Ok(
+                soap::parser::resolve_match::parse_resolve_matches(&mut reader, app_sequence)?
+                    .into(),
+            )
         },
         constants::WSD_PROBE => Ok(soap::parser::probe::parse_probe(&mut reader)?.into()),
         constants::WSD_RESOLVE => Ok(soap::parser::resolve::parse_resolve(&mut reader)?.into()),

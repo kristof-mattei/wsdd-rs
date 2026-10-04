@@ -20,6 +20,7 @@ use crate::constants;
 use crate::multicast_handler::{IncomingClientMessage, OutgoingMulticastMessage};
 use crate::network_address::NetworkAddress;
 use crate::soap::builder::Builder;
+use crate::soap::parser::app_sequence::AppSequence;
 use crate::soap::parser::bye::Bye;
 use crate::soap::parser::hello::Hello;
 use crate::soap::parser::probe_match::{ProbeMatch, ProbeMatches};
@@ -398,7 +399,10 @@ async fn handle_probe_matches(
     probes: Arc<RwLock<HashMap<MessageId, LastCopy>>>,
     mc_local_port_tx: &Sender<OutgoingMulticastMessage>,
     resolves: &mut HashMap<MessageId, LastCopy>,
-    ProbeMatches { matches }: ProbeMatches,
+    ProbeMatches {
+        app_sequence,
+        matches,
+    }: ProbeMatches,
 ) -> Result<(), eyre::Report> {
     let Some(relates_to) = relates_to else {
         event!(Level::DEBUG, "missing `RelatesTo`");
@@ -426,6 +430,7 @@ async fn handle_probe_matches(
             bound_to,
             mc_local_port_tx,
             resolves,
+            &app_sequence,
             probe_match,
         )
         .await
@@ -437,6 +442,7 @@ async fn handle_probe_matches(
     Ok(())
 }
 
+#[expect(clippy::too_many_arguments, reason = "WIP")]
 async fn handle_probe_match(
     client: &reqwest::Client,
     config: &Config,
@@ -444,16 +450,23 @@ async fn handle_probe_match(
     bound_to: &NetworkAddress,
     mc_local_port_tx: &Sender<OutgoingMulticastMessage>,
     resolves: &mut HashMap<MessageId, LastCopy>,
+    app_sequence: &AppSequence,
     ProbeMatch {
         endpoint,
         raw_xaddrs,
     }: ProbeMatch,
 ) -> Result<(), eyre::Report> {
+    let mut guard = devices.write().await;
+
+    guard.observe_match(&endpoint, app_sequence);
+
     match check_xaddrs(bound_to.address, "ProbeMatch", &endpoint, raw_xaddrs) {
         XAddrsCheck::Unusable => Ok(()),
         //  If no XAddrs are included in the ProbeMatches message, then the client may send a
         //  Resolve message by UDP multicast to port 3702.
         XAddrsCheck::Missing => {
+            drop(guard);
+
             event!(Level::INFO, "ProbeMatch without XAddrs, sending resolve");
 
             let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
@@ -465,7 +478,9 @@ async fn handle_probe_match(
             Ok(())
         },
         XAddrsCheck::Usable(xaddrs) => {
-            let exchange = devices.write().await.start_exchange(&endpoint);
+            let exchange = guard.start_exchange(&endpoint);
+
+            drop(guard);
 
             event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ProbeMatch");
 
@@ -486,7 +501,10 @@ async fn handle_resolve_matches(
     relates_to: Option<MessageId>,
     received_at: Instant,
     resolves: &mut HashMap<MessageId, LastCopy>,
-    ResolveMatches { resolve_match }: ResolveMatches,
+    ResolveMatches {
+        app_sequence,
+        resolve_match,
+    }: ResolveMatches,
 ) -> Result<(), eyre::Report> {
     let Some(relates_to) = relates_to else {
         event!(Level::DEBUG, "missing `RelatesTo`");
@@ -513,6 +531,10 @@ async fn handle_resolve_matches(
         return Ok(());
     };
 
+    let mut guard = devices.write().await;
+
+    guard.observe_match(&endpoint, &app_sequence);
+
     match check_xaddrs(bound_to.address, "ResolveMatch", &endpoint, raw_xaddrs) {
         XAddrsCheck::Unusable => Ok(()),
         XAddrsCheck::Missing => {
@@ -521,7 +543,9 @@ async fn handle_resolve_matches(
             Ok(())
         },
         XAddrsCheck::Usable(xaddrs) => {
-            let exchange = devices.write().await.start_exchange(&endpoint);
+            let exchange = guard.start_exchange(&endpoint);
+
+            drop(guard);
 
             event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ResolveMatch");
 
@@ -762,6 +786,8 @@ mod tests {
     use crate::soap::parser::app_sequence::AppSequence;
     use crate::soap::parser::bye::Bye;
     use crate::soap::parser::hello::Hello;
+    use crate::soap::parser::probe_match::ProbeMatch;
+    use crate::soap::parser::resolve_match::{ResolveMatch, ResolveMatches};
     use crate::soap::parser::xaddrs::XAddr;
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler_with_network_address};
@@ -770,7 +796,8 @@ mod tests {
     use crate::wsd::http::http_server::WSDHttpServer;
     use crate::wsd::udp::client::{
         LastCopy, WSDClient, XAddrsCheck, check_xaddrs, handle_bye, handle_hello, handle_metadata,
-        handle_probe_matches, handle_resolve_matches, parse_xaddrs, perform_metadata_exchange,
+        handle_probe_match, handle_probe_matches, handle_resolve_matches, parse_xaddrs,
+        perform_metadata_exchange,
     };
 
     #[test]
@@ -1281,6 +1308,298 @@ mod tests {
                 .observe_announcement(&endpoint, &AppSequence::new(1, None, 5)),
             Observation::Stale
         );
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn handles_probe_match_older_than_the_last_message() {
+        let (_message_handler, network_address) = build_message_handler_with_network_address(
+            IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // host
+        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
+            // a host in IPv4 form ensures we bind to an IPv4 address
+            host: "127.0.0.1",
+            // random port
+            port: 0,
+            assert_on_drop: true,
+        })
+        .await;
+
+        let metadata = format!(
+            include_str!("../../test/get-response-synology.xml"),
+            Uuid::now_v7().urn(),
+            Uuid::now_v7().urn(),
+        );
+
+        let metadata_exchange = server
+            .mock("POST", mockito::Matcher::Any)
+            .with_status(200)
+            .with_body(metadata)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let endpoint = new_endpoint();
+
+        client_devices
+            .write()
+            .await
+            .observe_announcement(&endpoint, &AppSequence::new(1, None, 6));
+
+        let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(1);
+
+        let mut resolves = HashMap::new();
+
+        let result = handle_probe_match(
+            &reqwest::ClientBuilder::new().build().unwrap(),
+            &client_config,
+            Arc::clone(&client_devices),
+            &network_address,
+            &multicast_tx,
+            &mut resolves,
+            &AppSequence::new(1, None, 5),
+            ProbeMatch {
+                endpoint: endpoint.clone(),
+                raw_xaddrs: Some(format!("http://{}/", server.socket_address()).into_boxed_str()),
+            },
+        )
+        .await;
+
+        assert_matches!(result, Ok(()));
+
+        metadata_exchange.assert_async().await;
+
+        assert!(client_devices.read().await.contains_key(&endpoint));
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn handles_resolve_match_older_than_the_last_message() {
+        let (_message_handler, network_address) = build_message_handler_with_network_address(
+            IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // host
+        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
+            // a host in IPv4 form ensures we bind to an IPv4 address
+            host: "127.0.0.1",
+            // random port
+            port: 0,
+            assert_on_drop: true,
+        })
+        .await;
+
+        let metadata = format!(
+            include_str!("../../test/get-response-synology.xml"),
+            Uuid::now_v7().urn(),
+            Uuid::now_v7().urn(),
+        );
+
+        let metadata_exchange = server
+            .mock("POST", mockito::Matcher::Any)
+            .with_status(200)
+            .with_body(metadata)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let endpoint = new_endpoint();
+
+        client_devices
+            .write()
+            .await
+            .observe_announcement(&endpoint, &AppSequence::new(1, None, 6));
+
+        let resolve_message_id = MessageId::from(Uuid::now_v7().urn());
+
+        let mut resolves =
+            HashMap::from([(resolve_message_id.clone(), LastCopy::Sent(Instant::now()))]);
+
+        let result = handle_resolve_matches(
+            &reqwest::ClientBuilder::new().build().unwrap(),
+            &client_config,
+            Arc::clone(&client_devices),
+            &network_address,
+            Some(resolve_message_id),
+            Instant::now(),
+            &mut resolves,
+            ResolveMatches {
+                app_sequence: AppSequence::new(1, None, 5),
+                resolve_match: Some(ResolveMatch {
+                    endpoint: endpoint.clone(),
+                    raw_xaddrs: Some(
+                        format!("http://{}/", server.socket_address()).into_boxed_str(),
+                    ),
+                }),
+            },
+        )
+        .await;
+
+        assert_matches!(result, Ok(()));
+
+        metadata_exchange.assert_async().await;
+
+        assert!(client_devices.read().await.contains_key(&endpoint));
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn adds_device_again_with_a_probe_match_older_than_the_last_bye() {
+        let (_message_handler, network_address) = build_message_handler_with_network_address(
+            IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // host
+        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
+            // a host in IPv4 form ensures we bind to an IPv4 address
+            host: "127.0.0.1",
+            // random port
+            port: 0,
+            assert_on_drop: true,
+        })
+        .await;
+
+        let metadata = format!(
+            include_str!("../../test/get-response-synology.xml"),
+            Uuid::now_v7().urn(),
+            Uuid::now_v7().urn(),
+        );
+
+        let metadata_exchange = server
+            .mock("POST", mockito::Matcher::Any)
+            .with_status(200)
+            .with_body(metadata)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let endpoint = new_endpoint();
+
+        let result = handle_bye(
+            Arc::clone(&client_devices),
+            Bye {
+                app_sequence: AppSequence::new(1, None, 7),
+                endpoint: endpoint.clone(),
+            },
+        )
+        .await;
+
+        assert_matches!(result, Ok(()));
+
+        let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(1);
+
+        let mut resolves = HashMap::new();
+
+        let result = handle_probe_match(
+            &reqwest::ClientBuilder::new().build().unwrap(),
+            &client_config,
+            Arc::clone(&client_devices),
+            &network_address,
+            &multicast_tx,
+            &mut resolves,
+            &AppSequence::new(1, None, 6),
+            ProbeMatch {
+                endpoint: endpoint.clone(),
+                raw_xaddrs: Some(format!("http://{}/", server.socket_address()).into_boxed_str()),
+            },
+        )
+        .await;
+
+        assert_matches!(result, Ok(()));
+
+        metadata_exchange.assert_async().await;
+
+        assert!(client_devices.read().await.contains_key(&endpoint));
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn adds_device_again_with_a_resolve_match_older_than_the_last_bye() {
+        let (_message_handler, network_address) = build_message_handler_with_network_address(
+            IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // host
+        let mut server = mockito::Server::new_with_opts_async(ServerOpts {
+            // a host in IPv4 form ensures we bind to an IPv4 address
+            host: "127.0.0.1",
+            // random port
+            port: 0,
+            assert_on_drop: true,
+        })
+        .await;
+
+        let metadata = format!(
+            include_str!("../../test/get-response-synology.xml"),
+            Uuid::now_v7().urn(),
+            Uuid::now_v7().urn(),
+        );
+
+        let metadata_exchange = server
+            .mock("POST", mockito::Matcher::Any)
+            .with_status(200)
+            .with_body(metadata)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let endpoint = new_endpoint();
+
+        let result = handle_bye(
+            Arc::clone(&client_devices),
+            Bye {
+                app_sequence: AppSequence::new(1, None, 7),
+                endpoint: endpoint.clone(),
+            },
+        )
+        .await;
+
+        assert_matches!(result, Ok(()));
+
+        let resolve_message_id = MessageId::from(Uuid::now_v7().urn());
+
+        let mut resolves =
+            HashMap::from([(resolve_message_id.clone(), LastCopy::Sent(Instant::now()))]);
+
+        let result = handle_resolve_matches(
+            &reqwest::ClientBuilder::new().build().unwrap(),
+            &client_config,
+            Arc::clone(&client_devices),
+            &network_address,
+            Some(resolve_message_id),
+            Instant::now(),
+            &mut resolves,
+            ResolveMatches {
+                app_sequence: AppSequence::new(1, None, 6),
+                resolve_match: Some(ResolveMatch {
+                    endpoint: endpoint.clone(),
+                    raw_xaddrs: Some(
+                        format!("http://{}/", server.socket_address()).into_boxed_str(),
+                    ),
+                }),
+            },
+        )
+        .await;
+
+        assert_matches!(result, Ok(()));
+
+        metadata_exchange.assert_async().await;
+
+        assert!(client_devices.read().await.contains_key(&endpoint));
     }
 
     #[cfg_attr(not(miri), tokio::test)]
