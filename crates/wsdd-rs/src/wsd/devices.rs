@@ -1,18 +1,40 @@
+use std::collections::VecDeque;
+
 use color_eyre::eyre;
 use hashbrown::HashMap;
 use hashbrown::hash_map::{Entry, EntryRef};
 use tokio_util::sync::CancellationToken;
 
 use crate::network_address::NetworkAddress;
+use crate::soap::parser::app_sequence::AppSequence;
 use crate::soap::parser::xaddrs::XAddr;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 
+/// The most sequences the ordering state tracks across all Target Services, which is WSDAPI's bound.
+const MAX_SEQUENCES: usize = 128;
+
 /// The discovered devices, shared by the clients of every interface.
+/// It also holds the order of the messages each Target Service sent, see documentation/ws-discovery.pdf, Appendix I.
 #[derive(Default)]
 pub struct Devices {
     discovered: HashMap<DeviceUri, WSDDiscoveredDevice>,
+    /// In insertion order.
+    sequences: VecDeque<Sequence>,
     /// The Target Services with a metadata exchange in progress.
     exchanges: HashMap<DeviceUri, Exchanges>,
+}
+
+/// The last message of one sequence of the Target Service at `endpoint`.
+struct Sequence {
+    endpoint: DeviceUri,
+    last: AppSequence,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Observation {
+    Current,
+    /// Older than a message received before it from the same Target Service.
+    Stale,
 }
 
 #[derive(Default)]
@@ -67,6 +89,29 @@ impl Devices {
         departed
     }
 
+    /// Records a Hello or Bye of the Target Service at `endpoint`.
+    pub fn observe_announcement(
+        &mut self,
+        endpoint: &DeviceUri,
+        app_sequence: &AppSequence,
+    ) -> Observation {
+        if self.is_stale(endpoint, app_sequence) {
+            return Observation::Stale;
+        }
+
+        self.advance(endpoint, app_sequence);
+
+        Observation::Current
+    }
+
+    /// Records a `ProbeMatch` or `ResolveMatch` of the Target Service at `endpoint`, which answers our own Probe or Resolve and is never stale.
+    /// An older match leaves the order as it is.
+    pub fn observe_match(&mut self, endpoint: &DeviceUri, app_sequence: &AppSequence) {
+        if !self.is_stale(endpoint, app_sequence) {
+            self.advance(endpoint, app_sequence);
+        }
+    }
+
     pub fn store(
         &mut self,
         endpoint: DeviceUri,
@@ -99,6 +144,7 @@ impl Devices {
         self.discovered.remove(endpoint)
     }
 
+    /// Forgets the discovered devices, not the order of their messages.
     pub fn clear(&mut self) {
         self.discovered.clear();
     }
@@ -126,6 +172,32 @@ impl Devices {
     pub fn has_running_exchanges(&self) -> bool {
         !self.exchanges.is_empty()
     }
+
+    fn is_stale(&self, endpoint: &DeviceUri, app_sequence: &AppSequence) -> bool {
+        self.sequences
+            .iter()
+            .any(|sequence| sequence.endpoint == *endpoint && app_sequence < &sequence.last)
+    }
+
+    fn advance(&mut self, endpoint: &DeviceUri, app_sequence: &AppSequence) {
+        // replaces in place the newest entry it orders after: its own sequence, or a sequence of an older instance
+        if let Some(sequence) = self.sequences.iter_mut().rev().find(|sequence| {
+            sequence.endpoint == *endpoint && sequence.last.partial_cmp(app_sequence).is_some()
+        }) {
+            sequence.last = app_sequence.clone();
+
+            return;
+        }
+
+        if self.sequences.len() == MAX_SEQUENCES {
+            self.sequences.pop_front();
+        }
+
+        self.sequences.push_back(Sequence {
+            endpoint: endpoint.clone(),
+            last: app_sequence.clone(),
+        });
+    }
 }
 
 #[cfg(test)]
@@ -134,34 +206,276 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
+    use crate::soap::parser::app_sequence::AppSequence;
     use crate::wsd::device::DeviceUri;
-    use crate::wsd::devices::Devices;
+    use crate::wsd::devices::{Devices, MAX_SEQUENCES, Observation};
 
-    fn endpoint() -> DeviceUri {
-        DeviceUri::new(Box::from("urn:uuid:00000000-0000-0000-0000-000000000001"))
+    fn endpoint(id: usize) -> DeviceUri {
+        DeviceUri::new(format!("urn:uuid:00000000-0000-0000-0000-{:012}", id).into_boxed_str())
+    }
+
+    fn sequence(instance_id: u64, message_number: u64) -> AppSequence {
+        AppSequence::new(instance_id, Some("urn:uuid:a"), message_number)
+    }
+
+    fn in_sequence(sequence_id: Option<&str>, message_number: u64) -> AppSequence {
+        AppSequence::new(1, sequence_id, message_number)
+    }
+
+    #[test]
+    fn first_message_is_current() {
+        let mut devices = Devices::default();
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(1), &sequence(1, 5)),
+            Observation::Current
+        );
+    }
+
+    #[test]
+    fn lower_message_number_is_stale() {
+        let mut devices = Devices::default();
+
+        devices.observe_announcement(&endpoint(1), &sequence(1, 5));
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(1), &sequence(1, 4)),
+            Observation::Stale
+        );
+    }
+
+    #[test]
+    fn equal_message_is_current() {
+        let mut devices = Devices::default();
+
+        devices.observe_announcement(&endpoint(1), &sequence(1, 5));
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(1), &sequence(1, 5)),
+            Observation::Current
+        );
+    }
+
+    #[test]
+    fn clear_keeps_the_order() {
+        let mut devices = Devices::default();
+
+        devices.observe_announcement(&endpoint(1), &sequence(1, 5));
+
+        devices.clear();
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(1), &sequence(1, 4)),
+            Observation::Stale
+        );
+    }
+
+    #[test]
+    fn stale_message_does_not_move_the_last_message() {
+        let mut devices = Devices::default();
+
+        devices.observe_announcement(&endpoint(1), &sequence(1, 5));
+        devices.observe_announcement(&endpoint(1), &sequence(1, 3));
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(1), &sequence(1, 4)),
+            Observation::Stale
+        );
+    }
+
+    #[test]
+    fn lower_instance_is_stale() {
+        let mut devices = Devices::default();
+
+        devices.observe_announcement(&endpoint(1), &sequence(2, 0));
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(1), &sequence(1, 9)),
+            Observation::Stale
+        );
+    }
+
+    #[test]
+    fn different_sequences_are_current() {
+        let mut devices = Devices::default();
+
+        devices.observe_announcement(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 5));
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(1), &in_sequence(Some("urn:uuid:b"), 3)),
+            Observation::Current
+        );
+    }
+
+    #[test]
+    fn each_sequence_keeps_its_order() {
+        let mut devices = Devices::default();
+
+        devices.observe_announcement(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 5));
+        devices.observe_announcement(&endpoint(1), &in_sequence(Some("urn:uuid:b"), 3));
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 4)),
+            Observation::Stale
+        );
+    }
+
+    #[test]
+    fn null_sequence_keeps_its_order() {
+        let mut devices = Devices::default();
+
+        devices.observe_announcement(&endpoint(1), &in_sequence(None, 5));
+        devices.observe_announcement(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 3));
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(1), &in_sequence(None, 4)),
+            Observation::Stale
+        );
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(1), &in_sequence(Some("urn:uuid:b"), 1)),
+            Observation::Current
+        );
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 2)),
+            Observation::Stale
+        );
+    }
+
+    #[test]
+    fn newer_instance_restarts_the_sequences() {
+        let mut devices = Devices::default();
+
+        devices.observe_announcement(&endpoint(1), &AppSequence::new(1, Some("urn:uuid:a"), 5));
+        devices.observe_announcement(&endpoint(1), &AppSequence::new(2, Some("urn:uuid:b"), 5));
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(1), &AppSequence::new(2, Some("urn:uuid:a"), 0)),
+            Observation::Current
+        );
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(1), &AppSequence::new(1, Some("urn:uuid:a"), 9)),
+            Observation::Stale
+        );
+    }
+
+    #[test]
+    fn newer_instance_replaces_the_newest_entry_it_orders_after() {
+        let mut devices = Devices::default();
+
+        devices.observe_announcement(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:a"), 5));
+        devices.observe_announcement(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:b"), 5));
+
+        for id in 1..MAX_SEQUENCES - 1 {
+            devices.observe_announcement(&endpoint(id), &sequence(1, 5));
+        }
+
+        devices.observe_announcement(&endpoint(0), &AppSequence::new(2, Some("urn:uuid:c"), 0));
+
+        // evicts the entry of sequence a
+        devices.observe_announcement(&endpoint(MAX_SEQUENCES - 1), &sequence(1, 5));
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:d"), 9)),
+            Observation::Stale
+        );
+
+        // evicts the entry that sequence c replaced
+        devices.observe_announcement(&endpoint(MAX_SEQUENCES), &sequence(1, 5));
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:d"), 9)),
+            Observation::Current
+        );
+    }
+
+    #[test]
+    fn full_state_forgets_the_first_inserted() {
+        let mut devices = Devices::default();
+
+        for id in 0..=MAX_SEQUENCES {
+            devices.observe_announcement(&endpoint(id), &sequence(1, 5));
+        }
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(1), &sequence(1, 4)),
+            Observation::Stale
+        );
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(0), &sequence(1, 4)),
+            Observation::Current
+        );
+    }
+
+    #[test]
+    fn advanced_entry_keeps_its_place() {
+        let mut devices = Devices::default();
+
+        for id in 0..MAX_SEQUENCES {
+            devices.observe_announcement(&endpoint(id), &sequence(1, 5));
+        }
+
+        devices.observe_announcement(&endpoint(0), &sequence(1, 6));
+
+        devices.observe_announcement(&endpoint(MAX_SEQUENCES), &sequence(1, 5));
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(0), &sequence(1, 5)),
+            Observation::Current
+        );
+    }
+
+    #[test]
+    fn newer_match_advances_the_order() {
+        let mut devices = Devices::default();
+
+        devices.observe_match(&endpoint(1), &sequence(1, 7));
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(1), &sequence(1, 6)),
+            Observation::Stale
+        );
+    }
+
+    #[test]
+    fn older_match_leaves_the_order() {
+        let mut devices = Devices::default();
+
+        devices.observe_announcement(&endpoint(1), &sequence(1, 10));
+
+        devices.observe_match(&endpoint(1), &sequence(1, 5));
+
+        assert_eq!(
+            devices.observe_announcement(&endpoint(1), &sequence(1, 7)),
+            Observation::Stale
+        );
     }
 
     #[test]
     fn bye_during_an_exchange_departs() {
         let mut devices = Devices::default();
 
-        let exchange = devices.start_exchange(&endpoint());
-        devices.depart(&endpoint());
+        let exchange = devices.start_exchange(&endpoint(1));
 
-        assert!(devices.finish_exchange(&endpoint(), exchange));
+        devices.depart(&endpoint(1));
+
+        assert!(devices.finish_exchange(&endpoint(1), exchange));
     }
 
     #[tokio::test]
     async fn bye_stops_a_running_exchange() {
         let mut devices = Devices::default();
 
-        let exchange = devices.start_exchange(&endpoint());
+        let exchange = devices.start_exchange(&endpoint(1));
 
         let (output, ()) = tokio::time::timeout(Duration::from_secs(5), async {
             tokio::join!(
                 exchange.run_until_bye(std::future::pending::<()>()),
                 async {
-                    devices.depart(&endpoint());
+                    devices.depart(&endpoint(1));
                 }
             )
         })
@@ -175,9 +489,11 @@ mod tests {
     async fn exchange_started_after_a_bye_runs() {
         let mut devices = Devices::default();
 
-        let before = devices.start_exchange(&endpoint());
-        devices.depart(&endpoint());
-        let after = devices.start_exchange(&endpoint());
+        let before = devices.start_exchange(&endpoint(1));
+
+        devices.depart(&endpoint(1));
+
+        let after = devices.start_exchange(&endpoint(1));
 
         assert_eq!(before.run_until_bye(async { 1 }).await, None);
         assert_eq!(after.run_until_bye(async { 1 }).await, Some(1));
@@ -187,36 +503,41 @@ mod tests {
     fn bye_before_an_exchange_does_not_depart() {
         let mut devices = Devices::default();
 
-        devices.depart(&endpoint());
-        let exchange = devices.start_exchange(&endpoint());
+        devices.depart(&endpoint(1));
 
-        assert!(!devices.finish_exchange(&endpoint(), exchange));
+        let exchange = devices.start_exchange(&endpoint(1));
+
+        assert!(!devices.finish_exchange(&endpoint(1), exchange));
     }
 
     #[test]
     fn exchange_started_after_a_bye_does_not_depart() {
         let mut devices = Devices::default();
 
-        let before = devices.start_exchange(&endpoint());
-        devices.depart(&endpoint());
-        let after = devices.start_exchange(&endpoint());
+        let before = devices.start_exchange(&endpoint(1));
 
-        assert!(devices.finish_exchange(&endpoint(), before));
-        assert!(!devices.finish_exchange(&endpoint(), after));
+        devices.depart(&endpoint(1));
+
+        let after = devices.start_exchange(&endpoint(1));
+
+        assert!(devices.finish_exchange(&endpoint(1), before));
+        assert!(!devices.finish_exchange(&endpoint(1), after));
     }
 
     #[test]
     fn finished_exchanges_leave_no_state() {
         let mut devices = Devices::default();
 
-        let first = devices.start_exchange(&endpoint());
-        let second = devices.start_exchange(&endpoint());
-        devices.depart(&endpoint());
-        devices.finish_exchange(&endpoint(), first);
+        let first = devices.start_exchange(&endpoint(1));
+        let second = devices.start_exchange(&endpoint(1));
+
+        devices.depart(&endpoint(1));
+
+        devices.finish_exchange(&endpoint(1), first);
 
         assert!(devices.has_running_exchanges());
 
-        devices.finish_exchange(&endpoint(), second);
+        devices.finish_exchange(&endpoint(1), second);
 
         assert!(!devices.has_running_exchanges());
     }
@@ -225,7 +546,7 @@ mod tests {
     fn bye_without_an_exchange_leaves_no_state() {
         let mut devices = Devices::default();
 
-        devices.depart(&endpoint());
+        devices.depart(&endpoint(1));
 
         assert!(!devices.has_running_exchanges());
     }

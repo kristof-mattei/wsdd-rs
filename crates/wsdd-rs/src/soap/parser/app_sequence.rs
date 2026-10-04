@@ -6,7 +6,7 @@ use xml::attribute::OwnedAttribute;
 use crate::soap::parser::generic::parse_unsigned_int;
 
 /// The `wsd:AppSequence` header block of a received message, see documentation/ws-discovery.pdf, Appendix I.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AppSequence {
     instance_id: u64,
     sequence_id: Option<Box<str>>,
