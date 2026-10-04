@@ -179,6 +179,12 @@ impl Devices {
         Observation::Current
     }
 
+    /// Records a `ProbeMatch` or `ResolveMatch` of the Target Service at `endpoint`.
+    /// A match is never stale, and an older one leaves the order as it is.
+    pub fn observe_match(&mut self, endpoint: &DeviceUri, app_sequence: &AppSequence) {
+        self.observe(endpoint, app_sequence);
+    }
+
     pub fn store(
         &mut self,
         endpoint: DeviceUri,
@@ -560,6 +566,32 @@ mod tests {
         assert_eq!(
             devices.observe(&endpoint(0), &sequence(1, 5)),
             Observation::Current
+        );
+    }
+
+    #[test]
+    fn newer_match_advances_the_order() {
+        let mut devices = Devices::default();
+
+        devices.observe_match(&endpoint(1), &sequence(1, 7));
+
+        assert_eq!(
+            devices.observe(&endpoint(1), &sequence(1, 6)),
+            Observation::Stale
+        );
+    }
+
+    #[test]
+    fn older_match_leaves_the_order() {
+        let mut devices = Devices::default();
+
+        devices.observe(&endpoint(1), &sequence(1, 10));
+
+        devices.observe_match(&endpoint(1), &sequence(1, 5));
+
+        assert_eq!(
+            devices.observe(&endpoint(1), &sequence(1, 7)),
+            Observation::Stale
         );
     }
 

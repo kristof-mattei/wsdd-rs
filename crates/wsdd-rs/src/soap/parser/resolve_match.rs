@@ -4,6 +4,7 @@ use xml::reader::XmlEvent;
 
 use crate::constants;
 use crate::soap::parser::BodyParsingError;
+use crate::soap::parser::app_sequence::AppSequence;
 use crate::soap::parser::generic::{
     EndpointMetadata, RawXAddrs, extract_endpoint_metadata, require_metadata_version,
     require_valid_types,
@@ -14,6 +15,7 @@ use crate::xml::{XmlError, XmlReader, find_child};
 type ParsedResolveMatchesResult = Result<ResolveMatches, BodyParsingError>;
 
 pub struct ResolveMatches {
+    pub app_sequence: AppSequence,
     pub resolve_match: Option<ResolveMatch>,
 }
 
@@ -27,7 +29,10 @@ pub struct ResolveMatch {
 ///
 /// This function makes NO claims about the position of the reader
 /// should the structure XML be invalid (e.g. missing `Address`).
-pub fn parse_resolve_matches<R>(reader: &mut XmlReader<R>) -> ParsedResolveMatchesResult
+pub fn parse_resolve_matches<R>(
+    reader: &mut XmlReader<R>,
+    app_sequence: AppSequence,
+) -> ParsedResolveMatchesResult
 where
     R: Read,
 {
@@ -95,7 +100,10 @@ where
         }
     }
 
-    Ok(ResolveMatches { resolve_match })
+    Ok(ResolveMatches {
+        app_sequence,
+        resolve_match,
+    })
 }
 
 #[cfg(test)]
@@ -105,6 +113,7 @@ mod tests {
 
     use crate::constants;
     use crate::soap::parser::BodyParsingError;
+    use crate::soap::parser::app_sequence::AppSequence;
     use crate::soap::parser::resolve_match::{ResolveMatches, parse_resolve_matches};
     use crate::xml::{XmlError, XmlReader};
 
@@ -128,7 +137,7 @@ mod tests {
                 .create_reader(xml.as_bytes()),
         );
 
-        parse_resolve_matches(&mut reader)
+        parse_resolve_matches(&mut reader, AppSequence::new(1, None, 0))
     }
 
     #[test]
