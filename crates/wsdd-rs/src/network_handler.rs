@@ -182,7 +182,7 @@ where
                 },
                 Command::ClearDevices => {
                     if self.config.discovery {
-                        self.devices.write().await.clear();
+                        self.devices.write().await.clear_discovered();
                     }
                 },
                 Command::ListDevices {
