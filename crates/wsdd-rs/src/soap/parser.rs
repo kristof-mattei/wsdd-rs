@@ -296,14 +296,17 @@ fn parse_message_body(
             Ok(soap::parser::bye::parse_bye(&mut reader, app_sequence)?.into())
         },
         constants::WSD_PROBE_MATCH => {
-            require_app_sequence(header)?;
+            let app_sequence = require_app_sequence(header)?;
 
-            Ok(soap::parser::probe_match::parse_probe_matches(&mut reader)?.into())
+            Ok(soap::parser::probe_match::parse_probe_matches(&mut reader, app_sequence)?.into())
         },
         constants::WSD_RESOLVE_MATCH => {
-            require_app_sequence(header)?;
+            let app_sequence = require_app_sequence(header)?;
 
-            Ok(soap::parser::resolve_match::parse_resolve_matches(&mut reader)?.into())
+            Ok(
+                soap::parser::resolve_match::parse_resolve_matches(&mut reader, app_sequence)?
+                    .into(),
+            )
         },
         constants::WSD_PROBE => Ok(soap::parser::probe::parse_probe(&mut reader)?.into()),
         constants::WSD_RESOLVE => Ok(soap::parser::resolve::parse_resolve(&mut reader)?.into()),
@@ -618,6 +621,10 @@ mod tests {
 
     const BYE_BODY: &str = "<wsd:Bye><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference></wsd:Bye>";
 
+    const PROBE_MATCHES_BODY: &str = "<wsd:ProbeMatches><wsd:ProbeMatch><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:MetadataVersion>1</wsd:MetadataVersion></wsd:ProbeMatch></wsd:ProbeMatches>";
+
+    const RESOLVE_MATCHES_BODY: &str = "<wsd:ResolveMatches><wsd:ResolveMatch><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:XAddrs>http://192.168.100.5:5357/</wsd:XAddrs><wsd:MetadataVersion>1</wsd:MetadataVersion></wsd:ResolveMatch></wsd:ResolveMatches>";
+
     const FULL_APP_SEQUENCE: &str = r#"<wsd:AppSequence InstanceId="3" SequenceId="urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9" MessageNumber="7" />"#;
 
     fn full_app_sequence() -> AppSequence {
@@ -687,6 +694,48 @@ mod tests {
 
         assert_eq!(
             message.into_hello().map(|hello| hello.app_sequence),
+            Some(full_app_sequence())
+        );
+    }
+
+    #[tokio::test]
+    async fn accepts_probe_matches_with_app_sequence() {
+        let probe_matches = message(
+            constants::WSD_PROBE_MATCH,
+            FULL_APP_SEQUENCE,
+            PROBE_MATCHES_BODY,
+        );
+
+        let (_, message) = handler_for_tests(8)
+            .deconstruct_message(&probe_matches, SOURCE)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            message
+                .into_probe_matches()
+                .map(|probe_matches| probe_matches.app_sequence),
+            Some(full_app_sequence())
+        );
+    }
+
+    #[tokio::test]
+    async fn accepts_resolve_matches_with_app_sequence() {
+        let resolve_matches = message(
+            constants::WSD_RESOLVE_MATCH,
+            FULL_APP_SEQUENCE,
+            RESOLVE_MATCHES_BODY,
+        );
+
+        let (_, message) = handler_for_tests(8)
+            .deconstruct_message(&resolve_matches, SOURCE)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            message
+                .into_resolve_matches()
+                .map(|resolve_matches| resolve_matches.app_sequence),
             Some(full_app_sequence())
         );
     }
