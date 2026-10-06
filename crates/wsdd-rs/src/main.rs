@@ -69,7 +69,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 fn build_filter() -> (EnvFilter, Option<eyre::Report>) {
     fn build_default_filter() -> EnvFilter {
         EnvFilter::builder()
-            .parse("warn")
+            .parse(format!("INFO,{}=TRACE", env!("CARGO_CRATE_NAME")))
             .expect("Default filter should always work")
     }
 
