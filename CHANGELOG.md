@@ -1,4 +1,107 @@
 <!-- header goes here -->
+## [0.7.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.6.4..v0.7.0) - 2026-10-06
+
+### 🚀 Features
+
+- Reject Hello, Bye and matches without a valid `wsd:AppSequence` by [@kristof-mattei](https://github.com/kristof-mattei) ([`2befc34`](https://github.com/kristof-mattei/wsdd-rs/commit/2befc34ea665d58a0935f8b743ce78fee455527b))
+- Reject Hello and matches without a valid `wsd:MetadataVersion` by [@kristof-mattei](https://github.com/kristof-mattei) ([`7b0a48a`](https://github.com/kristof-mattei/wsdd-rs/commit/7b0a48a2118e48cf12845a029e5f9044e4547496))
+- Abort the metadata exchange when the device sends a Bye by [@kristof-mattei](https://github.com/kristof-mattei) ([`8b09769`](https://github.com/kristof-mattei/wsdd-rs/commit/8b09769e120dc1decd945313fa5b8a714250e7c9))
+- Ignore Hello and Bye older than an earlier message of the same device by [@kristof-mattei](https://github.com/kristof-mattei) ([`450f368`](https://github.com/kristof-mattei/wsdd-rs/commit/450f3680350b67f5c4a15041287d1c8662dd63a5))
+- Ignore a Hello or Bye older than an earlier ProbeMatch or ResolveMatch by [@kristof-mattei](https://github.com/kristof-mattei) ([`7e36fa3`](https://github.com/kristof-mattei/wsdd-rs/commit/7e36fa38bb0d1fb59b5404a6221d70c632f2af17))
+- Log at `INFO` and `wsdd_rs` at `TRACE` by default by [@kristof-mattei](https://github.com/kristof-mattei) ([`3683cbb`](https://github.com/kristof-mattei/wsdd-rs/commit/3683cbb41a02531f38ab0bf05911e06607e586b0))
+
+### 🐛 Bug Fixes
+
+- *(client)* Start `MATCH_TIMEOUT` at the last copy by [@kristof-mattei](https://github.com/kristof-mattei) ([`5d2b1b4`](https://github.com/kristof-mattei/wsdd-rs/commit/5d2b1b494007fcb91e2878232a68bc7999a932a2))
+- *(deps)* Update rust crate thiserror to v2.0.21 by [@renovate[bot]](https://github.com/renovate[bot]) ([`1df9e7a`](https://github.com/kristof-mattei/wsdd-rs/commit/1df9e7af721493f558c10b439359673cc4bfe8a5))
+- *(deps)* Update rust crate hyper-util to v0.1.21 by [@renovate[bot]](https://github.com/renovate[bot]) ([`ff193bd`](https://github.com/kristof-mattei/wsdd-rs/commit/ff193bdf43433b3380e6f26a9a4c4ef6392ed1ed))
+- *(deps)* Update rust crate uuid to v1.27.0 by [@renovate[bot]](https://github.com/renovate[bot]) ([`100a542`](https://github.com/kristof-mattei/wsdd-rs/commit/100a5425cdaa6919feb3f1710c25b953f1c0a82d))
+- *(deps)* Update rust crate tokio to v1.53.2 by [@renovate[bot]](https://github.com/renovate[bot]) ([`7a71c85`](https://github.com/kristof-mattei/wsdd-rs/commit/7a71c85b839b081a46704fbbcc4a95edff77cf25))
+- *(deps)* Update rust crate ringmap to v0.2.8 by [@renovate[bot]](https://github.com/renovate[bot]) ([`cd75de9`](https://github.com/kristof-mattei/wsdd-rs/commit/cd75de9639347f76361fc97bfd0a3a9b5acab1c3))
+- Pass non-UTF-8 `--chroot` paths to `chroot` instead of panicking by [@kristof-mattei](https://github.com/kristof-mattei) ([`551417a`](https://github.com/kristof-mattei/wsdd-rs/commit/551417a5182e7b2f33135308b10bcab27445a1c5))
+- Share one `AppSequence` counter across all interfaces by [@kristof-mattei](https://github.com/kristof-mattei) ([`e0fcf3c`](https://github.com/kristof-mattei/wsdd-rs/commit/e0fcf3cb8cc93dbb8b51c9a9bcc1cbf78c03468e))
+- Require every probed `Types` entry to match by [@kristof-mattei](https://github.com/kristof-mattei) ([`53f9831`](https://github.com/kristof-mattei/wsdd-rs/commit/53f983198c8a78fb06942a6a57e0bb8fc81341cb))
+- Keep parsing a `Probe` after its `Types` by [@kristof-mattei](https://github.com/kristof-mattei) ([`13019cc`](https://github.com/kristof-mattei/wsdd-rs/commit/13019cc3b30e898835e4f73e4def809a4a59066a))
+- Reject `wsd:Probe` children out of `ProbeType` order by [@kristof-mattei](https://github.com/kristof-mattei) ([`4e7992f`](https://github.com/kristof-mattei/wsdd-rs/commit/4e7992f91e57cb8dee9e4082623b7631fd37c9d9))
+- Reject endpoint metadata children out of schema order by [@kristof-mattei](https://github.com/kristof-mattei) ([`81b98b4`](https://github.com/kristof-mattei/wsdd-rs/commit/81b98b4deb57723ff1b0c726fb87ff79c29b9655))
+- Handle every `wsd:ProbeMatch` in a `wsd:ProbeMatches` by [@kristof-mattei](https://github.com/kristof-mattei) ([`381d6bb`](https://github.com/kristof-mattei/wsdd-rs/commit/381d6bb7e26a075bba698b978644d0e1f31c4b55))
+- Accept a `wsd:ResolveMatches` without a match by [@kristof-mattei](https://github.com/kristof-mattei) ([`9407fdc`](https://github.com/kristof-mattei/wsdd-rs/commit/9407fdca21ba53670c39e855c9d2871bb3fc4a66))
+- Saturate netlink macro lengths instead of underflowing by [@kristof-mattei](https://github.com/kristof-mattei) ([`2372768`](https://github.com/kristof-mattei/wsdd-rs/commit/237276814a72c7be8efad47bcdc2b136155565d2))
+- Compute the next netlink element with `wrapping_byte_add` by [@kristof-mattei](https://github.com/kristof-mattei) ([`2a5546c`](https://github.com/kristof-mattei/wsdd-rs/commit/2a5546cf817b97fed52f21c34e789a3b13a95227))
+- Try the next XAddr when a metadata response has an HTTP error status by [@kristof-mattei](https://github.com/kristof-mattei) ([`c91c2ce`](https://github.com/kristof-mattei/wsdd-rs/commit/c91c2ce938fcffb8c4e8b224efd0bc76895fd774))
+- Stop forcing `ColorChoice::Always` on clap output by [@kristof-mattei](https://github.com/kristof-mattei) ([`4242b2a`](https://github.com/kristof-mattei/wsdd-rs/commit/4242b2a1cd7200a15b71ab312690c7f5a97e8838))
+- Log `NLMSG_NOOP` and netlink ACKs at debug, and the errno of an `NLMSG_ERROR` by [@kristof-mattei](https://github.com/kristof-mattei) ([`1c5cd88`](https://github.com/kristof-mattei/wsdd-rs/commit/1c5cd88af9cb6b3f786d474d2ae5232c87b02d97))
+- Keep the device order among XAddrs of equal priority by [@kristof-mattei](https://github.com/kristof-mattei) ([`20b746a`](https://github.com/kristof-mattei/wsdd-rs/commit/20b746ab1c7d69431384cb4529c5ee200a0a462f))
+- Reject a message with a second `soap:Header` by [@kristof-mattei](https://github.com/kristof-mattei) ([`90af636`](https://github.com/kristof-mattei/wsdd-rs/commit/90af6365ebd716bd75f13cc1b66404f40977527d))
+- Bind the IPv6 fallback socket to the WSD port instead of an ephemeral one by [@kristof-mattei](https://github.com/kristof-mattei) ([`b43b357`](https://github.com/kristof-mattei/wsdd-rs/commit/b43b3577f654c5032a1f31ad3603798261a0c711))
+- Run one handler for an IPv4 address with two masks by [@kristof-mattei](https://github.com/kristof-mattei) ([`b8f00ad`](https://github.com/kristof-mattei/wsdd-rs/commit/b8f00ad320d123f691fdc10b103bd524132d96f8))
+- Split API input into lines before parsing commands by [@kristof-mattei](https://github.com/kristof-mattei) ([`cbf79c0`](https://github.com/kristof-mattei/wsdd-rs/commit/cbf79c0c40a711bb8a09fe55fa3c8e45ccf35fd3))
+- Log a failed `IPV6_MULTICAST_ALL` unset at debug by [@kristof-mattei](https://github.com/kristof-mattei) ([`17068ff`](https://github.com/kristof-mattei/wsdd-rs/commit/17068ff6e95922f23fc65207a31b2a4b6f1a3443))
+- Reject a sign or non-XML whitespace in `xs:unsignedInt` values by [@kristof-mattei](https://github.com/kristof-mattei) ([`5283a41`](https://github.com/kristof-mattei/wsdd-rs/commit/5283a414d7933a812fa2c0da112a3445d25c5151))
+- Reject messages declared as XML 1.1 by [@kristof-mattei](https://github.com/kristof-mattei) ([`870c19e`](https://github.com/kristof-mattei/wsdd-rs/commit/870c19e024ad8834d46bbab0212addf17b3dc86d))
+- Reject a header with more than one `wsd:AppSequence` by [@kristof-mattei](https://github.com/kristof-mattei) ([`973dc63`](https://github.com/kristof-mattei/wsdd-rs/commit/973dc63aaf5a6c86ed3956bd046a1983a5351ee4))
+- Accept a Bye whose `wsd:MetadataVersion` is not an `xs:unsignedInt` by [@kristof-mattei](https://github.com/kristof-mattei) ([`6a3314d`](https://github.com/kristof-mattei/wsdd-rs/commit/6a3314d69d905188592a3e998fda4ebf6f8dadc1))
+- Reject Hello, matches and Probes whose `wsd:Types` has an invalid entry by [@kristof-mattei](https://github.com/kristof-mattei) ([`ef979bc`](https://github.com/kristof-mattei/wsdd-rs/commit/ef979bc9f604b0e1e323321796f45f865a4acdb5))
+- Reject a ResolveMatch without `wsd:XAddrs` by [@kristof-mattei](https://github.com/kristof-mattei) ([`dd507a5`](https://github.com/kristof-mattei/wsdd-rs/commit/dd507a5f77bda0e33d71b8b3f8cdd53504838cef))
+- Discard the fetched metadata when a Bye arrived during the exchange by [@kristof-mattei](https://github.com/kristof-mattei) ([`0564167`](https://github.com/kristof-mattei/wsdd-rs/commit/056416737198d6001b0bfa96a4385cc81482a74f))
+- Report the `AlignedBuffer` length in bytes instead of elements in `Debug` by [@kristof-mattei](https://github.com/kristof-mattei) ([`088b8ae`](https://github.com/kristof-mattei/wsdd-rs/commit/088b8aeb47d47b14c898b978fe57a68ae6c8e242))
+
+### 📚 Documentation
+
+- Explain `SO_REUSEADDR` on the WSD sockets by [@kristof-mattei](https://github.com/kristof-mattei) ([`ac1e5fe`](https://github.com/kristof-mattei/wsdd-rs/commit/ac1e5fe9294f1a21fc6d931db2f36b220832896e))
+- Vendor DPWS, WS-Addressing, SOAP 1.1/1.2 and RFC 2396 by [@kristof-mattei](https://github.com/kristof-mattei) ([`98fb7ff`](https://github.com/kristof-mattei/wsdd-rs/commit/98fb7ff3dd00b07a87486113d4066b19b5d61ed0))
+- Explain why `Hello` always includes `Types` and `XAddrs` by [@kristof-mattei](https://github.com/kristof-mattei) ([`ff21995`](https://github.com/kristof-mattei/wsdd-rs/commit/ff2199505925f271d2fc6cca51b67f1eb14bad66))
+- Explain `IPV6_V6ONLY` on the WSD multicast socket by [@kristof-mattei](https://github.com/kristof-mattei) ([`e4e1b3f`](https://github.com/kristof-mattei/wsdd-rs/commit/e4e1b3fa3f3a04b404a3b3c5d457ddf18c753e8e))
+- Drop settled TODOs from the README and move the backport baseline to `be083d4` by [@kristof-mattei](https://github.com/kristof-mattei) ([`aa5d2ba`](https://github.com/kristof-mattei/wsdd-rs/commit/aa5d2ba5d48b57faf34e9bd152b02278cefa0d3b))
+- Vendor XML Schema Part 2 by [@kristof-mattei](https://github.com/kristof-mattei) ([`78c328d`](https://github.com/kristof-mattei/wsdd-rs/commit/78c328d437cebd59c5a663292b038f0c9ae9b9c9))
+- Shorten the `parse_unsigned_int` and `metadata_version` comments by [@kristof-mattei](https://github.com/kristof-mattei) ([`19dfb6b`](https://github.com/kristof-mattei/wsdd-rs/commit/19dfb6baf4b7cd505d9b9fcd6aaad1c3a33e098d))
+
+### 🚜 Refactor
+
+- *(xml)* Add `find_optional_child` by [@kristof-mattei](https://github.com/kristof-mattei) ([`cbf9c2a`](https://github.com/kristof-mattei/wsdd-rs/commit/cbf9c2aa407cd58f55dff493e67dd8731f56bc9d))
+- Classify `wsd:Probe` children with `ProbeChild::from_name` by [@kristof-mattei](https://github.com/kristof-mattei) ([`37141d2`](https://github.com/kristof-mattei/wsdd-rs/commit/37141d2cb43e630ee999a536daa4776366d179a8))
+- Drop the redundant parentheses in `NLMSG_NEXT` by [@kristof-mattei](https://github.com/kristof-mattei) ([`f00ed9e`](https://github.com/kristof-mattei/wsdd-rs/commit/f00ed9e8cee12a5f217a6b9bfd0233dd33de3c0d))
+- Drop the identity casts in `RTA_NEXT` and `NLMSG_NEXT` by [@kristof-mattei](https://github.com/kristof-mattei) ([`25a6d3b`](https://github.com/kristof-mattei/wsdd-rs/commit/25a6d3bad8fdd1cda1d6b9b006f4cb94c1cbbc31))
+- Match every `XmlEvent` when tracking `XmlReader` depth by [@kristof-mattei](https://github.com/kristof-mattei) ([`65a8bd2`](https://github.com/kristof-mattei/wsdd-rs/commit/65a8bd2c9c7ed80d1d25c4e55ca5369e3b8619e9))
+- Drop unused equality on `NetworkAddress` and `NetworkInterface` by [@kristof-mattei](https://github.com/kristof-mattei) ([`7a9c62b`](https://github.com/kristof-mattei/wsdd-rs/commit/7a9c62b40e3856fed6ad13f1fc167e901b539a54))
+- Drop the fixed flow label from the IPv6 multicast address by [@kristof-mattei](https://github.com/kristof-mattei) ([`bc28148`](https://github.com/kristof-mattei/wsdd-rs/commit/bc28148412dc1d4966f6b5eb7d88d9f7b5dc7299))
+- Share the XAddrs checks of Hello, ProbeMatch and ResolveMatch by [@kristof-mattei](https://github.com/kristof-mattei) ([`3910d2c`](https://github.com/kristof-mattei/wsdd-rs/commit/3910d2c39716299e19f0665e9f44902196643e20))
+- Type the `AppSequence` `InstanceId` as `u64` by [@kristof-mattei](https://github.com/kristof-mattei) ([`c52690f`](https://github.com/kristof-mattei/wsdd-rs/commit/c52690f8cbc7f1ec21d9701ed953617889ca6d6b))
+- Report why a `wsd:AppSequence` is invalid by [@kristof-mattei](https://github.com/kristof-mattei) ([`84e9c35`](https://github.com/kristof-mattei/wsdd-rs/commit/84e9c3563485ec500b4363c03bf4c3bb6af7a7ce))
+- Wrap the discovered devices in `Devices` by [@kristof-mattei](https://github.com/kristof-mattei) ([`1640d47`](https://github.com/kristof-mattei/wsdd-rs/commit/1640d474885b0f0fb0975213ff1decd016420e44))
+- Trim `xs:unsignedInt` values with `is_whitespace_char` by [@kristof-mattei](https://github.com/kristof-mattei) ([`b98ab3f`](https://github.com/kristof-mattei/wsdd-rs/commit/b98ab3f0a155d6d7eb436cb8ae9c589b930340bd))
+- Accept any `AsRef<[u8]>` in `deconstruct_message` and `deconstruct_http_message` by [@kristof-mattei](https://github.com/kristof-mattei) ([`a3d9890`](https://github.com/kristof-mattei/wsdd-rs/commit/a3d989018da4fb7a3d770746fe22e66ad1f23bdb))
+- Rename `observe_announcement` to `observe` by [@kristof-mattei](https://github.com/kristof-mattei) ([`a061774`](https://github.com/kristof-mattei/wsdd-rs/commit/a0617743116b76419e5bff2b7c22aade91c448e1))
+
+### 🧪 Testing
+
+- Separate the unique local and link-local `is_multicastable` cases by [@kristof-mattei](https://github.com/kristof-mattei) ([`cd0dce6`](https://github.com/kristof-mattei/wsdd-rs/commit/cd0dce617448fe6d342ce721708f422153bc93f4))
+- Round-trip the metadata exchange between the HTTP server and the client by [@kristof-mattei](https://github.com/kristof-mattei) ([`6956736`](https://github.com/kristof-mattei/wsdd-rs/commit/695673620f023e4281719022de692c67e3813323))
+- Write through `DerefMut` of `AlignedBuffer` and read the bytes back by [@kristof-mattei](https://github.com/kristof-mattei) ([`b24c817`](https://github.com/kristof-mattei/wsdd-rs/commit/b24c81718303ad3c310a728c2ec72e23835ff9e8))
+- Move repeated client test setup into helpers by [@kristof-mattei](https://github.com/kristof-mattei) ([`e00932c`](https://github.com/kristof-mattei/wsdd-rs/commit/e00932c4d454f44b43d41d8cb4e0477558f209c9))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* Increase timeouts by [@kristof-mattei](https://github.com/kristof-mattei) ([`afdcbb4`](https://github.com/kristof-mattei/wsdd-rs/commit/afdcbb4ad0875a47571030915a6e00c07283b90e))
+- *(cspell)* Skip `documentation/` by [@kristof-mattei](https://github.com/kristof-mattei) ([`c185bd8`](https://github.com/kristof-mattei/wsdd-rs/commit/c185bd87fed67d646789a737bbc559d936608650))
+- *(docker)* Compare the PR image against its base commit's image instead of `edge` by [@kristof-mattei](https://github.com/kristof-mattei) ([`73bd78b`](https://github.com/kristof-mattei/wsdd-rs/commit/73bd78b97674f97a64d1b60f3fa294d8fcf5cf3a))
+- *(github)* Lint the pull request title by [@kristof-mattei](https://github.com/kristof-mattei) ([`35a772a`](https://github.com/kristof-mattei/wsdd-rs/commit/35a772aaf4901097a0d8c27bd681515f8f1f9bea))
+- *(release)* Compare the release commit's base image instead of `edge` by [@kristof-mattei](https://github.com/kristof-mattei) ([`08f21ab`](https://github.com/kristof-mattei/wsdd-rs/commit/08f21ab3ca6724b24275b69c9479a49fba0823a2))
+- Drop commented-out Python that we have already implemented by [@kristof-mattei](https://github.com/kristof-mattei) ([`4eeecbb`](https://github.com/kristof-mattei/wsdd-rs/commit/4eeecbbcc7367745471725e16144411b6ff9341f))
+- Drop the `is_global` TODO from `is_multicastable` by [@kristof-mattei](https://github.com/kristof-mattei) ([`28791cd`](https://github.com/kristof-mattei/wsdd-rs/commit/28791cd6cdc9e6162cc8490b87e372ee16d80db1))
+- Shfmt by [@kristof-mattei](https://github.com/kristof-mattei) ([`6fbb336`](https://github.com/kristof-mattei/wsdd-rs/commit/6fbb3360eb67cbb99bd16caf8ba3b51e8e1af54f))
+- Support GitHub stacked PRs by [@kristof-mattei](https://github.com/kristof-mattei) ([`5f43637`](https://github.com/kristof-mattei/wsdd-rs/commit/5f43637d79da34027396a78034bc9618e9d1aaf8))
+- Run the changelog selection check on stacked PRs by [@kristof-mattei](https://github.com/kristof-mattei) ([`02e9dd7`](https://github.com/kristof-mattei/wsdd-rs/commit/02e9dd7b88a57134eadcf5034a1cdc9418d1c928))
+- Fail the retag when the PR's artifacts were built against another base by [@kristof-mattei](https://github.com/kristof-mattei) ([`4f413a3`](https://github.com/kristof-mattei/wsdd-rs/commit/4f413a3ee58db1614ba3437e6ee9188be9668dc8))
+- Identify the build cache's PR from the incoming PR's image by [@kristof-mattei](https://github.com/kristof-mattei) ([`adfa27a`](https://github.com/kristof-mattei/wsdd-rs/commit/adfa27aa44c8f8a8ac1d0e7437d05e4cb96842ce))
+- End the `grcov` test-module exclusion at the closing brace by [@kristof-mattei](https://github.com/kristof-mattei) ([`12d6daf`](https://github.com/kristof-mattei/wsdd-rs/commit/12d6daf7f488ff326e1ce0f0015c17b80a7a0971))
+- End the `grcov` test-module branch exclusion at the closing brace by [@kristof-mattei](https://github.com/kristof-mattei) ([`2a9d642`](https://github.com/kristof-mattei/wsdd-rs/commit/2a9d6424a522b62e6c9f5bdd9b11c44bb8239dd1))
+- End the `grcov` test-module exclusions only at a bare closing brace by [@kristof-mattei](https://github.com/kristof-mattei) ([`0e0176f`](https://github.com/kristof-mattei/wsdd-rs/commit/0e0176f7f2120fa4ea73e52e1ad987ba62319b8f))
+- Consolidate the coverage pipeline into `generate-test-report.sh` by [@kristof-mattei](https://github.com/kristof-mattei) ([`a30c4db`](https://github.com/kristof-mattei/wsdd-rs/commit/a30c4dbb2df96934f42afd83df484c328e3eeba0))
+
+### ◀️ Revert
+
+- *(github)* Lint the pull request title by [@kristof-mattei](https://github.com/kristof-mattei) ([`d5d1305`](https://github.com/kristof-mattei/wsdd-rs/commit/d5d1305b1026c616cc8a12e141e9f32546fca5eb))
 ## [0.6.4](https://github.com/kristof-mattei/wsdd-rs/compare/v0.6.3..v0.6.4) - 2026-09-21
 
 ### 💼 Other
