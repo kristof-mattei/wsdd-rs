@@ -29,6 +29,7 @@ grcov "${profraw_files[@]}" \
     --excl-br-start "mod tests \{" \
     --excl-line "(#\\[derive\\()|(^\s*.await[;,]?$)" \
     --excl-start "mod tests \{" \
+    --excl-stop "^}" \
     --ignore-not-existing \
     --keep-only "crates/**" \
     --llvm \
