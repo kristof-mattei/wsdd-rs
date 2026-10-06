@@ -683,7 +683,7 @@ jobs:
 
               echo "Copying ${source} to ${tag} (attempt ${attempt} of 3)"
 
-              if skopeo copy --all --preserve-digests --src-tls-verify=false --command-timeout 70s --retry-times 5 "${source}" "docker://${tag}"; then
+              if skopeo copy --all --preserve-digests --src-tls-verify=false --command-timeout 5m --retry-times 5 "${source}" "docker://${tag}"; then
                 return 0
               fi
             done
@@ -711,7 +711,7 @@ jobs:
           while IFS= read -r new_tag; do
             echo "Inspecting ${new_tag}:"
 
-            skopeo inspect --raw --command-timeout 70s --retry-times 5 "docker://${new_tag}"
+            skopeo inspect --raw --command-timeout 5m --retry-times 5 "docker://${new_tag}"
 
             # empty to get newline
             echo ""
