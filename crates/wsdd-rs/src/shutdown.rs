@@ -43,12 +43,24 @@ impl Termination for Shutdown {
         match self {
             Shutdown::Success => ExitCode::SUCCESS,
             Shutdown::Signal(signal) => {
+                // 128 + n is the shell's exit code for death by signal n
+                let exit_code = ExitCode::from(128 + signal);
+
+                // `terminate_by_signal` cannot kill PID 1
+                if std::process::id() == 1 {
+                    event!(
+                        Level::INFO,
+                        signal,
+                        exit_code = ?exit_code,
+                        "Running as PID 1, exiting with an exit code instead of re-raising the signal"
+                    );
+
+                    return exit_code;
+                }
+
                 event!(Level::INFO, signal, "Terminating by re-raising the signal");
 
                 terminate_by_signal(signal);
-
-                // the process survived the raise, 128 + n is the shell's exit code for death by signal n
-                let exit_code = ExitCode::from(128 + signal);
 
                 event!(
                     Level::WARN,
