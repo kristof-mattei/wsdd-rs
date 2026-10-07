@@ -1,5 +1,10 @@
 <!-- header goes here -->
-## [0.7.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.6.4..v0.7.0) - 2026-10-06
+## [0.7.1](https://github.com/kristof-mattei/wsdd-rs/compare/v0.7.0..v0.7.1) - 2026-10-07
+
+### 🐛 Bug Fixes
+
+- Exit with 128+n as PID 1 instead of warning about a failed re-raise by [@kristof-mattei](https://github.com/kristof-mattei) ([`5b5f191`](https://github.com/kristof-mattei/wsdd-rs/commit/5b5f191ef20a6706d961f34106f6a53ff5bdc6af))
+## [0.7.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.6.4..v0.7.0) - 2026-10-07
 
 ### 🚀 Features
 
