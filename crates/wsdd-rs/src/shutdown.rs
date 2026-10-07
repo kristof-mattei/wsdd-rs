@@ -3,13 +3,13 @@ use std::process::{ExitCode, Termination};
 use color_eyre::eyre;
 use tracing::{Level, event};
 
-use crate::signal_handlers::terminate_by_signal;
+use crate::signal_handlers::{Signal, terminate_by_signal};
 
 /// Represents all ways the application can terminate.
 pub enum Shutdown {
     #[expect(unused, reason = "Application is a daemon")]
     Success,
-    Signal(u8),
+    Signal(Signal),
     OperationalFailure {
         code: ExitCode,
         message: &'static str,
@@ -21,7 +21,7 @@ impl std::fmt::Display for Shutdown {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
             Shutdown::Success => write!(f, "Clean shutdown"),
-            Shutdown::Signal(s) => write!(f, "Signal {}", s),
+            Shutdown::Signal(signal) => write!(f, "Signal {}", signal.number()),
             Shutdown::OperationalFailure { code, message } => {
                 write!(
                     f,
@@ -44,13 +44,13 @@ impl Termination for Shutdown {
             Shutdown::Success => ExitCode::SUCCESS,
             Shutdown::Signal(signal) => {
                 // 128 + n is the shell's exit code for death by signal n
-                let exit_code = ExitCode::from(128 + signal);
+                let exit_code = ExitCode::from(128 + signal.number());
 
                 // `terminate_by_signal` cannot kill PID 1
                 if std::process::id() == 1 {
                     event!(
                         Level::INFO,
-                        signal,
+                        signal = signal.number(),
                         exit_code = ?exit_code,
                         "Running as PID 1, exiting with an exit code instead of re-raising the signal"
                     );
@@ -58,13 +58,17 @@ impl Termination for Shutdown {
                     return exit_code;
                 }
 
-                event!(Level::INFO, signal, "Terminating by re-raising the signal");
+                event!(
+                    Level::INFO,
+                    signal = signal.number(),
+                    "Terminating by re-raising the signal"
+                );
 
                 terminate_by_signal(signal);
 
                 event!(
                     Level::WARN,
-                    signal,
+                    signal = signal.number(),
                     exit_code = ?exit_code,
                     "Survived the re-raise, falling back to an exit code"
                 );
