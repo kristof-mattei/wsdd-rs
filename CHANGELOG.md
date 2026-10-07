@@ -1,4 +1,21 @@
 <!-- header goes here -->
+## [0.8.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.7.1..v0.8.0) - 2026-10-07
+
+### 🚀 Features
+
+- Log the `MetadataVersion` of Hello, ProbeMatch and ResolveMatch by [@kristof-mattei](https://github.com/kristof-mattei) ([`ead521e`](https://github.com/kristof-mattei/wsdd-rs/commit/ead521ee0633c52733862b5fa3f925a8b8f50698))
+
+### 🐛 Bug Fixes
+
+- Send the boot time as `MetadataVersion` by [@kristof-mattei](https://github.com/kristof-mattei) ([`aee9462`](https://github.com/kristof-mattei/wsdd-rs/commit/aee9462802ebd1a551f16fe143cb9352b281d6bd))
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove CodeQL by [@kristof-mattei](https://github.com/kristof-mattei) ([`e065d20`](https://github.com/kristof-mattei/wsdd-rs/commit/e065d201dcd7901fa879e98f95795dd22adaec55))
+
+### 💼 Other
+
+- Inline `build-scripts` into the `Dockerfile` by [@kristof-mattei](https://github.com/kristof-mattei) ([`9fcfac0`](https://github.com/kristof-mattei/wsdd-rs/commit/9fcfac00d115a651c6de13c257c33ab217aef0e0))
 ## [0.7.1](https://github.com/kristof-mattei/wsdd-rs/compare/v0.7.0..v0.7.1) - 2026-10-07
 
 ### 🐛 Bug Fixes
