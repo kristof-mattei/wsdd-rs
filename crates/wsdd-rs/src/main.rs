@@ -38,9 +38,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use color_eyre::config::HookBuilder;
-use color_eyre::eyre;
+use color_eyre::eyre::{self, Context as _};
 use dotenvy::dotenv;
-use task_tracker_ext::TaskTrackerExt as _;
+use futures_util::future::{BoxFuture, FutureExt as _};
+use futures_util::stream::{FuturesUnordered, StreamExt as _};
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::Sender;
 use tokio::time::timeout;
@@ -236,12 +237,9 @@ async fn start_tasks(args: CliArgs) -> Shutdown {
     let recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>> =
         Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES)));
 
-    // shutdown broadcast: every task watches this token (or a child of it) to know
-    // when to stop, and holds a drop guard on it, so a task stopping on its own
-    // takes the others down with it
     let cancellation_token = CancellationToken::new();
 
-    let tasks = tokio_util::task::TaskTracker::new();
+    let mut tasks = FuturesUnordered::new();
 
     let (command_tx, command_rx) = tokio::sync::mpsc::channel(10);
     let (start_tx, start_rx) = tokio::sync::watch::channel::<()>(());
@@ -254,16 +252,15 @@ async fn start_tasks(args: CliArgs) -> Shutdown {
         recent_messages,
     );
 
-    {
-        let cancellation_token = cancellation_token.clone();
-        let config = Arc::clone(&config);
-        let command_tx = command_tx.clone();
-
-        tasks.spawn_with_name(
-            "address monitor",
-            launch_address_monitor(cancellation_token, command_tx, start_rx, config),
-        );
-    }
+    tasks.push(spawn_task(
+        "address monitor",
+        launch_address_monitor(
+            cancellation_token.child_token(),
+            command_tx.clone(),
+            start_rx,
+            Arc::clone(&config),
+        ),
+    ));
 
     if !config.no_autostart {
         if let Err(error) = network_handler.set_active() {
@@ -271,43 +268,27 @@ async fn start_tasks(args: CliArgs) -> Shutdown {
         }
     }
 
-    {
-        let cancellation_token = cancellation_token.clone();
-
-        tasks.spawn_with_name(
-            "network handler",
-            launch_network_handler(cancellation_token, network_handler),
-        );
-    }
+    tasks.push(spawn_task(
+        "network handler",
+        launch_network_handler(network_handler),
+    ));
 
     if let Some(listen_on) = config.listen.clone() {
-        let cancellation_token = cancellation_token.clone();
-        let command_tx = command_tx.clone();
-
-        tasks.spawn_with_name(
+        tasks.push(spawn_task(
             "api server",
-            launch_api_server(cancellation_token, command_tx, listen_on),
-        );
+            launch_api_server(
+                cancellation_token.child_token(),
+                command_tx.clone(),
+                listen_on,
+            ),
+        ));
     }
 
-    // done enrolling tasks in this tracker
-    tasks.close();
-
-    // now we wait forever for either
-    // * the cancellation token. we only cancel it ourselves after this select, so
-    //   here it means a task stopped on its own, which tasks only do on failure
-    // * SIGTERM
-    // * CTRL+c (SIGINT)
     // biased so that when multiple are ready at once, task failure wins over signals
     let shutdown_reason = tokio::select! {
         biased;
-        () = cancellation_token.cancelled() => {
-            event!(Level::WARN, "Underlying task stopped, stopping all other tasks");
-
-            Shutdown::OperationalFailure {
-                code: ExitCode::FAILURE,
-                message: "A task failed, triggering a shutdown"
-            }
+        Some((name, result)) = tasks.next() => {
+            task_stopped(name, result)
         },
         result = signal_handlers::wait_for_sigterm() => {
             result
@@ -317,11 +298,22 @@ async fn start_tasks(args: CliArgs) -> Shutdown {
         },
     };
 
-    // backup, in case we forgot a dropguard somewhere
     cancellation_token.cancel();
 
-    // wait for the other tasks to shut down gracefully
-    let drained = timeout(Duration::from_secs(10), tasks.wait()).await.is_ok();
+    let drained = timeout(Duration::from_secs(10), async {
+        while let Some((name, result)) = tasks.next().await {
+            if let Err(report) = result {
+                event!(
+                    Level::ERROR,
+                    task = name,
+                    ?report,
+                    "Task failed during the shutdown"
+                );
+            }
+        }
+    })
+    .await
+    .is_ok();
 
     if !drained {
         event!(Level::ERROR, "Tasks didn't stop within allotted time!");
@@ -345,74 +337,67 @@ async fn launch_address_monitor(
     command_tx: Sender<Command>,
     start_rx: tokio::sync::watch::Receiver<()>,
     config: Arc<Config>,
-) {
-    let _guard = cancellation_token.clone().drop_guard();
+) -> Result<(), eyre::Report> {
+    let address_monitor = create_address_monitor(cancellation_token, command_tx, start_rx, config)
+        .wrap_err("Failed to create address monitor")?;
 
-    let address_monitor = match create_address_monitor(
-        cancellation_token.child_token(),
-        command_tx,
-        start_rx,
-        Arc::clone(&config),
-    ) {
-        Ok(address_monitor) => address_monitor,
-        Err(error) => {
-            event!(Level::ERROR, ?error, "Failed to create address monitor");
-
-            return;
-        },
-    };
-
-    match address_monitor.process_changes().await {
-        Ok(()) => event!(Level::INFO, "Address Monitor stopped listening"),
-        Err(error) => {
-            event!(Level::ERROR, ?error, "Address Monitor stopped unexpectedly");
-        },
-    }
+    let result = address_monitor.process_changes().await;
 
     address_monitor.teardown().await;
+
+    result
 }
 
 async fn launch_api_server(
     cancellation_token: CancellationToken,
     command_tx: Sender<Command>,
     listen_on: PortOrSocket,
-) {
-    let _guard = cancellation_token.clone().drop_guard();
+) -> Result<(), eyre::Report> {
+    let api_server = api_server::ApiServer::new(cancellation_token, &listen_on, command_tx)
+        .wrap_err("Failed to start API Server")?;
 
-    let api_server = match api_server::ApiServer::new(
-        cancellation_token.child_token(),
-        &listen_on,
-        command_tx,
-    ) {
-        Ok(api_server) => api_server,
-        Err(error) => {
-            event!(Level::ERROR, ?error, "Failed to start API Server");
-            return;
-        },
-    };
-
-    match api_server.handle_connections().await {
-        Ok(()) => event!(Level::INFO, "API Server stopped listening"),
-        Err(error) => {
-            event!(Level::ERROR, ?error, "API Server stopped unexpectedly");
-        },
-    }
+    let result = api_server.handle_connections().await;
 
     api_server.teardown();
+
+    result
 }
 
-async fn launch_network_handler(
-    cancellation_token: CancellationToken,
-    mut network_handler: NetworkHandler,
-) {
-    let _guard = cancellation_token.drop_guard();
-
-    match network_handler.process_commands().await {
-        Ok(()) => event!(Level::INFO, "Network Handler stopped listening"),
-        Err(error) => {
-            event!(Level::ERROR, ?error, "Network Handler stopped unexpectedly");
-        },
-    }
+async fn launch_network_handler(mut network_handler: NetworkHandler) -> Result<(), eyre::Report> {
+    let result = network_handler.process_commands().await;
 
     network_handler.teardown().await;
+
+    result
+}
+
+type TaskResult = Result<(), eyre::Report>;
+
+fn spawn_task<F>(name: &'static str, task: F) -> BoxFuture<'static, (&'static str, TaskResult)>
+where
+    F: Future<Output = TaskResult> + Send + 'static,
+{
+    let handle = spawn_with_name(name, task);
+
+    async move {
+        let result = match handle.await {
+            Ok(result) => result,
+            Err(join_error) => Err(eyre::Report::new(join_error)),
+        };
+
+        (name, result)
+    }
+    .boxed()
+}
+
+/// Every task runs until the shutdown, so one that stops before it is a failure.
+fn task_stopped(name: &'static str, result: TaskResult) -> Shutdown {
+    match result {
+        Ok(()) => {
+            Shutdown::UnexpectedError(eyre::eyre!("Task `{}` stopped before the shutdown", name))
+        },
+        Err(report) => {
+            Shutdown::UnexpectedError(report.wrap_err(format!("Task `{}` failed", name)))
+        },
+    }
 }
