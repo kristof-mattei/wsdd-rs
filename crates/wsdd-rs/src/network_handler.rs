@@ -22,6 +22,7 @@ use crate::network_address::NetworkAddress;
 use crate::network_handler::address_handlers::AddressHandlers;
 use crate::network_interface::{LibcInterfaceNameResolver, NetworkInterface, ResolveInterfaceName};
 use crate::soap::MessageId;
+use crate::task_tracker_ext::TaskTrackerExt as _;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 use crate::wsd::devices::Devices;
 
@@ -437,7 +438,7 @@ where
         let tasks = TaskTracker::new();
 
         for mch in self.multicast_handlers.drain() {
-            tasks.spawn(async move {
+            tasks.spawn_with_name("multicast handler teardown", async move {
                 mch.teardown(true).await;
             });
         }

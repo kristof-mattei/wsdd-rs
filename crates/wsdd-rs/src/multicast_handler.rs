@@ -24,6 +24,7 @@ use crate::soap::parser::Header;
 use crate::soap::{
     ClientMessage, HostMessage, MessageId, MessageType, MulticastMessage, UnicastMessage,
 };
+use crate::task_tracker_ext::TaskTrackerExt as _;
 use crate::udp_address::UdpAddress;
 use crate::udp_socket_with_addr::UdpSocketWithAddr;
 use crate::url_ip_addr::UrlIpAddr;
@@ -684,22 +685,15 @@ where
                         let socket = Arc::clone(&socket);
                         let network_address = network_address.clone();
 
-                        spawn_with_name(
-                            "message sender",
-                            tracker.track_future(async move {
-                                let last_copy_sent_at = repeatedly_send_buffer::<T>(
-                                    socket,
-                                    message,
-                                    &network_address,
-                                    to,
-                                )
-                                .await;
+                        tracker.spawn_with_name("message sender", async move {
+                            let last_copy_sent_at =
+                                repeatedly_send_buffer::<T>(socket, message, &network_address, to)
+                                    .await;
 
-                                if let Some(last_copy_tx) = last_copy_tx {
-                                    let _r = last_copy_tx.send(last_copy_sent_at);
-                                }
-                            }),
-                        );
+                            if let Some(last_copy_tx) = last_copy_tx {
+                                let _r = last_copy_tx.send(last_copy_sent_at);
+                            }
+                        });
                     }
                 }
 
