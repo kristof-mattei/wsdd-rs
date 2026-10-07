@@ -161,7 +161,7 @@ impl ApiServer {
                         tokio::task::spawn(async move {
                             match timeout(
                                 Duration::from_secs(5),
-                                stream.write_all("No slots available".as_bytes()),
+                                stream.write_all("No slots available\n".as_bytes()),
                             )
                             .await
                             {
@@ -301,7 +301,7 @@ where
     let command = match str::from_utf8(raw_command) {
         Ok(command) => command.trim(),
         Err(_error) => {
-            writer.write_all("Invalid UTF-8".as_bytes()).await?;
+            writer.write_all("Invalid UTF-8\n".as_bytes()).await?;
 
             return Ok(true);
         },
@@ -323,7 +323,7 @@ where
                 .is_err()
             {
                 writer
-                    .write_all("Failed to issue probe command. Please retry.".as_bytes())
+                    .write_all("Failed to issue probe command. Please retry.\n".as_bytes())
                     .await?;
 
                 return Ok(true);
@@ -334,7 +334,7 @@ where
 
             if command_tx.send(Command::ClearDevices).await.is_err() {
                 writer
-                    .write_all("Failed to issue clear command. Please retry.".as_bytes())
+                    .write_all("Failed to issue clear command. Please retry.\n".as_bytes())
                     .await?;
 
                 return Ok(true);
@@ -352,7 +352,7 @@ where
                 .is_err()
             {
                 writer
-                    .write_all("Failed to issue list command. Please retry.".as_bytes())
+                    .write_all("Failed to issue list command. Please retry.\n".as_bytes())
                     .await?;
                 return Ok(true);
             }
@@ -372,19 +372,19 @@ where
         "start" => {
             if command_tx.send(Command::Start).await.is_err() {
                 writer
-                    .write_all("Failed to issue start command. Please retry.".as_bytes())
+                    .write_all("Failed to issue start command. Please retry.\n".as_bytes())
                     .await?;
             }
         },
         "stop" => {
             if command_tx.send(Command::Stop).await.is_err() {
                 writer
-                    .write_all("Failed to issue stop command. Please retry.".as_bytes())
+                    .write_all("Failed to issue stop command. Please retry.\n".as_bytes())
                     .await?;
             }
         },
         "help" => {
-            let list = "Valid commands are: \"clear\", \"probe\", \"list\", \"quit\", \"start\", \"stop\", \"help\"";
+            let list = "Valid commands are: \"clear\", \"probe\", \"list\", \"quit\", \"start\", \"stop\", \"help\"\n";
 
             writer.write_all(list.as_bytes()).await?;
         },
@@ -505,7 +505,17 @@ mod tests {
     async fn answers_after_invalid_utf8() {
         let response = serve(&b"\xff\nlist\n"[..]).await;
 
-        assert_eq!(response, "Invalid UTF-8.\n");
+        assert_eq!(response, "Invalid UTF-8\n.\n");
+    }
+
+    #[tokio::test]
+    async fn answers_help_with_a_newline() {
+        let response = serve(&b"help\nlist\n"[..]).await;
+
+        assert_eq!(
+            response,
+            "Valid commands are: \"clear\", \"probe\", \"list\", \"quit\", \"start\", \"stop\", \"help\"\n.\n"
+        );
     }
 
     #[tokio::test]
@@ -599,7 +609,7 @@ mod tests {
             .await
             .expect("Failed to read the rejection");
 
-        assert_eq!(response, "No slots available");
+        assert_eq!(response, "No slots available\n");
 
         cancellation_token.cancel();
     }
