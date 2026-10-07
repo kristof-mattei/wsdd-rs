@@ -24,7 +24,16 @@ where
 {
     find_child(reader, Some(constants::XML_WSD_NAMESPACE), "Bye")?;
 
-    let EndpointMetadata { endpoint, .. } = extract_endpoint_metadata(reader)?;
+    let EndpointMetadata {
+        endpoint,
+        metadata_version,
+        ..
+    } = extract_endpoint_metadata(reader)?;
+
+    // optional in `ByeType` (documentation/ws-discovery.pdf, Appendix II), but a present one must be valid
+    if let Some(Err(text)) = metadata_version {
+        return Err(BodyParsingError::InvalidMetadataVersion(text));
+    }
 
     Ok(Bye {
         app_sequence,
