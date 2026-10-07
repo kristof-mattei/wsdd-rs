@@ -52,7 +52,7 @@ where
         // each address here sends its own `Hello` from that address, so the datagram's source address already reveals the address in `XAddrs`, and omitting it would only cost clients a `Resolve` round trip
         add_xaddr(writer, config, self.xaddr)?;
 
-        add_metadata_version(writer)?;
+        add_metadata_version(writer, config)?;
 
         writer.write(XmlEvent::end_element())?;
 

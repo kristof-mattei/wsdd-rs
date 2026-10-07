@@ -302,7 +302,7 @@ mod tests {
             host_ip,
             5357,
             host_config.uuid,
-            1,
+            host_config.app_sequence.instance_id(),
         );
 
         let response = to_string_pretty(hello.message.as_ref()).unwrap();
@@ -455,7 +455,8 @@ mod tests {
             host_config.uuid_as_device_uri,
             host_ip,
             constants::WSD_HTTP_PORT,
-            host_config.uuid
+            host_config.uuid,
+            host_config.app_sequence.instance_id(),
         );
 
         let response = to_string_pretty(response.as_ref()).unwrap();
@@ -539,6 +540,7 @@ mod tests {
             host_config.app_sequence.instance_id(),
             expected_message_number,
             host_config.uuid_as_device_uri,
+            host_config.app_sequence.instance_id(),
         );
 
         let response = to_string_pretty(response.as_ref()).unwrap();
