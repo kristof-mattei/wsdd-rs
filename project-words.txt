@@ -48,6 +48,7 @@ dropguard
 dstaddr
 edff
 eintr
+einval
 endfor
 endmacro
 enobufs
@@ -197,6 +198,7 @@ tostring
 trixie
 trunc
 ulonglong
+uncatchable
 uninit
 uninlined
 uninspectable
