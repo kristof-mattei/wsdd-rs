@@ -327,6 +327,7 @@ async fn handle_hello(
         app_sequence,
         endpoint,
         raw_xaddrs,
+        metadata_version,
     }: Hello,
 ) -> Result<(), eyre::Report> {
     let next = {
@@ -347,7 +348,7 @@ async fn handle_hello(
 
     match next {
         Next::Resolve => {
-            event!(Level::INFO, "Hello without XAddrs, sending resolve");
+            event!(Level::INFO, %endpoint, metadata_version, "Hello without XAddrs, sending resolve");
 
             let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
 
@@ -358,7 +359,7 @@ async fn handle_hello(
             Ok(())
         },
         Next::Fetch(exchange, xaddrs) => {
-            event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "Hello");
+            event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), metadata_version, "Hello");
 
             perform_metadata_exchange(
                 client, config, devices, bound_to, endpoint, exchange, xaddrs,
@@ -460,6 +461,7 @@ async fn handle_probe_match(
     ProbeMatch {
         endpoint,
         raw_xaddrs,
+        metadata_version,
     }: ProbeMatch,
 ) -> Result<(), eyre::Report> {
     let next = {
@@ -478,7 +480,7 @@ async fn handle_probe_match(
         //  If no XAddrs are included in the ProbeMatches message, then the client may send a
         //  Resolve message by UDP multicast to port 3702.
         Next::Resolve => {
-            event!(Level::INFO, "ProbeMatch without XAddrs, sending resolve");
+            event!(Level::INFO, %endpoint, metadata_version, "ProbeMatch without XAddrs, sending resolve");
 
             let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
 
@@ -489,7 +491,7 @@ async fn handle_probe_match(
             Ok(())
         },
         Next::Fetch(exchange, xaddrs) => {
-            event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ProbeMatch");
+            event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), metadata_version, "ProbeMatch");
 
             perform_metadata_exchange(
                 client, config, devices, bound_to, endpoint, exchange, xaddrs,
@@ -531,6 +533,7 @@ async fn handle_resolve_matches(
     let Some(ResolveMatch {
         endpoint,
         raw_xaddrs,
+        metadata_version,
     }) = resolve_match
     else {
         event!(Level::DEBUG, %relates_to, "ResolveMatches without a match, nothing to do");
@@ -554,7 +557,7 @@ async fn handle_resolve_matches(
         }
     };
 
-    event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), "ResolveMatch");
+    event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), metadata_version, "ResolveMatch");
 
     perform_metadata_exchange(
         client, config, devices, bound_to, endpoint, exchange, xaddrs,
@@ -790,6 +793,7 @@ mod tests {
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
     use crate::soap::MessageId;
+    use crate::soap::parser::MessageHandler;
     use crate::soap::parser::app_sequence::AppSequence;
     use crate::soap::parser::bye::Bye;
     use crate::soap::parser::hello::Hello;
@@ -905,6 +909,27 @@ mod tests {
         app_sequence: AppSequence,
         raw_xaddrs: Option<Box<str>>,
     ) -> Result<bool, eyre::Report> {
+        receive_hello(
+            config,
+            devices,
+            bound_to,
+            Hello {
+                app_sequence,
+                endpoint: endpoint.clone(),
+                raw_xaddrs,
+                metadata_version: 1,
+            },
+        )
+        .await
+    }
+
+    /// Returns whether `hello` sent a Resolve.
+    async fn receive_hello(
+        config: &crate::config::Config,
+        devices: &Arc<RwLock<Devices>>,
+        bound_to: &NetworkAddress,
+        hello: Hello,
+    ) -> Result<bool, eyre::Report> {
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
         handle_hello(
@@ -914,15 +939,41 @@ mod tests {
             bound_to,
             &multicast_tx,
             &mut HashMap::new(),
-            Hello {
-                app_sequence,
-                endpoint: endpoint.clone(),
-                raw_xaddrs,
-            },
+            hello,
         )
         .await?;
 
         Ok(multicast_rx.try_recv().is_ok())
+    }
+
+    /// Parses a Hello with `XAddrs` at `server`.
+    async fn parse_hello(
+        message_handler: &MessageHandler,
+        server: &Server,
+        endpoint: &DeviceUri,
+        instance_id: u64,
+        message_number: u64,
+        metadata_version: u64,
+    ) -> Hello {
+        let hello = format!(
+            include_str!("../../test/hello-with-xaddrs-template.xml"),
+            Uuid::now_v7(),
+            instance_id,
+            Uuid::nil(),
+            message_number,
+            endpoint,
+            server.socket_address().ip(),
+            server.socket_address().port(),
+            Uuid::now_v7(),
+            metadata_version
+        );
+
+        let (_, message) = message_handler
+            .deconstruct_message(&hello, SocketAddr::new(server.socket_address().ip(), 5000))
+            .await
+            .unwrap();
+
+        message.into_hello().unwrap()
     }
 
     async fn bye(
@@ -1068,10 +1119,12 @@ mod tests {
             host_message_id.urn(),
             host_config.app_sequence.instance_id(),
             Uuid::now_v7(),
+            0,
             host_config.uuid_as_device_uri,
             server.socket_address().ip(),
             server.socket_address().port(),
-            host_config.uuid
+            host_config.uuid,
+            1
         );
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
@@ -1211,10 +1264,12 @@ mod tests {
             Uuid::now_v7(),
             host_config.app_sequence.instance_id(),
             Uuid::now_v7(),
+            0,
             host_config.uuid_as_device_uri,
             server.socket_address().ip(),
             server.socket_address().port(),
-            host_config.uuid
+            host_config.uuid,
+            1
         );
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
@@ -1356,6 +1411,80 @@ mod tests {
 
     #[cfg_attr(not(miri), tokio::test)]
     #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn fetches_metadata_of_a_hello_with_a_lower_metadata_version() {
+        let (message_handler, network_address) = build_message_handler_with_network_address(
+            IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // host
+        let (server, metadata_exchange) = metadata_server(3).await;
+
+        let endpoint = new_endpoint();
+
+        for (message_number, metadata_version) in [(1, 2), (2, 1), (3, 2)] {
+            let hello = parse_hello(
+                &message_handler,
+                &server,
+                &endpoint,
+                1,
+                message_number,
+                metadata_version,
+            )
+            .await;
+
+            assert_eq!(hello.metadata_version, metadata_version);
+
+            let result =
+                receive_hello(&client_config, &client_devices, &network_address, hello).await;
+
+            assert_matches!(result, Ok(false));
+        }
+
+        metadata_exchange.assert_async().await;
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn fetches_metadata_of_a_newer_instance_with_a_lower_metadata_version() {
+        let (message_handler, network_address) = build_message_handler_with_network_address(
+            IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // host
+        let (server, metadata_exchange) = metadata_server(2).await;
+
+        let endpoint = new_endpoint();
+
+        for (instance_id, metadata_version) in [(1, 5), (11, 1)] {
+            let hello = parse_hello(
+                &message_handler,
+                &server,
+                &endpoint,
+                instance_id,
+                1,
+                metadata_version,
+            )
+            .await;
+
+            assert_eq!(hello.metadata_version, metadata_version);
+
+            let result =
+                receive_hello(&client_config, &client_devices, &network_address, hello).await;
+
+            assert_matches!(result, Ok(false));
+        }
+
+        metadata_exchange.assert_async().await;
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn adds_device_again_with_a_hello_in_another_sequence_after_a_bye() {
         let (_message_handler, network_address) = build_message_handler_with_network_address(
             IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
@@ -1432,6 +1561,7 @@ mod tests {
             ProbeMatch {
                 endpoint: endpoint.clone(),
                 raw_xaddrs: Some(xaddrs_of(&server)),
+                metadata_version: 1,
             },
         )
         .await;
@@ -1480,6 +1610,7 @@ mod tests {
                 resolve_match: Some(ResolveMatch {
                     endpoint: endpoint.clone(),
                     raw_xaddrs: Some(xaddrs_of(&server)),
+                    metadata_version: 1,
                 }),
             },
         )
@@ -1551,6 +1682,7 @@ mod tests {
             ProbeMatch {
                 endpoint: endpoint.clone(),
                 raw_xaddrs: Some(xaddrs_of(&server)),
+                metadata_version: 1,
             },
         )
         .await;
@@ -1599,6 +1731,7 @@ mod tests {
                 resolve_match: Some(ResolveMatch {
                     endpoint: endpoint.clone(),
                     raw_xaddrs: Some(xaddrs_of(&server)),
+                    metadata_version: 1,
                 }),
             },
         )

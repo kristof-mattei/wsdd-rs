@@ -617,13 +617,28 @@ mod tests {
         )
     }
 
-    const HELLO_BODY: &str = "<wsd:Hello><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:MetadataVersion>1</wsd:MetadataVersion></wsd:Hello>";
+    fn hello_body(metadata_version: u64) -> String {
+        format!(
+            "<wsd:Hello><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:MetadataVersion>{}</wsd:MetadataVersion></wsd:Hello>",
+            metadata_version
+        )
+    }
 
     const BYE_BODY: &str = "<wsd:Bye><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference></wsd:Bye>";
 
-    const PROBE_MATCHES_BODY: &str = "<wsd:ProbeMatches><wsd:ProbeMatch><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:MetadataVersion>1</wsd:MetadataVersion></wsd:ProbeMatch></wsd:ProbeMatches>";
+    fn probe_matches_body(metadata_version: u64) -> String {
+        format!(
+            "<wsd:ProbeMatches><wsd:ProbeMatch><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:MetadataVersion>{}</wsd:MetadataVersion></wsd:ProbeMatch></wsd:ProbeMatches>",
+            metadata_version
+        )
+    }
 
-    const RESOLVE_MATCHES_BODY: &str = "<wsd:ResolveMatches><wsd:ResolveMatch><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:XAddrs>http://192.168.100.5:5357/</wsd:XAddrs><wsd:MetadataVersion>1</wsd:MetadataVersion></wsd:ResolveMatch></wsd:ResolveMatches>";
+    fn resolve_matches_body(metadata_version: u64) -> String {
+        format!(
+            "<wsd:ResolveMatches><wsd:ResolveMatch><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:XAddrs>http://192.168.100.5:5357/</wsd:XAddrs><wsd:MetadataVersion>{}</wsd:MetadataVersion></wsd:ResolveMatch></wsd:ResolveMatches>",
+            metadata_version
+        )
+    }
 
     const FULL_APP_SEQUENCE: &str = r#"<wsd:AppSequence InstanceId="3" SequenceId="urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9" MessageNumber="7" />"#;
 
@@ -685,7 +700,7 @@ mod tests {
 
     #[tokio::test]
     async fn accepts_hello_with_app_sequence() {
-        let hello = message(constants::WSD_HELLO, FULL_APP_SEQUENCE, HELLO_BODY);
+        let hello = message(constants::WSD_HELLO, FULL_APP_SEQUENCE, &hello_body(1));
 
         let (_, message) = handler_for_tests(8)
             .deconstruct_message(&hello, SOURCE)
@@ -703,7 +718,7 @@ mod tests {
         let probe_matches = message(
             constants::WSD_PROBE_MATCH,
             FULL_APP_SEQUENCE,
-            PROBE_MATCHES_BODY,
+            &probe_matches_body(1),
         );
 
         let (_, message) = handler_for_tests(8)
@@ -724,7 +739,7 @@ mod tests {
         let resolve_matches = message(
             constants::WSD_RESOLVE_MATCH,
             FULL_APP_SEQUENCE,
-            RESOLVE_MATCHES_BODY,
+            &resolve_matches_body(1),
         );
 
         let (_, message) = handler_for_tests(8)
@@ -737,6 +752,72 @@ mod tests {
                 .into_resolve_matches()
                 .map(|resolve_matches| resolve_matches.app_sequence),
             Some(full_app_sequence())
+        );
+    }
+
+    #[tokio::test]
+    async fn parses_metadata_version_of_hello() {
+        let hello = message(
+            constants::WSD_HELLO,
+            APP_SEQUENCE,
+            &hello_body(u64::from(u32::MAX) + 1),
+        );
+
+        let (_, message) = handler_for_tests(8)
+            .deconstruct_message(&hello, SOURCE)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            message.into_hello().map(|hello| hello.metadata_version),
+            Some(u64::from(u32::MAX) + 1)
+        );
+    }
+
+    #[tokio::test]
+    async fn parses_metadata_version_of_probe_match() {
+        let probe_matches = message(
+            constants::WSD_PROBE_MATCH,
+            APP_SEQUENCE,
+            &probe_matches_body(u64::from(u32::MAX) + 1),
+        );
+
+        let (_, message) = handler_for_tests(8)
+            .deconstruct_message(&probe_matches, SOURCE)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            message.into_probe_matches().map(|probe_matches| {
+                probe_matches
+                    .matches
+                    .iter()
+                    .map(|probe_match| probe_match.metadata_version)
+                    .collect::<Vec<_>>()
+            }),
+            Some(vec![u64::from(u32::MAX) + 1])
+        );
+    }
+
+    #[tokio::test]
+    async fn parses_metadata_version_of_resolve_match() {
+        let resolve_matches = message(
+            constants::WSD_RESOLVE_MATCH,
+            APP_SEQUENCE,
+            &resolve_matches_body(u64::from(u32::MAX) + 1),
+        );
+
+        let (_, message) = handler_for_tests(8)
+            .deconstruct_message(&resolve_matches, SOURCE)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            message
+                .into_resolve_matches()
+                .and_then(|resolve_matches| resolve_matches.resolve_match)
+                .map(|resolve_match| resolve_match.metadata_version),
+            Some(u64::from(u32::MAX) + 1)
         );
     }
 
@@ -757,7 +838,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_hello_without_app_sequence() {
-        let hello = message(constants::WSD_HELLO, "", HELLO_BODY);
+        let hello = message(constants::WSD_HELLO, "", &hello_body(1));
 
         let result = handler_for_tests(8)
             .deconstruct_message(&hello, SOURCE)
@@ -776,7 +857,7 @@ mod tests {
         let hello = message(
             constants::WSD_HELLO,
             r#"<wsd:AppSequence InstanceId="x" MessageNumber="2" />"#,
-            HELLO_BODY,
+            &hello_body(1),
         );
 
         let result = handler_for_tests(8)

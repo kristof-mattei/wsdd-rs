@@ -297,10 +297,12 @@ mod tests {
             Uuid::nil(),
             host_config.app_sequence.instance_id(),
             Uuid::nil(),
+            0,
             host_config.uuid_as_device_uri,
             host_ip,
             5357,
             host_config.uuid,
+            1,
         );
 
         let response = to_string_pretty(hello.message.as_ref()).unwrap();

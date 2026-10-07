@@ -21,6 +21,7 @@ pub struct ProbeMatches {
 pub struct ProbeMatch {
     pub endpoint: DeviceUri,
     pub raw_xaddrs: Option<Box<str>>,
+    pub metadata_version: u64,
 }
 
 /// This takes in a reader that is stopped at the body tag.
@@ -59,12 +60,14 @@ where
                             invalid_types,
                         } = extract_endpoint_metadata(reader)?;
 
-                        require_metadata_version(metadata_version)?;
+                        let metadata_version = require_metadata_version(metadata_version)?;
+
                         require_valid_types(invalid_types)?;
 
                         matches.push(ProbeMatch {
                             endpoint,
                             raw_xaddrs: raw_xaddrs.into_text(),
+                            metadata_version,
                         });
                     },
                     Some(constants::XML_WSD_NAMESPACE) | None => {
