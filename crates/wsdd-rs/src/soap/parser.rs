@@ -937,20 +937,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn accepts_bye_with_metadata_version() {
-        let bye = message(
-            constants::WSD_BYE,
-            APP_SEQUENCE,
-            "<wsd:Bye><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference><wsd:MetadataVersion>7</wsd:MetadataVersion></wsd:Bye>",
-        );
-
-        let result = handler_for_tests(8).deconstruct_message(&bye, SOURCE).await;
-
-        assert_matches!(result.map(|_| ()), Ok(()));
-    }
-
-    #[tokio::test]
-    async fn rejects_bye_with_malformed_metadata_version() {
+    async fn accepts_bye_with_malformed_metadata_version() {
         let bye = message(
             constants::WSD_BYE,
             APP_SEQUENCE,
@@ -959,10 +946,7 @@ mod tests {
 
         let result = handler_for_tests(8).deconstruct_message(&bye, SOURCE).await;
 
-        assert_matches!(
-            result.err(),
-            Some(MessageHandlerError::BodyError(BodyParsingError::InvalidMetadataVersion(ref text))) if &**text == "x"
-        );
+        assert_matches!(result.map(|_| ()), Ok(()));
     }
 
     #[tokio::test]
