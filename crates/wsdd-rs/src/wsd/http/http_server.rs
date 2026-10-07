@@ -316,6 +316,7 @@ mod tests {
             host_config.app_sequence.instance_id(),
             expected_message_number,
             host_config.uuid_as_device_uri,
+            host_config.app_sequence.instance_id(),
         );
 
         let response = to_string_pretty(response.bytes().await.unwrap().as_ref()).unwrap();

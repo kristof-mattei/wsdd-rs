@@ -78,9 +78,15 @@ fn add_xaddr<W: Write>(
     Ok(())
 }
 
-fn add_metadata_version<W: Write>(writer: &mut EventWriter<W>) -> Result<(), xml::writer::Error> {
+fn add_metadata_version<W: Write>(
+    writer: &mut EventWriter<W>,
+    config: &Config,
+) -> Result<(), xml::writer::Error> {
+    // the metadata only changes across a restart, which raises the `InstanceId`
+    let metadata_version = config.app_sequence.instance_id().to_string();
+
     writer.write(XmlEvent::start_element("wsd:MetadataVersion"))?;
-    writer.write(XmlEvent::Characters("1"))?;
+    writer.write(XmlEvent::Characters(&metadata_version))?;
     writer.write(XmlEvent::end_element())?;
 
     Ok(())

@@ -2444,7 +2444,8 @@ mod tests {
             host_message_id.urn(),
             host_config.app_sequence.instance_id(),
             0,
-            host_config.uuid_as_device_uri
+            host_config.uuid_as_device_uri,
+            1,
         );
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
@@ -2611,7 +2612,8 @@ mod tests {
             host_message_id.urn(),
             host_config.app_sequence.instance_id(),
             0,
-            host_config.uuid_as_device_uri
+            host_config.uuid_as_device_uri,
+            1,
         );
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
@@ -2707,7 +2709,8 @@ mod tests {
             host_config.uuid_as_device_uri,
             server.socket_address().ip(),
             server.socket_address().port(),
-            host_config.uuid
+            host_config.uuid,
+            1,
         );
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
@@ -2807,7 +2810,8 @@ mod tests {
             host_config.uuid_as_device_uri,
             server.socket_address().ip(),
             server.socket_address().port(),
-            host_config.uuid
+            host_config.uuid,
+            1,
         );
 
         let (header, message) = message_handler
@@ -2932,7 +2936,8 @@ mod tests {
             host_config.uuid_as_device_uri,
             server.socket_address().ip(),
             server.socket_address().port(),
-            host_config.uuid
+            host_config.uuid,
+            1,
         );
 
         let (header, message) = message_handler
@@ -2996,7 +3001,8 @@ mod tests {
             host_config.uuid_as_device_uri,
             server.socket_address().ip(),
             server.socket_address().port(),
-            host_config.uuid
+            host_config.uuid,
+            1,
         );
 
         let (header, message) = message_handler

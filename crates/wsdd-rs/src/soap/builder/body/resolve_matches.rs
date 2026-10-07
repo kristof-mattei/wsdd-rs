@@ -45,7 +45,7 @@ where
         add_endpoint_reference(writer, &config.uuid_as_device_uri)?;
         add_types(writer, constants::WSDP_TYPE_DEVICE_COMPUTER)?;
         add_xaddr(writer, config, self.address)?;
-        add_metadata_version(writer)?;
+        add_metadata_version(writer, config)?;
 
         writer.write(XmlEvent::end_element())?;
         writer.write(XmlEvent::end_element())?;

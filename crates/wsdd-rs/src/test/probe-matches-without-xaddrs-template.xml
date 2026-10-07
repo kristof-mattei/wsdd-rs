@@ -20,7 +20,7 @@
                     <wsa:Address>{}</wsa:Address>
                 </wsa:EndpointReference>
                 <wsd:Types>wsdp:Device pub:Computer</wsd:Types>
-                <wsd:MetadataVersion>1</wsd:MetadataVersion>
+                <wsd:MetadataVersion>{}</wsd:MetadataVersion>
             </wsd:ProbeMatch>
         </wsd:ProbeMatches>
     </soap:Body>

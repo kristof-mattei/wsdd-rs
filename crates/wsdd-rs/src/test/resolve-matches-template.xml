@@ -21,7 +21,7 @@
                 </wsa:EndpointReference>
                 <wsd:Types>wsdp:Device pub:Computer</wsd:Types>
                 <wsd:XAddrs>http://{}:{}/{}</wsd:XAddrs>
-                <wsd:MetadataVersion>1</wsd:MetadataVersion>
+                <wsd:MetadataVersion>{}</wsd:MetadataVersion>
             </wsd:ResolveMatch>
         </wsd:ResolveMatches>
     </soap:Body>
