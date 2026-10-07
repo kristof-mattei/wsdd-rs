@@ -1,4 +1,9 @@
 <!-- header goes here -->
+## [0.8.1](https://github.com/kristof-mattei/wsdd-rs/compare/v0.8.0..v0.8.1) - 2026-10-07
+
+### 🚜 Refactor
+
+- Replace `Shutdown::Signal(u8)` with a two-variant `Signal` by [@kristof-mattei](https://github.com/kristof-mattei) ([`8a06387`](https://github.com/kristof-mattei/wsdd-rs/commit/8a06387a5d93753752d16c6eda1696dfee117dad))
 ## [0.8.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.7.1..v0.8.0) - 2026-10-07
 
 ### 🚀 Features
