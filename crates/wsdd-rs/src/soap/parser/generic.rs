@@ -168,11 +168,11 @@ pub fn require_valid_types(invalid_types: Option<Box<str>>) -> Result<(), BodyPa
 /// Hello, `ProbeMatch` and `ResolveMatch` require a valid `MetadataVersion`, only Bye makes it optional, see documentation/ws-discovery.pdf, Appendix II.
 pub fn require_metadata_version(
     metadata_version: Option<Result<u64, Box<str>>>,
-) -> Result<(), BodyParsingError> {
+) -> Result<u64, BodyParsingError> {
     match metadata_version {
         None => Err(XmlError::MissingElement("wsd:MetadataVersion".into()).into()),
         Some(Err(text)) => Err(BodyParsingError::InvalidMetadataVersion(text)),
-        Some(Ok(_)) => Ok(()),
+        Some(Ok(metadata_version)) => Ok(metadata_version),
     }
 }
 
@@ -505,7 +505,7 @@ mod tests {
 
     #[test]
     fn requires_metadata_version() {
-        assert_matches!(require_metadata_version(Some(Ok(1))), Ok(()));
+        assert_matches!(require_metadata_version(Some(Ok(1))), Ok(1));
         assert_matches!(
             require_metadata_version(None),
             Err(BodyParsingError::Xml(XmlError::MissingElement(ref name))) if &**name == "wsd:MetadataVersion"

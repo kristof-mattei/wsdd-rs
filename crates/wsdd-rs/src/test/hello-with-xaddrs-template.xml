@@ -10,7 +10,7 @@
         <wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To>
         <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Hello</wsa:Action>
         <wsa:MessageID>urn:uuid:{}</wsa:MessageID>
-        <wsd:AppSequence InstanceId="{}" SequenceId="urn:uuid:{}" MessageNumber="0" />
+        <wsd:AppSequence InstanceId="{}" SequenceId="urn:uuid:{}" MessageNumber="{}" />
     </soap:Header>
     <soap:Body>
         <wsd:Hello>
@@ -19,7 +19,7 @@
             </wsa:EndpointReference>
             <wsd:Types>wsdp:Device pub:Computer</wsd:Types>
             <wsd:XAddrs>http://{}:{}/{}</wsd:XAddrs>
-            <wsd:MetadataVersion>1</wsd:MetadataVersion>
+            <wsd:MetadataVersion>{}</wsd:MetadataVersion>
         </wsd:Hello>
     </soap:Body>
 </soap:Envelope>
