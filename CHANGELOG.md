@@ -1,4 +1,14 @@
 <!-- header goes here -->
+## [0.9.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.8.1..v0.9.0) - 2026-10-07
+
+### 🚀 Features
+
+- Spawn tracked tasks with a name through `TaskTrackerExt` by [@kristof-mattei](https://github.com/kristof-mattei) ([`0dde422`](https://github.com/kristof-mattei/wsdd-rs/commit/0dde42232a79a94a87cd73c7648365f0babf612f))
+
+### 🐛 Bug Fixes
+
+- End every API server reply with a newline by [@kristof-mattei](https://github.com/kristof-mattei) ([`409d41a`](https://github.com/kristof-mattei/wsdd-rs/commit/409d41a18871d2fe305b089f3609540711372309))
+- Exit with the failing task's error instead of a canned message by [@kristof-mattei](https://github.com/kristof-mattei) ([`f3cf0f9`](https://github.com/kristof-mattei/wsdd-rs/commit/f3cf0f9a52288ec89cc9bebdbcc398223db42dff))
 ## [0.8.1](https://github.com/kristof-mattei/wsdd-rs/compare/v0.8.0..v0.8.1) - 2026-10-07
 
 ### 🚜 Refactor
