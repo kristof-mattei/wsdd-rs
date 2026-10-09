@@ -3,7 +3,6 @@ mod address_handlers;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use color_eyre::eyre;
 use hashbrown::HashMap;
 use hashbrown::hash_map::Entry;
 use ipnet::IpNet;
@@ -128,7 +127,7 @@ where
         }
     }
 
-    pub async fn process_commands(&mut self) -> Result<(), eyre::Report> {
+    pub async fn process_commands(&mut self) {
         loop {
             let command = tokio::select! {
                 () = self.cancellation_token.cancelled() => {
@@ -200,15 +199,13 @@ where
                     }
                 },
                 Command::Start => {
-                    self.set_active()?;
+                    self.set_active();
                 },
                 Command::Stop => {
                     self.teardown().await;
                 },
             }
         }
-
-        Ok(())
     }
 
     async fn list_devices(
@@ -447,7 +444,7 @@ where
         tasks.wait().await;
     }
 
-    pub fn set_active(&mut self) -> Result<(), eyre::Report> {
+    pub fn set_active(&mut self) {
         let mut was_active = self.active.load(Ordering::Relaxed);
 
         // we can get away with `Relaxed` because nothing depends on our value
@@ -459,9 +456,8 @@ where
                 Ordering::Relaxed,
             ) {
                 Ok(_) => {
-                    self.start_tx
-                        .send(())
-                        .map_err(|_| eyre::Report::msg("channel gone"))?;
+                    self.start_tx.send_replace(());
+
                     break;
                 },
                 Err(current) => {
@@ -469,8 +465,6 @@ where
                 },
             }
         }
-
-        Ok(())
     }
 }
 
@@ -554,7 +548,7 @@ mod tests {
 
         drop(command_tx);
 
-        assert_matches!(handle.await.unwrap(), Ok(()));
+        handle.await.unwrap();
     }
 
     #[test]
