@@ -64,7 +64,7 @@ tokio = { version = "=1.53.2", features = [
     "time",
     "tracing",
 ] }
-tokio-util = { version = "=0.7.19", features = ["codec", "rt"] }
+tokio-util = { version = "=0.7.20", features = ["codec", "rt"] }
 tower-http = { version = "=0.7.1", features = ["on-early-drop", "trace"] }
 tower-service = "=0.3.3"
 tracing = "=0.1.44"
