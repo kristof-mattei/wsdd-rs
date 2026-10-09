@@ -1,7 +1,6 @@
 mod address_handlers;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use hashbrown::HashMap;
 use hashbrown::hash_map::Entry;
@@ -65,7 +64,7 @@ pub enum Reason {
 
 pub struct NetworkHandler<R = LibcInterfaceNameResolver> {
     resolver: R,
-    active: AtomicBool,
+    active: bool,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
     devices: Arc<RwLock<Devices>>,
@@ -115,7 +114,7 @@ where
     ) -> Self {
         Self {
             resolver,
-            active: AtomicBool::new(false),
+            active: false,
             config: Arc::clone(config),
             cancellation_token,
             devices: Arc::new(RwLock::new(Devices::default())),
@@ -199,7 +198,7 @@ where
                     }
                 },
                 Command::Start => {
-                    self.set_active();
+                    self.start();
                 },
                 Command::Stop => {
                     self.teardown().await;
@@ -312,7 +311,7 @@ where
 
     fn is_address_handled(&self, address: &NetworkAddress) -> Result<(), Reason> {
         // do not handle anything when we are not active
-        if !self.active.load(Ordering::Relaxed) {
+        if !self.active {
             return Err(Reason::NotActive);
         }
 
@@ -412,25 +411,12 @@ where
     }
 
     pub async fn teardown(&mut self) {
-        let mut was_active = self.active.load(Ordering::Relaxed);
-
-        // we can get away with `Relaxed` because nothing depends on our value
-        while was_active {
-            match self.active.compare_exchange_weak(
-                true,
-                false,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => break,
-                Err(current) => was_active = current,
-            }
-        }
-
-        if !was_active {
+        if !self.active {
             // Already stopped, nothing to do
             return;
         }
+
+        self.active = false;
 
         let tasks = TaskTracker::new();
 
@@ -444,34 +430,20 @@ where
         tasks.wait().await;
     }
 
-    pub fn set_active(&mut self) {
-        let mut was_active = self.active.load(Ordering::Relaxed);
-
-        // we can get away with `Relaxed` because nothing depends on our value
-        while !was_active {
-            match self.active.compare_exchange_weak(
-                false,
-                true,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => {
-                    self.start_tx.send_replace(());
-
-                    break;
-                },
-                Err(current) => {
-                    was_active = current;
-                },
-            }
+    pub fn start(&mut self) {
+        if self.active {
+            return;
         }
+
+        self.active = true;
+
+        self.start_tx.send_replace(());
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::sync::atomic::Ordering;
 
     use pretty_assertions::{assert_eq, assert_matches};
     use tokio::sync::{RwLock, mpsc, watch};
@@ -615,8 +587,8 @@ mod tests {
             DevName::try_from(Box::from("eth0")).unwrap(),
         )];
 
-        let network_handler = build_network_handler(config);
-        network_handler.active.store(true, Ordering::Relaxed);
+        let mut network_handler = build_network_handler(config);
+        network_handler.active = true;
 
         let eth0 = Arc::new(NetworkInterface::new_with_index("eth0", 0, 2));
         let eth1 = Arc::new(NetworkInterface::new_with_index("eth1", 0, 3));
@@ -636,8 +608,8 @@ mod tests {
         let mut config = build_config(Uuid::now_v7(), 1);
         config.interfaces = vec![InterfaceFilter::Address("192.168.100.5".parse().unwrap())];
 
-        let network_handler = build_network_handler(config);
-        network_handler.active.store(true, Ordering::Relaxed);
+        let mut network_handler = build_network_handler(config);
+        network_handler.active = true;
 
         let interface = Arc::new(NetworkInterface::new_with_index("eth0", 0, 2));
 

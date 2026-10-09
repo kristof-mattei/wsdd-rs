@@ -263,7 +263,7 @@ async fn start_tasks(args: CliArgs) -> Shutdown {
     ));
 
     if !config.no_autostart {
-        network_handler.set_active();
+        network_handler.start();
     }
 
     tasks.push(spawn_task("network handler", async move {
