@@ -229,14 +229,15 @@ jobs:
           exit 1
 
   cargo-test-and-report-miri:
-    name: Cargo test (and report) with miri
+    name: Cargo test (and report) with miri (${{ matrix.partition }}/${{ strategy.job-total }})
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3, 4]
     runs-on: ubuntu-26.04
     permissions:
-      checks: write # publish-unit-test-result-action creates a check run
       contents: read
       id-token: write # codecov-action authenticates over OIDC
-      issues: read # publish-unit-test-result-action needs this in private repos
-      pull-requests: write # publish-unit-test-result-action comments the test summary
     env:
       # most features don't work with miri
       CARGO_FEATURES: ""
@@ -285,21 +286,22 @@ jobs:
         env:
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "${{ env.CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS }} --allow=warnings"
           MIRIFLAGS: "-Zmiri-backtrace=full -Zmiri-disable-isolation -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check"
+          PARTITION: slice:${{ matrix.partition }}/${{ strategy.job-total }}
         run: |
           # shellcheck disable=SC2086 # CARGO_FEATURES can hold more than one flag
-          cargo "+${TOOLCHAIN}" miri nextest run --profile ci --no-fail-fast ${CARGO_FEATURES} --all-targets --workspace
+          cargo "+${TOOLCHAIN}" miri nextest run --profile ci --no-fail-fast --partition "${PARTITION}" ${CARGO_FEATURES} --all-targets --workspace
         continue-on-error: true
 
       - name: Upload test results
         if: |
           github.event_name != 'pull_request' ||
           github.event.pull_request.head.repo.full_name == github.repository
-        uses: EnricoMi/publish-unit-test-result-action@d0a4676d0e0b938bc201470d88276b7c74c712b3 # v2.24.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          check_name: Test results for Rust with Miri
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          files: |
-            reports/results.xml
+          if-no-files-found: error
+          name: miri-test-results-${{ matrix.partition }}
+          path: reports/results.xml
+          retention-days: 1
 
       - name: Record Rust version
         shell: bash
@@ -334,6 +336,38 @@ jobs:
           # so we explicitly fail this one
           # which will fail All Done
           exit 1
+
+  publish-miri-test-results:
+    name: Publish test results for Rust with Miri
+    runs-on: ubuntu-26.04
+    permissions:
+      checks: write # publish-unit-test-result-action creates a check run
+      contents: read
+      issues: read # publish-unit-test-result-action needs this in private repos
+      pull-requests: write # publish-unit-test-result-action comments the test summary
+    needs:
+      - cargo-test-and-report-miri
+    # fork PRs run with a read-only token, which cannot create check runs or PR comments
+    if: |
+      !cancelled() &&
+      (
+        github.event_name != 'pull_request' ||
+        github.event.pull_request.head.repo.full_name == github.repository
+      )
+    steps:
+      - name: Download test results
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: reports/
+          pattern: miri-test-results-*
+
+      - name: Publish test results
+        uses: EnricoMi/publish-unit-test-result-action@d0a4676d0e0b938bc201470d88276b7c74c712b3 # v2.24.0
+        with:
+          check_name: Test results for Rust with Miri
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            reports/*/results.xml
 
   cargo-clippy-and-report:
     name: Cargo clippy (and report)
@@ -375,6 +409,7 @@ jobs:
       - cargo-fmt
       - cargo-test-and-report
       - cargo-test-and-report-miri
+      - publish-miri-test-results
     if: |
       !cancelled()
     steps:
