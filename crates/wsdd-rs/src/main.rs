@@ -263,15 +263,14 @@ async fn start_tasks(args: CliArgs) -> Shutdown {
     ));
 
     if !config.no_autostart {
-        if let Err(error) = network_handler.set_active() {
-            return error.into();
-        }
+        network_handler.set_active();
     }
 
-    tasks.push(spawn_task(
-        "network handler",
-        launch_network_handler(network_handler),
-    ));
+    tasks.push(spawn_task("network handler", async move {
+        launch_network_handler(network_handler).await;
+
+        Ok(())
+    }));
 
     if let Some(listen_on) = config.listen.clone() {
         tasks.push(spawn_task(
@@ -363,12 +362,10 @@ async fn launch_api_server(
     result
 }
 
-async fn launch_network_handler(mut network_handler: NetworkHandler) -> Result<(), eyre::Report> {
-    let result = network_handler.process_commands().await;
+async fn launch_network_handler(mut network_handler: NetworkHandler) {
+    network_handler.process_commands().await;
 
     network_handler.teardown().await;
-
-    result
 }
 
 type TaskResult = Result<(), eyre::Report>;
