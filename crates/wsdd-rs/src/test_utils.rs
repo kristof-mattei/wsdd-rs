@@ -62,20 +62,32 @@ pub mod xml {
 }
 
 pub mod netlink {
-    use libc::NLMSG_ERROR;
+    use libc::{NLMSG_DONE, NLMSG_ERROR};
     use shared::netlink::{ifinfomsg, nlmsghdr};
     use zerocopy::{FromZeros as _, IntoBytes as _};
 
     pub fn netlink_message(nlmsg_type: u16, payload: &[u8]) -> Vec<u8> {
+        sequenced_message(nlmsg_type, 0, payload)
+    }
+
+    fn sequenced_message(nlmsg_type: u16, nlmsg_seq: u32, payload: &[u8]) -> Vec<u8> {
         let header = nlmsghdr {
             nlmsg_len: u32::try_from(size_of::<nlmsghdr>() + payload.len()).unwrap(),
             nlmsg_type,
             nlmsg_flags: 0,
-            nlmsg_seq: 0,
+            nlmsg_seq,
             nlmsg_pid: 0,
         };
 
         [header.as_bytes(), payload].concat()
+    }
+
+    pub fn done_message(nlmsg_seq: u32) -> Vec<u8> {
+        sequenced_message(
+            u16::try_from(NLMSG_DONE).unwrap(),
+            nlmsg_seq,
+            0_i32.as_bytes(),
+        )
     }
 
     pub fn link_message(nlmsg_type: u16, family: i32, index: i32, flags: u32) -> Vec<u8> {

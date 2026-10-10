@@ -66,6 +66,7 @@ getgrname
 gethostbyaddr
 gethostname
 getifaddrs
+getlink
 getmetadata
 getpagesize
 getpwnam

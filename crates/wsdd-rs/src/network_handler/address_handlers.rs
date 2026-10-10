@@ -70,6 +70,12 @@ impl<H> AddressHandlers<H> {
         self.handled.remove(&key).map(|handled| handled.handler)
     }
 
+    pub fn remove_on_interface(&mut self, index: u32) -> impl Iterator<Item = H> {
+        self.handled
+            .extract_if(move |&(_, handled_index), _| handled_index == index)
+            .map(|(_, handled)| handled.handler)
+    }
+
     pub fn handlers(&self) -> impl Iterator<Item = &H> {
         self.handled.values().map(|handled| &handled.handler)
     }
@@ -157,5 +163,19 @@ mod tests {
 
         assert_eq!(handlers.remove_prefix(&network_address("eth0", 5, 8)), None);
         assert_eq!(handlers.handlers().collect::<Vec<_>>(), [&"handler"]);
+    }
+
+    #[test]
+    fn removing_on_an_interface_returns_only_its_handlers() {
+        let mut handlers = AddressHandlers::default();
+
+        handlers.insert(&network_address("eth0", 5, 24), "on eth0");
+        handlers.insert(&network_address("eth1", 6, 24), "on eth1");
+
+        assert_eq!(
+            handlers.remove_on_interface(5).collect::<Vec<_>>(),
+            ["on eth0"]
+        );
+        assert_eq!(handlers.handlers().collect::<Vec<_>>(), [&"on eth1"]);
     }
 }
