@@ -21,10 +21,10 @@ use wsdd_rs::define_typed_size;
 use zerocopy::IntoBytes as _;
 
 use crate::config::{BindTo, Config};
-use crate::netlink::{
+use crate::network_handler::Command;
+use crate::rtnetlink::{
     AddressValue, Attribute, Attributes, Message, Messages, ReceiveBuffer, RecvBuf,
 };
-use crate::network_handler::Command;
 use crate::utils::task::spawn_with_name;
 
 define_typed_size!(SIZE_OF_SOCKADDR_NL, u32, libc::sockaddr_nl);
@@ -436,8 +436,8 @@ mod tests {
     use crate::address_monitor::netlink_address_monitor::{
         SIZE_OF_SOCKADDR_NL, SkippedStates, process_changes,
     };
-    use crate::netlink::{RTA_ALIGNTO, ReceiveBuffer, RecvBuf};
     use crate::network_handler::Command;
+    use crate::rtnetlink::{RTA_ALIGNTO, ReceiveBuffer, RecvBuf};
     use crate::utils::u32_to_usize;
 
     #[test]
