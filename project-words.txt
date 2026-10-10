@@ -8,7 +8,6 @@ allgreen
 appgroup
 appuser
 artipacked
-attrlen
 autopad
 bbbbi
 bkeepers
@@ -76,7 +75,6 @@ goodsize
 grcov
 groupname
 hbbhhhbb
-hdrlen
 headgreen
 healthz
 homeaddress
@@ -161,7 +159,6 @@ ringmap
 rposition
 rsplit
 rtattr
-rtattributes
 rtmgrp
 rtnetlink
 rustflags

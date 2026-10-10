@@ -18,14 +18,12 @@ use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 use wsdd_rs::define_typed_size;
-use zerocopy::IntoBytes as _;
+use zerocopy::{FromBytes as _, IntoBytes as _};
 
 use crate::config::{BindTo, Config};
-use crate::ffi::{SendPtr, getpagesize};
+use crate::ffi::getpagesize;
 use crate::kernel_buffer::AlignedBuffer;
-use crate::netlink::{
-    IFA_PAYLOAD, IFA_RTA, NLMSG_DATA, NLMSG_NEXT, NLMSG_OK, RTA_DATA, RTA_NEXT, RTA_OK,
-};
+use crate::netlink::{attributes, messages};
 use crate::network_handler::Command;
 use crate::utils::task::spawn_with_name;
 
@@ -331,19 +329,12 @@ async fn parse_netlink_response(
     cancellation_token: &CancellationToken,
     command_tx: &Sender<Command>,
 ) -> Result<(), eyre::Report> {
-    let mut remaining_len = buffer.len();
-
-    let mut nlh_wrapper = SendPtr::from_start(buffer);
-
-    while NLMSG_OK(*nlh_wrapper, remaining_len) {
-        // SAFETY: `NLMSG_OK`
-        let nlh = unsafe { &**nlh_wrapper };
-
+    for (nlh, payload) in messages(buffer) {
         let command = if Into::<i32>::into(nlh.nlmsg_type) == NLMSG_DONE {
             break;
         } else if i32::from(nlh.nlmsg_type) == NLMSG_ERROR {
-            // SAFETY: `nlh.nlmsg_type` guarantees
-            let error = unsafe { &*NLMSG_DATA::<nlmsgerr>(*nlh_wrapper) };
+            let (error, _) = nlmsgerr::ref_from_prefix(payload)
+                .expect("`NLMSG_ERROR` must start with an `nlmsgerr`, as this is kernel data");
 
             if error.error == 0 {
                 event!(Level::DEBUG, "ACK");
@@ -363,25 +354,25 @@ async fn parse_netlink_response(
 
             None
         } else if nlh.nlmsg_type == RTM_NEWADDR {
-            if has_usable_state(*nlh_wrapper) {
-                parse_address_message(*nlh_wrapper).map(|(ip_net, scope, index)| {
-                    Command::NewAddress {
-                        address: ip_net,
-                        scope,
-                        index,
-                    }
+            let (ifa, rest) = split_address_message(payload);
+
+            if has_usable_state(ifa) {
+                parse_address_message(ifa, rest).map(|address| Command::NewAddress {
+                    address,
+                    scope: ifa.ifa_scope,
+                    index: ifa.ifa_index,
                 })
             } else {
                 None
             }
         } else if nlh.nlmsg_type == RTM_DELADDR {
+            let (ifa, rest) = split_address_message(payload);
+
             // a deleted address is gone, whatever its state
-            parse_address_message(*nlh_wrapper).map(|(ip_net, scope, index)| {
-                Command::DeleteAddress {
-                    address: ip_net,
-                    scope,
-                    index,
-                }
+            parse_address_message(ifa, rest).map(|address| Command::DeleteAddress {
+                address,
+                scope: ifa.ifa_scope,
+                index: ifa.ifa_index,
             })
         } else {
             event!(
@@ -406,17 +397,17 @@ async fn parse_netlink_response(
                 "Command receiver gone, nothing left to do but abandon buffer",
             ));
         }
-
-        nlh_wrapper.mutate(|p| NLMSG_NEXT(p, &mut remaining_len));
     }
 
     Ok(())
 }
 
-fn has_usable_state(raw_nlh: *const nlmsghdr) -> bool {
-    // SAFETY:`nlh` is valid, and has an `ifa`
-    let ifa = unsafe { &*NLMSG_DATA::<ifaddrmsg>(raw_nlh) };
+fn split_address_message(payload: &[u8]) -> (&ifaddrmsg, &[u8]) {
+    ifaddrmsg::ref_from_prefix(payload)
+        .expect("an address message must start with an `ifaddrmsg`, as this is kernel data")
+}
 
+fn has_usable_state(ifa: &ifaddrmsg) -> bool {
     let ifa_flags = u32::from(ifa.ifa_flags);
 
     if (ifa_flags & IFA_F_DADFAILED) != 0
@@ -436,12 +427,7 @@ fn has_usable_state(raw_nlh: *const nlmsghdr) -> bool {
     true
 }
 
-fn parse_address_message(raw_nlh: *const nlmsghdr) -> Option<(IpNet, u8, u32)> {
-    let raw_ifa = NLMSG_DATA::<ifaddrmsg>(raw_nlh);
-
-    // SAFETY:`nlh` is valid, and has an `ifa`
-    let ifa = unsafe { &*raw_ifa };
-
+fn parse_address_message(ifa: &ifaddrmsg, rest: &[u8]) -> Option<IpNet> {
     event!(
         Level::DEBUG,
         "RTM new/del addr family: {} flags: {} scope: {} idx: {}",
@@ -453,14 +439,7 @@ fn parse_address_message(raw_nlh: *const nlmsghdr) -> Option<(IpNet, u8, u32)> {
 
     let mut addr = None;
 
-    let mut raw_rta = IFA_RTA(raw_ifa);
-    let mut ifa_payload_remaining_length = IFA_PAYLOAD(raw_nlh);
-
-    #[expect(clippy::big_endian_bytes, reason = "We're reading network data")]
-    while RTA_OK(raw_rta, ifa_payload_remaining_length) {
-        // SAFETY: See `RTA_OK`
-        let rta = unsafe { &*raw_rta };
-
+    for (rta, value) in attributes(rest) {
         event!(
             Level::DEBUG,
             "rt_attr type: {} {} ({})",
@@ -470,24 +449,22 @@ fn parse_address_message(raw_nlh: *const nlmsghdr) -> Option<(IpNet, u8, u32)> {
         );
 
         if rta.rta_type == IFA_ADDRESS && i32::from(ifa.ifa_family) == AF_INET6 {
-            // assert!(RTA_PAYLOAD(rta) == 16, "Expected an IPv6 address");
+            let octets: [u8; 16] = value
+                .try_into()
+                .expect("an IPv6 `IFA_ADDRESS` must be 16 bytes, as this is kernel data");
 
-            // SAFETY: Combination of `rta.rta_type` and `ifa.ifa_family`
-            let ipv6_in_network_order = unsafe { &*RTA_DATA::<[u8; 16]>(raw_rta) };
-
-            addr = Some(Ipv6Addr::from_bits(u128::from_be_bytes(*ipv6_in_network_order)).into());
+            addr = Some(Ipv6Addr::from(octets).into());
         } else if rta.rta_type == IFA_LOCAL && i32::from(ifa.ifa_family) == AF_INET {
-            // assert!(RTA_PAYLOAD(rta) == 4, "Expected an IPv4 address");
-
             // `libc::IFA_ADDRESS` is prefix address, rather than local interface address.
             // It makes no difference for normally configured broadcast interfaces,
             // but for point-to-point `libc::IFA_ADDRESS` is DESTINATION address,
             // local address is supplied in `libc::IFA_LOCAL` attribute.
             // https://github.com/torvalds/linux/blob/e9a6fb0bcdd7609be6969112f3fbfcce3b1d4a7c/include/uapi/linux/if_addr.h#L16-L25
-            // SAFETY: Combination of `rta.rta_type` and `ifa.ifa_family`
-            let ipv4_in_network_order = unsafe { &*RTA_DATA::<[u8; 4]>(raw_rta) };
+            let octets: [u8; 4] = value
+                .try_into()
+                .expect("an IPv4 `IFA_LOCAL` must be 4 bytes, as this is kernel data");
 
-            addr = Some(Ipv4Addr::from_bits(u32::from_be_bytes(*ipv4_in_network_order)).into());
+            addr = Some(Ipv4Addr::from(octets).into());
         } else if rta.rta_type == IFA_LABEL {
             // Intentionally unused, the label (only present on IPv4 messages) is not what we name interfaces by,
             // as it might be an alias label, e.g. `eth0:0`.
@@ -499,8 +476,6 @@ fn parse_address_message(raw_nlh: *const nlmsghdr) -> Option<(IpNet, u8, u32)> {
         } else {
             // other attributes are intentionally ignored
         }
-
-        raw_rta = RTA_NEXT(raw_rta, &mut ifa_payload_remaining_length);
     }
 
     let Some(addr) = addr else {
@@ -509,12 +484,10 @@ fn parse_address_message(raw_nlh: *const nlmsghdr) -> Option<(IpNet, u8, u32)> {
         return None;
     };
 
-    Some((
-        IpNet::new(addr, ifa.ifa_prefixlen)
-            .expect("`prefix_len` must be valid for this address, as this is kernel data"),
-        ifa.ifa_scope,
-        ifa.ifa_index,
-    ))
+    let address = IpNet::new(addr, ifa.ifa_prefixlen)
+        .expect("`prefix_len` must be valid for this address, as this is kernel data");
+
+    Some(address)
 }
 
 #[cfg(test)]
