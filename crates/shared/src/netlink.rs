@@ -49,7 +49,7 @@ pub struct ifaddrmsg {
     pub ifa_index: u32,
 }
 
-#[derive(KnownLayout, FromBytes, Immutable)]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct rtattr {
     /// Length of option.

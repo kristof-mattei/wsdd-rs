@@ -2,8 +2,8 @@ mod address_handlers;
 
 use std::sync::Arc;
 
-use hashbrown::HashMap;
 use hashbrown::hash_map::Entry;
+use hashbrown::{HashMap, HashSet};
 use ipnet::IpNet;
 use thiserror::Error;
 use tokio::sync::RwLock;
@@ -69,6 +69,8 @@ pub struct NetworkHandler<R = LibcInterfaceNameResolver> {
     config: Arc<Config>,
     devices: Arc<RwLock<Devices>>,
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
+    /// Every address and interface index reported as new and not since reported as deleted.
+    known_addresses: HashSet<(IpNet, u32)>,
     multicast_handlers: AddressHandlers<MulticastHandler>,
     command_rx: Receiver<Command>,
     start_tx: StartSender<()>,
@@ -119,6 +121,7 @@ where
             cancellation_token,
             devices: Arc::new(RwLock::new(Devices::default())),
             interfaces: HashMap::new(),
+            known_addresses: HashSet::new(),
             multicast_handlers: AddressHandlers::default(),
             command_rx,
             start_tx,
@@ -342,10 +345,22 @@ where
     }
 
     pub async fn handle_new_address(&mut self, network_address: NetworkAddress) {
-        event!(Level::DEBUG, %network_address, "new address");
+        let is_new = self
+            .known_addresses
+            .insert((network_address.address, network_address.interface.index()));
+
+        if is_new {
+            event!(Level::DEBUG, %network_address, "new address");
+        } else {
+            event!(Level::TRACE, %network_address, "updated address");
+        }
 
         if let Err(why) = self.is_address_handled(&network_address) {
-            event!(Level::DEBUG, ?why, %network_address, "ignoring address");
+            if is_new {
+                event!(Level::DEBUG, ?why, %network_address, "ignoring address");
+            } else {
+                event!(Level::TRACE, ?why, %network_address, "ignoring address");
+            }
 
             return;
         }
@@ -396,6 +411,9 @@ where
 
     pub async fn handle_deleted_address(&mut self, network_address: NetworkAddress) {
         event!(Level::INFO, %network_address, "deleted address");
+
+        self.known_addresses
+            .remove(&(network_address.address, network_address.interface.index()));
 
         if self.is_address_handled(&network_address).is_err() {
             return;
@@ -621,6 +639,53 @@ mod tests {
         assert_matches!(
             network_handler.is_address_handled(&other),
             Err(Reason::ExcludedInterface)
+        );
+    }
+
+    #[tokio::test]
+    async fn deleted_address_is_no_longer_known() {
+        let mut network_handler = build_network_handler(build_config(Uuid::now_v7(), 1));
+
+        let interface = Arc::new(NetworkInterface::new_with_index("eth0", 0, 2));
+
+        let address = NetworkAddress::new("192.0.2.1/24".parse().unwrap(), interface);
+
+        network_handler.handle_new_address(address.clone()).await;
+
+        assert!(
+            network_handler
+                .known_addresses
+                .contains(&(address.address, 2))
+        );
+
+        network_handler
+            .handle_deleted_address(address.clone())
+            .await;
+
+        assert!(
+            !network_handler
+                .known_addresses
+                .contains(&(address.address, 2))
+        );
+    }
+
+    #[tokio::test]
+    async fn prefix_lengths_of_one_address_are_known_separately() {
+        let mut network_handler = build_network_handler(build_config(Uuid::now_v7(), 1));
+
+        let interface = Arc::new(NetworkInterface::new_with_index("eth0", 0, 2));
+
+        let narrow = NetworkAddress::new("192.0.2.1/24".parse().unwrap(), Arc::clone(&interface));
+        let wide = NetworkAddress::new("192.0.2.1/16".parse().unwrap(), interface);
+
+        network_handler.handle_new_address(narrow.clone()).await;
+        network_handler.handle_new_address(wide.clone()).await;
+
+        network_handler.handle_deleted_address(wide).await;
+
+        assert_eq!(
+            network_handler.known_addresses.iter().collect::<Vec<_>>(),
+            [&(narrow.address, 2)]
         );
     }
 }
