@@ -4,10 +4,10 @@ use std::net::IpAddr;
 
 use bytes::BufMut;
 use libc::{
-    AF_INET, AF_INET6, IFA_ADDRESS, IFA_LOCAL, NLMSG_DONE, NLMSG_ERROR, NLMSG_NOOP, RTM_DELADDR,
-    RTM_NEWADDR,
+    AF_INET, AF_INET6, AF_UNSPEC, IFA_ADDRESS, IFA_LOCAL, NLMSG_DONE, NLMSG_ERROR, NLMSG_NOOP,
+    RTM_DELADDR, RTM_DELLINK, RTM_NEWADDR, RTM_NEWLINK,
 };
-use shared::netlink::{ifaddrmsg, nlmsgerr, nlmsghdr, rtattr};
+use shared::netlink::{ifaddrmsg, ifinfomsg, nlmsgerr, nlmsghdr, rtattr};
 use tracing::{Level, event};
 use zerocopy::FromBytes as _;
 
@@ -98,6 +98,10 @@ pub enum Message<'a> {
     NewAddress(&'a ifaddrmsg, Attributes<'a>),
     DeleteAddress(&'a ifaddrmsg, Attributes<'a>),
     NonIpAddress(u8),
+    NewLink(&'a ifinfomsg),
+    DeleteLink(&'a ifinfomsg),
+    /// A link message about the device's role in a protocol, such as `AF_BRIDGE` for the device as a bridge port.
+    ProtocolLink(u8),
     Other(u16),
 }
 
@@ -111,6 +115,24 @@ impl<'a> Message<'a> {
             RTM_DELADDR => match split_address_message(payload) {
                 Ok((ifa, attributes)) => Self::DeleteAddress(ifa, attributes),
                 Err(family) => Self::NonIpAddress(family),
+            },
+            RTM_NEWLINK => {
+                let ifi = link_header(payload);
+
+                if i32::from(ifi.ifi_family) == AF_UNSPEC {
+                    Self::NewLink(ifi)
+                } else {
+                    Self::ProtocolLink(ifi.ifi_family)
+                }
+            },
+            RTM_DELLINK => {
+                let ifi = link_header(payload);
+
+                if i32::from(ifi.ifi_family) == AF_UNSPEC {
+                    Self::DeleteLink(ifi)
+                } else {
+                    Self::ProtocolLink(ifi.ifi_family)
+                }
             },
             _ => match i32::from(message_type) {
                 NLMSG_DONE => Self::Done,
@@ -130,6 +152,13 @@ impl<'a> Message<'a> {
             },
         }
     }
+}
+
+fn link_header(payload: &[u8]) -> &ifinfomsg {
+    let (ifi, _) = ifinfomsg::ref_from_prefix(payload)
+        .expect("a link message must start with an `ifinfomsg`, as this is kernel data");
+
+    ifi
 }
 
 /// Returns the family of a non-IP address message as the error.
@@ -237,11 +266,11 @@ mod tests {
     use std::mem::MaybeUninit;
 
     use bytes::BufMut as _;
-    use libc::EINVAL;
+    use libc::{AF_BRIDGE, EINVAL, IFF_UP, RTM_DELLINK};
     use pretty_assertions::assert_eq;
 
     use crate::rtnetlink::{Message, ReceiveBuffer, RecvBuf};
-    use crate::test_utils::netlink::error_message;
+    use crate::test_utils::netlink::{error_message, link_message};
 
     struct Datagram<'b>(&'b [u8]);
 
@@ -281,5 +310,20 @@ mod tests {
         };
 
         assert_eq!(error.raw_os_error(), Some(EINVAL));
+    }
+
+    #[tokio::test]
+    async fn bridge_port_link_decodes_as_protocol_link() {
+        let bytes = link_message(RTM_DELLINK, AF_BRIDGE, 3, IFF_UP.cast_unsigned());
+
+        let mut buffer = ReceiveBuffer::new();
+
+        let mut messages = buffer.receive(&Datagram(&bytes)).await.unwrap();
+
+        let Some(Message::ProtocolLink(family)) = messages.next() else {
+            panic!("expected `Message::ProtocolLink`");
+        };
+
+        assert_eq!(i32::from(family), AF_BRIDGE);
     }
 }
