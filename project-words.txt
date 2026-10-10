@@ -135,6 +135,7 @@ oneshot
 optlen
 oras
 pathbuf
+phonet
 pkgs
 pnpx
 postprocessors

@@ -6,7 +6,7 @@ use crate::utils::{u16_to_usize, u32_to_usize};
 const NLMSG_ALIGNTO: usize = 4;
 
 /// Larger than `align_of::<rtattr>()`, which is 2.
-const RTA_ALIGNTO: usize = 4;
+pub const RTA_ALIGNTO: usize = 4;
 
 /// Walks the netlink messages in `buffer`, yielding each header with its payload.
 pub fn messages(mut buffer: &[u8]) -> impl Iterator<Item = (&nlmsghdr, &[u8])> {

@@ -495,15 +495,16 @@ fn parse_address_message(ifa: &ifaddrmsg, rest: &[u8]) -> Option<IpNet> {
 #[cfg(test)]
 mod tests {
     use std::mem::MaybeUninit;
-    use std::net::Ipv6Addr;
+    use std::net::{Ipv4Addr, Ipv6Addr};
     use std::ops::ControlFlow;
     use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
     use bytes::BufMut as _;
     use ipnet::IpNet;
     use libc::{
-        AF_INET6, EINVAL, IFA_ADDRESS, IFA_F_DADFAILED, IFA_F_DEPRECATED, IFA_F_PERMANENT,
-        IFA_F_TENTATIVE, NLMSG_DONE, NLMSG_ERROR, RTM_DELADDR, RTM_NEWADDR,
+        AF_INET, AF_INET6, AF_PHONET, EINVAL, IFA_ADDRESS, IFA_F_DADFAILED, IFA_F_DEPRECATED,
+        IFA_F_PERMANENT, IFA_F_TENTATIVE, IFA_LOCAL, NLMSG_DONE, NLMSG_ERROR, RTM_DELADDR,
+        RTM_NEWADDR,
     };
     use pretty_assertions::{assert_eq, assert_matches};
     use shared::netlink::{ifaddrmsg, nlmsghdr, rtattr};
@@ -513,6 +514,7 @@ mod tests {
     use crate::address_monitor::netlink_address_monitor::{
         RecvBuf, SIZE_OF_SOCKADDR_NL, SkippedStates, build_buffer, process_changes,
     };
+    use crate::netlink::RTA_ALIGNTO;
     use crate::network_handler::Command;
     use crate::utils::u32_to_usize;
 
@@ -767,6 +769,34 @@ mod tests {
         )
     }
 
+    fn attribute(rta_type: u16, value: &[u8]) -> Vec<u8> {
+        let rta = rtattr {
+            rta_len: u16::try_from(size_of::<rtattr>() + value.len()).unwrap(),
+            rta_type,
+        };
+
+        let mut bytes = [rta.as_bytes(), value].concat();
+
+        bytes.resize(bytes.len().next_multiple_of(RTA_ALIGNTO), 0);
+
+        bytes
+    }
+
+    fn new_address_message(family: i32, prefix_len: u8, attributes: &[Vec<u8>]) -> Vec<u8> {
+        let ifa = ifaddrmsg {
+            ifa_family: u8::try_from(family).unwrap(),
+            ifa_prefixlen: prefix_len,
+            ifa_flags: 0,
+            ifa_scope: 0,
+            ifa_index: 2,
+        };
+
+        netlink_message(
+            RTM_NEWADDR,
+            &[ifa.as_bytes(), attributes.concat().as_slice()].concat(),
+        )
+    }
+
     fn error_message(error: i32) -> Vec<u8> {
         netlink_message(
             u16::try_from(NLMSG_ERROR).unwrap(),
@@ -833,6 +863,36 @@ mod tests {
             &*commands(&bytes).await,
             [Command::DeleteAddress { address, .. }] if *address == "2001:db8::1/64".parse::<IpNet>().unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn point_to_point_ipv4_address_is_the_local_address() {
+        let bytes = new_address_message(
+            AF_INET,
+            32,
+            &[
+                attribute(
+                    IFA_ADDRESS,
+                    &"192.0.2.2".parse::<Ipv4Addr>().unwrap().octets(),
+                ),
+                attribute(
+                    IFA_LOCAL,
+                    &"192.0.2.1".parse::<Ipv4Addr>().unwrap().octets(),
+                ),
+            ],
+        );
+
+        assert_matches!(
+            &*commands(&bytes).await,
+            [Command::NewAddress { address, .. }] if *address == "192.0.2.1/32".parse::<IpNet>().unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn address_of_another_family_is_ignored() {
+        let bytes = new_address_message(AF_PHONET, 0, &[attribute(IFA_LOCAL, &[0x40])]);
+
+        assert_matches!(&*commands(&bytes).await, []);
     }
 
     #[test]
