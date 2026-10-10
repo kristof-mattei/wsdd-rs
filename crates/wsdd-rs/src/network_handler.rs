@@ -5,6 +5,7 @@ use std::sync::Arc;
 use hashbrown::hash_map::Entry;
 use hashbrown::{HashMap, HashSet};
 use ipnet::IpNet;
+use libc::{IFF_MULTICAST, IFF_RUNNING};
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -36,6 +37,13 @@ pub enum Command {
         scope: u8,
         index: u32,
     },
+    NewLink {
+        index: u32,
+        flags: u32,
+    },
+    DeleteLink {
+        index: u32,
+    },
     ClearDevices,
     ListDevices {
         devices_tx: Sender<(DeviceUri, WSDDiscoveredDevice)>,
@@ -60,6 +68,31 @@ pub enum Reason {
     AddressNotMulticastable,
     #[error("Interface is excluded")]
     ExcludedInterface,
+    #[error("Interface state unknown")]
+    UnknownLink,
+    #[error("Interface not running")]
+    LinkNotRunning,
+    #[error("Interface without multicast")]
+    LinkWithoutMulticast,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LinkState {
+    Usable,
+    WithoutMulticast,
+    NotRunning,
+}
+
+impl LinkState {
+    fn from_flags(flags: u32) -> Self {
+        if flags & IFF_RUNNING.cast_unsigned() == 0 {
+            Self::NotRunning
+        } else if flags & IFF_MULTICAST.cast_unsigned() == 0 {
+            Self::WithoutMulticast
+        } else {
+            Self::Usable
+        }
+    }
 }
 
 pub struct NetworkHandler<R = LibcInterfaceNameResolver> {
@@ -69,6 +102,7 @@ pub struct NetworkHandler<R = LibcInterfaceNameResolver> {
     config: Arc<Config>,
     devices: Arc<RwLock<Devices>>,
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
+    links: HashMap<u32, LinkState>,
     /// Every address and interface index reported as new and not since reported as deleted.
     known_addresses: HashSet<(IpNet, u32)>,
     multicast_handlers: AddressHandlers<MulticastHandler>,
@@ -121,6 +155,7 @@ where
             cancellation_token,
             devices: Arc::new(RwLock::new(Devices::default())),
             interfaces: HashMap::new(),
+            links: HashMap::new(),
             known_addresses: HashSet::new(),
             multicast_handlers: AddressHandlers::default(),
             command_rx,
@@ -181,6 +216,12 @@ where
                         Arc::clone(&interface),
                     ))
                     .await;
+                },
+                Command::NewLink { index, flags } => {
+                    self.handle_link(index, LinkState::from_flags(flags)).await;
+                },
+                Command::DeleteLink { index } => {
+                    self.handle_deleted_link(index);
                 },
                 Command::ClearDevices => {
                     if self.config.discovery {
@@ -341,7 +382,12 @@ where
             return Err(Reason::ExcludedInterface);
         }
 
-        Ok(())
+        match self.links.get(&address.interface.index()).copied() {
+            Some(LinkState::Usable) => Ok(()),
+            Some(LinkState::WithoutMulticast) => Err(Reason::LinkWithoutMulticast),
+            Some(LinkState::NotRunning) => Err(Reason::LinkNotRunning),
+            None => Err(Reason::UnknownLink),
+        }
     }
 
     pub async fn handle_new_address(&mut self, network_address: NetworkAddress) {
@@ -365,6 +411,10 @@ where
             return;
         }
 
+        self.start_handler(network_address).await;
+    }
+
+    async fn start_handler(&mut self, network_address: NetworkAddress) {
         // the address may already have a handler under another prefix length
         if self
             .multicast_handlers
@@ -428,6 +478,71 @@ where
         // handler gets dropped
     }
 
+    async fn handle_link(&mut self, index: u32, state: LinkState) {
+        if self.links.insert(index, state) == Some(state) {
+            return;
+        }
+
+        match state {
+            LinkState::Usable => {
+                event!(Level::DEBUG, index, "link usable");
+
+                self.start_handlers_on(index).await;
+            },
+            LinkState::WithoutMulticast => {
+                event!(Level::DEBUG, index, "link without multicast");
+
+                // the link still works and wsdd leaves it by choice, so it sends a Bye
+                self.teardown_handlers_on(index, true).await;
+            },
+            LinkState::NotRunning => {
+                event!(Level::DEBUG, index, "link not running");
+
+                self.teardown_handlers_on(index, false).await;
+            },
+        }
+    }
+
+    fn handle_deleted_link(&mut self, index: u32) {
+        // the kernel reports the link as not running before deleting it, so its handlers are gone already
+        self.links.remove(&index);
+    }
+
+    async fn start_handlers_on(&mut self, index: u32) {
+        let Some(interface) = self.interfaces.get(&index).map(Arc::clone) else {
+            // no address on this link yet
+            return;
+        };
+
+        let addresses = self
+            .known_addresses
+            .iter()
+            .filter(|&&(_, address_index)| address_index == index)
+            .map(|&(address, _)| address)
+            .collect::<Vec<_>>();
+
+        for address in addresses {
+            let network_address = NetworkAddress::new(address, Arc::clone(&interface));
+
+            if self.is_address_handled(&network_address).is_ok() {
+                self.start_handler(network_address).await;
+            }
+        }
+    }
+
+    async fn teardown_handlers_on(&mut self, index: u32, graceful: bool) {
+        let tasks = TaskTracker::new();
+
+        for mch in self.multicast_handlers.remove_on_interface(index) {
+            tasks.spawn_with_name("multicast handler teardown", async move {
+                mch.teardown(graceful).await;
+            });
+        }
+
+        tasks.close();
+        tasks.wait().await;
+    }
+
     pub async fn teardown(&mut self) {
         if !self.active {
             // Already stopped, nothing to do
@@ -471,7 +586,7 @@ mod tests {
     use crate::config::{Config, InterfaceFilter};
     use crate::max_size_deque::MaxSizeDeque;
     use crate::network_address::NetworkAddress;
-    use crate::network_handler::{Command, NetworkHandler, Reason};
+    use crate::network_handler::{Command, LinkState, NetworkHandler, Reason};
     use crate::network_interface::{DevName, MockResolveInterfaceName, NetworkInterface};
     use crate::test_utils::{build_config, find_first_non_lo_network_interface};
 
@@ -607,6 +722,8 @@ mod tests {
 
         let mut network_handler = build_network_handler(config);
         network_handler.active = true;
+        network_handler.links.insert(2, LinkState::Usable);
+        network_handler.links.insert(3, LinkState::Usable);
 
         let eth0 = Arc::new(NetworkInterface::new_with_index("eth0", 0, 2));
         let eth1 = Arc::new(NetworkInterface::new_with_index("eth1", 0, 3));
@@ -628,6 +745,7 @@ mod tests {
 
         let mut network_handler = build_network_handler(config);
         network_handler.active = true;
+        network_handler.links.insert(2, LinkState::Usable);
 
         let interface = Arc::new(NetworkInterface::new_with_index("eth0", 0, 2));
 
@@ -686,6 +804,85 @@ mod tests {
         assert_eq!(
             network_handler.known_addresses.iter().collect::<Vec<_>>(),
             [&(narrow.address, 2)]
+        );
+    }
+
+    #[test]
+    fn link_flags_decide_the_state() {
+        let running = libc::IFF_RUNNING.cast_unsigned();
+        let multicast = libc::IFF_MULTICAST.cast_unsigned();
+
+        assert!(matches!(
+            LinkState::from_flags(running | multicast),
+            LinkState::Usable
+        ));
+        assert!(matches!(
+            LinkState::from_flags(running),
+            LinkState::WithoutMulticast
+        ));
+        assert!(matches!(
+            LinkState::from_flags(multicast),
+            LinkState::NotRunning
+        ));
+    }
+
+    fn address_on_eth0() -> NetworkAddress {
+        let interface = Arc::new(NetworkInterface::new_with_index("eth0", 0, 2));
+
+        NetworkAddress::new("192.0.2.1/24".parse().unwrap(), interface)
+    }
+
+    #[test]
+    fn address_on_an_unknown_link_is_not_handled() {
+        let mut network_handler = build_network_handler(build_config(Uuid::now_v7(), 1));
+        network_handler.active = true;
+
+        assert_matches!(
+            network_handler.is_address_handled(&address_on_eth0()),
+            Err(Reason::UnknownLink)
+        );
+    }
+
+    #[tokio::test]
+    async fn address_on_a_link_without_multicast_is_not_handled() {
+        let mut network_handler = build_network_handler(build_config(Uuid::now_v7(), 1));
+        network_handler.active = true;
+
+        network_handler
+            .handle_link(2, LinkState::WithoutMulticast)
+            .await;
+
+        assert_matches!(
+            network_handler.is_address_handled(&address_on_eth0()),
+            Err(Reason::LinkWithoutMulticast)
+        );
+    }
+
+    #[tokio::test]
+    async fn address_on_a_link_that_stopped_running_is_not_handled() {
+        let mut network_handler = build_network_handler(build_config(Uuid::now_v7(), 1));
+        network_handler.active = true;
+        network_handler.links.insert(2, LinkState::Usable);
+
+        network_handler.handle_link(2, LinkState::NotRunning).await;
+
+        assert_matches!(
+            network_handler.is_address_handled(&address_on_eth0()),
+            Err(Reason::LinkNotRunning)
+        );
+    }
+
+    #[test]
+    fn deleted_link_is_unknown() {
+        let mut network_handler = build_network_handler(build_config(Uuid::now_v7(), 1));
+        network_handler.active = true;
+        network_handler.links.insert(2, LinkState::Usable);
+
+        network_handler.handle_deleted_link(2);
+
+        assert_matches!(
+            network_handler.is_address_handled(&address_on_eth0()),
+            Err(Reason::UnknownLink)
         );
     }
 }

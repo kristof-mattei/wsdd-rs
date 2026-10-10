@@ -11,6 +11,13 @@ pub struct NetlinkRequest {
     pub ifa: ifaddrmsg,
 }
 
+#[derive(IntoBytes, Immutable)]
+#[repr(C)]
+pub struct LinkRequest {
+    pub nh: nlmsghdr,
+    pub ifi: ifinfomsg,
+}
+
 /// Copy from `libc::nlmsghdr`, but we need zerocopy.
 #[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]

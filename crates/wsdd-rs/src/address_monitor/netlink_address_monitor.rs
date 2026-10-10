@@ -9,10 +9,10 @@ use color_eyre::eyre;
 use ipnet::IpNet;
 use libc::{
     AF_INET, AF_INET6, AF_UNSPEC, IFA_F_DADFAILED, IFA_F_DEPRECATED, IFA_F_HOMEADDRESS,
-    IFA_F_TENTATIVE, NETLINK_ROUTE, NLM_F_ACK, NLM_F_DUMP, NLM_F_REQUEST, RTM_GETADDR,
+    IFA_F_TENTATIVE, NETLINK_ROUTE, NLM_F_ACK, NLM_F_DUMP, NLM_F_REQUEST, RTM_GETADDR, RTM_GETLINK,
     RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK,
 };
-use shared::netlink::{NetlinkRequest, ifaddrmsg, nlmsghdr};
+use shared::netlink::{LinkRequest, NetlinkRequest, ifaddrmsg, ifinfomsg, nlmsghdr};
 use socket2::SockAddrStorage;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
@@ -28,6 +28,29 @@ use crate::rtnetlink::{
 use crate::utils::task::spawn_with_name;
 
 define_typed_size!(SIZE_OF_SOCKADDR_NL, u32, libc::sockaddr_nl);
+
+/// Each dump request sets its own `nlmsg_seq`. Netlink treats the value as opaque and echoes it in the replies, so an `NLMSG_DONE` shows which dump ended.
+enum Dump {
+    Links,
+    Addresses,
+}
+
+impl Dump {
+    fn sequence(self) -> u32 {
+        match self {
+            Self::Links => 1,
+            Self::Addresses => 2,
+        }
+    }
+
+    fn from_sequence(sequence: u32) -> Option<Self> {
+        match sequence {
+            1 => Some(Self::Links),
+            2 => Some(Self::Addresses),
+            _ => None,
+        }
+    }
+}
 
 pub struct NetlinkAddressMonitor {
     cancellation_token: CancellationToken,
@@ -101,7 +124,6 @@ impl NetlinkAddressMonitor {
 
         let start_handler = {
             let cancellation_token = cancellation_token.clone();
-            let config = Arc::clone(&config);
             let socket = Arc::clone(&socket);
             let mut start_rx = start_rx;
 
@@ -120,7 +142,7 @@ impl NetlinkAddressMonitor {
 
                     event!(Level::INFO, "Requesting current network state");
 
-                    if let Err(error) = request_current_state(&config, &socket) {
+                    if let Err(error) = request_links(&socket) {
                         event!(Level::ERROR, ?error, "Failed to send start packet");
                     }
                 }
@@ -146,12 +168,15 @@ impl NetlinkAddressMonitor {
         // we originally had this on the stack (array), but that pushed the spawned task's future past tokio's `BOX_FUTURE_THRESHOLD` in debug builds, so `spawn` boxed it
         let mut buffer = ReceiveBuffer::new();
 
+        let request_addresses = || request_addresses(&self.config, &self.socket);
+
         loop {
-            match process_changes::<&tokio::net::UdpSocket>(
+            match process_changes::<&tokio::net::UdpSocket, _>(
                 &self.cancellation_token,
                 &*self.socket,
                 self.command_tx.clone(),
                 &mut buffer,
+                &request_addresses,
             )
             .await?
             {
@@ -160,7 +185,7 @@ impl NetlinkAddressMonitor {
                 },
                 ControlFlow::Continue(()) => {
                     // recover the lost notifications by re-requesting the current state
-                    if let Err(error) = request_current_state(&self.config, &self.socket) {
+                    if let Err(error) = request_links(&self.socket) {
                         event!(
                             Level::ERROR,
                             ?error,
@@ -175,14 +200,16 @@ impl NetlinkAddressMonitor {
 
 /// Reads and processes netlink messages until cancelled (`Break`), the receive queue
 /// overflows (`Continue`, the caller recovers and re-enters), or a fatal receive error.
-async fn process_changes<R>(
+async fn process_changes<R, F>(
     cancellation_token: &CancellationToken,
     recv_buf: R,
     command_tx: Sender<Command>,
     buffer: &mut ReceiveBuffer,
+    request_addresses: &F,
 ) -> Result<ControlFlow<()>, eyre::Report>
 where
     R: for<'a> RecvBuf<&'a mut [MaybeUninit<u8>]>,
+    F: Fn() -> Result<(), std::io::Error>,
 {
     loop {
         let messages = tokio::select! {
@@ -208,7 +235,9 @@ where
             },
         };
 
-        if let Err(error) = parse_netlink_response(messages, cancellation_token, &command_tx).await
+        if let Err(error) =
+            parse_netlink_response(messages, cancellation_token, &command_tx, request_addresses)
+                .await
         {
             event!(
                 Level::ERROR,
@@ -219,7 +248,29 @@ where
     }
 }
 
-fn request_current_state(
+fn request_links(socket: &tokio::net::UdpSocket) -> Result<(), std::io::Error> {
+    let request = LinkRequest {
+        nh: nlmsghdr {
+            nlmsg_len: size_of::<LinkRequest>().try_into().unwrap(),
+            nlmsg_type: RTM_GETLINK,
+            nlmsg_flags: u16::try_from(NLM_F_REQUEST | NLM_F_ACK | NLM_F_DUMP).unwrap(),
+            nlmsg_seq: Dump::Links.sequence(),
+            nlmsg_pid: 0,
+        },
+        ifi: ifinfomsg {
+            ifi_family: AF_UNSPEC.try_into().unwrap(),
+            ifi_pad: 0,
+            ifi_type: 0,
+            ifi_index: 0,
+            ifi_flags: 0,
+            ifi_change: 0,
+        },
+    };
+
+    send_to_kernel(socket, request.as_bytes())
+}
+
+fn request_addresses(
     config: &Config,
     socket: &tokio::net::UdpSocket,
 ) -> Result<(), std::io::Error> {
@@ -234,7 +285,7 @@ fn request_current_state(
             nlmsg_len: size_of::<NetlinkRequest>().try_into().unwrap(),
             nlmsg_type: RTM_GETADDR,
             nlmsg_flags: u16::try_from(NLM_F_REQUEST | NLM_F_ACK | NLM_F_DUMP).unwrap(),
-            nlmsg_seq: 1,
+            nlmsg_seq: Dump::Addresses.sequence(),
             nlmsg_pid: 0,
         },
         ifa: ifaddrmsg {
@@ -246,6 +297,10 @@ fn request_current_state(
         },
     };
 
+    send_to_kernel(socket, request.as_bytes())
+}
+
+fn send_to_kernel(socket: &tokio::net::UdpSocket, request: &[u8]) -> Result<(), std::io::Error> {
     #[expect(
         clippy::multiple_unsafe_ops_per_block,
         reason = "Lint limitations on nested `unsafe`"
@@ -274,7 +329,7 @@ fn request_current_state(
         })
     }?;
 
-    socket2::SockRef::from(&socket).send_to(request.as_bytes(), &socket_addr)?;
+    socket2::SockRef::from(&socket).send_to(request, &socket_addr)?;
 
     Ok(())
 }
@@ -294,14 +349,34 @@ impl fmt::Display for SkippedStates {
     }
 }
 
-async fn parse_netlink_response(
+async fn parse_netlink_response<F>(
     messages: Messages<'_>,
     cancellation_token: &CancellationToken,
     command_tx: &Sender<Command>,
-) -> Result<(), eyre::Report> {
+    request_addresses: &F,
+) -> Result<(), eyre::Report>
+where
+    F: Fn() -> Result<(), std::io::Error>,
+{
     for message in messages {
         let command = match message {
-            Message::Done => break,
+            Message::Done { sequence } => {
+                match Dump::from_sequence(sequence) {
+                    Some(Dump::Links) => {
+                        // only one dump runs per socket at a time, so the address dump starts once the link dump is done
+                        if let Err(error) = request_addresses() {
+                            event!(
+                                Level::ERROR,
+                                ?error,
+                                "Failed to request the current addresses"
+                            );
+                        }
+                    },
+                    Some(Dump::Addresses) | None => {},
+                }
+
+                break;
+            },
             Message::Ack => {
                 event!(Level::DEBUG, "ACK");
 
@@ -345,16 +420,13 @@ async fn parse_netlink_response(
 
                 None
             },
-            Message::NewLink(ifi) | Message::DeleteLink(ifi) => {
-                event!(
-                    Level::DEBUG,
-                    index = ifi.ifi_index,
-                    flags = ifi.ifi_flags,
-                    "unhandled link message"
-                );
-
-                None
-            },
+            Message::NewLink(ifi) => Some(Command::NewLink {
+                index: ifi.ifi_index.cast_unsigned(),
+                flags: ifi.ifi_flags,
+            }),
+            Message::DeleteLink(ifi) => Some(Command::DeleteLink {
+                index: ifi.ifi_index.cast_unsigned(),
+            }),
             Message::ProtocolLink(family) => {
                 event!(Level::DEBUG, "skipping link, family: {}", family);
 
@@ -439,8 +511,9 @@ mod tests {
     use bytes::BufMut as _;
     use ipnet::IpNet;
     use libc::{
-        AF_INET, AF_INET6, AF_PHONET, IFA_ADDRESS, IFA_F_DADFAILED, IFA_F_DEPRECATED,
-        IFA_F_PERMANENT, IFA_F_TENTATIVE, IFA_LOCAL, NLMSG_DONE, RTM_DELADDR, RTM_NEWADDR,
+        AF_INET, AF_INET6, AF_PHONET, AF_UNSPEC, IFA_ADDRESS, IFA_F_DADFAILED, IFA_F_DEPRECATED,
+        IFA_F_PERMANENT, IFA_F_TENTATIVE, IFA_LOCAL, IFF_MULTICAST, IFF_RUNNING, IFF_UP,
+        NLMSG_DONE, RTM_DELADDR, RTM_NEWADDR, RTM_NEWLINK,
     };
     use pretty_assertions::{assert_eq, assert_matches};
     use shared::netlink::{ifaddrmsg, rtattr};
@@ -448,11 +521,11 @@ mod tests {
     use zerocopy::IntoBytes as _;
 
     use crate::address_monitor::netlink_address_monitor::{
-        SIZE_OF_SOCKADDR_NL, SkippedStates, process_changes,
+        Dump, SIZE_OF_SOCKADDR_NL, SkippedStates, process_changes,
     };
     use crate::network_handler::Command;
     use crate::rtnetlink::{RTA_ALIGNTO, ReceiveBuffer, RecvBuf};
-    use crate::test_utils::netlink::netlink_message;
+    use crate::test_utils::netlink::{done_message, link_message, netlink_message};
     use crate::utils::u32_to_usize;
 
     #[test]
@@ -577,6 +650,7 @@ mod tests {
             },
             command_tx,
             &mut buffer,
+            &|| Ok(()),
         )
         .await;
 
@@ -625,6 +699,7 @@ mod tests {
             &socket,
             command_tx.clone(),
             &mut buffer,
+            &|| Ok(()),
         )
         .await;
 
@@ -643,7 +718,14 @@ mod tests {
             })
         };
 
-        let result = process_changes(&cancellation_token, &socket, command_tx, &mut buffer).await;
+        let result = process_changes(
+            &cancellation_token,
+            &socket,
+            command_tx,
+            &mut buffer,
+            &|| Ok(()),
+        )
+        .await;
 
         assert_matches!(result, Ok(ControlFlow::Break(())));
 
@@ -722,6 +804,39 @@ mod tests {
         )
     }
 
+    async fn address_requests(bytes: &[u8]) -> u8 {
+        let cancellation_token = CancellationToken::new();
+
+        let (command_tx, _command_rx) = tokio::sync::mpsc::channel::<Command>(10);
+
+        let socket = DrainingNetlinkSocket {
+            bytes,
+            cancellation_token: cancellation_token.clone(),
+            done: AtomicBool::new(false),
+        };
+
+        let requests = AtomicU8::new(0);
+
+        let mut buffer = ReceiveBuffer::new();
+
+        let result = process_changes(
+            &cancellation_token,
+            socket,
+            command_tx,
+            &mut buffer,
+            &|| {
+                requests.fetch_add(1, Ordering::Relaxed);
+
+                Ok(())
+            },
+        )
+        .await;
+
+        assert_matches!(result, Ok(ControlFlow::Break(())));
+
+        requests.into_inner()
+    }
+
     /// Every command `process_changes` sends for `bytes`.
     async fn commands(bytes: &[u8]) -> Vec<Command> {
         let cancellation_token = CancellationToken::new();
@@ -736,7 +851,14 @@ mod tests {
 
         let mut buffer = ReceiveBuffer::new();
 
-        let result = process_changes(&cancellation_token, socket, command_tx, &mut buffer).await;
+        let result = process_changes(
+            &cancellation_token,
+            socket,
+            command_tx,
+            &mut buffer,
+            &|| Ok(()),
+        )
+        .await;
 
         assert_matches!(result, Ok(ControlFlow::Break(())));
 
@@ -860,5 +982,45 @@ mod tests {
             &*commands(&bytes).await,
             [Command::NewAddress { address, .. }] if *address == "2001:db8::1/64".parse::<IpNet>().unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn end_of_link_dump_requests_the_addresses() {
+        assert_eq!(
+            address_requests(&done_message(Dump::Links.sequence())).await,
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn end_of_address_dump_requests_nothing() {
+        assert_eq!(
+            address_requests(&done_message(Dump::Addresses.sequence())).await,
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn device_link_is_reported_with_its_flags() {
+        let flags = (IFF_UP | IFF_RUNNING | IFF_MULTICAST).cast_unsigned();
+
+        let bytes = link_message(RTM_NEWLINK, AF_UNSPEC, 3, flags);
+
+        assert_matches!(
+            &*commands(&bytes).await,
+            [Command::NewLink { index: 3, flags: reported }] if *reported == flags
+        );
+    }
+
+    #[test]
+    fn dump_sequences_map_back_to_their_dump() {
+        assert!(matches!(
+            Dump::from_sequence(Dump::Links.sequence()),
+            Some(Dump::Links)
+        ));
+        assert!(matches!(
+            Dump::from_sequence(Dump::Addresses.sequence()),
+            Some(Dump::Addresses)
+        ));
     }
 }

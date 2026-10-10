@@ -85,12 +85,18 @@ impl<'a> Iterator for Messages<'a> {
 
         self.0 = &self.0[message_len.next_multiple_of(NLMSG_ALIGNTO)..];
 
-        Some(Message::decode(header.nlmsg_type, payload))
+        Some(Message::decode(
+            header.nlmsg_type,
+            header.nlmsg_seq,
+            payload,
+        ))
     }
 }
 
 pub enum Message<'a> {
-    Done,
+    Done {
+        sequence: u32,
+    },
     /// An `NLMSG_ERROR` with error code 0.
     Ack,
     Error(io::Error),
@@ -106,7 +112,7 @@ pub enum Message<'a> {
 }
 
 impl<'a> Message<'a> {
-    fn decode(message_type: u16, payload: &'a [u8]) -> Self {
+    fn decode(message_type: u16, sequence: u32, payload: &'a [u8]) -> Self {
         match message_type {
             RTM_NEWADDR => {
                 let (ifa, rest) = address_header(payload);
@@ -155,7 +161,7 @@ impl<'a> Message<'a> {
                 }
             },
             _ => match i32::from(message_type) {
-                NLMSG_DONE => Self::Done,
+                NLMSG_DONE => Self::Done { sequence },
                 NLMSG_ERROR => {
                     let (error, _) = nlmsgerr::ref_from_prefix(payload).expect(
                         "`NLMSG_ERROR` must start with an `nlmsgerr`, as this is kernel data",
@@ -286,7 +292,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::rtnetlink::{Message, ReceiveBuffer, RecvBuf};
-    use crate::test_utils::netlink::{error_message, link_message};
+    use crate::test_utils::netlink::{done_message, error_message, link_message};
 
     struct Datagram<'b>(&'b [u8]);
 
@@ -326,6 +332,20 @@ mod tests {
         };
 
         assert_eq!(error.raw_os_error(), Some(EINVAL));
+    }
+
+    #[tokio::test]
+    async fn done_keeps_its_sequence() {
+        let bytes = done_message(7);
+
+        let mut buffer = ReceiveBuffer::new();
+
+        let mut messages = buffer.receive(&Datagram(&bytes)).await.unwrap();
+
+        assert!(matches!(
+            messages.next(),
+            Some(Message::Done { sequence: 7 })
+        ));
     }
 
     #[tokio::test]
