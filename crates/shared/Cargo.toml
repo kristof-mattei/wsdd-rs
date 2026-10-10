@@ -15,7 +15,6 @@ include.workspace = true
 default = []
 
 [dependencies]
-libc.workspace = true
 zerocopy = { features = ["derive"], workspace = true }
 
 [dev-dependencies]

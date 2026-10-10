@@ -19,6 +19,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 use wsdd_rs::define_typed_size;
 use zerocopy::IntoBytes as _;
+use zerocopy::byteorder::native_endian::{I32, U16, U32};
 
 use crate::config::{BindTo, Config};
 use crate::network_handler::Command;
@@ -251,19 +252,19 @@ where
 fn request_links(socket: &tokio::net::UdpSocket) -> Result<(), std::io::Error> {
     let request = LinkRequest {
         nh: nlmsghdr {
-            nlmsg_len: size_of::<LinkRequest>().try_into().unwrap(),
-            nlmsg_type: RTM_GETLINK,
-            nlmsg_flags: u16::try_from(NLM_F_REQUEST | NLM_F_ACK | NLM_F_DUMP).unwrap(),
-            nlmsg_seq: Dump::Links.sequence(),
-            nlmsg_pid: 0,
+            nlmsg_len: U32::new(size_of::<LinkRequest>().try_into().unwrap()),
+            nlmsg_type: U16::new(RTM_GETLINK),
+            nlmsg_flags: U16::new(u16::try_from(NLM_F_REQUEST | NLM_F_ACK | NLM_F_DUMP).unwrap()),
+            nlmsg_seq: U32::new(Dump::Links.sequence()),
+            nlmsg_pid: U32::ZERO,
         },
         ifi: ifinfomsg {
             ifi_family: AF_UNSPEC.try_into().unwrap(),
             ifi_pad: 0,
-            ifi_type: 0,
-            ifi_index: 0,
-            ifi_flags: 0,
-            ifi_change: 0,
+            ifi_type: U16::ZERO,
+            ifi_index: I32::ZERO,
+            ifi_flags: U32::ZERO,
+            ifi_change: U32::ZERO,
         },
     };
 
@@ -282,18 +283,18 @@ fn request_addresses(
 
     let request = NetlinkRequest {
         nh: nlmsghdr {
-            nlmsg_len: size_of::<NetlinkRequest>().try_into().unwrap(),
-            nlmsg_type: RTM_GETADDR,
-            nlmsg_flags: u16::try_from(NLM_F_REQUEST | NLM_F_ACK | NLM_F_DUMP).unwrap(),
-            nlmsg_seq: Dump::Addresses.sequence(),
-            nlmsg_pid: 0,
+            nlmsg_len: U32::new(size_of::<NetlinkRequest>().try_into().unwrap()),
+            nlmsg_type: U16::new(RTM_GETADDR),
+            nlmsg_flags: U16::new(u16::try_from(NLM_F_REQUEST | NLM_F_ACK | NLM_F_DUMP).unwrap()),
+            nlmsg_seq: U32::new(Dump::Addresses.sequence()),
+            nlmsg_pid: U32::ZERO,
         },
         ifa: ifaddrmsg {
             ifa_family: family.try_into().unwrap(),
             ifa_prefixlen: 0,
             ifa_flags: 0,
             ifa_scope: 0,
-            ifa_index: 0,
+            ifa_index: U32::ZERO,
         },
     };
 
@@ -399,7 +400,7 @@ where
                     parse_address_message(ifa, attributes).map(|address| Command::NewAddress {
                         address,
                         scope: ifa.ifa_scope,
-                        index: ifa.ifa_index,
+                        index: ifa.ifa_index.get(),
                     })
                 } else {
                     event!(Level::DEBUG, "skipping address, state: {}", skipped_states);
@@ -412,7 +413,7 @@ where
                 parse_address_message(ifa, attributes).map(|address| Command::DeleteAddress {
                     address,
                     scope: ifa.ifa_scope,
-                    index: ifa.ifa_index,
+                    index: ifa.ifa_index.get(),
                 })
             },
             Message::NonIpAddress(family) => {
@@ -421,11 +422,11 @@ where
                 None
             },
             Message::NewLink(ifi) => Some(Command::NewLink {
-                index: ifi.ifi_index.cast_unsigned(),
-                flags: ifi.ifi_flags,
+                index: ifi.ifi_index.get().cast_unsigned(),
+                flags: ifi.ifi_flags.get(),
             }),
             Message::DeleteLink(ifi) => Some(Command::DeleteLink {
-                index: ifi.ifi_index.cast_unsigned(),
+                index: ifi.ifi_index.get().cast_unsigned(),
             }),
             Message::ProtocolLink(family) => {
                 event!(Level::DEBUG, "skipping link, family: {}", family);
@@ -519,6 +520,7 @@ mod tests {
     use shared::netlink::{ifaddrmsg, rtattr};
     use tokio_util::sync::CancellationToken;
     use zerocopy::IntoBytes as _;
+    use zerocopy::byteorder::native_endian::{U16, U32};
 
     use crate::address_monitor::netlink_address_monitor::{
         Dump, SIZE_OF_SOCKADDR_NL, SkippedStates, process_changes,
@@ -762,12 +764,12 @@ mod tests {
             ifa_prefixlen: 64,
             ifa_flags: u8::try_from(ifa_flags).unwrap(),
             ifa_scope: 0,
-            ifa_index: 2,
+            ifa_index: U32::new(2),
         };
 
         let rta = rtattr {
-            rta_len: u16::try_from(size_of::<rtattr>() + octets.len()).unwrap(),
-            rta_type: IFA_ADDRESS,
+            rta_len: U16::new(u16::try_from(size_of::<rtattr>() + octets.len()).unwrap()),
+            rta_type: U16::new(IFA_ADDRESS),
         };
 
         netlink_message(
@@ -778,8 +780,8 @@ mod tests {
 
     fn attribute(rta_type: u16, value: &[u8]) -> Vec<u8> {
         let rta = rtattr {
-            rta_len: u16::try_from(size_of::<rtattr>() + value.len()).unwrap(),
-            rta_type,
+            rta_len: U16::new(u16::try_from(size_of::<rtattr>() + value.len()).unwrap()),
+            rta_type: U16::new(rta_type),
         };
 
         let mut bytes = [rta.as_bytes(), value].concat();
@@ -795,7 +797,7 @@ mod tests {
             ifa_prefixlen: prefix_len,
             ifa_flags: 0,
             ifa_scope: 0,
-            ifa_index: 2,
+            ifa_index: U32::new(2),
         };
 
         netlink_message(

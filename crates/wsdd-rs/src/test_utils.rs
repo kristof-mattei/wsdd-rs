@@ -64,6 +64,7 @@ pub mod xml {
 pub mod netlink {
     use libc::{NLMSG_DONE, NLMSG_ERROR};
     use shared::netlink::{ifinfomsg, nlmsghdr};
+    use zerocopy::byteorder::native_endian::{I32, U16, U32};
     use zerocopy::{FromZeros as _, IntoBytes as _};
 
     pub fn netlink_message(nlmsg_type: u16, payload: &[u8]) -> Vec<u8> {
@@ -72,11 +73,11 @@ pub mod netlink {
 
     fn sequenced_message(nlmsg_type: u16, nlmsg_seq: u32, payload: &[u8]) -> Vec<u8> {
         let header = nlmsghdr {
-            nlmsg_len: u32::try_from(size_of::<nlmsghdr>() + payload.len()).unwrap(),
-            nlmsg_type,
-            nlmsg_flags: 0,
-            nlmsg_seq,
-            nlmsg_pid: 0,
+            nlmsg_len: U32::new(u32::try_from(size_of::<nlmsghdr>() + payload.len()).unwrap()),
+            nlmsg_type: U16::new(nlmsg_type),
+            nlmsg_flags: U16::ZERO,
+            nlmsg_seq: U32::new(nlmsg_seq),
+            nlmsg_pid: U32::ZERO,
         };
 
         [header.as_bytes(), payload].concat()
@@ -94,10 +95,10 @@ pub mod netlink {
         let ifi = ifinfomsg {
             ifi_family: u8::try_from(family).unwrap(),
             ifi_pad: 0,
-            ifi_type: 0,
-            ifi_index: index,
-            ifi_flags: flags,
-            ifi_change: 0,
+            ifi_type: U16::ZERO,
+            ifi_index: I32::new(index),
+            ifi_flags: U32::new(flags),
+            ifi_change: U32::ZERO,
         };
 
         netlink_message(nlmsg_type, ifi.as_bytes())
