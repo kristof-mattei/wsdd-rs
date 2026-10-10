@@ -231,3 +231,55 @@ impl AddressValue<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::mem::MaybeUninit;
+
+    use bytes::BufMut as _;
+    use libc::EINVAL;
+    use pretty_assertions::assert_eq;
+
+    use crate::rtnetlink::{Message, ReceiveBuffer, RecvBuf};
+    use crate::test_utils::netlink::error_message;
+
+    struct Datagram<'b>(&'b [u8]);
+
+    impl RecvBuf<&mut [MaybeUninit<u8>]> for Datagram<'_> {
+        #[expect(clippy::mut_mut, reason = "Mandated by the trait")]
+        fn recv_buf(
+            &self,
+            buf: &mut &mut [MaybeUninit<u8>],
+        ) -> impl Future<Output = std::io::Result<usize>> {
+            buf.put_slice(self.0);
+
+            std::future::ready(Ok(self.0.len()))
+        }
+    }
+
+    #[tokio::test]
+    async fn error_code_zero_decodes_as_ack() {
+        let bytes = error_message(0);
+
+        let mut buffer = ReceiveBuffer::new();
+
+        let mut messages = buffer.receive(&Datagram(&bytes)).await.unwrap();
+
+        assert!(matches!(messages.next(), Some(Message::Ack)));
+    }
+
+    #[tokio::test]
+    async fn negative_errno_decodes_as_error() {
+        let bytes = error_message(-EINVAL);
+
+        let mut buffer = ReceiveBuffer::new();
+
+        let mut messages = buffer.receive(&Datagram(&bytes)).await.unwrap();
+
+        let Some(Message::Error(error)) = messages.next() else {
+            panic!("expected `Message::Error`");
+        };
+
+        assert_eq!(error.raw_os_error(), Some(EINVAL));
+    }
+}
