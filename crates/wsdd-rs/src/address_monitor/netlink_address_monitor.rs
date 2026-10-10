@@ -1,32 +1,29 @@
 use std::fmt;
 use std::mem::MaybeUninit;
-use std::net::IpAddr;
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use bitflags::bitflags;
 use bitflags::parser::to_writer;
-use bytes::BufMut;
 use color_eyre::eyre;
 use ipnet::IpNet;
 use libc::{
-    AF_INET, AF_INET6, AF_UNSPEC, IFA_ADDRESS, IFA_F_DADFAILED, IFA_F_DEPRECATED,
-    IFA_F_HOMEADDRESS, IFA_F_TENTATIVE, IFA_FLAGS, IFA_LABEL, IFA_LOCAL, NETLINK_ROUTE, NLM_F_ACK,
-    NLM_F_DUMP, NLM_F_REQUEST, NLMSG_DONE, NLMSG_ERROR, NLMSG_NOOP, RTM_DELADDR, RTM_GETADDR,
-    RTM_NEWADDR, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK,
+    AF_INET, AF_INET6, AF_UNSPEC, IFA_F_DADFAILED, IFA_F_DEPRECATED, IFA_F_HOMEADDRESS,
+    IFA_F_TENTATIVE, NETLINK_ROUTE, NLM_F_ACK, NLM_F_DUMP, NLM_F_REQUEST, RTM_GETADDR,
+    RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK,
 };
-use shared::netlink::{NetlinkRequest, ifaddrmsg, nlmsgerr, nlmsghdr};
+use shared::netlink::{NetlinkRequest, ifaddrmsg, nlmsghdr};
 use socket2::SockAddrStorage;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 use wsdd_rs::define_typed_size;
-use zerocopy::{FromBytes as _, IntoBytes as _};
+use zerocopy::IntoBytes as _;
 
 use crate::config::{BindTo, Config};
-use crate::ffi::getpagesize;
-use crate::kernel_buffer::AlignedBuffer;
-use crate::netlink::{attributes, messages};
+use crate::netlink::{
+    AddressValue, Attribute, Attributes, Message, Messages, ReceiveBuffer, RecvBuf,
+};
 use crate::network_handler::Command;
 use crate::utils::task::spawn_with_name;
 
@@ -38,16 +35,6 @@ pub struct NetlinkAddressMonitor {
     config: Arc<Config>,
     socket: Arc<tokio::net::UdpSocket>,
     start_handler: tokio::task::JoinHandle<()>,
-}
-
-trait RecvBuf<B: BufMut> {
-    async fn recv_buf(&self, buf: &mut B) -> std::io::Result<usize>;
-}
-
-impl<B: BufMut> RecvBuf<B> for &tokio::net::UdpSocket {
-    async fn recv_buf(&self, buf: &mut B) -> std::io::Result<usize> {
-        tokio::net::UdpSocket::recv_buf::<B>(self, buf).await
-    }
 }
 
 impl NetlinkAddressMonitor {
@@ -156,10 +143,8 @@ impl NetlinkAddressMonitor {
     }
 
     pub async fn process_changes(&self) -> Result<(), eyre::Report> {
-        // we originally had this on the stack (array) but tokio then moves the whole task to the heap because of size
-        // Notice the buffer's alignment being equal to the alignment of `nlmsghdr`.
-        // This is because we will be reading structs from this buffer who have, at max, that alignment.
-        let mut buffer = build_buffer();
+        // we originally had this on the stack (array), but that pushed the spawned task's future past tokio's `BOX_FUTURE_THRESHOLD` in debug builds, so `spawn` boxed it
+        let mut buffer = ReceiveBuffer::new();
 
         loop {
             match process_changes::<&tokio::net::UdpSocket>(
@@ -188,76 +173,43 @@ impl NetlinkAddressMonitor {
     }
 }
 
-fn build_buffer() -> AlignedBuffer<{ align_of::<nlmsghdr>() }> {
-    // Can't have smaller than this on x86
-    const MIN_PAGE_SIZE: usize = 4096;
-    // Large enough for the kernel's max packet (see `NLMSG_GOODSIZE`)
-    // https://github.com/torvalds/linux/blob/24d479d26b25bce5faea3ddd9fa8f3a6c3129ea7/include/linux/netlink.h#L272-L276
-    const MAX_PAGE_SIZE: usize = 8192;
-
-    // The kernel itself caps recvmsg sizing at `NLMSG_GOODSIZE = min(PAGE_SIZE, 8192)`,
-    // so allocating more than 8192 bytes would never be filled. We mirror that cap here.
-    let page_size = getpagesize().clamp(MIN_PAGE_SIZE, MAX_PAGE_SIZE);
-
-    AlignedBuffer::<{ align_of::<nlmsghdr>() }>::new(page_size)
-}
-
 /// Reads and processes netlink messages until cancelled (`Break`), the receive queue
 /// overflows (`Continue`, the caller recovers and re-enters), or a fatal receive error.
 async fn process_changes<R>(
     cancellation_token: &CancellationToken,
     recv_buf: R,
     command_tx: Sender<Command>,
-    buffer: &mut AlignedBuffer<{ align_of::<nlmsghdr>() }>,
+    buffer: &mut ReceiveBuffer,
 ) -> Result<ControlFlow<()>, eyre::Report>
 where
     R: for<'a> RecvBuf<&'a mut [MaybeUninit<u8>]>,
 {
-    // we don't need to zero out the buffer between runs as `recv_buf` starts at 0 and returns `bytes_read`
-    // since we only read that portion we don't need to worry about the leftovers
-
     loop {
-        let bytes_read = {
-            let mut buffer_byte_cursor = &mut **buffer;
+        let messages = tokio::select! {
+            () = cancellation_token.cancelled() => {
+                return Ok(ControlFlow::Break(()));
+            },
+            result = buffer.receive(&recv_buf) => {
+                match result {
+                    Ok(messages) => messages,
+                    Err(error) if error.raw_os_error() == Some(libc::ENOBUFS) => {
+                        // the kernel dropped notifications because our receive queue overflowed
+                        event!(
+                            Level::WARN,
+                            "netlink receive queue overflowed, notifications were lost"
+                        );
 
-            tokio::select! {
-                () = cancellation_token.cancelled() => {
-                    return Ok(ControlFlow::Break(()));
-                },
-                result = recv_buf.recv_buf(&mut buffer_byte_cursor) => {
-                    match result {
-                        Ok(bytes_read) => bytes_read,
-                        Err(error) if error.raw_os_error() == Some(libc::ENOBUFS) => {
-                            // the kernel dropped notifications because our receive queue overflowed
-                            event!(
-                                Level::WARN,
-                                "netlink receive queue overflowed, notifications were lost"
-                            );
-
-                            return Ok(ControlFlow::Continue(()));
-                        },
-                        Err(error) => {
-                            return Err(error.into());
-                        },
-                    }
-                },
-            }
+                        return Ok(ControlFlow::Continue(()));
+                    },
+                    Err(error) => {
+                        return Err(error.into());
+                    },
+                }
+            },
         };
 
-        event!(
-            Level::DEBUG,
-            length = bytes_read,
-            "netlink message received"
-        );
-
-        let buffer = {
-            let raw_buffer = buffer.as_ptr().cast::<u8>();
-
-            // SAFETY: we are only initializing the parts of the buffer `recv_buf` has written to
-            unsafe { std::slice::from_raw_parts(raw_buffer, bytes_read) }
-        };
-
-        if let Err(error) = parse_netlink_response(buffer, cancellation_token, &command_tx).await {
+        if let Err(error) = parse_netlink_response(messages, cancellation_token, &command_tx).await
+        {
             event!(
                 Level::ERROR,
                 ?error,
@@ -343,67 +295,61 @@ impl fmt::Display for SkippedStates {
 }
 
 async fn parse_netlink_response(
-    buffer: &[u8],
+    messages: Messages<'_>,
     cancellation_token: &CancellationToken,
     command_tx: &Sender<Command>,
 ) -> Result<(), eyre::Report> {
-    for (nlh, payload) in messages(buffer) {
-        let command = if Into::<i32>::into(nlh.nlmsg_type) == NLMSG_DONE {
-            break;
-        } else if i32::from(nlh.nlmsg_type) == NLMSG_ERROR {
-            let (error, _) = nlmsgerr::ref_from_prefix(payload)
-                .expect("`NLMSG_ERROR` must start with an `nlmsgerr`, as this is kernel data");
-
-            if error.error == 0 {
+    for message in messages {
+        let command = match message {
+            Message::Done => break,
+            Message::Ack => {
                 event!(Level::DEBUG, "ACK");
 
                 break;
-            }
+            },
+            Message::Error(error) => {
+                event!(Level::ERROR, %error, "NLMSG_ERROR");
 
-            event!(
-                Level::ERROR,
-                error = %std::io::Error::from_raw_os_error(error.error.wrapping_neg()),
-                "NLMSG_ERROR"
-            );
+                None
+            },
+            Message::Noop => {
+                event!(Level::DEBUG, "NLMSG_NOOP");
 
-            None
-        } else if i32::from(nlh.nlmsg_type) == NLMSG_NOOP {
-            event!(Level::DEBUG, "NLMSG_NOOP");
+                None
+            },
+            Message::NewAddress(ifa, attributes) => {
+                let skipped_states = SkippedStates::from_bits_truncate(u32::from(ifa.ifa_flags));
 
-            None
-        } else if nlh.nlmsg_type == RTM_NEWADDR {
-            let (ifa, rest) = split_address_message(payload);
+                if skipped_states.is_empty() {
+                    parse_address_message(ifa, attributes).map(|address| Command::NewAddress {
+                        address,
+                        scope: ifa.ifa_scope,
+                        index: ifa.ifa_index,
+                    })
+                } else {
+                    event!(Level::DEBUG, "skipping address, state: {}", skipped_states);
 
-            let skipped_states = SkippedStates::from_bits_truncate(u32::from(ifa.ifa_flags));
-
-            if skipped_states.is_empty() {
-                parse_address_message(ifa, rest).map(|address| Command::NewAddress {
+                    None
+                }
+            },
+            Message::DeleteAddress(ifa, attributes) => {
+                // a deleted address is gone, whatever its state
+                parse_address_message(ifa, attributes).map(|address| Command::DeleteAddress {
                     address,
                     scope: ifa.ifa_scope,
                     index: ifa.ifa_index,
                 })
-            } else {
-                event!(Level::DEBUG, "skipping address, state: {}", skipped_states);
+            },
+            Message::NonIpAddress(family) => {
+                event!(Level::DEBUG, "skipping address, family: {}", family);
 
                 None
-            }
-        } else if nlh.nlmsg_type == RTM_DELADDR {
-            let (ifa, rest) = split_address_message(payload);
+            },
+            Message::Other(message_type) => {
+                event!(Level::DEBUG, "unhandled rtm_message type {}", message_type);
 
-            // a deleted address is gone, whatever its state
-            parse_address_message(ifa, rest).map(|address| Command::DeleteAddress {
-                address,
-                scope: ifa.ifa_scope,
-                index: ifa.ifa_index,
-            })
-        } else {
-            event!(
-                Level::DEBUG,
-                "unhandled rtm_message type {}",
-                nlh.nlmsg_type
-            );
-
-            None
+                None
+            },
         };
 
         if let Some(command) = command
@@ -424,12 +370,7 @@ async fn parse_netlink_response(
     Ok(())
 }
 
-fn split_address_message(payload: &[u8]) -> (&ifaddrmsg, &[u8]) {
-    ifaddrmsg::ref_from_prefix(payload)
-        .expect("an address message must start with an `ifaddrmsg`, as this is kernel data")
-}
-
-fn parse_address_message(ifa: &ifaddrmsg, rest: &[u8]) -> Option<IpNet> {
+fn parse_address_message(ifa: &ifaddrmsg, attributes: Attributes<'_>) -> Option<IpNet> {
     event!(
         Level::DEBUG,
         "RTM new/del addr family: {} flags: {} scope: {} idx: {}",
@@ -442,29 +383,17 @@ fn parse_address_message(ifa: &ifaddrmsg, rest: &[u8]) -> Option<IpNet> {
     let mut ifa_address = None;
     let mut ifa_local = None;
 
-    for (rta, value) in attributes(rest) {
-        event!(
-            Level::DEBUG,
-            "rt_attr type: {} {} ({})",
-            rta.rta_len,
-            rta.rta_type,
-            rta.label().unwrap_or("Unknown type")
-        );
-
-        if rta.rta_type == IFA_ADDRESS {
-            ifa_address = Some(value);
-        } else if rta.rta_type == IFA_LOCAL {
-            ifa_local = Some(value);
-        } else if rta.rta_type == IFA_LABEL {
-            // Intentionally unused, the label (only present on IPv4 messages) is not what we name interfaces by,
-            // as it might be an alias label, e.g. `eth0:0`.
-        } else if rta.rta_type == IFA_FLAGS {
-            // https://github.com/torvalds/linux/blob/febbc555cf0fff895546ddb8ba2c9a523692fb55/include/uapi/linux/if_addr.h#L35
-            // unused
-            // original:
-            // _, ifa_flags = struct.unpack_from('HI', buf, i)
-        } else {
-            // other attributes are intentionally ignored
+    for attribute in attributes {
+        match attribute {
+            Attribute::Address(value) => {
+                ifa_address = Some(value);
+            },
+            Attribute::Local(value) => {
+                ifa_local = Some(value);
+            },
+            Attribute::Other => {
+                // `IFA_LABEL` might be an alias label, e.g. `eth0:0`, so it does not identify the interface
+            },
         }
     }
 
@@ -473,10 +402,7 @@ fn parse_address_message(ifa: &ifaddrmsg, rest: &[u8]) -> Option<IpNet> {
     // but for point-to-point `libc::IFA_ADDRESS` is DESTINATION address,
     // local address is supplied in `libc::IFA_LOCAL` attribute.
     // https://github.com/torvalds/linux/blob/e9a6fb0bcdd7609be6969112f3fbfcce3b1d4a7c/include/uapi/linux/if_addr.h#L16-L25
-    let Some(addr) = ifa_local
-        .or(ifa_address)
-        .and_then(|value| decode_address(ifa.ifa_family, value))
-    else {
+    let Some(addr) = ifa_local.or(ifa_address).map(AddressValue::decode) else {
         event!(Level::DEBUG, "no address in RTM message");
 
         return None;
@@ -486,26 +412,6 @@ fn parse_address_message(ifa: &ifaddrmsg, rest: &[u8]) -> Option<IpNet> {
         .expect("`prefix_len` must be valid for this address, as this is kernel data");
 
     Some(address)
-}
-
-fn decode_address(family: u8, value: &[u8]) -> Option<IpAddr> {
-    match i32::from(family) {
-        AF_INET => {
-            let octets: [u8; 4] = value
-                .try_into()
-                .expect("an `AF_INET` address must be 4 bytes, as this is kernel data");
-
-            Some(IpAddr::from(octets))
-        },
-        AF_INET6 => {
-            let octets: [u8; 16] = value
-                .try_into()
-                .expect("an `AF_INET6` address must be 16 bytes, as this is kernel data");
-
-            Some(IpAddr::from(octets))
-        },
-        _ => None,
-    }
 }
 
 #[cfg(test)]
@@ -528,9 +434,9 @@ mod tests {
     use zerocopy::{FromZeros as _, IntoBytes as _};
 
     use crate::address_monitor::netlink_address_monitor::{
-        RecvBuf, SIZE_OF_SOCKADDR_NL, SkippedStates, build_buffer, process_changes,
+        SIZE_OF_SOCKADDR_NL, SkippedStates, process_changes,
     };
-    use crate::netlink::RTA_ALIGNTO;
+    use crate::netlink::{RTA_ALIGNTO, ReceiveBuffer, RecvBuf};
     use crate::network_handler::Command;
     use crate::utils::u32_to_usize;
 
@@ -647,7 +553,7 @@ mod tests {
             });
         }
 
-        let mut buffer = build_buffer();
+        let mut buffer = ReceiveBuffer::new();
 
         let result = process_changes(
             &cancellation_token,
@@ -696,7 +602,7 @@ mod tests {
             calls: AtomicU8::new(0),
         };
 
-        let mut buffer = build_buffer();
+        let mut buffer = ReceiveBuffer::new();
 
         // the first pass ends at the overflow, asking the caller to recover and re-enter
         let result = process_changes(
@@ -832,7 +738,7 @@ mod tests {
             done: AtomicBool::new(false),
         };
 
-        let mut buffer = build_buffer();
+        let mut buffer = ReceiveBuffer::new();
 
         let result = process_changes(&cancellation_token, socket, command_tx, &mut buffer).await;
 
