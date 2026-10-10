@@ -43,7 +43,6 @@ doesnt
 dont
 dorny
 dpws
-dropguard
 dstaddr
 edff
 eintr
@@ -195,7 +194,6 @@ tostring
 trixie
 trunc
 ulonglong
-uncatchable
 uninit
 uninlined
 uninspectable
