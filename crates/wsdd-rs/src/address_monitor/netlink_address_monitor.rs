@@ -424,20 +424,20 @@ mod tests {
     use bytes::BufMut as _;
     use ipnet::IpNet;
     use libc::{
-        AF_INET, AF_INET6, AF_PHONET, EINVAL, IFA_ADDRESS, IFA_F_DADFAILED, IFA_F_DEPRECATED,
-        IFA_F_PERMANENT, IFA_F_TENTATIVE, IFA_LOCAL, NLMSG_DONE, NLMSG_ERROR, RTM_DELADDR,
-        RTM_NEWADDR,
+        AF_INET, AF_INET6, AF_PHONET, IFA_ADDRESS, IFA_F_DADFAILED, IFA_F_DEPRECATED,
+        IFA_F_PERMANENT, IFA_F_TENTATIVE, IFA_LOCAL, NLMSG_DONE, RTM_DELADDR, RTM_NEWADDR,
     };
     use pretty_assertions::{assert_eq, assert_matches};
-    use shared::netlink::{ifaddrmsg, nlmsghdr, rtattr};
+    use shared::netlink::{ifaddrmsg, rtattr};
     use tokio_util::sync::CancellationToken;
-    use zerocopy::{FromZeros as _, IntoBytes as _};
+    use zerocopy::IntoBytes as _;
 
     use crate::address_monitor::netlink_address_monitor::{
         SIZE_OF_SOCKADDR_NL, SkippedStates, process_changes,
     };
     use crate::network_handler::Command;
     use crate::rtnetlink::{RTA_ALIGNTO, ReceiveBuffer, RecvBuf};
+    use crate::test_utils::netlink::netlink_message;
     use crate::utils::u32_to_usize;
 
     #[test]
@@ -657,18 +657,6 @@ mod tests {
         }
     }
 
-    fn netlink_message(nlmsg_type: u16, payload: &[u8]) -> Vec<u8> {
-        let header = nlmsghdr {
-            nlmsg_len: u32::try_from(size_of::<nlmsghdr>() + payload.len()).unwrap(),
-            nlmsg_type,
-            nlmsg_flags: 0,
-            nlmsg_seq: 0,
-            nlmsg_pid: 0,
-        };
-
-        [header.as_bytes(), payload].concat()
-    }
-
     fn ipv6_address_message(nlmsg_type: u16, ifa_flags: u32, address: Ipv6Addr) -> Vec<u8> {
         let octets = address.octets();
 
@@ -716,13 +704,6 @@ mod tests {
         netlink_message(
             RTM_NEWADDR,
             &[ifa.as_bytes(), attributes.concat().as_slice()].concat(),
-        )
-    }
-
-    fn error_message(error: i32) -> Vec<u8> {
-        netlink_message(
-            u16::try_from(NLMSG_ERROR).unwrap(),
-            &[error.as_bytes(), nlmsghdr::new_zeroed().as_bytes()].concat(),
         )
     }
 
@@ -864,15 +845,5 @@ mod tests {
             &*commands(&bytes).await,
             [Command::NewAddress { address, .. }] if *address == "2001:db8::1/64".parse::<IpNet>().unwrap()
         );
-    }
-
-    #[tokio::test]
-    async fn ack_sends_no_command() {
-        assert_matches!(&*commands(&error_message(0)).await, []);
-    }
-
-    #[tokio::test]
-    async fn failed_request_sends_no_command() {
-        assert_matches!(&*commands(&error_message(-EINVAL)).await, []);
     }
 }

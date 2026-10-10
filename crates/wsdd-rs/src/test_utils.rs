@@ -61,6 +61,31 @@ pub mod xml {
     }
 }
 
+pub mod netlink {
+    use libc::NLMSG_ERROR;
+    use shared::netlink::nlmsghdr;
+    use zerocopy::{FromZeros as _, IntoBytes as _};
+
+    pub fn netlink_message(nlmsg_type: u16, payload: &[u8]) -> Vec<u8> {
+        let header = nlmsghdr {
+            nlmsg_len: u32::try_from(size_of::<nlmsghdr>() + payload.len()).unwrap(),
+            nlmsg_type,
+            nlmsg_flags: 0,
+            nlmsg_seq: 0,
+            nlmsg_pid: 0,
+        };
+
+        [header.as_bytes(), payload].concat()
+    }
+
+    pub fn error_message(error: i32) -> Vec<u8> {
+        netlink_message(
+            u16::try_from(NLMSG_ERROR).unwrap(),
+            &[error.as_bytes(), nlmsghdr::new_zeroed().as_bytes()].concat(),
+        )
+    }
+}
+
 pub fn build_config(endpoint_uuid: Uuid, instance_id: u64) -> Config {
     let mut config = cli::parse_cli_from([
         "-4",
