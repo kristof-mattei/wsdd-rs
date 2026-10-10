@@ -1,6 +1,6 @@
 use std::fmt;
 use std::mem::MaybeUninit;
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
@@ -439,7 +439,8 @@ fn parse_address_message(ifa: &ifaddrmsg, rest: &[u8]) -> Option<IpNet> {
         ifa.ifa_index
     );
 
-    let mut addr = None;
+    let mut ifa_address = None;
+    let mut ifa_local = None;
 
     for (rta, value) in attributes(rest) {
         event!(
@@ -450,23 +451,10 @@ fn parse_address_message(ifa: &ifaddrmsg, rest: &[u8]) -> Option<IpNet> {
             rta.label().unwrap_or("Unknown type")
         );
 
-        if rta.rta_type == IFA_ADDRESS && i32::from(ifa.ifa_family) == AF_INET6 {
-            let octets: [u8; 16] = value
-                .try_into()
-                .expect("an IPv6 `IFA_ADDRESS` must be 16 bytes, as this is kernel data");
-
-            addr = Some(Ipv6Addr::from(octets).into());
-        } else if rta.rta_type == IFA_LOCAL && i32::from(ifa.ifa_family) == AF_INET {
-            // `libc::IFA_ADDRESS` is prefix address, rather than local interface address.
-            // It makes no difference for normally configured broadcast interfaces,
-            // but for point-to-point `libc::IFA_ADDRESS` is DESTINATION address,
-            // local address is supplied in `libc::IFA_LOCAL` attribute.
-            // https://github.com/torvalds/linux/blob/e9a6fb0bcdd7609be6969112f3fbfcce3b1d4a7c/include/uapi/linux/if_addr.h#L16-L25
-            let octets: [u8; 4] = value
-                .try_into()
-                .expect("an IPv4 `IFA_LOCAL` must be 4 bytes, as this is kernel data");
-
-            addr = Some(Ipv4Addr::from(octets).into());
+        if rta.rta_type == IFA_ADDRESS {
+            ifa_address = Some(value);
+        } else if rta.rta_type == IFA_LOCAL {
+            ifa_local = Some(value);
         } else if rta.rta_type == IFA_LABEL {
             // Intentionally unused, the label (only present on IPv4 messages) is not what we name interfaces by,
             // as it might be an alias label, e.g. `eth0:0`.
@@ -480,7 +468,15 @@ fn parse_address_message(ifa: &ifaddrmsg, rest: &[u8]) -> Option<IpNet> {
         }
     }
 
-    let Some(addr) = addr else {
+    // `libc::IFA_ADDRESS` is prefix address, rather than local interface address.
+    // It makes no difference for normally configured broadcast interfaces,
+    // but for point-to-point `libc::IFA_ADDRESS` is DESTINATION address,
+    // local address is supplied in `libc::IFA_LOCAL` attribute.
+    // https://github.com/torvalds/linux/blob/e9a6fb0bcdd7609be6969112f3fbfcce3b1d4a7c/include/uapi/linux/if_addr.h#L16-L25
+    let Some(addr) = ifa_local
+        .or(ifa_address)
+        .and_then(|value| decode_address(ifa.ifa_family, value))
+    else {
         event!(Level::DEBUG, "no address in RTM message");
 
         return None;
@@ -490,6 +486,26 @@ fn parse_address_message(ifa: &ifaddrmsg, rest: &[u8]) -> Option<IpNet> {
         .expect("`prefix_len` must be valid for this address, as this is kernel data");
 
     Some(address)
+}
+
+fn decode_address(family: u8, value: &[u8]) -> Option<IpAddr> {
+    match i32::from(family) {
+        AF_INET => {
+            let octets: [u8; 4] = value
+                .try_into()
+                .expect("an `AF_INET` address must be 4 bytes, as this is kernel data");
+
+            Some(IpAddr::from(octets))
+        },
+        AF_INET6 => {
+            let octets: [u8; 16] = value
+                .try_into()
+                .expect("an `AF_INET6` address must be 16 bytes, as this is kernel data");
+
+            Some(IpAddr::from(octets))
+        },
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -885,6 +901,26 @@ mod tests {
         assert_matches!(
             &*commands(&bytes).await,
             [Command::NewAddress { address, .. }] if *address == "192.0.2.1/32".parse::<IpNet>().unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn point_to_point_ipv6_address_is_the_local_address() {
+        let bytes = new_address_message(
+            AF_INET6,
+            128,
+            &[
+                attribute(IFA_LOCAL, &"fe80::1".parse::<Ipv6Addr>().unwrap().octets()),
+                attribute(
+                    IFA_ADDRESS,
+                    &"fe80::2".parse::<Ipv6Addr>().unwrap().octets(),
+                ),
+            ],
+        );
+
+        assert_matches!(
+            &*commands(&bytes).await,
+            [Command::NewAddress { address, .. }] if *address == "fe80::1/128".parse::<IpNet>().unwrap()
         );
     }
 
