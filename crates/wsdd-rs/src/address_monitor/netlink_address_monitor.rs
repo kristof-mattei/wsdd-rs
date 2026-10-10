@@ -1,8 +1,10 @@
+use std::fmt::{self, Write as _};
 use std::mem::MaybeUninit;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
+use bitflags::bitflags;
 use bytes::BufMut;
 use color_eyre::eyre;
 use ipnet::IpNet;
@@ -356,14 +358,14 @@ async fn parse_netlink_response(
         } else if nlh.nlmsg_type == RTM_NEWADDR {
             let (ifa, rest) = split_address_message(payload);
 
-            if has_usable_state(ifa) {
+            if is_skipped(ifa) {
+                None
+            } else {
                 parse_address_message(ifa, rest).map(|address| Command::NewAddress {
                     address,
                     scope: ifa.ifa_scope,
                     index: ifa.ifa_index,
                 })
-            } else {
-                None
             }
         } else if nlh.nlmsg_type == RTM_DELADDR {
             let (ifa, rest) = split_address_message(payload);
@@ -407,22 +409,39 @@ fn split_address_message(payload: &[u8]) -> (&ifaddrmsg, &[u8]) {
         .expect("an address message must start with an `ifaddrmsg`, as this is kernel data")
 }
 
-fn has_usable_state(ifa: &ifaddrmsg) -> bool {
-    let ifa_flags = u32::from(ifa.ifa_flags);
+bitflags! {
+    struct SkippedStates: u32 {
+        const DADFAILED = IFA_F_DADFAILED;
+        const HOMEADDRESS = IFA_F_HOMEADDRESS;
+        const DEPRECATED = IFA_F_DEPRECATED;
+        const TENTATIVE = IFA_F_TENTATIVE;
+    }
+}
 
-    if (ifa_flags & IFA_F_DADFAILED) != 0
-        || (ifa_flags & IFA_F_HOMEADDRESS) != 0
-        || (ifa_flags & IFA_F_DEPRECATED) != 0
-        || (ifa_flags & IFA_F_TENTATIVE) != 0
-    {
-        event!(
-            Level::DEBUG,
-            "ignore address with invalid state {:#x}",
-            ifa_flags
-        );
+impl fmt::Display for SkippedStates {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, (name, _)) in self.iter_names().enumerate() {
+            if index > 0 {
+                f.write_str(" | ")?;
+            }
 
+            for character in name.chars() {
+                f.write_char(character.to_ascii_lowercase())?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+fn is_skipped(ifa: &ifaddrmsg) -> bool {
+    let states = SkippedStates::from_bits_truncate(u32::from(ifa.ifa_flags));
+
+    if states.is_empty() {
         return false;
     }
+
+    event!(Level::DEBUG, "skipping address, state: {}", states);
 
     true
 }
@@ -500,8 +519,8 @@ mod tests {
     use bytes::BufMut as _;
     use ipnet::IpNet;
     use libc::{
-        AF_INET6, EINVAL, IFA_ADDRESS, IFA_F_DEPRECATED, NLMSG_DONE, NLMSG_ERROR, RTM_DELADDR,
-        RTM_NEWADDR,
+        AF_INET6, EINVAL, IFA_ADDRESS, IFA_F_DADFAILED, IFA_F_DEPRECATED, IFA_F_PERMANENT,
+        IFA_F_TENTATIVE, NLMSG_DONE, NLMSG_ERROR, RTM_DELADDR, RTM_NEWADDR,
     };
     use pretty_assertions::{assert_eq, assert_matches};
     use shared::netlink::{ifaddrmsg, nlmsghdr, rtattr};
@@ -509,7 +528,7 @@ mod tests {
     use zerocopy::{FromZeros as _, IntoBytes as _};
 
     use crate::address_monitor::netlink_address_monitor::{
-        RecvBuf, SIZE_OF_SOCKADDR_NL, build_buffer, process_changes,
+        RecvBuf, SIZE_OF_SOCKADDR_NL, SkippedStates, build_buffer, process_changes,
     };
     use crate::network_handler::Command;
     use crate::utils::u32_to_usize;
@@ -831,6 +850,20 @@ mod tests {
             &*commands(&bytes).await,
             [Command::DeleteAddress { address, .. }] if *address == "2001:db8::1/64".parse::<IpNet>().unwrap()
         );
+    }
+
+    #[test]
+    fn skipped_states_leave_out_other_flags() {
+        let states = SkippedStates::from_bits_truncate(IFA_F_DEPRECATED | IFA_F_PERMANENT);
+
+        assert_eq!(states.to_string(), "deprecated");
+    }
+
+    #[test]
+    fn skipped_states_list_every_match() {
+        let states = SkippedStates::from_bits_truncate(IFA_F_DADFAILED | IFA_F_TENTATIVE);
+
+        assert_eq!(states.to_string(), "dadfailed | tentative");
     }
 
     #[tokio::test]
