@@ -108,13 +108,33 @@ pub enum Message<'a> {
 impl<'a> Message<'a> {
     fn decode(message_type: u16, payload: &'a [u8]) -> Self {
         match message_type {
-            RTM_NEWADDR => match split_address_message(payload) {
-                Ok((ifa, attributes)) => Self::NewAddress(ifa, attributes),
-                Err(family) => Self::NonIpAddress(family),
+            RTM_NEWADDR => {
+                let (ifa, rest) = address_header(payload);
+
+                match IpFamily::from_family(ifa.ifa_family) {
+                    Some(family) => Self::NewAddress(
+                        ifa,
+                        Attributes {
+                            family,
+                            buffer: rest,
+                        },
+                    ),
+                    None => Self::NonIpAddress(ifa.ifa_family),
+                }
             },
-            RTM_DELADDR => match split_address_message(payload) {
-                Ok((ifa, attributes)) => Self::DeleteAddress(ifa, attributes),
-                Err(family) => Self::NonIpAddress(family),
+            RTM_DELADDR => {
+                let (ifa, rest) = address_header(payload);
+
+                match IpFamily::from_family(ifa.ifa_family) {
+                    Some(family) => Self::DeleteAddress(
+                        ifa,
+                        Attributes {
+                            family,
+                            buffer: rest,
+                        },
+                    ),
+                    None => Self::NonIpAddress(ifa.ifa_family),
+                }
             },
             RTM_NEWLINK => {
                 let ifi = link_header(payload);
@@ -161,29 +181,25 @@ fn link_header(payload: &[u8]) -> &ifinfomsg {
     ifi
 }
 
-/// Returns the family of a non-IP address message as the error.
-fn split_address_message(payload: &[u8]) -> Result<(&ifaddrmsg, Attributes<'_>), u8> {
-    let (ifa, rest) = ifaddrmsg::ref_from_prefix(payload)
-        .expect("an address message must start with an `ifaddrmsg`, as this is kernel data");
-
-    let family = match i32::from(ifa.ifa_family) {
-        AF_INET => IpFamily::V4,
-        AF_INET6 => IpFamily::V6,
-        _ => return Err(ifa.ifa_family),
-    };
-
-    let attributes = Attributes {
-        family,
-        buffer: rest,
-    };
-
-    Ok((ifa, attributes))
+fn address_header(payload: &[u8]) -> (&ifaddrmsg, &[u8]) {
+    ifaddrmsg::ref_from_prefix(payload)
+        .expect("an address message must start with an `ifaddrmsg`, as this is kernel data")
 }
 
 #[derive(Clone, Copy)]
 enum IpFamily {
     V4,
     V6,
+}
+
+impl IpFamily {
+    fn from_family(family: u8) -> Option<Self> {
+        match i32::from(family) {
+            AF_INET => Some(Self::V4),
+            AF_INET6 => Some(Self::V6),
+            _ => None,
+        }
+    }
 }
 
 pub struct Attributes<'a> {
