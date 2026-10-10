@@ -526,11 +526,14 @@ mod tests {
 
     use bytes::BufMut as _;
     use ipnet::IpNet;
-    use libc::{AF_INET6, IFA_ADDRESS, IFA_F_DEPRECATED, RTM_DELADDR, RTM_NEWADDR};
+    use libc::{
+        AF_INET6, EINVAL, IFA_ADDRESS, IFA_F_DEPRECATED, NLMSG_DONE, NLMSG_ERROR, RTM_DELADDR,
+        RTM_NEWADDR,
+    };
     use pretty_assertions::{assert_eq, assert_matches};
     use shared::netlink::{ifaddrmsg, nlmsghdr, rtattr};
     use tokio_util::sync::CancellationToken;
-    use zerocopy::IntoBytes as _;
+    use zerocopy::{FromZeros as _, IntoBytes as _};
 
     use crate::address_monitor::netlink_address_monitor::{
         RecvBuf, SIZE_OF_SOCKADDR_NL, build_buffer, process_changes,
@@ -755,20 +758,20 @@ mod tests {
         }
     }
 
-    fn ipv6_address_message(nlmsg_type: u16, ifa_flags: u32, address: Ipv6Addr) -> Vec<u8> {
-        let octets = address.octets();
-
-        let rta_len = size_of::<rtattr>() + octets.len();
-
-        let nlmsg_len = size_of::<nlmsghdr>() + size_of::<ifaddrmsg>() + rta_len;
-
+    fn netlink_message(nlmsg_type: u16, payload: &[u8]) -> Vec<u8> {
         let header = nlmsghdr {
-            nlmsg_len: u32::try_from(nlmsg_len).unwrap(),
+            nlmsg_len: u32::try_from(size_of::<nlmsghdr>() + payload.len()).unwrap(),
             nlmsg_type,
             nlmsg_flags: 0,
             nlmsg_seq: 0,
             nlmsg_pid: 0,
         };
+
+        [header.as_bytes(), payload].concat()
+    }
+
+    fn ipv6_address_message(nlmsg_type: u16, ifa_flags: u32, address: Ipv6Addr) -> Vec<u8> {
+        let octets = address.octets();
 
         let ifa = ifaddrmsg {
             ifa_family: u8::try_from(AF_INET6).unwrap(),
@@ -779,18 +782,21 @@ mod tests {
         };
 
         let rta = rtattr {
-            rta_len: u16::try_from(rta_len).unwrap(),
+            rta_len: u16::try_from(size_of::<rtattr>() + octets.len()).unwrap(),
             rta_type: IFA_ADDRESS,
         };
 
-        let mut message = Vec::with_capacity(nlmsg_len);
+        netlink_message(
+            nlmsg_type,
+            &[ifa.as_bytes(), rta.as_bytes(), octets.as_slice()].concat(),
+        )
+    }
 
-        message.extend_from_slice(header.as_bytes());
-        message.extend_from_slice(ifa.as_bytes());
-        message.extend_from_slice(rta.as_bytes());
-        message.extend_from_slice(&octets);
-
-        message
+    fn error_message(error: i32) -> Vec<u8> {
+        netlink_message(
+            u16::try_from(NLMSG_ERROR).unwrap(),
+            &[error.as_bytes(), nlmsghdr::new_zeroed().as_bytes()].concat(),
+        )
     }
 
     /// Every command `process_changes` sends for `bytes`.
@@ -852,5 +858,30 @@ mod tests {
             &*commands(&bytes).await,
             [Command::DeleteAddress { address, .. }] if *address == "2001:db8::1/64".parse::<IpNet>().unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn addresses_before_done_are_reported() {
+        let mut bytes = ipv6_address_message(RTM_NEWADDR, 0, "2001:db8::1".parse().unwrap());
+
+        bytes.extend(netlink_message(
+            u16::try_from(NLMSG_DONE).unwrap(),
+            0_i32.as_bytes(),
+        ));
+
+        assert_matches!(
+            &*commands(&bytes).await,
+            [Command::NewAddress { address, .. }] if *address == "2001:db8::1/64".parse::<IpNet>().unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn ack_sends_no_command() {
+        assert_matches!(&*commands(&error_message(0)).await, []);
+    }
+
+    #[tokio::test]
+    async fn failed_request_sends_no_command() {
+        assert_matches!(&*commands(&error_message(-EINVAL)).await, []);
     }
 }
