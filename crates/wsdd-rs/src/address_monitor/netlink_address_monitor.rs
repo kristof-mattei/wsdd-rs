@@ -363,12 +363,19 @@ async fn parse_netlink_response(
 
             None
         } else if nlh.nlmsg_type == RTM_NEWADDR {
-            parse_address_message(*nlh_wrapper).map(|(ip_net, scope, index)| Command::NewAddress {
-                address: ip_net,
-                scope,
-                index,
-            })
+            if has_usable_state(*nlh_wrapper) {
+                parse_address_message(*nlh_wrapper).map(|(ip_net, scope, index)| {
+                    Command::NewAddress {
+                        address: ip_net,
+                        scope,
+                        index,
+                    }
+                })
+            } else {
+                None
+            }
         } else if nlh.nlmsg_type == RTM_DELADDR {
+            // a deleted address is gone, whatever its state
             parse_address_message(*nlh_wrapper).map(|(ip_net, scope, index)| {
                 Command::DeleteAddress {
                     address: ip_net,
@@ -406,11 +413,9 @@ async fn parse_netlink_response(
     Ok(())
 }
 
-fn parse_address_message(raw_nlh: *const nlmsghdr) -> Option<(IpNet, u8, u32)> {
-    let raw_ifa = NLMSG_DATA::<ifaddrmsg>(raw_nlh);
-
+fn has_usable_state(raw_nlh: *const nlmsghdr) -> bool {
     // SAFETY:`nlh` is valid, and has an `ifa`
-    let ifa = unsafe { &*raw_ifa };
+    let ifa = unsafe { &*NLMSG_DATA::<ifaddrmsg>(raw_nlh) };
 
     let ifa_flags = u32::from(ifa.ifa_flags);
 
@@ -425,9 +430,17 @@ fn parse_address_message(raw_nlh: *const nlmsghdr) -> Option<(IpNet, u8, u32)> {
             ifa_flags
         );
 
-        // skip this message and its data
-        return None;
+        return false;
     }
+
+    true
+}
+
+fn parse_address_message(raw_nlh: *const nlmsghdr) -> Option<(IpNet, u8, u32)> {
+    let raw_ifa = NLMSG_DATA::<ifaddrmsg>(raw_nlh);
+
+    // SAFETY:`nlh` is valid, and has an `ifa`
+    let ifa = unsafe { &*raw_ifa };
 
     event!(
         Level::DEBUG,
@@ -507,12 +520,17 @@ fn parse_address_message(raw_nlh: *const nlmsghdr) -> Option<(IpNet, u8, u32)> {
 #[cfg(test)]
 mod tests {
     use std::mem::MaybeUninit;
+    use std::net::Ipv6Addr;
     use std::ops::ControlFlow;
     use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
     use bytes::BufMut as _;
+    use ipnet::IpNet;
+    use libc::{AF_INET6, IFA_ADDRESS, IFA_F_DEPRECATED, RTM_DELADDR, RTM_NEWADDR};
     use pretty_assertions::{assert_eq, assert_matches};
+    use shared::netlink::{ifaddrmsg, nlmsghdr, rtattr};
     use tokio_util::sync::CancellationToken;
+    use zerocopy::IntoBytes as _;
 
     use crate::address_monitor::netlink_address_monitor::{
         RecvBuf, SIZE_OF_SOCKADDR_NL, build_buffer, process_changes,
@@ -713,5 +731,126 @@ mod tests {
         assert_matches!(result, Ok(ControlFlow::Break(())));
 
         consumer.await.unwrap();
+    }
+
+    /// Delivers `bytes` once, then cancels.
+    struct DrainingNetlinkSocket<'b> {
+        bytes: &'b [u8],
+        cancellation_token: CancellationToken,
+        done: AtomicBool,
+    }
+
+    impl RecvBuf<&mut [MaybeUninit<u8>]> for DrainingNetlinkSocket<'_> {
+        #[expect(clippy::mut_mut, reason = "Mandated by the trait")]
+        async fn recv_buf(&self, buf: &mut &mut [MaybeUninit<u8>]) -> std::io::Result<usize> {
+            if self.done.fetch_or(true, Ordering::Relaxed) {
+                self.cancellation_token.cancel();
+
+                return std::future::pending().await;
+            }
+
+            buf.put_slice(self.bytes);
+
+            Ok(self.bytes.len())
+        }
+    }
+
+    fn ipv6_address_message(nlmsg_type: u16, ifa_flags: u32, address: Ipv6Addr) -> Vec<u8> {
+        let octets = address.octets();
+
+        let rta_len = size_of::<rtattr>() + octets.len();
+
+        let nlmsg_len = size_of::<nlmsghdr>() + size_of::<ifaddrmsg>() + rta_len;
+
+        let header = nlmsghdr {
+            nlmsg_len: u32::try_from(nlmsg_len).unwrap(),
+            nlmsg_type,
+            nlmsg_flags: 0,
+            nlmsg_seq: 0,
+            nlmsg_pid: 0,
+        };
+
+        let ifa = ifaddrmsg {
+            ifa_family: u8::try_from(AF_INET6).unwrap(),
+            ifa_prefixlen: 64,
+            ifa_flags: u8::try_from(ifa_flags).unwrap(),
+            ifa_scope: 0,
+            ifa_index: 2,
+        };
+
+        let rta = rtattr {
+            rta_len: u16::try_from(rta_len).unwrap(),
+            rta_type: IFA_ADDRESS,
+        };
+
+        let mut message = Vec::with_capacity(nlmsg_len);
+
+        message.extend_from_slice(header.as_bytes());
+        message.extend_from_slice(ifa.as_bytes());
+        message.extend_from_slice(rta.as_bytes());
+        message.extend_from_slice(&octets);
+
+        message
+    }
+
+    /// Every command `process_changes` sends for `bytes`.
+    async fn commands(bytes: &[u8]) -> Vec<Command> {
+        let cancellation_token = CancellationToken::new();
+
+        let (command_tx, mut command_rx) = tokio::sync::mpsc::channel::<Command>(10);
+
+        let socket = DrainingNetlinkSocket {
+            bytes,
+            cancellation_token: cancellation_token.clone(),
+            done: AtomicBool::new(false),
+        };
+
+        let mut buffer = build_buffer();
+
+        let result = process_changes(&cancellation_token, socket, command_tx, &mut buffer).await;
+
+        assert_matches!(result, Ok(ControlFlow::Break(())));
+
+        let mut commands = Vec::new();
+
+        while let Ok(command) = command_rx.try_recv() {
+            commands.push(command);
+        }
+
+        commands
+    }
+
+    #[tokio::test]
+    async fn new_address_in_deprecated_state_is_skipped() {
+        let mut bytes = ipv6_address_message(
+            RTM_NEWADDR,
+            IFA_F_DEPRECATED,
+            "2001:db8::1".parse().unwrap(),
+        );
+
+        bytes.extend(ipv6_address_message(
+            RTM_NEWADDR,
+            0,
+            "2001:db8::2".parse().unwrap(),
+        ));
+
+        assert_matches!(
+            &*commands(&bytes).await,
+            [Command::NewAddress { address, .. }] if *address == "2001:db8::2/64".parse::<IpNet>().unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn deleted_address_in_deprecated_state_is_reported() {
+        let bytes = ipv6_address_message(
+            RTM_DELADDR,
+            IFA_F_DEPRECATED,
+            "2001:db8::1".parse().unwrap(),
+        );
+
+        assert_matches!(
+            &*commands(&bytes).await,
+            [Command::DeleteAddress { address, .. }] if *address == "2001:db8::1/64".parse::<IpNet>().unwrap()
+        );
     }
 }
