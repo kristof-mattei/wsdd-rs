@@ -1,5 +1,21 @@
 <!-- header goes here -->
-## [0.9.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.8.1..v0.9.0) - 2026-10-07
+## [0.9.1](https://github.com/kristof-mattei/wsdd-rs/compare/v0.9.0..v0.9.1) - 2026-10-10
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update rust crate tokio-util to v0.7.20 by [@renovate[bot]](https://github.com/renovate[bot]) ([`3c3f7bd`](https://github.com/kristof-mattei/wsdd-rs/commit/3c3f7bdab9293d7d5a1aec025bf898c1bff6dcbf))
+- *(deps)* Update rust crate uuid to v1.28.0 by [@renovate[bot]](https://github.com/renovate[bot]) ([`66ff64f`](https://github.com/kristof-mattei/wsdd-rs/commit/66ff64f8aac2cf0e4e26119f78b7696d59109cc7))
+- Let `set_active` succeed after the address monitor stops by [@kristof-mattei](https://github.com/kristof-mattei) ([`1a4bfac`](https://github.com/kristof-mattei/wsdd-rs/commit/1a4bfacc8aab960b3ff88cd3ac8be4c6a1f6a401))
+
+### 🚜 Refactor
+
+- Rename `set_active` to `start` and store `active` as a `bool` by [@kristof-mattei](https://github.com/kristof-mattei) ([`0970014`](https://github.com/kristof-mattei/wsdd-rs/commit/0970014b57f2cf8047c2fbd8b81055f0c0985248))
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove the merge-SHA `TODO` that the retag base check covers by [@kristof-mattei](https://github.com/kristof-mattei) ([`cfebda2`](https://github.com/kristof-mattei/wsdd-rs/commit/cfebda2941093385c351175c27760fff87bc5681))
+- Split the Miri tests over 4 jobs with nextest `--partition slice` by [@kristof-mattei](https://github.com/kristof-mattei) ([`7047321`](https://github.com/kristof-mattei/wsdd-rs/commit/7047321485d22af06b2d54828ad7f1ba0ab71d9a))
+## [0.9.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.8.1..v0.9.0) - 2026-10-08
 
 ### 🚀 Features
 
