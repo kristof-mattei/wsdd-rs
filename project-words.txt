@@ -7,6 +7,7 @@ alignto
 allgreen
 appgroup
 appuser
+arphrd
 artipacked
 autopad
 bbbbi
@@ -34,6 +35,7 @@ datagram's
 datagrams
 datatypes
 deladdr
+dellink
 deque
 devicesprofile
 dgram
@@ -85,6 +87,7 @@ ifaddrmsg
 ifaddrs
 ifas
 ifinfo
+ifinfomsg
 iflist
 ifname
 ifnamsiz
@@ -122,6 +125,7 @@ ncname
 netinet
 netlink
 newaddr
+newlink
 nextest
 nlmsg
 nlmsgerr

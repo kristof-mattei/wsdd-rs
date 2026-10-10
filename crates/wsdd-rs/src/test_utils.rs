@@ -63,7 +63,7 @@ pub mod xml {
 
 pub mod netlink {
     use libc::NLMSG_ERROR;
-    use shared::netlink::nlmsghdr;
+    use shared::netlink::{ifinfomsg, nlmsghdr};
     use zerocopy::{FromZeros as _, IntoBytes as _};
 
     pub fn netlink_message(nlmsg_type: u16, payload: &[u8]) -> Vec<u8> {
@@ -76,6 +76,19 @@ pub mod netlink {
         };
 
         [header.as_bytes(), payload].concat()
+    }
+
+    pub fn link_message(nlmsg_type: u16, family: i32, index: i32, flags: u32) -> Vec<u8> {
+        let ifi = ifinfomsg {
+            ifi_family: u8::try_from(family).unwrap(),
+            ifi_pad: 0,
+            ifi_type: 0,
+            ifi_index: index,
+            ifi_flags: flags,
+            ifi_change: 0,
+        };
+
+        netlink_message(nlmsg_type, ifi.as_bytes())
     }
 
     pub fn error_message(error: i32) -> Vec<u8> {

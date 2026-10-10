@@ -345,6 +345,21 @@ async fn parse_netlink_response(
 
                 None
             },
+            Message::NewLink(ifi) | Message::DeleteLink(ifi) => {
+                event!(
+                    Level::DEBUG,
+                    index = ifi.ifi_index,
+                    flags = ifi.ifi_flags,
+                    "unhandled link message"
+                );
+
+                None
+            },
+            Message::ProtocolLink(family) => {
+                event!(Level::DEBUG, "skipping link, family: {}", family);
+
+                None
+            },
             Message::Other(message_type) => {
                 event!(Level::DEBUG, "unhandled rtm_message type {}", message_type);
 

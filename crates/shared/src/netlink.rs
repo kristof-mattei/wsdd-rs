@@ -51,6 +51,20 @@ pub struct ifaddrmsg {
 
 #[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
+pub struct ifinfomsg {
+    pub ifi_family: u8,
+    pub ifi_pad: u8,
+    /// `ARPHRD_*`.
+    pub ifi_type: u16,
+    pub ifi_index: i32,
+    /// `IFF_*`.
+    pub ifi_flags: u32,
+    /// `IFF_*` change mask.
+    pub ifi_change: u32,
+}
+
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
+#[repr(C)]
 pub struct rtattr {
     /// Length of option.
     pub rta_len: u16,
