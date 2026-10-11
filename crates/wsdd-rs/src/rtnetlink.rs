@@ -4,8 +4,8 @@ use std::net::IpAddr;
 
 use bytes::BufMut;
 use libc::{
-    AF_INET, AF_INET6, AF_UNSPEC, IFA_ADDRESS, IFA_LOCAL, NLMSG_DONE, NLMSG_ERROR, NLMSG_NOOP,
-    RTM_DELADDR, RTM_DELLINK, RTM_NEWADDR, RTM_NEWLINK,
+    AF_INET, AF_INET6, AF_UNSPEC, IFA_ADDRESS, IFA_LOCAL, NLM_F_DUMP_INTR, NLMSG_DONE, NLMSG_ERROR,
+    NLMSG_NOOP, RTM_DELADDR, RTM_DELLINK, RTM_NEWADDR, RTM_NEWLINK,
 };
 use shared::netlink::{ifaddrmsg, ifinfomsg, nlmsgerr, nlmsghdr, rtattr};
 use tracing::{Level, event};
@@ -21,11 +21,17 @@ pub const RTA_ALIGNTO: usize = 4;
 
 pub trait RecvBuf<B: BufMut> {
     async fn recv_buf(&self, buf: &mut B) -> io::Result<usize>;
+
+    fn try_recv_buf(&self, buf: &mut B) -> io::Result<usize>;
 }
 
 impl<B: BufMut> RecvBuf<B> for &tokio::net::UdpSocket {
     async fn recv_buf(&self, buf: &mut B) -> io::Result<usize> {
         tokio::net::UdpSocket::recv_buf::<B>(self, buf).await
+    }
+
+    fn try_recv_buf(&self, buf: &mut B) -> io::Result<usize> {
+        tokio::net::UdpSocket::try_recv_buf::<B>(self, buf)
     }
 }
 
@@ -67,12 +73,36 @@ impl ReceiveBuffer {
 
         Ok(Messages(received))
     }
+
+    pub fn discard_queued<R>(&mut self, socket: &R) -> io::Result<()>
+    where
+        R: for<'a> RecvBuf<&'a mut [MaybeUninit<u8>]>,
+    {
+        loop {
+            let mut cursor = &mut *self.0;
+
+            match socket.try_recv_buf(&mut cursor) {
+                Ok(_) => {},
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    return Ok(());
+                },
+                Err(error) if error.raw_os_error() == Some(libc::ENOBUFS) => {},
+                Err(error) => {
+                    return Err(error);
+                },
+            }
+        }
+    }
 }
 
 pub struct Messages<'a>(&'a [u8]);
 
+pub struct Header {
+    pub dump_interrupted: bool,
+}
+
 impl<'a> Iterator for Messages<'a> {
-    type Item = Message<'a>;
+    type Item = (Header, Message<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
         let (header, _) = nlmsghdr::ref_from_prefix(self.0).ok()?;
@@ -83,18 +113,19 @@ impl<'a> Iterator for Messages<'a> {
 
         self.0 = &self.0[message_len.next_multiple_of(NLMSG_ALIGNTO)..];
 
-        Some(Message::decode(
-            header.nlmsg_type.get(),
-            header.nlmsg_seq.get(),
-            payload,
+        let message_header = Header {
+            dump_interrupted: i32::from(header.nlmsg_flags.get()) & NLM_F_DUMP_INTR != 0,
+        };
+
+        Some((
+            message_header,
+            Message::decode(header.nlmsg_type.get(), payload),
         ))
     }
 }
 
 pub enum Message<'a> {
-    Done {
-        sequence: u32,
-    },
+    Done,
     /// An `NLMSG_ERROR` with error code 0.
     Ack,
     Error(io::Error),
@@ -110,7 +141,7 @@ pub enum Message<'a> {
 }
 
 impl<'a> Message<'a> {
-    fn decode(message_type: u16, sequence: u32, payload: &'a [u8]) -> Self {
+    fn decode(message_type: u16, payload: &'a [u8]) -> Self {
         match message_type {
             RTM_NEWADDR => {
                 let (ifa, rest) = address_header(payload);
@@ -159,7 +190,7 @@ impl<'a> Message<'a> {
                 }
             },
             _ => match i32::from(message_type) {
-                NLMSG_DONE => Self::Done { sequence },
+                NLMSG_DONE => Self::Done,
                 NLMSG_ERROR => {
                     let (error, _) = nlmsgerr::ref_from_prefix(payload).expect(
                         "`NLMSG_ERROR` must start with an `nlmsgerr`, as this is kernel data",
@@ -289,7 +320,9 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::rtnetlink::{Message, Messages};
-    use crate::test_utils::netlink::{done_message, error_message, link_message};
+    use crate::test_utils::netlink::{
+        done_message, error_message, interrupted_message, link_message,
+    };
 
     #[test]
     fn error_code_zero_decodes_as_ack() {
@@ -297,7 +330,7 @@ mod tests {
 
         let mut messages = Messages(&bytes);
 
-        assert!(matches!(messages.next(), Some(Message::Ack)));
+        assert!(matches!(messages.next(), Some((_, Message::Ack))));
     }
 
     #[test]
@@ -306,7 +339,7 @@ mod tests {
 
         let mut messages = Messages(&bytes);
 
-        let Some(Message::Error(error)) = messages.next() else {
+        let Some((_, Message::Error(error))) = messages.next() else {
             panic!("expected `Message::Error`");
         };
 
@@ -314,15 +347,16 @@ mod tests {
     }
 
     #[test]
-    fn done_keeps_its_sequence() {
-        let bytes = done_message(7);
+    fn header_reports_an_interrupted_dump() {
+        let mut bytes = done_message();
 
-        let mut messages = Messages(&bytes);
+        bytes.extend(interrupted_message(&done_message()));
 
-        assert!(matches!(
-            messages.next(),
-            Some(Message::Done { sequence: 7 })
-        ));
+        let headers = Messages(&bytes)
+            .map(|(header, _)| header.dump_interrupted)
+            .collect::<Vec<_>>();
+
+        assert_eq!(headers, [false, true]);
     }
 
     #[test]
@@ -331,7 +365,7 @@ mod tests {
 
         let mut messages = Messages(&bytes);
 
-        let Some(Message::ProtocolLink(family)) = messages.next() else {
+        let Some((_, Message::ProtocolLink(family))) = messages.next() else {
             panic!("expected `Message::ProtocolLink`");
         };
 
