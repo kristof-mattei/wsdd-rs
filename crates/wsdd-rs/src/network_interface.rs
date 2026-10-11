@@ -6,7 +6,7 @@ use std::io::Error;
 use color_eyre::eyre;
 use libc::IF_NAMESIZE;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct NetworkInterface {
     name: Box<str>,
     index: u32,
