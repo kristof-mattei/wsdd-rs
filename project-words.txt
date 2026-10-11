@@ -42,7 +42,6 @@ dgram
 diskstation
 dladm
 doesnt
-dont
 dorny
 dpws
 dstaddr

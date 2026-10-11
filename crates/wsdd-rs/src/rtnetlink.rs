@@ -12,7 +12,6 @@ use tracing::{Level, event};
 use zerocopy::FromBytes as _;
 
 use crate::ffi::getpagesize;
-use crate::kernel_buffer::AlignedBuffer;
 use crate::utils::{u16_to_usize, u32_to_usize};
 
 const NLMSG_ALIGNTO: usize = 4;
@@ -30,8 +29,7 @@ impl<B: BufMut> RecvBuf<B> for &tokio::net::UdpSocket {
     }
 }
 
-/// Aligned for `nlmsghdr`, the largest alignment of the structs read from it.
-pub struct ReceiveBuffer(AlignedBuffer<{ align_of::<nlmsghdr>() }>);
+pub struct ReceiveBuffer(Box<[MaybeUninit<u8>]>);
 
 impl ReceiveBuffer {
     pub fn new() -> Self {
@@ -45,7 +43,7 @@ impl ReceiveBuffer {
         // so allocating more than 8192 bytes would never be filled. We mirror that cap here.
         let page_size = getpagesize().clamp(MIN_PAGE_SIZE, MAX_PAGE_SIZE);
 
-        Self(AlignedBuffer::new(page_size))
+        Self(Box::new_uninit_slice(page_size))
     }
 
     pub async fn receive<R>(&mut self, socket: &R) -> io::Result<Messages<'_>>
@@ -79,15 +77,15 @@ impl<'a> Iterator for Messages<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let (header, _) = nlmsghdr::ref_from_prefix(self.0).ok()?;
 
-        let message_len = u32_to_usize(header.nlmsg_len);
+        let message_len = u32_to_usize(header.nlmsg_len.get());
 
         let payload = &self.0[size_of::<nlmsghdr>()..message_len];
 
         self.0 = &self.0[message_len.next_multiple_of(NLMSG_ALIGNTO)..];
 
         Some(Message::decode(
-            header.nlmsg_type,
-            header.nlmsg_seq,
+            header.nlmsg_type.get(),
+            header.nlmsg_seq.get(),
             payload,
         ))
     }
@@ -167,10 +165,12 @@ impl<'a> Message<'a> {
                         "`NLMSG_ERROR` must start with an `nlmsgerr`, as this is kernel data",
                     );
 
-                    if error.error == 0 {
+                    let code = error.error.get();
+
+                    if code == 0 {
                         Self::Ack
                     } else {
-                        Self::Error(io::Error::from_raw_os_error(error.error.wrapping_neg()))
+                        Self::Error(io::Error::from_raw_os_error(code.wrapping_neg()))
                     }
                 },
                 NLMSG_NOOP => Self::Noop,
@@ -219,7 +219,7 @@ impl<'a> Iterator for Attributes<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let (rta, _) = rtattr::ref_from_prefix(self.buffer).ok()?;
 
-        let attribute_len = u16_to_usize(rta.rta_len);
+        let attribute_len = u16_to_usize(rta.rta_len.get());
 
         let value = &self.buffer[size_of::<rtattr>()..attribute_len];
 
@@ -228,12 +228,12 @@ impl<'a> Iterator for Attributes<'a> {
         event!(
             Level::DEBUG,
             "rt_attr type: {} {} ({})",
-            rta.rta_len,
-            rta.rta_type,
+            rta.rta_len.get(),
+            rta.rta_type.get(),
             rta.label().unwrap_or("Unknown type")
         );
 
-        let attribute = match rta.rta_type {
+        let attribute = match rta.rta_type.get() {
             IFA_ADDRESS => Attribute::Address(AddressValue {
                 family: self.family,
                 value,
@@ -285,47 +285,26 @@ impl AddressValue<'_> {
 
 #[cfg(test)]
 mod tests {
-    use std::mem::MaybeUninit;
-
-    use bytes::BufMut as _;
     use libc::{AF_BRIDGE, EINVAL, IFF_UP, RTM_DELLINK};
     use pretty_assertions::assert_eq;
 
-    use crate::rtnetlink::{Message, ReceiveBuffer, RecvBuf};
+    use crate::rtnetlink::{Message, Messages};
     use crate::test_utils::netlink::{done_message, error_message, link_message};
 
-    struct Datagram<'b>(&'b [u8]);
-
-    impl RecvBuf<&mut [MaybeUninit<u8>]> for Datagram<'_> {
-        #[expect(clippy::mut_mut, reason = "Mandated by the trait")]
-        fn recv_buf(
-            &self,
-            buf: &mut &mut [MaybeUninit<u8>],
-        ) -> impl Future<Output = std::io::Result<usize>> {
-            buf.put_slice(self.0);
-
-            std::future::ready(Ok(self.0.len()))
-        }
-    }
-
-    #[tokio::test]
-    async fn error_code_zero_decodes_as_ack() {
+    #[test]
+    fn error_code_zero_decodes_as_ack() {
         let bytes = error_message(0);
 
-        let mut buffer = ReceiveBuffer::new();
-
-        let mut messages = buffer.receive(&Datagram(&bytes)).await.unwrap();
+        let mut messages = Messages(&bytes);
 
         assert!(matches!(messages.next(), Some(Message::Ack)));
     }
 
-    #[tokio::test]
-    async fn negative_errno_decodes_as_error() {
+    #[test]
+    fn negative_errno_decodes_as_error() {
         let bytes = error_message(-EINVAL);
 
-        let mut buffer = ReceiveBuffer::new();
-
-        let mut messages = buffer.receive(&Datagram(&bytes)).await.unwrap();
+        let mut messages = Messages(&bytes);
 
         let Some(Message::Error(error)) = messages.next() else {
             panic!("expected `Message::Error`");
@@ -334,13 +313,11 @@ mod tests {
         assert_eq!(error.raw_os_error(), Some(EINVAL));
     }
 
-    #[tokio::test]
-    async fn done_keeps_its_sequence() {
+    #[test]
+    fn done_keeps_its_sequence() {
         let bytes = done_message(7);
 
-        let mut buffer = ReceiveBuffer::new();
-
-        let mut messages = buffer.receive(&Datagram(&bytes)).await.unwrap();
+        let mut messages = Messages(&bytes);
 
         assert!(matches!(
             messages.next(),
@@ -348,13 +325,11 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn bridge_port_link_decodes_as_protocol_link() {
+    #[test]
+    fn bridge_port_link_decodes_as_protocol_link() {
         let bytes = link_message(RTM_DELLINK, AF_BRIDGE, 3, IFF_UP.cast_unsigned());
 
-        let mut buffer = ReceiveBuffer::new();
-
-        let mut messages = buffer.receive(&Datagram(&bytes)).await.unwrap();
+        let mut messages = Messages(&bytes);
 
         let Some(Message::ProtocolLink(family)) = messages.next() else {
             panic!("expected `Message::ProtocolLink`");

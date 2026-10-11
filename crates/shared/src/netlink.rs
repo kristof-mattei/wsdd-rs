@@ -1,4 +1,5 @@
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use zerocopy::byteorder::native_endian::{I32, U16, U32};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 #[derive(IntoBytes, Immutable)]
 #[repr(C)]
@@ -19,29 +20,29 @@ pub struct LinkRequest {
 }
 
 /// Copy from `libc::nlmsghdr`, but we need zerocopy.
-#[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct nlmsghdr {
     /// Size of message including header.
-    pub nlmsg_len: u32,
+    pub nlmsg_len: U32,
     /// Type of message content.
-    pub nlmsg_type: u16,
+    pub nlmsg_type: U16,
     /// Additional flags.
-    pub nlmsg_flags: u16,
+    pub nlmsg_flags: U16,
     /// Sequence number.
-    pub nlmsg_seq: u32,
+    pub nlmsg_seq: U32,
     /// Sender port ID.
-    pub nlmsg_pid: u32,
+    pub nlmsg_pid: U32,
 }
 
-#[derive(KnownLayout, FromBytes, Immutable)]
+#[derive(KnownLayout, FromBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct nlmsgerr {
-    pub error: libc::c_int,
+    pub error: I32,
     pub msg: nlmsghdr,
 }
 
-#[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct ifaddrmsg {
     /// Address type.
@@ -53,30 +54,30 @@ pub struct ifaddrmsg {
     /// Address scope.
     pub ifa_scope: u8,
     /// Interface index.
-    pub ifa_index: u32,
+    pub ifa_index: U32,
 }
 
-#[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct ifinfomsg {
     pub ifi_family: u8,
     pub ifi_pad: u8,
     /// `ARPHRD_*`.
-    pub ifi_type: u16,
-    pub ifi_index: i32,
+    pub ifi_type: U16,
+    pub ifi_index: I32,
     /// `IFF_*`.
-    pub ifi_flags: u32,
+    pub ifi_flags: U32,
     /// `IFF_*` change mask.
-    pub ifi_change: u32,
+    pub ifi_change: U32,
 }
 
-#[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct rtattr {
     /// Length of option.
-    pub rta_len: u16,
+    pub rta_len: U16,
     /// Type of option.
-    pub rta_type: u16,
+    pub rta_type: U16,
     // Data follows
 }
 
@@ -95,6 +96,6 @@ impl rtattr {
             "IFA_FLAGS",
         ];
 
-        RTA_TYPES.get(usize::from(self.rta_type)).copied()
+        RTA_TYPES.get(usize::from(self.rta_type.get())).copied()
     }
 }
