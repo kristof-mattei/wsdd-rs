@@ -336,12 +336,13 @@ async fn launch_address_monitor(
     start_rx: tokio::sync::watch::Receiver<()>,
     config: Arc<Config>,
 ) -> Result<(), eyre::Report> {
-    let address_monitor = create_address_monitor(cancellation_token, command_tx, start_rx, config)
-        .wrap_err("Failed to create address monitor")?;
+    let mut address_monitor =
+        create_address_monitor(cancellation_token, command_tx, start_rx, config)
+            .wrap_err("Failed to create address monitor")?;
 
     let result = address_monitor.process_changes().await;
 
-    address_monitor.teardown().await;
+    address_monitor.teardown();
 
     result
 }
