@@ -62,20 +62,31 @@ pub mod xml {
 }
 
 pub mod netlink {
-    use libc::{NLMSG_DONE, NLMSG_ERROR};
+    use libc::{NLM_F_DUMP_INTR, NLMSG_DONE, NLMSG_ERROR};
     use shared::netlink::{ifinfomsg, nlmsghdr};
     use zerocopy::byteorder::native_endian::{I32, U16, U32};
     use zerocopy::{FromZeros as _, IntoBytes as _};
 
     pub fn netlink_message(nlmsg_type: u16, payload: &[u8]) -> Vec<u8> {
-        sequenced_message(nlmsg_type, 0, payload)
+        reply(nlmsg_type, 0, false, payload)
     }
 
-    fn sequenced_message(nlmsg_type: u16, nlmsg_seq: u32, payload: &[u8]) -> Vec<u8> {
+    pub fn reply(
+        nlmsg_type: u16,
+        nlmsg_seq: u32,
+        dump_interrupted: bool,
+        payload: &[u8],
+    ) -> Vec<u8> {
+        let nlmsg_flags = if dump_interrupted {
+            u16::try_from(NLM_F_DUMP_INTR).unwrap()
+        } else {
+            0
+        };
+
         let header = nlmsghdr {
             nlmsg_len: U32::new(u32::try_from(size_of::<nlmsghdr>() + payload.len()).unwrap()),
             nlmsg_type: U16::new(nlmsg_type),
-            nlmsg_flags: U16::ZERO,
+            nlmsg_flags: U16::new(nlmsg_flags),
             nlmsg_seq: U32::new(nlmsg_seq),
             nlmsg_pid: U32::ZERO,
         };
@@ -84,14 +95,15 @@ pub mod netlink {
     }
 
     pub fn done_message(nlmsg_seq: u32) -> Vec<u8> {
-        sequenced_message(
+        reply(
             u16::try_from(NLMSG_DONE).unwrap(),
             nlmsg_seq,
+            false,
             0_i32.as_bytes(),
         )
     }
 
-    pub fn link_message(nlmsg_type: u16, family: i32, index: i32, flags: u32) -> Vec<u8> {
+    pub fn link_payload(family: i32, index: i32, flags: u32) -> Vec<u8> {
         let ifi = ifinfomsg {
             ifi_family: u8::try_from(family).unwrap(),
             ifi_pad: 0,
@@ -101,14 +113,19 @@ pub mod netlink {
             ifi_change: U32::ZERO,
         };
 
-        netlink_message(nlmsg_type, ifi.as_bytes())
+        ifi.as_bytes().to_vec()
+    }
+
+    pub fn link_message(nlmsg_type: u16, family: i32, index: i32, flags: u32) -> Vec<u8> {
+        netlink_message(nlmsg_type, &link_payload(family, index, flags))
+    }
+
+    pub fn error_payload(error: i32) -> Vec<u8> {
+        [error.as_bytes(), nlmsghdr::new_zeroed().as_bytes()].concat()
     }
 
     pub fn error_message(error: i32) -> Vec<u8> {
-        netlink_message(
-            u16::try_from(NLMSG_ERROR).unwrap(),
-            &[error.as_bytes(), nlmsghdr::new_zeroed().as_bytes()].concat(),
-        )
+        netlink_message(u16::try_from(NLMSG_ERROR).unwrap(), &error_payload(error))
     }
 }
 

@@ -45,6 +45,7 @@ doesnt
 dorny
 dpws
 dstaddr
+ebusy
 edff
 eintr
 einval
