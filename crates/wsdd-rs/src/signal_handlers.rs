@@ -13,10 +13,6 @@ use crate::shutdown::Shutdown;
 use crate::utils::i32_to_u8;
 use crate::wrap_and_report;
 
-const SIGINT: u8 = i32_to_u8(libc::SIGINT);
-
-const SIGTERM: u8 = i32_to_u8(libc::SIGTERM);
-
 #[derive(Clone, Copy)]
 pub enum Signal {
     Interrupt,
@@ -26,8 +22,8 @@ pub enum Signal {
 impl Signal {
     pub const fn number(self) -> u8 {
         match self {
-            Signal::Interrupt => SIGINT,
-            Signal::Terminate => SIGTERM,
+            Signal::Interrupt => const { i32_to_u8(libc::SIGINT) },
+            Signal::Terminate => const { i32_to_u8(libc::SIGTERM) },
         }
     }
 }

@@ -279,9 +279,9 @@ fn request_addresses(
     socket: &tokio::net::UdpSocket,
 ) -> Result<(), std::io::Error> {
     let family = match config.bind_to {
-        BindTo::IPv4 => AF_INET,
-        BindTo::IPv6 => AF_INET6,
-        BindTo::DualStack => AF_UNSPEC,
+        BindTo::IPv4 => const { i32_to_u8(AF_INET) },
+        BindTo::IPv6 => const { i32_to_u8(AF_INET6) },
+        BindTo::DualStack => const { i32_to_u8(AF_UNSPEC) },
     };
 
     let request = NetlinkRequest {
@@ -293,7 +293,7 @@ fn request_addresses(
             nlmsg_pid: U32::ZERO,
         },
         ifa: ifaddrmsg {
-            ifa_family: i32_to_u8(family),
+            ifa_family: family,
             ifa_prefixlen: 0,
             ifa_flags: 0,
             ifa_scope: 0,
