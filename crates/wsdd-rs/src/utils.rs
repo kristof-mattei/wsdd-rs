@@ -30,17 +30,11 @@ pub const fn u16_to_usize(from: u16) -> usize {
     }
 }
 
-/// `const` cast a `u32` to `usize`.
-/// Validates at compile time that `usize` is at least as wide as `u32`.
-///
-/// Even if `usize::try_from(u32)` ever becomes `const`, this is better, as it fails at compile time.
-///
-/// Why?
-/// A raw `value as usize` at a call site is dangerous: if `value` is later widened to `u64` or `u128`, the cast silently truncates instead of erroring.
+/// `const` cast a `u32` to `usize`. `usize::try_from(u32)` returns a `Result` on every target.
 pub const fn u32_to_usize(from: u32) -> usize {
     const _: () = assert!(
         size_of::<usize>() >= size_of::<u32>(),
-        "rtnetlink doesn't support 16-bit, so we don't either"
+        "wsdd-rs requires a `usize` of at least 32 bits"
     );
 
     #[expect(
@@ -49,6 +43,62 @@ pub const fn u32_to_usize(from: u32) -> usize {
     )]
     {
         from as usize
+    }
+}
+
+/// `const` cast an `i32` to `u8`. `u8::try_from(i32)` is not `const` yet.
+///
+/// # Panics
+///
+/// If `from` is outside `0..=0xFF`.
+pub const fn i32_to_u8(from: i32) -> u8 {
+    assert!(matches!(from, 0..=0xFF), "`from` must fit in a `u8`");
+
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Validated that `from` fits in `u8`"
+    )]
+    {
+        from as u8
+    }
+}
+
+/// `const` cast an `i32` to `u16`. `u16::try_from(i32)` is not `const` yet.
+///
+/// # Panics
+///
+/// If `from` is outside `0..=0xFFFF`.
+pub const fn i32_to_u16(from: i32) -> u16 {
+    assert!(matches!(from, 0..=0xFFFF), "`from` must fit in a `u16`");
+
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Validated that `from` fits in `u16`"
+    )]
+    {
+        from as u16
+    }
+}
+
+/// `const` cast a `usize` to `u16`. `u16::try_from(usize)` is not `const` yet.
+///
+/// # Panics
+///
+/// If `from` is outside `0..=0xFFFF`.
+pub const fn usize_to_u16(from: usize) -> u16 {
+    assert!(matches!(from, 0..=0xFFFF), "`from` must fit in a `u16`");
+
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        reason = "Validated that `from` fits in `u16`"
+    )]
+    {
+        from as u16
     }
 }
 

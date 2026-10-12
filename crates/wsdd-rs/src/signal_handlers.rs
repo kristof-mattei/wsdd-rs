@@ -10,21 +10,12 @@ use tokio::signal::unix::signal;
 use tracing::{Level, event};
 
 use crate::shutdown::Shutdown;
+use crate::utils::i32_to_u8;
 use crate::wrap_and_report;
 
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    reason = "Waiting for `try_into()` to become const"
-)]
-const SIGINT: u8 = libc::SIGINT as u8;
+const SIGINT: u8 = i32_to_u8(libc::SIGINT);
 
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    reason = "Waiting for `try_into()` to become const"
-)]
-const SIGTERM: u8 = libc::SIGTERM as u8;
+const SIGTERM: u8 = i32_to_u8(libc::SIGTERM);
 
 #[derive(Clone, Copy)]
 pub enum Signal {
