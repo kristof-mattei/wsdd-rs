@@ -485,18 +485,18 @@ where
 
         match state {
             LinkState::Usable => {
-                event!(Level::DEBUG, index, "link usable");
+                event!(Level::INFO, index, "link usable");
 
                 self.start_handlers_on(index).await;
             },
             LinkState::WithoutMulticast => {
-                event!(Level::DEBUG, index, "link without multicast");
+                event!(Level::INFO, index, "link without multicast");
 
                 // the link still works and wsdd leaves it by choice, so it sends a Bye
                 self.teardown_handlers_on(index, true).await;
             },
             LinkState::NotRunning => {
-                event!(Level::DEBUG, index, "link not running");
+                event!(Level::INFO, index, "link not running");
 
                 self.teardown_handlers_on(index, false).await;
             },
