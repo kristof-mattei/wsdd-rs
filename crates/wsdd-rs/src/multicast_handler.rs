@@ -793,4 +793,41 @@ mod tests {
         // copies are at least `UDP_MIN_DELAY` apart
         assert!(last_copy_sent_at + constants::UDP_MIN_DELAY > *arrivals.last().unwrap());
     }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn teardown_waits_for_queued_messages() {
+        let receiver = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let target = receiver.local_addr().unwrap();
+
+        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+
+        let mut message_sender = MessageSender::new(
+            Arc::new(UdpSocketWithAddr::new(socket).unwrap()),
+            MulticastMessageSplitter { target },
+            NetworkAddress::new(
+                IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
+                Arc::new(NetworkInterface::new_with_index("lo", RT_SCOPE_SITE, 1)),
+            ),
+        );
+
+        let (last_copy_tx, last_copy_rx) = oneshot::channel();
+
+        message_sender
+            .get_tx()
+            .send(OutgoingMulticastMessage {
+                message: MulticastMessage::Bye(Box::from(&b"bye"[..])),
+                last_copy_tx: Some(last_copy_tx),
+            })
+            .await
+            .unwrap();
+
+        message_sender.teardown().await;
+
+        let torn_down_at = Instant::now();
+
+        let last_copy_sent_at = last_copy_rx.await.unwrap();
+
+        assert!(last_copy_sent_at <= torn_down_at);
+    }
 }
