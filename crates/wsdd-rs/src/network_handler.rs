@@ -396,7 +396,7 @@ where
             .insert((network_address.address, network_address.interface.index()));
 
         if is_new {
-            event!(Level::DEBUG, %network_address, "new address");
+            event!(Level::INFO, %network_address, "new address");
         } else {
             event!(Level::TRACE, %network_address, "updated address");
         }

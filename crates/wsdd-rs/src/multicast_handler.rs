@@ -49,7 +49,6 @@ pub struct MulticastHandler {
     network_address: NetworkAddress,
 
     /// The multicast group on which we broadcast our messages.
-    #[expect(unused, reason = "WIP")]
     multicast_address: UdpAddress,
     http_listen_address: SocketAddr,
     wsd_host: OnceCell<WSDHost>,
@@ -264,6 +263,13 @@ impl MulticastHandler {
 
         // since this consumes self, now the sockets etc are closed. We awaited all tasks, and thus are sure that messages were either
         // sent, or failed to send, but we avoided the 'schedule but shut down too soon' situation.
+
+        event!(
+            Level::INFO,
+            "left multicast group {} on {}",
+            UrlIpAddr::from(self.multicast_address.get_transport_address().ip()),
+            self.network_address
+        );
     }
 
     fn init_v6(
