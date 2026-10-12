@@ -275,10 +275,10 @@ impl<'a> Iterator for Attributes<'a> {
 
         event!(
             Level::DEBUG,
-            "rt_attr type: {} {} ({})",
-            rta.rta_len.get(),
-            rta.rta_type.get(),
-            rta.label().unwrap_or("Unknown type")
+            rta_len = rta.rta_len.get(),
+            rta_type = rta.rta_type.get(),
+            label = rta.label(),
+            "attribute"
         );
 
         let attribute = match rta.rta_type.get() {
