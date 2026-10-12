@@ -461,11 +461,11 @@ async fn parse_netlink_response(
 fn parse_address_message(ifa: &ifaddrmsg, attributes: Attributes<'_>) -> Option<IpNet> {
     event!(
         Level::DEBUG,
-        "RTM new/del addr family: {} flags: {} scope: {} idx: {}",
-        ifa.ifa_family,
-        ifa.ifa_flags,
-        ifa.ifa_scope,
-        ifa.ifa_index
+        ifa_family = ifa.ifa_family,
+        ifa_flags = ifa.ifa_flags,
+        ifa_scope = ifa.ifa_scope,
+        ifa_index = ifa.ifa_index.get(),
+        "address message"
     );
 
     let mut ifa_address = None;
