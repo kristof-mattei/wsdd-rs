@@ -245,7 +245,7 @@ fn parse_xaddrs(bound_to: IpNet, raw_xaddrs: &str) -> Vec<XAddr> {
             Ok(xaddr) => Some(xaddr),
             Err(error) => {
                 event!(
-                    Level::INFO,
+                    Level::DEBUG,
                     ?error,
                     %raw_xaddr,
                     "Message sent with invalid/non-http/https xaddr or no host, ignoring"
@@ -386,7 +386,7 @@ async fn handle_bye(
 
     if guard.depart(&endpoint).is_none() {
         event!(
-            Level::INFO,
+            Level::DEBUG,
             endpoint = &*endpoint,
             "Received bye, but not record of that endpoint"
         );
