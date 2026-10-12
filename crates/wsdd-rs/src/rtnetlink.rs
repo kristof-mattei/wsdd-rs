@@ -80,7 +80,7 @@ impl ReceiveBuffer {
         };
 
         event!(
-            Level::DEBUG,
+            Level::TRACE,
             length = bytes_read,
             "netlink message received"
         );
@@ -274,7 +274,7 @@ impl<'a> Iterator for Attributes<'a> {
         self.buffer = &self.buffer[attribute_len.next_multiple_of(RTA_ALIGNTO)..];
 
         event!(
-            Level::DEBUG,
+            Level::TRACE,
             rta_len = rta.rta_len.get(),
             rta_type = rta.rta_type.get(),
             label = rta.label(),

@@ -460,7 +460,7 @@ async fn parse_netlink_response(
 
 fn parse_address_message(ifa: &ifaddrmsg, attributes: Attributes<'_>) -> Option<IpNet> {
     event!(
-        Level::DEBUG,
+        Level::TRACE,
         ifa_family = ifa.ifa_family,
         ifa_flags = ifa.ifa_flags,
         ifa_scope = ifa.ifa_scope,
