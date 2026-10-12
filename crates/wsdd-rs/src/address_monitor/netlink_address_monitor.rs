@@ -8,10 +8,10 @@ use color_eyre::eyre;
 use ipnet::IpNet;
 use libc::{
     AF_INET, AF_INET6, AF_UNSPEC, IFA_F_DADFAILED, IFA_F_DEPRECATED, IFA_F_HOMEADDRESS,
-    IFA_F_TENTATIVE, NETLINK_ROUTE, NLM_F_ACK, NLM_F_DUMP, NLM_F_REQUEST, RTM_GETADDR, RTM_GETLINK,
-    RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK,
+    IFA_F_TENTATIVE, NETLINK_ROUTE, NLM_F_ACK, NLM_F_DUMP, NLM_F_REQUEST, RTEXT_FILTER_SKIP_STATS,
+    RTM_GETADDR, RTM_GETLINK, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK,
 };
-use shared::netlink::{LinkRequest, NetlinkRequest, ifaddrmsg, ifinfomsg, nlmsghdr};
+use shared::netlink::{LinkRequest, NetlinkRequest, ifaddrmsg, ifinfomsg, nlmsghdr, rtattr};
 use socket2::SockAddrStorage;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::watch;
@@ -28,6 +28,8 @@ use crate::rtnetlink::{
 };
 
 define_typed_size!(SIZE_OF_SOCKADDR_NL, u32, libc::sockaddr_nl);
+
+const IFLA_EXT_MASK: u16 = 29;
 
 pub struct NetlinkAddressMonitor {
     cancellation_token: CancellationToken,
@@ -256,6 +258,12 @@ fn request_links(socket: &tokio::net::UdpSocket) -> Result<(), std::io::Error> {
             ifi_flags: U32::ZERO,
             ifi_change: U32::ZERO,
         },
+        ext_mask_header: rtattr {
+            rta_len: U16::new(u16::try_from(size_of::<rtattr>() + size_of::<U32>()).unwrap()),
+            rta_type: U16::new(IFLA_EXT_MASK),
+        },
+        // without a filter mask, the kernel ends the dump early at a link message larger than our receive buffer
+        ext_mask: U32::new(RTEXT_FILTER_SKIP_STATS.cast_unsigned()),
     };
 
     send_to_kernel(socket, request.as_bytes())
@@ -505,12 +513,12 @@ mod tests {
         IFF_UP, NLMSG_DONE, RTM_DELADDR, RTM_NEWADDR, RTM_NEWLINK,
     };
     use pretty_assertions::{assert_eq, assert_matches};
-    use shared::netlink::{ifaddrmsg, rtattr};
+    use shared::netlink::{ifaddrmsg, ifinfomsg, rtattr};
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio::sync::watch;
     use tokio_util::sync::CancellationToken;
     use zerocopy::IntoBytes as _;
-    use zerocopy::byteorder::native_endian::{U16, U32};
+    use zerocopy::byteorder::native_endian::{I32, U16, U32};
 
     use crate::address_monitor::netlink_address_monitor::{
         Dump, Exit, SIZE_OF_SOCKADDR_NL, SkippedStates, forward_dump, process_changes,
@@ -647,17 +655,26 @@ mod tests {
     }
 
     impl RecvBuf<&mut [MaybeUninit<u8>]> for DrainingNetlinkSocket<'_> {
-        #[expect(clippy::mut_mut, reason = "Mandated by the trait")]
-        async fn recv_buf(&self, buf: &mut &mut [MaybeUninit<u8>]) -> std::io::Result<usize> {
-            if self.done.fetch_or(true, Ordering::Relaxed) {
+        async fn peek_len(&self) -> std::io::Result<usize> {
+            if self.done.load(Ordering::Relaxed) {
                 self.cancellation_token.cancel();
 
                 return std::future::pending().await;
             }
 
+            Ok(self.bytes.len())
+        }
+
+        #[expect(clippy::mut_mut, reason = "Mandated by the trait")]
+        fn recv_buf(
+            &self,
+            buf: &mut &mut [MaybeUninit<u8>],
+        ) -> impl Future<Output = std::io::Result<usize>> {
+            self.done.store(true, Ordering::Relaxed);
+
             buf.put_slice(self.bytes);
 
-            Ok(self.bytes.len())
+            std::future::ready(Ok(self.bytes.len()))
         }
 
         #[expect(clippy::mut_mut, reason = "Mandated by the trait")]
@@ -867,6 +884,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn link_message_larger_than_a_page_is_reported() {
+        let flags = (IFF_UP | IFF_RUNNING | IFF_MULTICAST).cast_unsigned();
+
+        let ifi = ifinfomsg {
+            ifi_family: u8::try_from(AF_UNSPEC).unwrap(),
+            ifi_pad: 0,
+            ifi_type: U16::ZERO,
+            ifi_index: I32::new(3),
+            ifi_flags: U32::new(flags),
+            ifi_change: U32::ZERO,
+        };
+
+        // larger than the receive buffer's starting size on every page size
+        let bytes = netlink_message(
+            RTM_NEWLINK,
+            &[ifi.as_bytes(), &attribute(0, &[0; 8192])].concat(),
+        );
+
+        assert_matches!(
+            &*commands(&bytes).await,
+            [Command::NewLink { index: 3, flags: reported }] if *reported == flags
+        );
+    }
+
+    #[tokio::test]
     async fn device_link_is_reported_with_its_flags() {
         let flags = (IFF_UP | IFF_RUNNING | IFF_MULTICAST).cast_unsigned();
 
@@ -910,6 +952,23 @@ mod tests {
     }
 
     impl RecvBuf<&mut [MaybeUninit<u8>]> for &DatagramSocket {
+        async fn peek_len(&self) -> std::io::Result<usize> {
+            let next = self.datagrams.borrow_mut().pop_front();
+
+            match next {
+                Some(Ok(datagram)) => {
+                    let length = datagram.len();
+
+                    self.datagrams.borrow_mut().push_front(Ok(datagram));
+
+                    Ok(length)
+                },
+                // the kernel reports a pending error to whichever read comes first
+                Some(Err(error)) => Err(error),
+                None => std::future::pending().await,
+            }
+        }
+
         #[expect(clippy::mut_mut, reason = "Mandated by the trait")]
         async fn recv_buf(&self, buf: &mut &mut [MaybeUninit<u8>]) -> std::io::Result<usize> {
             match self.try_recv_buf(buf) {

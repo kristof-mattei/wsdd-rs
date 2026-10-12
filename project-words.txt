@@ -88,6 +88,7 @@ ifaddrs
 ifas
 ifinfo
 ifinfomsg
+ifla
 iflist
 ifname
 ifnamsiz
@@ -153,7 +154,6 @@ qname
 qnames
 rawfile
 recond
-recvmsg
 retag
 retagging
 reuseaddr
@@ -163,6 +163,7 @@ ringmap
 rposition
 rsplit
 rtattr
+rtext
 rtmgrp
 rtnetlink
 rustflags

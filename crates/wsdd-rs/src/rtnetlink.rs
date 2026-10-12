@@ -4,10 +4,11 @@ use std::net::IpAddr;
 
 use bytes::BufMut;
 use libc::{
-    AF_INET, AF_INET6, AF_UNSPEC, IFA_ADDRESS, IFA_LOCAL, NLM_F_DUMP_INTR, NLMSG_DONE, NLMSG_ERROR,
-    NLMSG_NOOP, RTM_DELADDR, RTM_DELLINK, RTM_NEWADDR, RTM_NEWLINK,
+    AF_INET, AF_INET6, AF_UNSPEC, IFA_ADDRESS, IFA_LOCAL, MSG_PEEK, MSG_TRUNC, NLM_F_DUMP_INTR,
+    NLMSG_DONE, NLMSG_ERROR, NLMSG_NOOP, RTM_DELADDR, RTM_DELLINK, RTM_NEWADDR, RTM_NEWLINK,
 };
 use shared::netlink::{ifaddrmsg, ifinfomsg, nlmsgerr, nlmsghdr, rtattr};
+use tokio::io::Interest;
 use tracing::{Level, event};
 use zerocopy::FromBytes as _;
 
@@ -20,12 +21,22 @@ const NLMSG_ALIGNTO: usize = 4;
 pub const RTA_ALIGNTO: usize = 4;
 
 pub trait RecvBuf<B: BufMut> {
+    /// Returns the full length of the next datagram and leaves it queued.
+    async fn peek_len(&self) -> io::Result<usize>;
+
     async fn recv_buf(&self, buf: &mut B) -> io::Result<usize>;
 
     fn try_recv_buf(&self, buf: &mut B) -> io::Result<usize>;
 }
 
 impl<B: BufMut> RecvBuf<B> for &tokio::net::UdpSocket {
+    async fn peek_len(&self) -> io::Result<usize> {
+        self.async_io(Interest::READABLE, || {
+            socket2::SockRef::from(*self).recv_with_flags(&mut [], MSG_PEEK | MSG_TRUNC)
+        })
+        .await
+    }
+
     async fn recv_buf(&self, buf: &mut B) -> io::Result<usize> {
         tokio::net::UdpSocket::recv_buf::<B>(self, buf).await
     }
@@ -41,12 +52,11 @@ impl ReceiveBuffer {
     pub fn new() -> Self {
         // Can't have smaller than this on x86
         const MIN_PAGE_SIZE: usize = 4096;
-        // Large enough for the kernel's max packet (see `NLMSG_GOODSIZE`)
+        // `NLMSG_GOODSIZE` uses at most 8192 bytes, whatever the page size
         // https://github.com/torvalds/linux/blob/24d479d26b25bce5faea3ddd9fa8f3a6c3129ea7/include/linux/netlink.h#L272-L276
         const MAX_PAGE_SIZE: usize = 8192;
 
-        // The kernel itself caps recvmsg sizing at `NLMSG_GOODSIZE = min(PAGE_SIZE, 8192)`,
-        // so allocating more than 8192 bytes would never be filled. We mirror that cap here.
+        // the kernel sizes most datagrams to `NLMSG_GOODSIZE`
         let page_size = getpagesize().clamp(MIN_PAGE_SIZE, MAX_PAGE_SIZE);
 
         Self(Box::new_uninit_slice(page_size))
@@ -56,6 +66,13 @@ impl ReceiveBuffer {
     where
         R: for<'a> RecvBuf<&'a mut [MaybeUninit<u8>]>,
     {
+        let length = socket.peek_len().await?;
+
+        // a link notification is sized to its message, which can exceed `NLMSG_GOODSIZE`
+        if length > self.0.len() {
+            self.0 = Box::new_uninit_slice(length);
+        }
+
         let bytes_read = {
             let mut cursor = &mut *self.0;
 

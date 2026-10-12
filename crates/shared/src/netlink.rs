@@ -17,6 +17,8 @@ pub struct NetlinkRequest {
 pub struct LinkRequest {
     pub nh: nlmsghdr,
     pub ifi: ifinfomsg,
+    pub ext_mask_header: rtattr,
+    pub ext_mask: U32,
 }
 
 /// Copy from `libc::nlmsghdr`, but we need zerocopy.
