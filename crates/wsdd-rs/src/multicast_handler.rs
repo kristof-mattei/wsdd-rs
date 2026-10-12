@@ -676,7 +676,7 @@ where
                 loop {
                     let Some(buffer) = rx.recv().await else {
                         event!(
-                            Level::INFO,
+                            Level::DEBUG,
                             socket = %socket.local_addr(),
                             splitter = %T::NAME,
                             "All senders gone, stopping sender"

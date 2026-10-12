@@ -33,13 +33,13 @@ impl WSDHttpServer {
     ) -> Result<WSDHttpServer, std::io::Error> {
         let message_handler = MessageHandler::new(bound_to.clone(), recent_messages);
 
-        event!(Level::INFO, ?http_listen_address, "Trying to bind");
+        event!(Level::DEBUG, ?http_listen_address, "Trying to bind");
 
         let listener = tokio::net::TcpListener::bind(http_listen_address).await?;
 
         let http_bound_to = listener.local_addr()?;
 
-        event!(Level::INFO, ?listener, "Bound successfully");
+        event!(Level::DEBUG, ?listener, "Bound successfully");
 
         // launch axum server on http_listen_address
         // this will never fail unless shut down
