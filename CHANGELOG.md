@@ -1,4 +1,17 @@
 <!-- header goes here -->
+## [0.9.3](https://github.com/kristof-mattei/wsdd-rs/compare/v0.9.2..v0.9.3) - 2026-10-12
+
+### 🐛 Bug Fixes
+
+- Log netlink messages and their attributes at trace by [@kristof-mattei](https://github.com/kristof-mattei) ([`9d877cd`](https://github.com/kristof-mattei/wsdd-rs/commit/9d877cddf4c3324065bc9add13480521c1621362))
+- Log new addresses and leaving a multicast group at info by [@kristof-mattei](https://github.com/kristof-mattei) ([`abb67fa`](https://github.com/kristof-mattei/wsdd-rs/commit/abb67fae106219e8602ddc734d116b7f9edfc9b7))
+- Log invalid XAddrs and Byes from unknown endpoints at debug by [@kristof-mattei](https://github.com/kristof-mattei) ([`65c4f34`](https://github.com/kristof-mattei/wsdd-rs/commit/65c4f3493ee8324bf8db3ee499bcc676d035c6fe))
+- Log link state changes at info by [@kristof-mattei](https://github.com/kristof-mattei) ([`6e5b88d`](https://github.com/kristof-mattei/wsdd-rs/commit/6e5b88d15e6fb7276bdbe15dd8e941a4f9aeb625))
+- Log sender shutdown and HTTP binding at debug by [@kristof-mattei](https://github.com/kristof-mattei) ([`a0c2a75`](https://github.com/kristof-mattei/wsdd-rs/commit/a0c2a7511834a5b0a0d479107bcf0a0432633841))
+
+### 🚜 Refactor
+
+- Structured netlink logs by [@kristof-mattei](https://github.com/kristof-mattei) ([`f7bfe01`](https://github.com/kristof-mattei/wsdd-rs/commit/f7bfe01c6890a4c4b0a9772210ec07f56dbe2397))
 ## [0.9.2](https://github.com/kristof-mattei/wsdd-rs/compare/v0.9.1..v0.9.2) - 2026-10-12
 
 ### 🐛 Bug Fixes
