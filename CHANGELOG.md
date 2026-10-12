@@ -1,4 +1,33 @@
 <!-- header goes here -->
+## [0.9.2](https://github.com/kristof-mattei/wsdd-rs/compare/v0.9.1..v0.9.2) - 2026-10-12
+
+### 🐛 Bug Fixes
+
+- Report netlink address deletions in any address state by [@kristof-mattei](https://github.com/kristof-mattei) ([`9157897`](https://github.com/kristof-mattei/wsdd-rs/commit/915789775b9caf2305f2942cc03583b0a81f3411))
+- Log repeated `RTM_NEWADDR` reports of a known address at trace by [@kristof-mattei](https://github.com/kristof-mattei) ([`dec28c5`](https://github.com/kristof-mattei/wsdd-rs/commit/dec28c50bdb824c44e00e3e089efebcfd52a9f00))
+- Log skipped address states by name by [@kristof-mattei](https://github.com/kristof-mattei) ([`7233e2b`](https://github.com/kristof-mattei/wsdd-rs/commit/7233e2b15c989192c9a9acbf740aee9b5fe6c743))
+- Take point-to-point IPv6 addresses from `IFA_LOCAL`, not the peer in `IFA_ADDRESS` by [@kristof-mattei](https://github.com/kristof-mattei) ([`ebc44aa`](https://github.com/kristof-mattei/wsdd-rs/commit/ebc44aad6c54f4ad0b0a590fcd55b0d62ffe2331))
+- Start handlers only on running links with multicast by [@kristof-mattei](https://github.com/kristof-mattei) ([`f2bd189`](https://github.com/kristof-mattei/wsdd-rs/commit/f2bd189ba9400f574c118651c2322fbf8ede5aa6))
+- Dump on a separate netlink socket and redo interrupted dumps by [@kristof-mattei](https://github.com/kristof-mattei) ([`e91b45a`](https://github.com/kristof-mattei/wsdd-rs/commit/e91b45a9967ffb902ad5b2b53b0cd4287d88628f))
+- Read netlink messages larger than a page by [@kristof-mattei](https://github.com/kristof-mattei) ([`42036f1`](https://github.com/kristof-mattei/wsdd-rs/commit/42036f13acb549f7c889383b79c90da8d66db177))
+
+### 🚜 Refactor
+
+- Read netlink messages through `zerocopy` references instead of raw pointers by [@kristof-mattei](https://github.com/kristof-mattei) ([`4157e20`](https://github.com/kristof-mattei/wsdd-rs/commit/4157e20a99f186a09fe67d64f96e694dda2c46d4))
+- Decode rtnetlink messages into typed variants by [@kristof-mattei](https://github.com/kristof-mattei) ([`c2e0d44`](https://github.com/kristof-mattei/wsdd-rs/commit/c2e0d44cf148b0733df5f352459b598c581bd52a))
+- We rely on rtnetlink, not just netlink by [@kristof-mattei](https://github.com/kristof-mattei) ([`3fbafde`](https://github.com/kristof-mattei/wsdd-rs/commit/3fbafde2f9498657aeeb724818630cae27117a34))
+- Decode `RTM_NEWLINK` and `RTM_DELLINK` messages by [@kristof-mattei](https://github.com/kristof-mattei) ([`2ec5a6d`](https://github.com/kristof-mattei/wsdd-rs/commit/2ec5a6d6465c6dc2e7330fa682135a55bf3c5e35))
+- Return `None` for a non-IP address family instead of an `Err` by [@kristof-mattei](https://github.com/kristof-mattei) ([`9f6c249`](https://github.com/kristof-mattei/wsdd-rs/commit/9f6c2496efcc8c797d845edbddd1ea53dbb1d8c0))
+- Make the netlink structs `Unaligned` and drop `AlignedBuffer` by [@kristof-mattei](https://github.com/kristof-mattei) ([`0617932`](https://github.com/kristof-mattei/wsdd-rs/commit/0617932aa47be3d425898fac84843ee2d6ce4ea8))
+- Drop the unused `Clone` derive on `NetworkInterface` by [@kristof-mattei](https://github.com/kristof-mattei) ([`5022b14`](https://github.com/kristof-mattei/wsdd-rs/commit/5022b145ab2875ff2b9a3c4c8aded300ced37ca4))
+- Check casts of constants at compile time by [@kristof-mattei](https://github.com/kristof-mattei) ([`cf88d7c`](https://github.com/kristof-mattei/wsdd-rs/commit/cf88d7cf29f510fdf062f9d60b70cd4d19fe1f2a))
+- Check the address family and signal casts at compile time by [@kristof-mattei](https://github.com/kristof-mattei) ([`8df0778`](https://github.com/kristof-mattei/wsdd-rs/commit/8df077884b6396067139ebe7b689ee7805f80cdf))
+
+### 🧪 Testing
+
+- Cover `NLMSG_DONE` and `NLMSG_ERROR` in the netlink parser by [@kristof-mattei](https://github.com/kristof-mattei) ([`e144525`](https://github.com/kristof-mattei/wsdd-rs/commit/e144525312a7a330132021ca17b6d13f981edb87))
+- Cover point-to-point IPv4 and `AF_PHONET` address messages by [@kristof-mattei](https://github.com/kristof-mattei) ([`e0ea284`](https://github.com/kristof-mattei/wsdd-rs/commit/e0ea28458f223c45629461de8a72fdff7a45f7f2))
+- Check that `NLMSG_ERROR` decodes to `Message::Ack` or `Message::Error` by [@kristof-mattei](https://github.com/kristof-mattei) ([`8f67a24`](https://github.com/kristof-mattei/wsdd-rs/commit/8f67a24dfab37e6f52baa689a42141d5eac6fff6))
 ## [0.9.1](https://github.com/kristof-mattei/wsdd-rs/compare/v0.9.0..v0.9.1) - 2026-10-10
 
 ### 🐛 Bug Fixes
