@@ -26,8 +26,13 @@ use crate::network_handler::Command;
 use crate::rtnetlink::{
     AddressValue, Attribute, Attributes, Message, Messages, ReceiveBuffer, RecvBuf,
 };
+use crate::utils::{i32_to_u8, i32_to_u16, usize_to_u16};
 
 define_typed_size!(SIZE_OF_SOCKADDR_NL, u32, libc::sockaddr_nl);
+define_typed_size!(SIZE_OF_LINK_REQUEST, u32, LinkRequest);
+define_typed_size!(SIZE_OF_NETLINK_REQUEST, u32, NetlinkRequest);
+
+const DUMP_REQUEST_FLAGS: u16 = i32_to_u16(NLM_F_REQUEST | NLM_F_ACK | NLM_F_DUMP);
 
 const IFLA_EXT_MASK: u16 = 29;
 
@@ -244,14 +249,14 @@ fn netlink_socket(groups: u32) -> Result<tokio::net::UdpSocket, std::io::Error> 
 fn request_links(socket: &tokio::net::UdpSocket) -> Result<(), std::io::Error> {
     let request = LinkRequest {
         nh: nlmsghdr {
-            nlmsg_len: U32::new(size_of::<LinkRequest>().try_into().unwrap()),
+            nlmsg_len: U32::new(SIZE_OF_LINK_REQUEST),
             nlmsg_type: U16::new(RTM_GETLINK),
-            nlmsg_flags: U16::new(u16::try_from(NLM_F_REQUEST | NLM_F_ACK | NLM_F_DUMP).unwrap()),
+            nlmsg_flags: U16::new(DUMP_REQUEST_FLAGS),
             nlmsg_seq: U32::ZERO,
             nlmsg_pid: U32::ZERO,
         },
         ifi: ifinfomsg {
-            ifi_family: AF_UNSPEC.try_into().unwrap(),
+            ifi_family: const { i32_to_u8(AF_UNSPEC) },
             ifi_pad: 0,
             ifi_type: U16::ZERO,
             ifi_index: I32::ZERO,
@@ -259,7 +264,7 @@ fn request_links(socket: &tokio::net::UdpSocket) -> Result<(), std::io::Error> {
             ifi_change: U32::ZERO,
         },
         ext_mask_header: rtattr {
-            rta_len: U16::new(u16::try_from(size_of::<rtattr>() + size_of::<U32>()).unwrap()),
+            rta_len: U16::new(const { usize_to_u16(size_of::<rtattr>() + size_of::<U32>()) }),
             rta_type: U16::new(IFLA_EXT_MASK),
         },
         // without a filter mask, the kernel ends the dump early at a link message larger than our receive buffer
@@ -281,14 +286,14 @@ fn request_addresses(
 
     let request = NetlinkRequest {
         nh: nlmsghdr {
-            nlmsg_len: U32::new(size_of::<NetlinkRequest>().try_into().unwrap()),
+            nlmsg_len: U32::new(SIZE_OF_NETLINK_REQUEST),
             nlmsg_type: U16::new(RTM_GETADDR),
-            nlmsg_flags: U16::new(u16::try_from(NLM_F_REQUEST | NLM_F_ACK | NLM_F_DUMP).unwrap()),
+            nlmsg_flags: U16::new(DUMP_REQUEST_FLAGS),
             nlmsg_seq: U32::ZERO,
             nlmsg_pid: U32::ZERO,
         },
         ifa: ifaddrmsg {
-            ifa_family: family.try_into().unwrap(),
+            ifa_family: i32_to_u8(family),
             ifa_prefixlen: 0,
             ifa_flags: 0,
             ifa_scope: 0,
@@ -324,7 +329,7 @@ fn netlink_address(groups: u32) -> Result<socket2::SockAddr, std::io::Error> {
             // SAFETY: see `SockAddr::try_init` for guarantees that `addr_storage` is zeroed
             let sockaddr_nl = &mut *addr_storage.cast::<libc::sockaddr_nl>();
 
-            sockaddr_nl.nl_family = libc::AF_NETLINK.try_into().unwrap();
+            sockaddr_nl.nl_family = const { i32_to_u16(libc::AF_NETLINK) };
             sockaddr_nl.nl_pid = 0;
             sockaddr_nl.nl_groups = groups;
 
