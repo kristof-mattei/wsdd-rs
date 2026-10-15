@@ -25,7 +25,7 @@ use crate::wsd::device::DeviceUri;
     long_version = concat!("- Web Service Discovery Daemon, v", env!("CARGO_PKG_VERSION")),
     color = clap::ColorChoice::Auto
 )]
-pub struct CliArgs {
+pub struct Cli {
     #[arg(short, long, help = "interface or address to use")]
     interface: Vec<String>,
 
@@ -111,17 +111,17 @@ fn float_to_duration_parser(value: &str) -> Result<Duration, String> {
     Duration::try_from_secs_f32(value).map_err(|error| error.to_string())
 }
 
-pub fn parse_args() -> Result<CliArgs, eyre::Report> {
+pub fn parse_args() -> Result<Cli, eyre::Report> {
     parse_args_from(env::args_os())
 }
 
-fn parse_args_from<I, T>(from: I) -> Result<CliArgs, eyre::Report>
+fn parse_args_from<I, T>(from: I) -> Result<Cli, eyre::Report>
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
     // TODO: How do we return a specific error (e.g. 3 for the user spec's value parser) when an error occurs?
-    Ok(CliArgs::try_parse_from(from)?)
+    Ok(Cli::try_parse_from(from)?)
 }
 
 #[cfg(test)]
@@ -133,7 +133,7 @@ where
     to_config(parse_args_from(from)?)
 }
 
-pub fn to_config(args: CliArgs) -> Result<Config, eyre::Report> {
+pub fn to_config(args: Cli) -> Result<Config, eyre::Report> {
     let interfaces: Vec<InterfaceFilter> = if args.interface.is_empty() {
         event!(Level::WARN, "no interface given, using all interfaces");
 
