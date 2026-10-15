@@ -35,6 +35,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
+use clap::Parser as _;
 use color_eyre::config::HookBuilder;
 use color_eyre::eyre::{self, Context as _};
 use dotenvy::dotenv;
@@ -52,7 +53,7 @@ use tracing_subscriber::{EnvFilter, Layer as _};
 
 use crate::address_monitor::create_address_monitor;
 use crate::build_env::get_build_env;
-use crate::cli::{Cli, parse_args, to_config};
+use crate::cli::{Cli, to_config};
 use crate::config::{Config, PortOrSocket};
 use crate::constants::WSD_MAX_KNOWN_MESSAGES;
 use crate::max_size_deque::MaxSizeDeque;
@@ -108,22 +109,9 @@ fn main() -> Shutdown {
         .install()
         .expect("Failed to install panic handler");
 
-    // parse before tracing is set up, so `--help`/`--version` and usage errors
-    // are not preceded by log output
-    let args = match parse_args() {
-        Ok(args) => args,
-        Err(error) => {
-            // this prints the error in color and exits
-            // can't do anything else until
-            // https://github.com/clap-rs/clap/issues/2914
-            // is merged in
-            if let Some(clap_error) = error.downcast_ref::<clap::error::Error>() {
-                clap_error.exit();
-            }
-
-            return Shutdown::from(error);
-        },
-    };
+    // parse before tracing is set up, so clap's help and usage errors are not preceded by log output
+    // TODO: How do we return a specific error (e.g. 3 for the user spec's value parser) when an error occurs?
+    let cli = Cli::parse();
 
     let (env_filter, parsing_error) = build_filter();
 
@@ -147,7 +135,7 @@ fn main() -> Shutdown {
         .block_on(async {
             // explicitly launch everything in a spawned task
             // see https://docs.rs/tokio/latest/tokio/attr.main.html#non-worker-async-function
-            let handle = spawn_with_name("main task runner", start_tasks(args));
+            let handle = spawn_with_name("main task runner", start_tasks(cli));
 
             flatten_shutdown_handle(handle).await
         });
@@ -218,10 +206,10 @@ fn try_chroot(config: &Config) -> Option<Shutdown> {
 
 /// starts all the tasks, such as the web server, the key refresh, ...
 /// ensures all tasks are gracefully shutdown in case of error, `CTRL+c` or `SIGTERM`.
-async fn start_tasks(args: Cli) -> Shutdown {
+async fn start_tasks(cli: Cli) -> Shutdown {
     print_header();
 
-    let config = match to_config(args) {
+    let config = match to_config(cli) {
         Ok(config) => Arc::new(config),
         Err(error) => return Shutdown::from(error),
     };
