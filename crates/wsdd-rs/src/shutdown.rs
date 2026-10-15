@@ -17,27 +17,6 @@ pub enum Shutdown {
     UnexpectedError(eyre::Report),
 }
 
-impl std::fmt::Display for Shutdown {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match *self {
-            Shutdown::Success => write!(f, "Clean shutdown"),
-            Shutdown::Signal(signal) => write!(f, "Signal {}", signal.number()),
-            Shutdown::OperationalFailure { code, message } => {
-                write!(
-                    f,
-                    "Expected failure (e.g., chroot denied, bad config). Code {:?} ({})",
-                    code, message
-                )
-            },
-            Shutdown::UnexpectedError(ref report) => write!(
-                f,
-                "Bug or system failure we didn't or can't (reasonably) anticipate {}",
-                report
-            ),
-        }
-    }
-}
-
 impl Termination for Shutdown {
     fn report(self) -> ExitCode {
         match self {
