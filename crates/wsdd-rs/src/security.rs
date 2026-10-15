@@ -1,10 +1,8 @@
-use std::ffi::CString;
+use std::ffi::{CString, NulError};
 use std::io::Error;
 use std::os::unix::ffi::OsStrExt as _;
 use std::path::Path;
 
-use color_eyre::eyre;
-use color_eyre::eyre::WrapErr as _;
 use libc::{setegid, seteuid, setgid, setuid};
 use tracing::{Level, event};
 
@@ -132,22 +130,37 @@ pub fn drop_privileges(uid: u32, gid: u32) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ChrootError {
+    #[error("invalid chroot path: {}", .0)]
+    InvalidPath(NulError),
+    #[error("could not chroot to {}: {}", .path.display(), .error)]
+    Chroot { path: Box<Path>, error: Error },
+    #[error("could not chdir to /: {}", .0)]
+    Chdir(Error),
+}
+
 /// Chroot into a separate directory to isolate ourself for increased security.
-pub fn chroot(root: &Path) -> Result<(), eyre::Report> {
-    let path = CString::new(root.as_os_str().as_bytes()).wrap_err("invalid chroot path")?;
+pub fn chroot(root: &Path) -> Result<(), ChrootError> {
+    let path = CString::new(root.as_os_str().as_bytes()).map_err(ChrootError::InvalidPath)?;
 
     // SAFETY: libc call
     let result = unsafe { libc::chroot(path.as_ptr()) };
 
     if result == -1 {
-        return Err(eyre::Report::new(Error::last_os_error()).wrap_err("chroot failed"));
+        let error = Error::last_os_error();
+
+        return Err(ChrootError::Chroot {
+            path: root.into(),
+            error,
+        });
     }
 
     // SAFETY: libc call
     let result = unsafe { libc::chdir(c"/".as_ptr()) };
 
     if result == -1 {
-        return Err(eyre::Report::new(Error::last_os_error()).wrap_err("chdir failed"));
+        return Err(ChrootError::Chdir(Error::last_os_error()));
     }
 
     Ok(())
@@ -161,13 +174,13 @@ mod tests {
 
     use pretty_assertions::assert_matches;
 
-    use crate::security::{I_DO_NOT_EXIST, chroot, parse_userspec};
+    use crate::security::{ChrootError, I_DO_NOT_EXIST, chroot, parse_userspec};
 
     #[test]
     fn chroot_path_with_nul_byte() {
         let result = chroot(Path::new(OsStr::from_bytes(b"/a\0b")));
 
-        assert_matches!(result, Err(error) if error.to_string() == "invalid chroot path");
+        assert_matches!(result, Err(ChrootError::InvalidPath(_)));
     }
 
     #[cfg_attr(not(miri), test)]
@@ -175,7 +188,7 @@ mod tests {
     fn chroot_non_utf8_path_reaches_syscall() {
         let result = chroot(Path::new(OsStr::from_bytes(b"/I_DO_NOT_EXIST_\xff")));
 
-        assert_matches!(result, Err(error) if error.to_string() == "chroot failed");
+        assert_matches!(result, Err(ChrootError::Chroot { .. }));
     }
 
     #[test]
