@@ -1,4 +1,4 @@
-use std::io::Error;
+use std::io::{Error, Write as _};
 use std::ptr::null_mut;
 
 use color_eyre::eyre;
@@ -90,6 +90,9 @@ pub fn terminate_by_signal(signal: Signal) {
     unsafe {
         libc::signal(signum, libc::SIG_DFL);
     }
+
+    // the raise terminates without flushing stdout
+    let _r = std::io::stdout().flush();
 
     // SAFETY: `raise(3)` has no preconditions
     unsafe {
