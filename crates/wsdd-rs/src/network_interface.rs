@@ -82,7 +82,7 @@ pub fn if_indextoname(index: u32) -> Result<Box<str>, std::io::Error> {
     Ok(String::from(ifname).into_boxed_str())
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DevName(Box<str>);
 
 impl TryFrom<Box<str>> for DevName {

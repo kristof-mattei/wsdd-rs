@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use clap::Parser;
 use color_eyre::eyre;
-use color_eyre::eyre::WrapErr as _;
 use tracing::{Level, event};
 use uuid::Uuid;
 use uuid::fmt::Urn;
@@ -21,8 +20,8 @@ use crate::wsd::device::DeviceUri;
 #[derive(Parser)]
 #[command(about, version)]
 pub struct Cli {
-    #[arg(short, long, help = "interface or address to use")]
-    interface: Vec<String>,
+    #[arg(short, long, value_parser = to_interface_filter, help = "interface or address to use")]
+    interface: Vec<InterfaceFilter>,
 
     #[arg(
         short = 'H',
@@ -116,19 +115,9 @@ where
 }
 
 pub fn to_config(args: Cli) -> Result<Config, eyre::Report> {
-    let interfaces: Vec<InterfaceFilter> = if args.interface.is_empty() {
+    if args.interface.is_empty() {
         event!(Level::WARN, "no interface given, using all interfaces");
-
-        vec![]
-    } else {
-        args.interface
-            .into_iter()
-            .map(to_interface_filter)
-            .collect::<Result<_, _>>()
-            .wrap_err(
-                "invalid --interface value, alias labels like `eth0:0` are not supported yet",
-            )?
-    };
+    }
 
     let hostname = if let Some(hostname) = args.hostname {
         hostname.into_boxed_str()
@@ -185,7 +174,7 @@ pub fn to_config(args: Cli) -> Result<Config, eyre::Report> {
     };
 
     let config = Config {
-        interfaces,
+        interfaces: args.interface,
         hoplimit: args.hoplimit,
         uuid,
         uuid_as_device_uri,
@@ -242,12 +231,19 @@ fn sequence_id() -> Urn {
     }
 }
 
-fn to_interface_filter(value: String) -> Result<InterfaceFilter, eyre::Report> {
+fn to_interface_filter(value: &str) -> Result<InterfaceFilter, String> {
     if let Ok(address) = value.parse::<IpAddr>() {
         return Ok(InterfaceFilter::Address(address));
     }
 
-    DevName::try_from(value.into_boxed_str()).map(InterfaceFilter::Name)
+    DevName::try_from(Box::from(value))
+        .map(InterfaceFilter::Name)
+        .map_err(|error| {
+            format!(
+                "{}, alias labels like `eth0:0` are not supported yet",
+                error
+            )
+        })
 }
 
 fn to_listen(listen: &str) -> Result<PortOrSocket, String> {
@@ -344,35 +340,35 @@ mod tests {
 
     #[test]
     fn interface_values_classify_as_name_or_address() {
-        assert_matches!(to_interface_filter("eth0".into()), Ok(InterfaceFilter::Name(n)) if n.as_ref() == "eth0");
+        assert_matches!(to_interface_filter("eth0"), Ok(InterfaceFilter::Name(n)) if n.as_ref() == "eth0");
         assert_matches!(
-            to_interface_filter("eth0.100".into()),
+            to_interface_filter("eth0.100"),
             Ok(InterfaceFilter::Name(_))
         );
         assert_matches!(
-            to_interface_filter("a".repeat(15)),
+            to_interface_filter(&"a".repeat(15)),
             Ok(InterfaceFilter::Name(_))
         );
         assert_matches!(
-            to_interface_filter("192.168.1.5".into()),
+            to_interface_filter("192.168.1.5"),
             Ok(InterfaceFilter::Address(IpAddr::V4(_)))
         );
         assert_matches!(
-            to_interface_filter("fe80::1".into()),
+            to_interface_filter("fe80::1"),
             Ok(InterfaceFilter::Address(IpAddr::V6(_)))
         );
     }
 
     #[test]
     fn invalid_interface_values_are_rejected() {
-        assert_matches!(to_interface_filter("eth0:0".into()), Err(_));
-        assert_matches!(to_interface_filter("fe80::1%eth0".into()), Err(_));
-        assert_matches!(to_interface_filter(String::new()), Err(_));
-        assert_matches!(to_interface_filter(".".into()), Err(_));
-        assert_matches!(to_interface_filter("..".into()), Err(_));
-        assert_matches!(to_interface_filter("eth 0".into()), Err(_));
-        assert_matches!(to_interface_filter("eth/0".into()), Err(_));
-        assert_matches!(to_interface_filter("a".repeat(16)), Err(_));
+        assert_matches!(to_interface_filter("eth0:0"), Err(_));
+        assert_matches!(to_interface_filter("fe80::1%eth0"), Err(_));
+        assert_matches!(to_interface_filter(""), Err(_));
+        assert_matches!(to_interface_filter("."), Err(_));
+        assert_matches!(to_interface_filter(".."), Err(_));
+        assert_matches!(to_interface_filter("eth 0"), Err(_));
+        assert_matches!(to_interface_filter("eth/0"), Err(_));
+        assert_matches!(to_interface_filter(&"a".repeat(16)), Err(_));
     }
 
     #[test]
