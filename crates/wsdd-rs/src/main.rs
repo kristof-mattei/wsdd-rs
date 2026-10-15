@@ -52,7 +52,7 @@ use tracing_subscriber::{EnvFilter, Layer as _};
 
 use crate::address_monitor::create_address_monitor;
 use crate::build_env::get_build_env;
-use crate::cli::{CliArgs, parse_args, to_config};
+use crate::cli::{Cli, parse_args, to_config};
 use crate::config::{Config, PortOrSocket};
 use crate::constants::WSD_MAX_KNOWN_MESSAGES;
 use crate::max_size_deque::MaxSizeDeque;
@@ -218,7 +218,7 @@ fn try_chroot(config: &Config) -> Option<Shutdown> {
 
 /// starts all the tasks, such as the web server, the key refresh, ...
 /// ensures all tasks are gracefully shutdown in case of error, `CTRL+c` or `SIGTERM`.
-async fn start_tasks(args: CliArgs) -> Shutdown {
+async fn start_tasks(args: Cli) -> Shutdown {
     print_header();
 
     let config = match to_config(args) {
