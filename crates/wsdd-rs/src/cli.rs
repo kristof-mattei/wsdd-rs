@@ -19,12 +19,7 @@ use crate::wsd::device::DeviceUri;
 
 #[expect(clippy::struct_excessive_bools, reason = "CLI flags")]
 #[derive(Parser)]
-#[command(
-    about,
-    version = concat!("v", env!("CARGO_PKG_VERSION")),
-    long_version = concat!("- Web Service Discovery Daemon, v", env!("CARGO_PKG_VERSION")),
-    color = clap::ColorChoice::Auto
-)]
+#[command(about, version)]
 pub struct Cli {
     #[arg(short, long, help = "interface or address to use")]
     interface: Vec<String>,
