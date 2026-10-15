@@ -174,17 +174,10 @@ fn print_header() {
 fn try_chroot(config: &Config) -> Option<Shutdown> {
     if let &Some(ref chroot_path) = &config.chroot {
         if let Err(error) = chroot(chroot_path) {
-            event!(
-                Level::ERROR,
-                ?error,
-                "could not chroot to {}",
-                chroot_path.display()
-            );
-
             return Some(Shutdown::OperationalFailure {
                 code: ExitCode::from(2),
                 message: "chroot failed",
-                error: None,
+                error: Some(Box::new(error)),
             });
         } else {
             event!(
