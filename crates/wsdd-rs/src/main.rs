@@ -126,6 +126,15 @@ fn main() -> Shutdown {
         };
     }
 
+    print_header();
+
+    let config = match to_config(cli) {
+        Ok(config) => config,
+        Err(error) => return Shutdown::from(error),
+    };
+
+    config.log();
+
     // initialize the runtime
     let shutdown: Shutdown = tokio::runtime::Builder::new_multi_thread()
         .enable_io()
@@ -135,7 +144,7 @@ fn main() -> Shutdown {
         .block_on(async {
             // explicitly launch everything in a spawned task
             // see https://docs.rs/tokio/latest/tokio/attr.main.html#non-worker-async-function
-            let handle = spawn_with_name("main task runner", start_tasks(cli));
+            let handle = spawn_with_name("main task runner", start_tasks(config));
 
             flatten_shutdown_handle(handle).await
         });
@@ -206,15 +215,8 @@ fn try_chroot(config: &Config) -> Option<Shutdown> {
 
 /// starts all the tasks, such as the web server, the key refresh, ...
 /// ensures all tasks are gracefully shutdown in case of error, `CTRL+c` or `SIGTERM`.
-async fn start_tasks(cli: Cli) -> Shutdown {
-    print_header();
-
-    let config = match to_config(cli) {
-        Ok(config) => Arc::new(config),
-        Err(error) => return Shutdown::from(error),
-    };
-
-    config.log();
+async fn start_tasks(config: Config) -> Shutdown {
+    let config = Arc::new(config);
 
     if let Some(shutdown) = try_chroot(&config) {
         return shutdown;
