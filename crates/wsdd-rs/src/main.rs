@@ -45,6 +45,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
+use tracing_subscriber::filter::FromEnvError;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::{EnvFilter, Layer as _};
@@ -65,23 +66,23 @@ use crate::utils::task::{flatten_shutdown_handle, spawn_with_name};
 #[cfg_attr(miri, expect(unused, reason = "Not supported in Miri"))]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-fn build_filter() -> (EnvFilter, Option<eyre::Report>) {
+fn build_filter() -> (EnvFilter, Option<FromEnvError>) {
     fn build_default_filter() -> EnvFilter {
         EnvFilter::builder()
             .parse(format!("INFO,{}=TRACE", env!("CARGO_CRATE_NAME")))
             .expect("Default filter should always work")
     }
 
-    match env::var(EnvFilter::DEFAULT_ENV).as_deref().map(str::trim) {
-        Ok("") | Err(&VarError::NotPresent) => (build_default_filter(), None),
-        Ok(user_directive) => match EnvFilter::builder().parse(user_directive) {
-            Ok(filter) => (filter, None),
-            Err(error) => (build_default_filter(), Some(eyre::Report::new(error))),
+    match env::var(EnvFilter::DEFAULT_ENV) {
+        Ok(user_directive) => match user_directive.trim() {
+            "" => (build_default_filter(), None),
+            user_directive => match EnvFilter::builder().parse(user_directive) {
+                Ok(filter) => (filter, None),
+                Err(error) => (build_default_filter(), Some(error.into())),
+            },
         },
-        Err(error @ &VarError::NotUnicode(_)) => (
-            build_default_filter(),
-            Some(eyre::Report::new(error.clone())),
-        ),
+        Err(VarError::NotPresent) => (build_default_filter(), None),
+        Err(error @ VarError::NotUnicode(_)) => (build_default_filter(), Some(error.into())),
     }
 }
 
@@ -130,7 +131,11 @@ fn main() -> Shutdown {
 
     // bubble up the parsing error
     if let Some(error) = parsing_error {
-        return Shutdown::from(error);
+        return Shutdown::OperationalFailure {
+            code: ExitCode::FAILURE,
+            message: "Invalid `RUST_LOG`",
+            error: Some(Box::new(error)),
+        };
     }
 
     // initialize the runtime
@@ -179,6 +184,7 @@ fn try_chroot(config: &Config) -> Option<Shutdown> {
             return Some(Shutdown::OperationalFailure {
                 code: ExitCode::from(2),
                 message: "chroot failed",
+                error: None,
             });
         } else {
             event!(
@@ -197,6 +203,7 @@ fn try_chroot(config: &Config) -> Option<Shutdown> {
         return Some(Shutdown::OperationalFailure {
             code: ExitCode::from(3),
             message: "drop privileges failed",
+            error: None,
         });
     }
 
@@ -321,6 +328,7 @@ async fn start_tasks(args: CliArgs) -> Shutdown {
         return Shutdown::OperationalFailure {
             code: ExitCode::FAILURE,
             message: "Tasks didn't stop within the allotted time",
+            error: None,
         };
     }
 

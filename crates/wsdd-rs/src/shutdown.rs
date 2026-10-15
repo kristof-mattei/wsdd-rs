@@ -13,6 +13,7 @@ pub enum Shutdown {
     OperationalFailure {
         code: ExitCode,
         message: &'static str,
+        error: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
     UnexpectedError(eyre::Report),
 }
@@ -54,8 +55,16 @@ impl Termination for Shutdown {
 
                 exit_code
             },
-            Shutdown::OperationalFailure { code, message } => {
-                event!(Level::ERROR, ?code, message);
+            Shutdown::OperationalFailure {
+                code,
+                message,
+                error,
+            } => {
+                if let Some(error) = error {
+                    event!(Level::ERROR, ?code, %error, message);
+                } else {
+                    event!(Level::ERROR, ?code, message);
+                }
 
                 code
             },
