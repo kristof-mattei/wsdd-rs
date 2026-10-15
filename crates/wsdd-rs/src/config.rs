@@ -66,7 +66,7 @@ impl AppSequence {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum InterfaceFilter {
     Name(DevName),
     Address(IpAddr),
