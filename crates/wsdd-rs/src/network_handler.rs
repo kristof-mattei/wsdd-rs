@@ -378,17 +378,11 @@ where
 
         // Use the address only if it matches one of the user-provided filters
         if !self.config.interfaces.is_empty()
-            && !self.config.interfaces.iter().any(|filter| match *filter {
-                InterfaceFilter::Name(ref name) => name.as_ref() == address.interface.name(),
-                InterfaceFilter::Address(ip) => ip == address.address.addr(),
-                InterfaceFilter::ScopedAddress {
-                    address: scoped,
-                    ref zone,
-                } => {
-                    IpAddr::V6(scoped) == address.address.addr()
-                        && self.zone_matches(zone, &address.interface)
-                },
-            })
+            && !self
+                .config
+                .interfaces
+                .iter()
+                .any(|filter| self.filter_matches(filter, address))
         {
             return Err(Reason::ExcludedInterface);
         }
@@ -398,6 +392,20 @@ where
             Some(LinkState::WithoutMulticast) => Err(Reason::LinkWithoutMulticast),
             Some(LinkState::NotRunning) => Err(Reason::LinkNotRunning),
             None => Err(Reason::UnknownLink),
+        }
+    }
+
+    fn filter_matches(&self, filter: &InterfaceFilter, address: &NetworkAddress) -> bool {
+        match *filter {
+            InterfaceFilter::Name(ref name) => name.as_ref() == address.interface.name(),
+            InterfaceFilter::Address(ip) => ip == address.address.addr(),
+            InterfaceFilter::ScopedAddress {
+                address: scoped,
+                ref zone,
+            } => {
+                IpAddr::V6(scoped) == address.address.addr()
+                    && self.zone_matches(zone, &address.interface)
+            },
         }
     }
 
