@@ -192,65 +192,66 @@ where
                 break;
             };
 
-            match command {
-                Command::NewAddress {
-                    address,
-                    scope,
-                    index,
-                } => {
-                    let Ok(interface) = self.add_interface(scope, index) else {
-                        continue;
-                    };
+            self.handle_command(command).await;
+        }
+    }
 
-                    self.handle_new_address(NetworkAddress::new(address, Arc::clone(&interface)))
-                        .await;
-                },
-                Command::DeleteAddress {
-                    address,
-                    scope,
-                    index,
-                } => {
-                    let Ok(interface) = self.add_interface(scope, index) else {
-                        continue;
-                    };
+    async fn handle_command(&mut self, command: Command) {
+        match command {
+            Command::NewAddress {
+                address,
+                scope,
+                index,
+            } => {
+                let Ok(interface) = self.add_interface(scope, index) else {
+                    return;
+                };
 
-                    self.handle_deleted_address(NetworkAddress::new(
-                        address,
-                        Arc::clone(&interface),
-                    ))
+                self.handle_new_address(NetworkAddress::new(address, Arc::clone(&interface)))
                     .await;
-                },
-                Command::NewLink { index, flags } => {
-                    self.handle_link(index, LinkState::from_flags(flags)).await;
-                },
-                Command::DeleteLink { index } => {
-                    self.handle_deleted_link(index);
-                },
-                Command::ClearDevices => {
-                    if self.config.discovery {
-                        self.devices.write().await.clear_discovered();
-                    }
-                },
-                Command::ListDevices {
-                    devices_tx,
-                    wsd_type_filter,
-                } => {
-                    if self.config.discovery {
-                        self.list_devices(devices_tx, wsd_type_filter).await;
-                    }
-                },
-                Command::SendProbes { interface_filter } => {
-                    if self.config.discovery {
-                        self.send_probes(interface_filter).await;
-                    }
-                },
-                Command::Start => {
-                    self.start();
-                },
-                Command::Stop => {
-                    self.teardown().await;
-                },
-            }
+            },
+            Command::DeleteAddress {
+                address,
+                scope,
+                index,
+            } => {
+                let Ok(interface) = self.add_interface(scope, index) else {
+                    return;
+                };
+
+                self.handle_deleted_address(NetworkAddress::new(address, Arc::clone(&interface)))
+                    .await;
+            },
+            Command::NewLink { index, flags } => {
+                self.handle_link(index, LinkState::from_flags(flags)).await;
+            },
+            Command::DeleteLink { index } => {
+                self.handle_deleted_link(index);
+            },
+            Command::ClearDevices => {
+                if self.config.discovery {
+                    self.devices.write().await.clear_discovered();
+                }
+            },
+            Command::ListDevices {
+                devices_tx,
+                wsd_type_filter,
+            } => {
+                if self.config.discovery {
+                    self.list_devices(devices_tx, wsd_type_filter).await;
+                }
+            },
+            Command::SendProbes { interface_filter } => {
+                if self.config.discovery {
+                    self.send_probes(interface_filter).await;
+                }
+            },
+            Command::Start => {
+                self.start();
+            },
+            Command::Stop => {
+                self.teardown().await;
+            },
         }
     }
 
