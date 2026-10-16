@@ -60,12 +60,16 @@ use crate::max_size_deque::MaxSizeDeque;
 use crate::network_handler::{Command, NetworkHandler};
 use crate::security::{chroot, drop_privileges};
 use crate::shutdown::Shutdown;
+use crate::signal_handlers::{Signal, SignalListeners};
 use crate::soap::MessageId;
 use crate::utils::task::{flatten_shutdown_handle, spawn_with_name};
 
 #[cfg_attr(not(miri), global_allocator)]
 #[cfg_attr(miri, expect(unused, reason = "Not supported in Miri"))]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+// under `docker stop`'s 10 second default grace period
+const DRAIN_BUDGET: Duration = Duration::from_secs(8);
 
 fn build_filter() -> (EnvFilter, Option<FromEnvError>) {
     fn build_default_filter() -> EnvFilter {
@@ -216,6 +220,12 @@ fn try_chroot(config: &Config) -> Option<Shutdown> {
 /// starts all the tasks, such as the web server, the key refresh, ...
 /// ensures all tasks are gracefully shutdown in case of error, `CTRL+c` or `SIGTERM`.
 async fn start_tasks(config: Config) -> Shutdown {
+    // when running as PID 1, a signal before this registration is discarded
+    let mut signal_listeners = match SignalListeners::register() {
+        Ok(signal_listeners) => signal_listeners,
+        Err(report) => return Shutdown::from(report),
+    };
+
     let config = Arc::new(config);
 
     if let Some(shutdown) = try_chroot(&config) {
@@ -277,17 +287,14 @@ async fn start_tasks(config: Config) -> Shutdown {
         Some((name, result)) = tasks.next() => {
             task_stopped(name, result)
         },
-        result = signal_handlers::wait_for_sigterm() => {
-            result
-        },
-        result = signal_handlers::wait_for_sigint() => {
-            result
+        signal = signal_listeners.wait() => {
+            Shutdown::Signal(signal)
         },
     };
 
     cancellation_token.cancel();
 
-    let drained = timeout(Duration::from_secs(10), async {
+    let drain = timeout(DRAIN_BUDGET, async {
         while let Some((name, result)) = tasks.next().await {
             if let Err(report) = result {
                 event!(
@@ -298,9 +305,15 @@ async fn start_tasks(config: Config) -> Shutdown {
                 );
             }
         }
-    })
-    .await
-    .is_ok();
+    });
+
+    let drained = tokio::select! {
+        biased;
+        drained = drain => drained.is_ok(),
+        second_signal = signal_listeners.wait() => {
+            return abandon_drain(shutdown_reason, second_signal);
+        },
+    };
 
     if !drained {
         event!(Level::ERROR, "Tasks didn't stop within allotted time!");
@@ -375,6 +388,15 @@ where
         (name, result)
     }
     .boxed()
+}
+
+fn abandon_drain(shutdown_reason: Shutdown, second_signal: Signal) -> Shutdown {
+    event!(Level::WARN, "Second signal, abandoning the drain");
+
+    match shutdown_reason {
+        Shutdown::Success | Shutdown::Signal(_) => Shutdown::Signal(second_signal),
+        failure @ (Shutdown::OperationalFailure { .. } | Shutdown::UnexpectedError(_)) => failure,
+    }
 }
 
 /// Every task runs until the shutdown, so one that stops before it is a failure.
