@@ -116,7 +116,6 @@ fn main() -> Shutdown {
         .expect("Failed to install panic handler");
 
     // parse before tracing is set up, so clap's help and usage errors are not preceded by log output
-    // TODO: How do we return a specific error (e.g. 3 for the user spec's value parser) when an error occurs?
     let cli = Cli::parse();
 
     let (env_filter, parsing_error) = build_filter();
@@ -134,7 +133,18 @@ fn main() -> Shutdown {
 
     print_header();
 
-    let config = match to_config(cli) {
+    let user = match cli.resolve_user() {
+        Ok(user) => user,
+        Err(error) => {
+            return Shutdown::OperationalFailure {
+                code: ExitCode::from(3),
+                message: "invalid user spec",
+                error: Some(error.into()),
+            };
+        },
+    };
+
+    let config = match to_config(cli, user) {
         Ok(config) => config,
         Err(error) => return Shutdown::from(error),
     };

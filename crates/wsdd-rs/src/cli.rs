@@ -72,8 +72,8 @@ pub struct Cli {
     #[arg(short, long, help = "directory to chroot into")]
     chroot: Option<PathBuf>,
 
-    #[arg(short, long, value_parser = parse_userspec, help = "drop privileges to user:group")]
-    user: Option<(u32, u32)>,
+    #[arg(short, long, help = "drop privileges to user:group")]
+    user: Option<String>,
 
     #[arg(short = 'D', long, help = "enable discovery operation mode")]
     discovery: bool,
@@ -99,6 +99,12 @@ pub struct Cli {
     source_port: u16,
 }
 
+impl Cli {
+    pub fn resolve_user(&self) -> Result<Option<(u32, u32)>, String> {
+        self.user.as_deref().map(parse_userspec).transpose()
+    }
+}
+
 fn float_to_duration_parser(value: &str) -> Result<Duration, String> {
     let value = value.parse::<f32>().map_err(|error| error.to_string())?;
 
@@ -111,10 +117,13 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    to_config(Cli::try_parse_from(from)?)
+    let cli = Cli::try_parse_from(from)?;
+    let user = cli.resolve_user().map_err(eyre::Report::msg)?;
+
+    to_config(cli, user)
 }
 
-pub fn to_config(args: Cli) -> Result<Config, eyre::Report> {
+pub fn to_config(args: Cli, user: Option<(u32, u32)>) -> Result<Config, eyre::Report> {
     if args.interface.is_empty() {
         event!(Level::WARN, "no interface given, using all interfaces");
     }
@@ -184,7 +193,7 @@ pub fn to_config(args: Cli) -> Result<Config, eyre::Report> {
         no_http: args.no_http,
         bind_to,
         chroot: args.chroot,
-        user: args.user,
+        user,
         discovery: args.discovery,
         listen,
         no_host: args.no_host,
@@ -318,11 +327,19 @@ mod tests {
     use std::net::IpAddr;
     use std::path::Path;
 
+    use clap::Parser as _;
     use pretty_assertions::{assert_eq, assert_matches};
 
-    use crate::cli::{parse_cli_from, to_interface_filter, to_listen};
+    use crate::cli::{Cli, parse_cli_from, to_interface_filter, to_listen};
     use crate::config::{InterfaceFilter, PortOrSocket};
     use crate::network_interface::DevName;
+
+    #[test]
+    fn invalid_user_spec_parses_and_fails_to_resolve() {
+        let cli = Cli::try_parse_from(["wsdd-rs", "--user", "abcabc"]).unwrap();
+
+        assert_matches!(cli.resolve_user(), Err(error) if error == "Wrong format (expected `username:groupname`)");
+    }
 
     #[test]
     fn interfaces() {
