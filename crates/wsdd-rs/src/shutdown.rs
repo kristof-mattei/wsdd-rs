@@ -69,6 +69,12 @@ impl Termination for Shutdown {
                 code
             },
             Shutdown::UnexpectedError(report) => {
+                event!(
+                    Level::ERROR,
+                    error = AsRef::<dyn std::error::Error>::as_ref(&report),
+                    "Exiting because of an unexpected error"
+                );
+
                 Err::<std::convert::Infallible, _>(report).report()
             },
         }
