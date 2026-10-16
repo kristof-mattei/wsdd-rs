@@ -239,11 +239,21 @@ fn to_interface_filter(value: &str) -> Result<InterfaceFilter, String> {
     DevName::try_from(Box::from(value))
         .map(InterfaceFilter::Name)
         .map_err(|error| {
-            format!(
-                "{}, alias labels like `eth0:0` are not supported yet",
-                error
-            )
+            if is_alias_label(value) {
+                format!(
+                    "{}, alias labels like `eth0:0` are not supported yet",
+                    error
+                )
+            } else {
+                error.to_string()
+            }
         })
+}
+
+fn is_alias_label(value: &str) -> bool {
+    value.split_once(':').is_some_and(|(name, label)| {
+        !label.is_empty() && !label.contains(':') && DevName::try_from(Box::from(name)).is_ok()
+    })
 }
 
 fn to_listen(listen: &str) -> Result<PortOrSocket, String> {
@@ -361,14 +371,32 @@ mod tests {
 
     #[test]
     fn invalid_interface_values_are_rejected() {
-        assert_matches!(to_interface_filter("eth0:0"), Err(_));
-        assert_matches!(to_interface_filter("fe80::1%eth0"), Err(_));
-        assert_matches!(to_interface_filter(""), Err(_));
-        assert_matches!(to_interface_filter("."), Err(_));
-        assert_matches!(to_interface_filter(".."), Err(_));
-        assert_matches!(to_interface_filter("eth 0"), Err(_));
-        assert_matches!(to_interface_filter("eth/0"), Err(_));
-        assert_matches!(to_interface_filter(&"a".repeat(16)), Err(_));
+        let too_long = "a".repeat(16);
+
+        for value in [
+            "fe80::1%eth0",
+            "",
+            ".",
+            "..",
+            "eth 0",
+            "eth/0",
+            too_long.as_str(),
+        ] {
+            assert_eq!(
+                to_interface_filter(value),
+                Err(format!("`{}` is not a valid interface name", value))
+            );
+        }
+    }
+
+    #[test]
+    fn alias_labels_get_the_alias_hint() {
+        assert_eq!(
+            to_interface_filter("eth0:0"),
+            Err(String::from(
+                "`eth0:0` is not a valid interface name, alias labels like `eth0:0` are not supported yet"
+            ))
+        );
     }
 
     #[test]
