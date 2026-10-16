@@ -148,65 +148,68 @@ pub fn terminate_by_signal(_signal: Signal) {}
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::process::ExitStatusExt as _;
-    use std::process::{Command, Stdio};
+    #[cfg(not(target_os = "windows"))]
+    mod unix {
+        use std::os::unix::process::ExitStatusExt as _;
+        use std::process::{Command, Stdio};
 
-    use pretty_assertions::assert_eq;
-    use tokio::signal::unix::{SignalKind, signal};
+        use pretty_assertions::assert_eq;
+        use tokio::signal::unix::{SignalKind, signal};
 
-    use super::{Signal, SignalListeners, terminate_by_signal};
+        use crate::signal_handlers::{Signal, SignalListeners, terminate_by_signal};
 
-    const CHILD_MARKER: &str = "WSDD_RS_TERMINATE_BY_SIGNAL_CHILD";
+        const CHILD_MARKER: &str = "WSDD_RS_TERMINATE_BY_SIGNAL_CHILD";
 
-    // the raise kills the calling process, so the scenario runs in a re-executed copy of this test binary
-    #[cfg_attr(not(miri), test)]
-    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
-    fn dies_by_the_raised_signal_despite_tokio_handler() {
-        if std::env::var_os(CHILD_MARKER).is_some() {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_io()
-                .build()
+        // the raise kills the calling process, so the scenario runs in a re-executed copy of this test binary
+        #[cfg_attr(not(miri), test)]
+        #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+        fn dies_by_the_raised_signal_despite_tokio_handler() {
+            if std::env::var_os(CHILD_MARKER).is_some() {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_io()
+                    .build()
+                    .unwrap();
+
+                // installs tokio's handler, the case under test
+                runtime.block_on(async {
+                    let _listener = signal(SignalKind::terminate()).unwrap();
+                });
+
+                drop(runtime);
+
+                terminate_by_signal(Signal::Terminate);
+
+                // surviving the raise exits 0, which fails the parent's assertion
+                return;
+            }
+
+            let status = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "signal_handlers::tests::unix::dies_by_the_raised_signal_despite_tokio_handler",
+                ])
+                .env(CHILD_MARKER, "1")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
                 .unwrap();
 
-            // installs tokio's handler, the case under test
-            runtime.block_on(async {
-                let _listener = signal(SignalKind::terminate()).unwrap();
-            });
-
-            drop(runtime);
-
-            terminate_by_signal(Signal::Terminate);
-
-            // surviving the raise exits 0, which fails the parent's assertion
-            return;
+            assert_eq!(status.signal(), Some(libc::SIGTERM));
         }
 
-        let status = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "signal_handlers::tests::dies_by_the_raised_signal_despite_tokio_handler",
-            ])
-            .env(CHILD_MARKER, "1")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .unwrap();
+        #[cfg_attr(not(miri), tokio::test)]
+        #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+        async fn wait_returns_a_signal_raised_before_the_call() {
+            let mut signal_listeners = SignalListeners::register().unwrap();
 
-        assert_eq!(status.signal(), Some(libc::SIGTERM));
-    }
+            // SAFETY: `raise(3)` has no preconditions
+            unsafe {
+                libc::raise(libc::SIGINT);
+            }
 
-    #[cfg_attr(not(miri), tokio::test)]
-    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
-    async fn wait_returns_a_signal_raised_before_the_call() {
-        let mut signal_listeners = SignalListeners::register().unwrap();
+            let signal = signal_listeners.wait().await;
 
-        // SAFETY: `raise(3)` has no preconditions
-        unsafe {
-            libc::raise(libc::SIGINT);
+            assert!(matches!(signal, Signal::Interrupt));
         }
-
-        let signal = signal_listeners.wait().await;
-
-        assert!(matches!(signal, Signal::Interrupt));
     }
 }
