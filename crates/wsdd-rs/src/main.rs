@@ -17,6 +17,7 @@ mod parsers;
 mod rtnetlink;
 mod security;
 mod shutdown;
+mod sigaction;
 mod signal_handlers;
 mod soap;
 mod socket;
@@ -62,7 +63,8 @@ use crate::security::{chroot, drop_privileges};
 use crate::shutdown::Shutdown;
 use crate::signal_handlers::{Signal, SignalListeners};
 use crate::soap::MessageId;
-use crate::utils::task::{flatten_shutdown_handle, spawn_with_name};
+use crate::utils::flatten_shutdown_handle;
+use crate::utils::task::spawn_with_name;
 
 #[cfg_attr(not(miri), global_allocator)]
 #[cfg_attr(miri, expect(unused, reason = "Not supported in Miri"))]
