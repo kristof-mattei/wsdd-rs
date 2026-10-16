@@ -88,15 +88,15 @@ pub struct DevName(Box<str>);
 impl TryFrom<Box<str>> for DevName {
     type Error = eyre::Report;
 
-    /// Follows the kernel's `dev_valid_name`.
+    /// Matches the kernel's [`dev_valid_name`](https://github.com/torvalds/linux/blob/v7.2/net/core/dev.c#L1325-L1340).
     fn try_from(value: Box<str>) -> Result<Self, Self::Error> {
         let valid = !value.is_empty()
             && value.len() < libc::IFNAMSIZ
             && &*value != "."
             && &*value != ".."
             && !value
-                .chars()
-                .any(|c| c == '/' || c == ':' || c.is_whitespace());
+                .bytes()
+                .any(|byte| matches!(byte, b'/' | b':' | b'\t'..=b'\r' | b' ' | 0xA0));
 
         if valid {
             Ok(Self(value))
@@ -130,9 +130,9 @@ impl ResolveInterfaceName for LibcInterfaceNameResolver {
 
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_eq;
+    use pretty_assertions::{assert_eq, assert_matches};
 
-    use crate::network_interface::NetworkInterface;
+    use crate::network_interface::{DevName, NetworkInterface};
 
     #[test]
     fn display_only_prints_name() {
@@ -141,5 +141,16 @@ mod tests {
         let interface = NetworkInterface::new_with_index(NAME, 0, 1);
 
         assert_eq!(interface.to_string(), NAME);
+    }
+
+    #[test]
+    fn dev_name_checks_whitespace_bytes_like_the_kernel() {
+        assert_matches!(DevName::try_from(Box::from("eth\t0")), Err(_));
+        assert_matches!(DevName::try_from(Box::from("eth 0")), Err(_));
+        assert_matches!(DevName::try_from(Box::from("eth\u{a0}0")), Err(_));
+        // `à` is `C3 A0`
+        assert_matches!(DevName::try_from(Box::from("\u{e0}")), Err(_));
+        // U+2003 is `E2 80 83`
+        assert_matches!(DevName::try_from(Box::from("eth\u{2003}0")), Ok(_));
     }
 }
