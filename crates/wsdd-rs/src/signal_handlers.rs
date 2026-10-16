@@ -10,9 +10,22 @@ use tokio::signal::unix::{self, SignalKind, signal};
 use tokio::signal::windows;
 use tracing::{Level, event};
 
-use crate::utils::i32_to_u8;
 #[cfg(not(miri))]
 use crate::wrap_and_report;
+
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    reason = "Waiting for `try_into()` to become const"
+)]
+const SIGINT: u8 = libc::SIGINT as u8;
+
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    reason = "Waiting for `try_into()` to become const"
+)]
+const SIGTERM: u8 = libc::SIGTERM as u8;
 
 #[derive(Clone, Copy)]
 #[cfg_attr(miri, expect(dead_code, reason = "No signal listeners in Miri"))]
@@ -28,8 +41,8 @@ pub enum Signal {
 impl Signal {
     pub const fn number(self) -> u8 {
         match self {
-            Signal::Interrupt => const { i32_to_u8(libc::SIGINT) },
-            Signal::Terminate => const { i32_to_u8(libc::SIGTERM) },
+            Signal::Interrupt => SIGINT,
+            Signal::Terminate => SIGTERM,
         }
     }
 }
