@@ -69,6 +69,12 @@ impl Termination for Shutdown {
                 code
             },
             Shutdown::UnexpectedError(report) => {
+                event!(
+                    Level::ERROR,
+                    error = AsRef::<dyn std::error::Error>::as_ref(&report),
+                    "Exiting because of an unexpected error"
+                );
+
                 Err::<std::convert::Infallible, _>(report).report()
             },
         }
@@ -76,6 +82,7 @@ impl Termination for Shutdown {
 }
 
 impl<E: Into<eyre::Report>> From<E> for Shutdown {
+    #[track_caller]
     fn from(error: E) -> Self {
         Shutdown::UnexpectedError(error.into())
     }
