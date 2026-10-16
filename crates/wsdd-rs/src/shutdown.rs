@@ -82,6 +82,7 @@ impl Termination for Shutdown {
 }
 
 impl<E: Into<eyre::Report>> From<E> for Shutdown {
+    #[track_caller]
     fn from(error: E) -> Self {
         Shutdown::UnexpectedError(error.into())
     }
