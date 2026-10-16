@@ -110,17 +110,41 @@ fn getgrname(group: &str) -> Result<u32, String> {
     getgrname(group)
 }
 
-pub fn drop_privileges(uid: u32, gid: u32) -> Result<(), String> {
+#[derive(Debug, thiserror::Error)]
+pub enum DropPrivilegesError {
+    #[error("could not switch to {}:{}, setgid/setegid failed: {}", .requested_uid, .requested_gid, .error)]
+    Group {
+        requested_uid: u32,
+        requested_gid: u32,
+        error: Error,
+    },
+    #[error("could not switch to {}:{}, setuid/seteuid failed: {}", .requested_uid, .requested_gid, .error)]
+    User {
+        requested_uid: u32,
+        requested_gid: u32,
+        error: Error,
+    },
+}
+
+pub fn drop_privileges(uid: u32, gid: u32) -> Result<(), DropPrivilegesError> {
     // SAFETY: libc calls
     if unsafe { -1 == setgid(gid) } || unsafe { -1 == setegid(gid) } {
-        return Err(format!("setgid/setegid failed: {}", Error::last_os_error()));
+        return Err(DropPrivilegesError::Group {
+            requested_uid: uid,
+            requested_gid: gid,
+            error: Error::last_os_error(),
+        });
     }
 
     event!(Level::DEBUG, "Switched gid to {}", gid);
 
     // SAFETY: libc calls
     if unsafe { -1 == setuid(uid) } || unsafe { -1 == seteuid(uid) } {
-        return Err(format!("setuid/seteuid failed: {}", Error::last_os_error()));
+        return Err(DropPrivilegesError::User {
+            requested_uid: uid,
+            requested_gid: gid,
+            error: Error::last_os_error(),
+        });
     }
 
     event!(Level::DEBUG, "Switched uid to {}", uid);
@@ -169,12 +193,29 @@ pub fn chroot(root: &Path) -> Result<(), ChrootError> {
 #[cfg(test)]
 mod tests {
     use std::ffi::OsStr;
+    use std::io::Error;
     use std::os::unix::ffi::OsStrExt as _;
     use std::path::Path;
 
-    use pretty_assertions::assert_matches;
+    use pretty_assertions::{assert_eq, assert_matches};
 
-    use crate::security::{ChrootError, I_DO_NOT_EXIST, chroot, parse_userspec};
+    use crate::security::{
+        ChrootError, DropPrivilegesError, I_DO_NOT_EXIST, chroot, parse_userspec,
+    };
+
+    #[test]
+    fn drop_privileges_error_names_the_requested_ids_and_the_failed_step() {
+        let error = DropPrivilegesError::Group {
+            requested_uid: 1000,
+            requested_gid: 100,
+            error: Error::other("denied"),
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "could not switch to 1000:100, setgid/setegid failed: denied"
+        );
+    }
 
     #[test]
     fn chroot_path_with_nul_byte() {

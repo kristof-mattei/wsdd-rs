@@ -191,14 +191,12 @@ fn try_chroot(config: &Config) -> Option<Shutdown> {
     }
 
     if let &Some((uid, gid)) = &config.user
-        && let Err(reason) = drop_privileges(uid, gid)
+        && let Err(error) = drop_privileges(uid, gid)
     {
-        event!(Level::ERROR, ?uid, ?gid, reason, "Drop privileges failed");
-
         return Some(Shutdown::OperationalFailure {
             code: ExitCode::from(3),
             message: "drop privileges failed",
-            error: None,
+            error: Some(Box::new(error)),
         });
     }
 
