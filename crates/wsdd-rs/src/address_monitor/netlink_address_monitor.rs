@@ -440,22 +440,32 @@ async fn parse_netlink_response(
             },
         };
 
-        if let Some(command) = command
-            && let Err(error) = command_tx.send(command).await
-        {
-            if cancellation_token.is_cancelled() {
-                event!(Level::INFO, command = ?error.0, "Could not announce command due to shutting down");
-            } else {
-                event!(Level::ERROR, command = ?error.0, "Failed to announce command");
-            }
-
-            return Err(eyre::Report::msg(
-                "Command receiver gone, nothing left to do but abandon buffer",
-            ));
+        if let Some(command) = command {
+            announce(command, cancellation_token, command_tx).await?;
         }
     }
 
     Ok(received)
+}
+
+async fn announce(
+    command: Command,
+    cancellation_token: &CancellationToken,
+    command_tx: &Sender<Command>,
+) -> Result<(), eyre::Report> {
+    let Err(error) = command_tx.send(command).await else {
+        return Ok(());
+    };
+
+    if cancellation_token.is_cancelled() {
+        event!(Level::INFO, command = ?error.0, "Could not announce command due to shutting down");
+    } else {
+        event!(Level::ERROR, command = ?error.0, "Failed to announce command");
+    }
+
+    Err(eyre::Report::msg(
+        "Command receiver gone, nothing left to do but abandon buffer",
+    ))
 }
 
 fn parse_address_message(ifa: &ifaddrmsg, attributes: Attributes<'_>) -> Option<IpNet> {
