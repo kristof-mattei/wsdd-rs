@@ -386,6 +386,13 @@ mod tests {
     }
 
     #[test]
+    fn interface_filters_display_as_given() {
+        for value in ["eth0", "192.168.1.5", "fe80::1", "fe80::1%eth0"] {
+            assert_eq!(to_interface_filter(value).unwrap().to_string(), value);
+        }
+    }
+
+    #[test]
     fn invalid_interface_values_are_rejected() {
         let too_long = "a".repeat(16);
 

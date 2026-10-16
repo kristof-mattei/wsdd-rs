@@ -196,7 +196,7 @@ async fn resync(
         let addresses = forward_dump(&socket, &mut buffer, cancellation_token, command_tx).await?;
 
         if let (Dump::Complete, Dump::Complete) = (links, addresses) {
-            return Ok(());
+            return announce(Command::ResyncComplete, cancellation_token, command_tx).await;
         }
     }
 }
@@ -532,14 +532,16 @@ mod tests {
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio::sync::watch;
     use tokio_util::sync::CancellationToken;
+    use uuid::Uuid;
     use zerocopy::IntoBytes as _;
     use zerocopy::byteorder::native_endian::{I32, U16, U32};
 
     use crate::address_monitor::netlink_address_monitor::{
-        Dump, Exit, SIZE_OF_SOCKADDR_NL, SkippedStates, forward_dump, process_changes,
+        Dump, Exit, SIZE_OF_SOCKADDR_NL, SkippedStates, forward_dump, process_changes, resync,
     };
     use crate::network_handler::Command;
     use crate::rtnetlink::{RTA_ALIGNTO, ReceiveBuffer, RecvBuf};
+    use crate::test_utils::build_config;
     use crate::test_utils::netlink::{
         done_message, error_message, interrupted_message, link_message, netlink_message,
     };
@@ -1063,5 +1065,29 @@ mod tests {
         let (result, _) = dump(vec![error_message(-EINVAL)]).await;
 
         assert!(result.is_err());
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn resync_ends_with_resync_complete() {
+        let config = build_config(Uuid::now_v7(), 1);
+        let (command_tx, mut command_rx) = tokio::sync::mpsc::channel::<Command>(10);
+
+        let sent = async move { resync(&config, &CancellationToken::new(), &command_tx).await };
+
+        let received = async {
+            let mut commands = Vec::new();
+
+            while let Some(command) = command_rx.recv().await {
+                commands.push(command);
+            }
+
+            commands
+        };
+
+        let (result, commands) = tokio::join!(sent, received);
+
+        result.unwrap();
+        assert_matches!(commands.last(), Some(Command::ResyncComplete));
     }
 }

@@ -55,6 +55,7 @@ pub enum Command {
     SendProbes {
         interface_filter: Option<Box<str>>,
     },
+    ResyncComplete,
     Start,
     Stop,
 }
@@ -109,6 +110,8 @@ pub struct NetworkHandler<R = LibcInterfaceNameResolver> {
     /// Every address and interface index reported as new and not since reported as deleted.
     known_addresses: HashSet<(IpNet, u32)>,
     multicast_handlers: AddressHandlers<MulticastHandler>,
+    /// Per `config.interfaces` entry, whether it matches a handled address. `None` while stopped and until the first resync after a start completes.
+    matched_filters: Option<Vec<bool>>,
     command_rx: Receiver<Command>,
     start_tx: StartSender<()>,
     recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
@@ -161,6 +164,7 @@ where
             links: HashMap::new(),
             known_addresses: HashSet::new(),
             multicast_handlers: AddressHandlers::default(),
+            matched_filters: None,
             command_rx,
             start_tx,
             recent_messages,
@@ -246,6 +250,9 @@ where
                     self.send_probes(interface_filter).await;
                 }
             },
+            Command::ResyncComplete => {
+                self.handle_resync_complete();
+            },
             Command::Start => {
                 self.start();
             },
@@ -253,6 +260,8 @@ where
                 self.teardown().await;
             },
         }
+
+        self.report_filter_changes();
     }
 
     async fn list_devices(
@@ -421,6 +430,47 @@ where
             && self.resolver.index_of(zone.as_ref()).is_err()
     }
 
+    fn match_filters(&self) -> Vec<bool> {
+        self.config
+            .interfaces
+            .iter()
+            .map(|filter| {
+                self.known_addresses.iter().any(|&(address, index)| {
+                    self.interfaces.get(&index).is_some_and(|interface| {
+                        let network_address = NetworkAddress::new(address, Arc::clone(interface));
+
+                        self.filter_matches(filter, &network_address)
+                            && self.is_address_handled(&network_address).is_ok()
+                    })
+                })
+            })
+            .collect()
+    }
+
+    fn report_filter_changes(&mut self) {
+        let Some(previous) = self.matched_filters.as_deref() else {
+            return;
+        };
+
+        let current = self.match_filters();
+
+        for ((filter, &was_matched), &is_matched) in
+            self.config.interfaces.iter().zip(previous).zip(&current)
+        {
+            match (was_matched, is_matched) {
+                (true, false) => {
+                    event!(Level::WARN, %filter, "interface filter matches no handled address");
+                },
+                (false, true) => {
+                    event!(Level::INFO, %filter, "interface filter matches a handled address");
+                },
+                (true, true) | (false, false) => {},
+            }
+        }
+
+        self.matched_filters = Some(current);
+    }
+
     pub async fn handle_new_address(&mut self, network_address: NetworkAddress) {
         let is_new = self
             .known_addresses
@@ -539,6 +589,15 @@ where
         self.links.remove(&index);
     }
 
+    fn handle_resync_complete(&mut self) {
+        if !self.active || self.matched_filters.is_some() {
+            return;
+        }
+
+        // so the report after this command warns about every filter without a match
+        self.matched_filters = Some(vec![true; self.config.interfaces.len()]);
+    }
+
     async fn start_handlers_on(&mut self, index: u32) {
         let Some(interface) = self.interfaces.get(&index).map(Arc::clone) else {
             // no address on this link yet
@@ -581,6 +640,7 @@ where
         }
 
         self.active = false;
+        self.matched_filters = None;
 
         let tasks = TaskTracker::new();
 
@@ -1015,5 +1075,91 @@ mod tests {
             network_handler.is_address_handled(&address_on_eth0()),
             Err(Reason::UnknownLink)
         );
+    }
+
+    fn name_filter(name: &str) -> InterfaceFilter {
+        InterfaceFilter::Name(DevName::try_from(Box::from(name)).unwrap())
+    }
+
+    /// An active handler that knows `address_on_eth0` on a usable link.
+    fn network_handler_with_address_on_eth0(
+        interfaces: Vec<InterfaceFilter>,
+    ) -> NetworkHandler<MockResolveInterfaceName> {
+        let mut config = build_config(Uuid::now_v7(), 1);
+        config.interfaces = interfaces;
+
+        let mut network_handler = build_network_handler(config);
+        network_handler.active = true;
+
+        let address = address_on_eth0();
+
+        network_handler
+            .interfaces
+            .insert(2, Arc::clone(&address.interface));
+        network_handler.links.insert(2, LinkState::Usable);
+        network_handler.known_addresses.insert((address.address, 2));
+
+        network_handler
+    }
+
+    #[tokio::test]
+    async fn filters_are_matched_once_the_resync_completes() {
+        let mut network_handler =
+            network_handler_with_address_on_eth0(vec![name_filter("eth0"), name_filter("eth1")]);
+
+        assert_eq!(network_handler.matched_filters, None);
+
+        network_handler
+            .handle_command(Command::ResyncComplete)
+            .await;
+
+        assert_eq!(network_handler.matched_filters, Some(vec![true, false]));
+    }
+
+    #[tokio::test]
+    async fn filter_is_unmatched_once_its_link_stops_running() {
+        let mut network_handler = network_handler_with_address_on_eth0(vec![name_filter("eth0")]);
+
+        network_handler
+            .handle_command(Command::ResyncComplete)
+            .await;
+        network_handler
+            .handle_command(Command::NewLink { index: 2, flags: 0 })
+            .await;
+
+        assert_eq!(network_handler.matched_filters, Some(vec![false]));
+    }
+
+    #[tokio::test]
+    async fn filter_is_unmatched_once_its_address_is_deleted() {
+        let mut network_handler = network_handler_with_address_on_eth0(vec![name_filter("eth0")]);
+
+        network_handler
+            .handle_command(Command::ResyncComplete)
+            .await;
+        network_handler
+            .handle_command(Command::DeleteAddress {
+                address: address_on_eth0().address,
+                scope: 0,
+                index: 2,
+            })
+            .await;
+
+        assert_eq!(network_handler.matched_filters, Some(vec![false]));
+    }
+
+    #[tokio::test]
+    async fn filters_are_not_matched_while_stopped() {
+        let mut network_handler = network_handler_with_address_on_eth0(vec![name_filter("eth1")]);
+
+        network_handler
+            .handle_command(Command::ResyncComplete)
+            .await;
+        network_handler.handle_command(Command::Stop).await;
+        network_handler
+            .handle_command(Command::ResyncComplete)
+            .await;
+
+        assert_eq!(network_handler.matched_filters, None);
     }
 }
