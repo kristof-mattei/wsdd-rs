@@ -88,7 +88,7 @@ pub struct DevName(Box<str>);
 impl TryFrom<Box<str>> for DevName {
     type Error = eyre::Report;
 
-    /// Matches the kernel's [`dev_valid_name`](https://github.com/torvalds/linux/blob/v7.2/net/core/dev.c#L1325-L1340).
+    /// Matches the kernel's [`dev_valid_name`](https://github.com/torvalds/linux/blob/v7.2/net/core/dev.c#L1325-L1340), minus `%`, which [`dev_prep_valid_name`](https://github.com/torvalds/linux/blob/v7.2/net/core/dev.c#L1416-L1431) treats as a template.
     fn try_from(value: Box<str>) -> Result<Self, Self::Error> {
         let valid = !value.is_empty()
             && value.len() < libc::IFNAMSIZ
@@ -96,7 +96,7 @@ impl TryFrom<Box<str>> for DevName {
             && &*value != ".."
             && !value
                 .bytes()
-                .any(|byte| matches!(byte, b'/' | b':' | b'\t'..=b'\r' | b' ' | 0xA0));
+                .any(|byte| matches!(byte, b'/' | b':' | b'%' | b'\t'..=b'\r' | b' ' | 0xA0));
 
         if valid {
             Ok(Self(value))
@@ -118,6 +118,8 @@ impl AsRef<str> for DevName {
 #[cfg_attr(test, mockall::automock)]
 pub trait ResolveInterfaceName {
     fn resolve(&self, index: u32) -> Result<Box<str>, std::io::Error>;
+
+    fn index_of(&self, name: &str) -> Result<u32, std::io::Error>;
 }
 
 pub struct LibcInterfaceNameResolver;
@@ -125,6 +127,10 @@ pub struct LibcInterfaceNameResolver;
 impl ResolveInterfaceName for LibcInterfaceNameResolver {
     fn resolve(&self, index: u32) -> Result<Box<str>, std::io::Error> {
         if_indextoname(index)
+    }
+
+    fn index_of(&self, name: &str) -> Result<u32, std::io::Error> {
+        if_nametoindex(name)
     }
 }
 
@@ -152,5 +158,10 @@ mod tests {
         assert_matches!(DevName::try_from(Box::from("\u{e0}")), Err(_));
         // U+2003 is `E2 80 83`
         assert_matches!(DevName::try_from(Box::from("eth\u{2003}0")), Ok(_));
+    }
+
+    #[test]
+    fn dev_name_rejects_templates() {
+        assert_matches!(DevName::try_from(Box::from("eth%d")), Err(_));
     }
 }

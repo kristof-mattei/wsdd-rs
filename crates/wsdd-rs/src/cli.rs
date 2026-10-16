@@ -1,6 +1,6 @@
 #[cfg(test)]
 use std::ffi::OsString;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv6Addr};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -20,7 +20,7 @@ use crate::wsd::device::DeviceUri;
 #[derive(Parser)]
 #[command(about, version)]
 pub struct Cli {
-    #[arg(short, long, value_parser = to_interface_filter, help = "interface or address to use")]
+    #[arg(short, long, value_parser = to_interface_filter, help = "interface, address or scoped IPv6 address such as `fe80::1%eth0` to use")]
     interface: Vec<InterfaceFilter>,
 
     #[arg(
@@ -236,6 +236,15 @@ fn to_interface_filter(value: &str) -> Result<InterfaceFilter, String> {
         return Ok(InterfaceFilter::Address(address));
     }
 
+    if let Some((address, zone)) = value.split_once('%')
+        && let Ok(address) = address.parse::<Ipv6Addr>()
+    {
+        let zone = DevName::try_from(Box::from(zone))
+            .map_err(|error| format!("invalid zone in `{}`: {}", value, error))?;
+
+        return Ok(InterfaceFilter::ScopedAddress { address, zone });
+    }
+
     DevName::try_from(Box::from(value))
         .map(InterfaceFilter::Name)
         .map_err(|error| {
@@ -374,7 +383,7 @@ mod tests {
         let too_long = "a".repeat(16);
 
         for value in [
-            "fe80::1%eth0",
+            "10.0.0.1%eth0",
             "",
             ".",
             "..",
@@ -387,6 +396,29 @@ mod tests {
                 Err(format!("`{}` is not a valid interface name", value))
             );
         }
+    }
+
+    #[test]
+    fn scoped_ipv6_addresses_are_parsed() {
+        for zone in ["eth0", "2"] {
+            assert_eq!(
+                to_interface_filter(&format!("fe80::1%{}", zone)),
+                Ok(InterfaceFilter::ScopedAddress {
+                    address: "fe80::1".parse().unwrap(),
+                    zone: DevName::try_from(Box::from(zone)).unwrap(),
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn scoped_ipv6_address_with_an_invalid_zone_is_rejected() {
+        assert_eq!(
+            to_interface_filter("fe80::1%eth 0"),
+            Err(String::from(
+                "invalid zone in `fe80::1%eth 0`: `eth 0` is not a valid interface name"
+            ))
+        );
     }
 
     #[test]

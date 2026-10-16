@@ -51,6 +51,7 @@ einval
 endfor
 endmacro
 enobufs
+enodev
 enxio
 errorlens
 fccd
@@ -211,6 +212,7 @@ uppercased
 usernamehw
 userspec
 vadimcn
+withf
 wprt
 wsdapi
 wsdd
