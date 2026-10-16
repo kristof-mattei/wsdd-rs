@@ -1,6 +1,8 @@
+#[cfg(not(target_os = "windows"))]
 use std::io::Write as _;
 
 use color_eyre::eyre;
+#[cfg(not(target_os = "windows"))]
 use libc::c_int;
 #[cfg(not(any(target_os = "windows", miri)))]
 use tokio::signal::unix::{self, SignalKind, signal};
@@ -107,6 +109,7 @@ impl SignalListeners {
 
 /// Sets signal back to its default action and raises it, killing this process.
 /// Returns when the raise did not terminate the process: PID 1 of a PID namespace only receives signals it has a handler for, and the reset removes it.
+#[cfg(not(target_os = "windows"))]
 pub fn terminate_by_signal(signal: Signal) {
     let signum = c_int::from(signal.number());
 
@@ -126,6 +129,9 @@ pub fn terminate_by_signal(signal: Signal) {
         libc::raise(signum);
     }
 }
+
+#[cfg(target_os = "windows")]
+pub fn terminate_by_signal(_signal: Signal) {}
 
 #[cfg(test)]
 mod tests {
