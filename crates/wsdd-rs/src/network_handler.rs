@@ -1,5 +1,6 @@
 mod address_handlers;
 
+use std::net::IpAddr;
 use std::sync::Arc;
 
 use hashbrown::hash_map::Entry;
@@ -19,7 +20,9 @@ use crate::max_size_deque::MaxSizeDeque;
 use crate::multicast_handler::MulticastHandler;
 use crate::network_address::NetworkAddress;
 use crate::network_handler::address_handlers::AddressHandlers;
-use crate::network_interface::{LibcInterfaceNameResolver, NetworkInterface, ResolveInterfaceName};
+use crate::network_interface::{
+    DevName, LibcInterfaceNameResolver, NetworkInterface, ResolveInterfaceName,
+};
 use crate::soap::MessageId;
 use crate::task_tracker_ext::TaskTrackerExt as _;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
@@ -377,6 +380,13 @@ where
             && !self.config.interfaces.iter().any(|filter| match *filter {
                 InterfaceFilter::Name(ref name) => name.as_ref() == address.interface.name(),
                 InterfaceFilter::Address(ip) => ip == address.address.addr(),
+                InterfaceFilter::ScopedAddress {
+                    address: scoped,
+                    ref zone,
+                } => {
+                    IpAddr::V6(scoped) == address.address.addr()
+                        && self.zone_matches(zone, &address.interface)
+                },
             })
         {
             return Err(Reason::ExcludedInterface);
@@ -388,6 +398,18 @@ where
             Some(LinkState::NotRunning) => Err(Reason::LinkNotRunning),
             None => Err(Reason::UnknownLink),
         }
+    }
+
+    /// A zone is an interface name, or an interface index when no interface has that name.
+    fn zone_matches(&self, zone: &DevName, interface: &NetworkInterface) -> bool {
+        if zone.as_ref() == interface.name() {
+            return true;
+        }
+
+        zone.as_ref()
+            .parse::<u32>()
+            .is_ok_and(|index| index == interface.index())
+            && self.resolver.index_of(zone.as_ref()).is_err()
     }
 
     pub async fn handle_new_address(&mut self, network_address: NetworkAddress) {
@@ -591,6 +613,13 @@ mod tests {
     use crate::test_utils::{build_config, find_first_non_lo_network_interface};
 
     fn build_network_handler(config: Config) -> NetworkHandler<MockResolveInterfaceName> {
+        build_network_handler_with_resolver(config, MockResolveInterfaceName::new())
+    }
+
+    fn build_network_handler_with_resolver(
+        config: Config,
+        resolver: MockResolveInterfaceName,
+    ) -> NetworkHandler<MockResolveInterfaceName> {
         let (_command_tx, command_rx) = mpsc::channel(1);
         let (start_tx, _start_rx) = watch::channel(());
 
@@ -600,8 +629,15 @@ mod tests {
             command_rx,
             start_tx,
             Arc::new(RwLock::new(MaxSizeDeque::new(10))),
-            MockResolveInterfaceName::new(),
+            resolver,
         )
+    }
+
+    fn scoped_filter(zone: &str) -> InterfaceFilter {
+        InterfaceFilter::ScopedAddress {
+            address: "fe80::1".parse().unwrap(),
+            zone: DevName::try_from(Box::from(zone)).unwrap(),
+        }
     }
 
     #[tokio::test]
@@ -756,6 +792,92 @@ mod tests {
         assert_matches!(network_handler.is_address_handled(&matching), Ok(()));
         assert_matches!(
             network_handler.is_address_handled(&other),
+            Err(Reason::ExcludedInterface)
+        );
+    }
+
+    #[test]
+    fn interface_filter_matches_scoped_address_by_zone_name() {
+        let mut config = build_config(Uuid::now_v7(), 1);
+        config.interfaces = vec![scoped_filter("eth0")];
+
+        let mut network_handler = build_network_handler(config);
+        network_handler.active = true;
+        network_handler.links.insert(2, LinkState::Usable);
+        network_handler.links.insert(3, LinkState::Usable);
+
+        let eth0 = Arc::new(NetworkInterface::new_with_index("eth0", 0, 2));
+        let eth1 = Arc::new(NetworkInterface::new_with_index("eth1", 0, 3));
+
+        let on_eth0 = NetworkAddress::new("fe80::1/64".parse().unwrap(), Arc::clone(&eth0));
+        let on_eth1 = NetworkAddress::new("fe80::1/64".parse().unwrap(), eth1);
+        let other_on_eth0 = NetworkAddress::new("fe80::2/64".parse().unwrap(), eth0);
+
+        assert_matches!(network_handler.is_address_handled(&on_eth0), Ok(()));
+        assert_matches!(
+            network_handler.is_address_handled(&on_eth1),
+            Err(Reason::ExcludedInterface)
+        );
+        assert_matches!(
+            network_handler.is_address_handled(&other_on_eth0),
+            Err(Reason::ExcludedInterface)
+        );
+    }
+
+    #[test]
+    fn interface_filter_matches_scoped_address_by_zone_index() {
+        let mut config = build_config(Uuid::now_v7(), 1);
+        config.interfaces = vec![scoped_filter("3")];
+
+        let mut resolver = MockResolveInterfaceName::new();
+        resolver
+            .expect_index_of()
+            .withf(|name| name == "3")
+            .returning(|_| Err(std::io::Error::from_raw_os_error(libc::ENODEV)));
+
+        let mut network_handler = build_network_handler_with_resolver(config, resolver);
+        network_handler.active = true;
+        network_handler.links.insert(2, LinkState::Usable);
+        network_handler.links.insert(3, LinkState::Usable);
+
+        let eth0 = Arc::new(NetworkInterface::new_with_index("eth0", 0, 2));
+        let eth1 = Arc::new(NetworkInterface::new_with_index("eth1", 0, 3));
+
+        let on_eth0 = NetworkAddress::new("fe80::1/64".parse().unwrap(), eth0);
+        let on_eth1 = NetworkAddress::new("fe80::1/64".parse().unwrap(), eth1);
+
+        assert_matches!(network_handler.is_address_handled(&on_eth1), Ok(()));
+        assert_matches!(
+            network_handler.is_address_handled(&on_eth0),
+            Err(Reason::ExcludedInterface)
+        );
+    }
+
+    #[test]
+    fn interface_filter_prefers_an_interface_named_like_the_zone() {
+        let mut config = build_config(Uuid::now_v7(), 1);
+        config.interfaces = vec![scoped_filter("3")];
+
+        let mut resolver = MockResolveInterfaceName::new();
+        resolver
+            .expect_index_of()
+            .withf(|name| name == "3")
+            .returning(|_| Ok(4));
+
+        let mut network_handler = build_network_handler_with_resolver(config, resolver);
+        network_handler.active = true;
+        network_handler.links.insert(3, LinkState::Usable);
+        network_handler.links.insert(4, LinkState::Usable);
+
+        let eth1 = Arc::new(NetworkInterface::new_with_index("eth1", 0, 3));
+        let named_3 = Arc::new(NetworkInterface::new_with_index("3", 0, 4));
+
+        let on_eth1 = NetworkAddress::new("fe80::1/64".parse().unwrap(), eth1);
+        let on_named_3 = NetworkAddress::new("fe80::1/64".parse().unwrap(), named_3);
+
+        assert_matches!(network_handler.is_address_handled(&on_named_3), Ok(()));
+        assert_matches!(
+            network_handler.is_address_handled(&on_eth1),
             Err(Reason::ExcludedInterface)
         );
     }

@@ -1,4 +1,4 @@
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv6Addr};
 use std::os::fd::RawFd;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -70,6 +70,7 @@ impl AppSequence {
 pub enum InterfaceFilter {
     Name(DevName),
     Address(IpAddr),
+    ScopedAddress { address: Ipv6Addr, zone: DevName },
 }
 
 #[derive(Debug, Eq, PartialEq)]

@@ -118,6 +118,8 @@ impl AsRef<str> for DevName {
 #[cfg_attr(test, mockall::automock)]
 pub trait ResolveInterfaceName {
     fn resolve(&self, index: u32) -> Result<Box<str>, std::io::Error>;
+
+    fn index_of(&self, name: &str) -> Result<u32, std::io::Error>;
 }
 
 pub struct LibcInterfaceNameResolver;
@@ -125,6 +127,10 @@ pub struct LibcInterfaceNameResolver;
 impl ResolveInterfaceName for LibcInterfaceNameResolver {
     fn resolve(&self, index: u32) -> Result<Box<str>, std::io::Error> {
         if_indextoname(index)
+    }
+
+    fn index_of(&self, name: &str) -> Result<u32, std::io::Error> {
+        if_nametoindex(name)
     }
 }
 
