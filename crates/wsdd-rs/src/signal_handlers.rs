@@ -158,7 +158,7 @@ mod tests {
 
         use crate::signal_handlers::{Signal, SignalListeners, terminate_by_signal};
 
-        const CHILD_MARKER: &str = "WSDD_RS_TERMINATE_BY_SIGNAL_CHILD";
+        const CHILD_MARKER: &str = "TERMINATE_BY_SIGNAL_CHILD";
 
         // the raise kills the calling process, so the scenario runs in a re-executed copy of this test binary
         #[cfg_attr(not(miri), test)]
