@@ -239,6 +239,13 @@ fn to_interface_filter(value: &str) -> Result<InterfaceFilter, String> {
     if let Some((address, zone)) = value.split_once('%')
         && let Ok(address) = address.parse::<Ipv6Addr>()
     {
+        if !address.is_unicast_link_local() {
+            return Err(format!(
+                "invalid zone in `{}`: zones only apply to link-local addresses",
+                value
+            ));
+        }
+
         let zone = DevName::try_from(Box::from(zone))
             .map_err(|error| format!("invalid zone in `{}`: {}", value, error))?;
 
@@ -417,6 +424,16 @@ mod tests {
             to_interface_filter("fe80::1%eth 0"),
             Err(String::from(
                 "invalid zone in `fe80::1%eth 0`: `eth 0` is not a valid interface name"
+            ))
+        );
+    }
+
+    #[test]
+    fn scoped_non_link_local_address_is_rejected() {
+        assert_eq!(
+            to_interface_filter("2001:db8::1%eth0"),
+            Err(String::from(
+                "invalid zone in `2001:db8::1%eth0`: zones only apply to link-local addresses"
             ))
         );
     }
