@@ -17,6 +17,7 @@ mod parsers;
 mod rtnetlink;
 mod security;
 mod shutdown;
+mod sigaction;
 mod signal_handlers;
 mod soap;
 mod socket;
