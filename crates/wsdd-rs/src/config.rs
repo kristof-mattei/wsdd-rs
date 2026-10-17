@@ -73,6 +73,18 @@ pub enum InterfaceFilter {
     ScopedAddress { address: Ipv6Addr, zone: DevName },
 }
 
+impl std::fmt::Display for InterfaceFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            InterfaceFilter::Name(ref name) => f.write_str(name.as_ref()),
+            InterfaceFilter::Address(address) => write!(f, "{}", address),
+            InterfaceFilter::ScopedAddress { address, ref zone } => {
+                write!(f, "{}%{}", address, zone.as_ref())
+            },
+        }
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum BindTo {
     IPv4,
