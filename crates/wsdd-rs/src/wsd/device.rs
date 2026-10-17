@@ -210,13 +210,16 @@ impl WSDDiscoveredDevice {
 
                         self.props.extend(new_props);
                     } else if attribute.value == constants::WSDP_RELATIONSHIP_DIALECT {
-                        let (types, display_name_belongs_to) = extract_host_props(&mut reader)?;
+                        // relationships can span several sections, not all of them have a `wsdp:Host`, see documentation/devicesprofile.pdf, 5.2
+                        if let Some((types, display_name_belongs_to)) =
+                            extract_host_props(&mut reader)?
+                        {
+                            self.types = types;
 
-                        self.types = types;
-
-                        if let Some((display_name, belongs_to)) = display_name_belongs_to {
-                            self.props.insert("DisplayName".into(), display_name);
-                            self.props.insert("BelongsTo".into(), belongs_to);
+                            if let Some((display_name, belongs_to)) = display_name_belongs_to {
+                                self.props.insert("DisplayName".into(), display_name);
+                                self.props.insert("BelongsTo".into(), belongs_to);
+                            }
                         }
                     } else {
                         event!(
@@ -309,9 +312,11 @@ where
     }
 }
 
-type ExtractHostPropsResult = Result<(HashSet<Box<str>>, Option<(Box<str>, Box<str>)>), XmlError>;
+type HostProps = (HashSet<Box<str>>, Option<(Box<str>, Box<str>)>);
 
-fn extract_host_props<R>(reader: &mut XmlReader<R>) -> ExtractHostPropsResult
+type ExtractHostPropsResult = Result<HostProps, XmlError>;
+
+fn extract_host_props<R>(reader: &mut XmlReader<R>) -> Result<Option<HostProps>, XmlError>
 where
     R: Read,
 {
@@ -326,7 +331,7 @@ where
         )?
         else {
             // no `wsdp:Relationship` to be found`
-            return Ok((HashSet::new(), None));
+            return Ok(None);
         };
 
         for attribute in attributes {
@@ -355,14 +360,14 @@ where
                                 }
                             }
 
-                            return Ok((types, display_name_belongs_to));
+                            return Ok(Some((types, display_name_belongs_to)));
                         },
 
                         None => {
                             // no `Host` to be found, so we have just closed the `WSDP_RELATIONSHIP`
                             // we are now in `<wsx:MetadataSection>`
 
-                            return Ok((HashSet::new(), None));
+                            return Ok(None);
                         },
                     }
                 } else {
@@ -468,12 +473,123 @@ where
 
 #[cfg(test)]
 mod tests {
+    use color_eyre::eyre;
+    use hashbrown::{HashMap, HashSet};
     use pretty_assertions::{assert_eq, assert_matches};
+    use time::OffsetDateTime;
     use xml::reader::EventReader;
 
     use crate::constants;
-    use crate::wsd::device::{extract_wsdp_props, read_types_and_pub_computer};
+    use crate::wsd::device::{
+        WSDDiscoveredDevice, extract_wsdp_props, read_types_and_pub_computer,
+    };
     use crate::xml::{XmlError, XmlReader, find_child};
+
+    const HOST_RELATIONSHIP: &str = r#"<wsdp:Relationship Type="http://schemas.xmlsoap.org/ws/2006/02/devprof/host">
+            <wsdp:Host>
+                <wsdp:Types>pub:Computer</wsdp:Types>
+                <pub:Computer>MYPC/Workgroup:MYGROUP</pub:Computer>
+            </wsdp:Host>
+        </wsdp:Relationship>"#;
+
+    const HOSTED_RELATIONSHIP: &str = r#"<wsdp:Relationship Type="http://schemas.xmlsoap.org/ws/2006/02/devprof/host">
+            <wsdp:Hosted>
+                <wsdp:ServiceId>urn:example:service</wsdp:ServiceId>
+            </wsdp:Hosted>
+        </wsdp:Relationship>"#;
+
+    const OTHER_RELATIONSHIP: &str =
+        r#"<wsdp:Relationship Type="urn:example:other"></wsdp:Relationship>"#;
+
+    fn get_response(relationship_sections: &[&str]) -> String {
+        let sections = relationship_sections
+            .iter()
+            .map(|relationships| {
+                format!(
+                    r#"<wsx:MetadataSection Dialect="{}">{}</wsx:MetadataSection>"#,
+                    constants::WSDP_RELATIONSHIP_DIALECT,
+                    relationships
+                )
+            })
+            .collect::<Vec<_>>()
+            .concat();
+
+        format!(
+            r#"<soap:Envelope xmlns:soap="{}" xmlns:wsa="{}" xmlns:wsx="{}" xmlns:wsdp="{}" xmlns:pub="{}">
+                   <soap:Header>
+                       <wsa:Action>http://schemas.xmlsoap.org/ws/2004/09/transfer/GetResponse</wsa:Action>
+                       <wsa:MessageID>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:MessageID>
+                   </soap:Header>
+                   <soap:Body>
+                       <wsx:Metadata>{}</wsx:Metadata>
+                   </soap:Body>
+               </soap:Envelope>"#,
+            constants::XML_SOAP_NAMESPACE,
+            constants::XML_WSA_NAMESPACE,
+            constants::XML_WSX_NAMESPACE,
+            constants::XML_WSDP_NAMESPACE,
+            constants::XML_PUB_NAMESPACE,
+            sections
+        )
+    }
+
+    fn device_from(get_response: &str) -> Result<WSDDiscoveredDevice, eyre::Report> {
+        let mut device = WSDDiscoveredDevice {
+            addresses: HashMap::new(),
+            props: HashMap::new(),
+            display_name: None,
+            last_seen: OffsetDateTime::UNIX_EPOCH,
+            types: HashSet::new(),
+        };
+
+        device.update_metadata(get_response.as_bytes())?;
+
+        Ok(device)
+    }
+
+    #[test]
+    fn relationship_section_without_host_keeps_the_host_metadata() -> Result<(), eyre::Report> {
+        let device = device_from(&get_response(&[HOST_RELATIONSHIP, HOSTED_RELATIONSHIP]))?;
+
+        assert_eq!(
+            device.types(),
+            &HashSet::from_iter([Box::from("pub:Computer")])
+        );
+        assert_eq!(
+            device.props().get("DisplayName").map(|s| &**s),
+            Some("MYPC")
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn non_host_relationship_section_keeps_the_host_metadata() -> Result<(), eyre::Report> {
+        let device = device_from(&get_response(&[HOST_RELATIONSHIP, OTHER_RELATIONSHIP]))?;
+
+        assert_eq!(
+            device.types(),
+            &HashSet::from_iter([Box::from("pub:Computer")])
+        );
+        assert_eq!(
+            device.props().get("DisplayName").map(|s| &**s),
+            Some("MYPC")
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn only_the_first_relationship_of_a_section_is_read() -> Result<(), eyre::Report> {
+        let relationships = format!("{}{}", OTHER_RELATIONSHIP, HOST_RELATIONSHIP);
+
+        let device = device_from(&get_response(&[&relationships]))?;
+
+        assert_eq!(device.types(), &HashSet::new());
+        assert_eq!(device.props().get("DisplayName"), None);
+
+        Ok(())
+    }
 
     #[test]
     fn extract_wsdp_props_reads_namespaced_children() -> Result<(), XmlError> {
