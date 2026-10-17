@@ -62,6 +62,8 @@ pub enum HeaderParsingError {
     DuplicateHeader,
     #[error("Unsupported XML version: {}", .0)]
     UnsupportedXmlVersion(XmlVersion),
+    #[error("Document type declaration")]
+    DocumentTypeDeclaration,
     #[error("Not a SOAP 1.2 envelope: {}", .0)]
     NotASoap12Envelope(Box<str>),
     #[error("Unexpected child of soap:Envelope: {}", .0)]
@@ -190,6 +192,10 @@ where
                 ..
             } => {
                 return Err(HeaderParsingError::UnsupportedXmlVersion(version).into());
+            },
+            // a SOAP 1.2 message MUST NOT contain a document type declaration, see documentation/soap12-part1.pdf, 5
+            XmlEvent::Doctype { .. } => {
+                return Err(HeaderParsingError::DocumentTypeDeclaration.into());
             },
             XmlEvent::StartElement { name, .. } => {
                 break name;
@@ -669,6 +675,21 @@ mod tests {
             deconstruct_raw(probe.as_bytes()).err(),
             Some(MessageHandlerError::HeaderError(
                 HeaderParsingError::UnsupportedXmlVersion(XmlVersion::Version11)
+            ))
+        );
+    }
+
+    #[test]
+    fn rejects_document_type_declaration() {
+        let probe = format!(
+            r#"<?xml version="1.0" encoding="utf-8"?><!DOCTYPE soap:Envelope>{}"#,
+            message(constants::WSD_PROBE, "", "<wsd:Probe />")
+        );
+
+        assert_matches!(
+            deconstruct_raw(probe.as_bytes()).err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::DocumentTypeDeclaration
             ))
         );
     }
