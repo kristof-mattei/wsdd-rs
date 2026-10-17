@@ -1,5 +1,6 @@
 use std::fmt;
 use std::mem::MaybeUninit;
+use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use bitflags::bitflags;
@@ -167,12 +168,26 @@ where
             },
         };
 
-        if let Err(error) = parse_netlink_response(messages, cancellation_token, command_tx).await {
-            event!(
-                Level::ERROR,
-                ?error,
-                "Error parsing response as a netlink response"
-            );
+        let received = match parse_netlink_response(messages) {
+            Ok(received) => received,
+            Err(error) => {
+                event!(
+                    Level::ERROR,
+                    ?error,
+                    "Error parsing response as a netlink response"
+                );
+
+                continue;
+            },
+        };
+
+        for change in received.changes {
+            if announce(Command::Change(change), cancellation_token, command_tx)
+                .await
+                .is_break()
+            {
+                break;
+            }
         }
     }
 }
@@ -220,7 +235,16 @@ where
     loop {
         let messages = buffer.receive(&recv_buf).await?;
 
-        let received = parse_netlink_response(messages, cancellation_token, command_tx).await?;
+        let received = parse_netlink_response(messages)?;
+
+        for change in received.changes {
+            if announce(Command::Change(change), cancellation_token, command_tx)
+                .await
+                .is_break()
+            {
+                return Err(eyre::Report::msg("Command receiver gone"));
+            }
+        }
 
         if received.dump_interrupted {
             dump = Dump::Interrupted;
@@ -360,15 +384,12 @@ impl fmt::Display for SkippedStates {
 
 #[derive(Default)]
 struct Received {
+    changes: Vec<Change>,
     done: bool,
     dump_interrupted: bool,
 }
 
-async fn parse_netlink_response(
-    messages: Messages<'_>,
-    cancellation_token: &CancellationToken,
-    command_tx: &Sender<Command>,
-) -> Result<Received, eyre::Report> {
+fn parse_netlink_response(messages: Messages<'_>) -> Result<Received, eyre::Report> {
     let mut received = Received::default();
 
     for (header, message) in messages {
@@ -444,22 +465,31 @@ async fn parse_netlink_response(
             },
         };
 
-        if let Some(change) = change
-            && let Err(error) = command_tx.send(Command::Change(change)).await
-        {
-            if cancellation_token.is_cancelled() {
-                event!(Level::INFO, command = ?error.0, "Could not announce command due to shutting down");
-            } else {
-                event!(Level::ERROR, command = ?error.0, "Failed to announce command");
-            }
-
-            return Err(eyre::Report::msg(
-                "Command receiver gone, nothing left to do but abandon buffer",
-            ));
+        if let Some(change) = change {
+            received.changes.push(change);
         }
     }
 
     Ok(received)
+}
+
+/// Breaks when the receiver is gone.
+async fn announce(
+    command: Command,
+    cancellation_token: &CancellationToken,
+    command_tx: &Sender<Command>,
+) -> ControlFlow<()> {
+    let Err(error) = command_tx.send(command).await else {
+        return ControlFlow::Continue(());
+    };
+
+    if cancellation_token.is_cancelled() {
+        event!(Level::INFO, command = ?error.0, "Could not announce command due to shutting down");
+    } else {
+        event!(Level::ERROR, command = ?error.0, "Failed to announce command");
+    }
+
+    ControlFlow::Break(())
 }
 
 fn parse_address_message(ifa: &ifaddrmsg, attributes: Attributes<'_>) -> Option<IpNet> {
