@@ -22,7 +22,7 @@ use zerocopy::IntoBytes as _;
 use zerocopy::byteorder::native_endian::{I32, U16, U32};
 
 use crate::config::{BindTo, Config};
-use crate::network_handler::Command;
+use crate::network_handler::{Change, Command, InterfaceAddress, Link};
 use crate::rtnetlink::{
     AddressValue, Attribute, Attributes, Message, Messages, ReceiveBuffer, RecvBuf,
 };
@@ -374,7 +374,7 @@ async fn parse_netlink_response(
     for (header, message) in messages {
         received.dump_interrupted |= header.dump_interrupted;
 
-        let command = match message {
+        let change = match message {
             Message::Done => {
                 received.done = true;
 
@@ -397,10 +397,12 @@ async fn parse_netlink_response(
                 let skipped_states = SkippedStates::from_bits_truncate(u32::from(ifa.ifa_flags));
 
                 if skipped_states.is_empty() {
-                    parse_address_message(ifa, attributes).map(|address| Command::NewAddress {
-                        address,
-                        scope: ifa.ifa_scope,
-                        index: ifa.ifa_index.get(),
+                    parse_address_message(ifa, attributes).map(|address| {
+                        Change::NewAddress(InterfaceAddress {
+                            address,
+                            scope: ifa.ifa_scope,
+                            index: ifa.ifa_index.get(),
+                        })
                     })
                 } else {
                     event!(Level::DEBUG, "skipping address, state: {}", skipped_states);
@@ -410,10 +412,12 @@ async fn parse_netlink_response(
             },
             Message::DeleteAddress(ifa, attributes) => {
                 // a deleted address is gone, whatever its state
-                parse_address_message(ifa, attributes).map(|address| Command::DeleteAddress {
-                    address,
-                    scope: ifa.ifa_scope,
-                    index: ifa.ifa_index.get(),
+                parse_address_message(ifa, attributes).map(|address| {
+                    Change::DeleteAddress(InterfaceAddress {
+                        address,
+                        scope: ifa.ifa_scope,
+                        index: ifa.ifa_index.get(),
+                    })
                 })
             },
             Message::NonIpAddress(family) => {
@@ -421,11 +425,11 @@ async fn parse_netlink_response(
 
                 None
             },
-            Message::NewLink(ifi) => Some(Command::NewLink {
+            Message::NewLink(ifi) => Some(Change::NewLink(Link {
                 index: ifi.ifi_index.get().cast_unsigned(),
                 flags: ifi.ifi_flags.get(),
-            }),
-            Message::DeleteLink(ifi) => Some(Command::DeleteLink {
+            })),
+            Message::DeleteLink(ifi) => Some(Change::DeleteLink {
                 index: ifi.ifi_index.get().cast_unsigned(),
             }),
             Message::ProtocolLink(family) => {
@@ -440,8 +444,8 @@ async fn parse_netlink_response(
             },
         };
 
-        if let Some(command) = command
-            && let Err(error) = command_tx.send(command).await
+        if let Some(change) = change
+            && let Err(error) = command_tx.send(Command::Change(change)).await
         {
             if cancellation_token.is_cancelled() {
                 event!(Level::INFO, command = ?error.0, "Could not announce command due to shutting down");
@@ -528,7 +532,7 @@ mod tests {
     use crate::address_monitor::netlink_address_monitor::{
         Dump, Exit, SIZE_OF_SOCKADDR_NL, SkippedStates, forward_dump, process_changes,
     };
-    use crate::network_handler::Command;
+    use crate::network_handler::{Change, Command, InterfaceAddress, Link};
     use crate::rtnetlink::{RTA_ALIGNTO, ReceiveBuffer, RecvBuf};
     use crate::test_utils::netlink::{
         done_message, error_message, interrupted_message, link_message, netlink_message,
@@ -595,20 +599,20 @@ mod tests {
             ("fe80::b475:97ff:fe15:fc6c/64", 253, 48),
         ];
 
-        let commands = commands(include_bytes!("fixtures/commands.bin")).await;
+        let changes = changes(include_bytes!("fixtures/commands.bin")).await;
 
-        assert_eq!(commands.len(), expected.len());
+        assert_eq!(changes.len(), expected.len());
 
-        for (command, (expected_address, expected_scope, expected_index)) in
-            commands.into_iter().zip(expected)
+        for (change, (expected_address, expected_scope, expected_index)) in
+            changes.into_iter().zip(expected)
         {
-            let Command::NewAddress {
+            let Change::NewAddress(InterfaceAddress {
                 address,
                 scope,
                 index,
-            } = command
+            }) = change
             else {
-                panic!("Invalid command type");
+                panic!("Invalid change type");
             };
 
             assert_eq!(address, expected_address.parse().unwrap());
@@ -738,8 +742,8 @@ mod tests {
         )
     }
 
-    /// Every command `process_changes` sends for `bytes`.
-    async fn commands(bytes: &[u8]) -> Vec<Command> {
+    /// Every change `process_changes` sends for `bytes`.
+    async fn changes(bytes: &[u8]) -> Vec<Change> {
         let cancellation_token = CancellationToken::new();
 
         let (command_tx, mut command_rx) = tokio::sync::mpsc::channel::<Command>(100);
@@ -766,13 +770,17 @@ mod tests {
 
         assert!(matches!(result, Ok(Exit::Cancelled)));
 
-        let mut commands = Vec::new();
+        let mut changes = Vec::new();
 
         while let Ok(command) = command_rx.try_recv() {
-            commands.push(command);
+            let Command::Change(change) = command else {
+                panic!("Invalid command type");
+            };
+
+            changes.push(change);
         }
 
-        commands
+        changes
     }
 
     #[tokio::test]
@@ -790,8 +798,8 @@ mod tests {
         ));
 
         assert_matches!(
-            &*commands(&bytes).await,
-            [Command::NewAddress { address, .. }] if *address == "2001:db8::2/64".parse::<IpNet>().unwrap()
+            &*changes(&bytes).await,
+            [Change::NewAddress(InterfaceAddress { address, .. })] if *address == "2001:db8::2/64".parse::<IpNet>().unwrap()
         );
     }
 
@@ -804,8 +812,8 @@ mod tests {
         );
 
         assert_matches!(
-            &*commands(&bytes).await,
-            [Command::DeleteAddress { address, .. }] if *address == "2001:db8::1/64".parse::<IpNet>().unwrap()
+            &*changes(&bytes).await,
+            [Change::DeleteAddress(InterfaceAddress { address, .. })] if *address == "2001:db8::1/64".parse::<IpNet>().unwrap()
         );
     }
 
@@ -827,8 +835,8 @@ mod tests {
         );
 
         assert_matches!(
-            &*commands(&bytes).await,
-            [Command::NewAddress { address, .. }] if *address == "192.0.2.1/32".parse::<IpNet>().unwrap()
+            &*changes(&bytes).await,
+            [Change::NewAddress(InterfaceAddress { address, .. })] if *address == "192.0.2.1/32".parse::<IpNet>().unwrap()
         );
     }
 
@@ -847,8 +855,8 @@ mod tests {
         );
 
         assert_matches!(
-            &*commands(&bytes).await,
-            [Command::NewAddress { address, .. }] if *address == "fe80::1/128".parse::<IpNet>().unwrap()
+            &*changes(&bytes).await,
+            [Change::NewAddress(InterfaceAddress { address, .. })] if *address == "fe80::1/128".parse::<IpNet>().unwrap()
         );
     }
 
@@ -856,7 +864,7 @@ mod tests {
     async fn address_of_another_family_is_ignored() {
         let bytes = new_address_message(AF_PHONET, 0, &[attribute(IFA_LOCAL, &[0x40])]);
 
-        assert_matches!(&*commands(&bytes).await, []);
+        assert_matches!(&*changes(&bytes).await, []);
     }
 
     #[test]
@@ -883,8 +891,8 @@ mod tests {
         ));
 
         assert_matches!(
-            &*commands(&bytes).await,
-            [Command::NewAddress { address, .. }] if *address == "2001:db8::1/64".parse::<IpNet>().unwrap()
+            &*changes(&bytes).await,
+            [Change::NewAddress(InterfaceAddress { address, .. })] if *address == "2001:db8::1/64".parse::<IpNet>().unwrap()
         );
     }
 
@@ -908,8 +916,8 @@ mod tests {
         );
 
         assert_matches!(
-            &*commands(&bytes).await,
-            [Command::NewLink { index: 3, flags: reported }] if *reported == flags
+            &*changes(&bytes).await,
+            [Change::NewLink(Link { index: 3, flags: reported })] if *reported == flags
         );
     }
 
@@ -920,8 +928,8 @@ mod tests {
         let bytes = link_message(RTM_NEWLINK, AF_UNSPEC, 3, flags);
 
         assert_matches!(
-            &*commands(&bytes).await,
-            [Command::NewLink { index: 3, flags: reported }] if *reported == flags
+            &*changes(&bytes).await,
+            [Change::NewLink(Link { index: 3, flags: reported })] if *reported == flags
         );
     }
 
@@ -1032,7 +1040,10 @@ mod tests {
         .await;
 
         assert!(matches!(result, Ok(Dump::Complete)));
-        assert_matches!(&*commands, [Command::NewLink { index: 3, .. }]);
+        assert_matches!(
+            &*commands,
+            [Command::Change(Change::NewLink(Link { index: 3, .. }))]
+        );
     }
 
     #[tokio::test]

@@ -29,24 +29,29 @@ use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 use crate::wsd::devices::Devices;
 
 #[derive(Debug)]
+pub struct InterfaceAddress {
+    pub address: IpNet,
+    pub scope: u8,
+    pub index: u32,
+}
+
+#[derive(Debug)]
+pub struct Link {
+    pub index: u32,
+    pub flags: u32,
+}
+
+#[derive(Debug)]
+pub enum Change {
+    NewAddress(InterfaceAddress),
+    DeleteAddress(InterfaceAddress),
+    NewLink(Link),
+    DeleteLink { index: u32 },
+}
+
+#[derive(Debug)]
 pub enum Command {
-    NewAddress {
-        address: IpNet,
-        scope: u8,
-        index: u32,
-    },
-    DeleteAddress {
-        address: IpNet,
-        scope: u8,
-        index: u32,
-    },
-    NewLink {
-        index: u32,
-        flags: u32,
-    },
-    DeleteLink {
-        index: u32,
-    },
+    Change(Change),
     ClearDevices,
     ListDevices {
         devices_tx: Sender<(DeviceUri, WSDDiscoveredDevice)>,
@@ -193,38 +198,8 @@ where
             };
 
             match command {
-                Command::NewAddress {
-                    address,
-                    scope,
-                    index,
-                } => {
-                    let Ok(interface) = self.add_interface(scope, index) else {
-                        continue;
-                    };
-
-                    self.handle_new_address(NetworkAddress::new(address, Arc::clone(&interface)))
-                        .await;
-                },
-                Command::DeleteAddress {
-                    address,
-                    scope,
-                    index,
-                } => {
-                    let Ok(interface) = self.add_interface(scope, index) else {
-                        continue;
-                    };
-
-                    self.handle_deleted_address(NetworkAddress::new(
-                        address,
-                        Arc::clone(&interface),
-                    ))
-                    .await;
-                },
-                Command::NewLink { index, flags } => {
-                    self.handle_link(index, LinkState::from_flags(flags)).await;
-                },
-                Command::DeleteLink { index } => {
-                    self.handle_deleted_link(index);
+                Command::Change(change) => {
+                    self.handle_change(change).await;
                 },
                 Command::ClearDevices => {
                     if self.config.discovery {
@@ -251,6 +226,41 @@ where
                     self.teardown().await;
                 },
             }
+        }
+    }
+
+    async fn handle_change(&mut self, change: Change) {
+        match change {
+            Change::NewAddress(InterfaceAddress {
+                address,
+                scope,
+                index,
+            }) => {
+                let Ok(interface) = self.add_interface(scope, index) else {
+                    return;
+                };
+
+                self.handle_new_address(NetworkAddress::new(address, interface))
+                    .await;
+            },
+            Change::DeleteAddress(InterfaceAddress {
+                address,
+                scope,
+                index,
+            }) => {
+                let Ok(interface) = self.add_interface(scope, index) else {
+                    return;
+                };
+
+                self.handle_deleted_address(NetworkAddress::new(address, interface))
+                    .await;
+            },
+            Change::NewLink(Link { index, flags }) => {
+                self.handle_link(index, LinkState::from_flags(flags)).await;
+            },
+            Change::DeleteLink { index } => {
+                self.handle_deleted_link(index);
+            },
         }
     }
 
@@ -608,7 +618,9 @@ mod tests {
     use crate::config::{Config, InterfaceFilter};
     use crate::max_size_deque::MaxSizeDeque;
     use crate::network_address::NetworkAddress;
-    use crate::network_handler::{Command, LinkState, NetworkHandler, Reason};
+    use crate::network_handler::{
+        Change, Command, InterfaceAddress, LinkState, NetworkHandler, Reason,
+    };
     use crate::network_interface::{DevName, MockResolveInterfaceName, NetworkInterface};
     use crate::test_utils::{build_config, find_first_non_lo_network_interface};
 
@@ -665,20 +677,20 @@ mod tests {
         let handle = tokio::spawn(async move { network_handler.process_commands().await });
 
         command_tx
-            .send(Command::NewAddress {
+            .send(Command::Change(Change::NewAddress(InterfaceAddress {
                 address: "192.0.2.1/24".parse().unwrap(),
                 scope: 0,
                 index: 7,
-            })
+            })))
             .await
             .unwrap();
 
         command_tx
-            .send(Command::DeleteAddress {
+            .send(Command::Change(Change::DeleteAddress(InterfaceAddress {
                 address: "192.0.2.1/24".parse().unwrap(),
                 scope: 0,
                 index: 7,
-            })
+            })))
             .await
             .unwrap();
 
