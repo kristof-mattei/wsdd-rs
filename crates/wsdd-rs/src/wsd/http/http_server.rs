@@ -77,6 +77,9 @@ fn bind_listener(
     address: SocketAddr,
     interface_index: u32,
 ) -> Result<tokio::net::TcpListener, std::io::Error> {
+    // mirrors mio's backlog for `tokio::net::TcpListener::bind`, https://github.com/tokio-rs/mio/blob/79d1417c94e3a45c8bdd796e5422e22e8c488086/src/net/tcp/listener.rs#L92
+    const LISTEN_BACKLOG: i32 = 128;
+
     let socket = Socket::new(Domain::for_address(address), Type::STREAM, None)?;
 
     socket.set_nonblocking(true)?;
@@ -90,7 +93,7 @@ fn bind_listener(
     }
 
     socket.bind(&address.into())?;
-    socket.listen(128)?;
+    socket.listen(LISTEN_BACKLOG)?;
 
     tokio::net::TcpListener::from_std(socket.into())
 }
