@@ -275,7 +275,49 @@ where
         }
     }
 
+    /// Known entries missing from `state` were deleted while notifications were lost.
     async fn handle_resync(&mut self, state: NetworkState) {
+        let addresses = state
+            .addresses
+            .iter()
+            .map(|address| (address.address, address.index))
+            .collect::<HashSet<_>>();
+
+        let deleted_addresses = self
+            .known_addresses
+            .difference(&addresses)
+            .copied()
+            .collect::<Vec<_>>();
+
+        // before the links, as `handle_deleted_address` only finds handlers on known links
+        for (address, index) in deleted_addresses {
+            let interface = Arc::clone(
+                self.interfaces
+                    .get(&index)
+                    .expect("a known address has a cached interface"),
+            );
+
+            self.handle_deleted_address(NetworkAddress::new(address, interface))
+                .await;
+        }
+
+        let links = state
+            .links
+            .iter()
+            .map(|link| link.index)
+            .collect::<HashSet<_>>();
+
+        let deleted_links = self
+            .links
+            .keys()
+            .filter(|index| !links.contains(*index))
+            .copied()
+            .collect::<Vec<_>>();
+
+        for index in deleted_links {
+            self.handle_deleted_link(index);
+        }
+
         for link in state.links {
             self.handle_change(Change::NewLink(link)).await;
         }
@@ -1074,5 +1116,55 @@ mod tests {
                 .known_addresses
                 .contains(&(address.address, 2))
         );
+    }
+
+    #[tokio::test]
+    async fn address_missing_from_a_resync_is_forgotten() {
+        let mut network_handler = build_network_handler(build_config(Uuid::now_v7(), 1));
+
+        let kept = address_on_eth0();
+        let deleted =
+            NetworkAddress::new("192.0.2.2/24".parse().unwrap(), Arc::clone(&kept.interface));
+
+        network_handler.handle_new_address(kept.clone()).await;
+        network_handler.handle_new_address(deleted).await;
+        network_handler
+            .interfaces
+            .insert(2, Arc::clone(&kept.interface));
+
+        network_handler
+            .handle_resync(NetworkState {
+                links: vec![],
+                addresses: vec![InterfaceAddress {
+                    address: kept.address,
+                    scope: 0,
+                    index: 2,
+                }],
+            })
+            .await;
+
+        assert_eq!(
+            network_handler.known_addresses.iter().collect::<Vec<_>>(),
+            [&(kept.address, 2)]
+        );
+    }
+
+    #[tokio::test]
+    async fn link_missing_from_a_resync_is_unknown() {
+        let mut network_handler = build_network_handler(build_config(Uuid::now_v7(), 1));
+        network_handler.links.insert(2, LinkState::Usable);
+        network_handler.links.insert(3, LinkState::Usable);
+
+        network_handler
+            .handle_resync(NetworkState {
+                links: vec![Link {
+                    index: 3,
+                    flags: (libc::IFF_RUNNING | libc::IFF_MULTICAST).cast_unsigned(),
+                }],
+                addresses: vec![],
+            })
+            .await;
+
+        assert_eq!(network_handler.links.keys().collect::<Vec<_>>(), [&3]);
     }
 }
