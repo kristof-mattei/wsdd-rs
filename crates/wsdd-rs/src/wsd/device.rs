@@ -320,68 +320,68 @@ fn extract_host_props<R>(reader: &mut XmlReader<R>) -> Result<Option<HostProps>,
 where
     R: Read,
 {
-    // we are inside of the relationship metadata section, which contains ... RELATIONSHIPS
-    // for each relationship, we find the one with Type=Host
-    loop {
-        // we'll need to ensure that the depth is always the same
-        let Some((_element, attributes)) = find_optional_child(
-            reader,
-            Some(constants::XML_WSDP_NAMESPACE),
-            constants::WSDP_RELATIONSHIP,
-        )?
-        else {
-            // no `wsdp:Relationship` to be found`
+    // we are inside of the relationship metadata section
+    let Some((_element, attributes)) = find_optional_child(
+        reader,
+        Some(constants::XML_WSDP_NAMESPACE),
+        constants::WSDP_RELATIONSHIP,
+    )?
+    else {
+        // no `wsdp:Relationship` to be found`
+        return Ok(None);
+    };
+
+    let relationship_type = attributes
+        .iter()
+        .find(|attribute| {
+            attribute.name.namespace_ref().is_none() && attribute.name.local_name == "Type"
+        })
+        .map(|attribute| &*attribute.value);
+
+    match relationship_type {
+        Some(constants::WSDP_RELATIONSHIP_TYPE_HOST) => {},
+        Some(relationship_type) => {
+            event!(
+                Level::DEBUG,
+                r#type = relationship_type,
+                "unknown relationship type"
+            );
+
             return Ok(None);
+        },
+        None => {
+            return Ok(None);
+        },
+    }
+
+    let Some((_name, _attributes)) =
+        find_optional_child(reader, Some(constants::XML_WSDP_NAMESPACE), "Host")?
+    else {
+        // no `Host` to be found, so we have just closed the `WSDP_RELATIONSHIP`
+        // we are now in `<wsx:MetadataSection>`
+        return Ok(None);
+    };
+
+    let (types, display_name_belongs_to) = read_types_and_pub_computer(reader)?;
+
+    // we're now back in `<wsdp:Relationship Type=$WSDP_RELATIONSHIP_TYPE_HOST>`
+    // and we have to go one level up to `<wsx:MetadataSection>`
+    // so we pop the closing element `</wsdp:Relationship Type=$WSDP_RELATIONSHIP_TYPE_HOST>`
+    loop {
+        let event = reader.next()?;
+
+        let XmlEvent::EndElement { name } = event else {
+            continue;
         };
 
-        for attribute in attributes {
-            if attribute.name.namespace_ref().is_none() && attribute.name.local_name == "Type" {
-                if attribute.value == constants::WSDP_RELATIONSHIP_TYPE_HOST {
-                    match find_optional_child(reader, Some(constants::XML_WSDP_NAMESPACE), "Host")?
-                    {
-                        Some((_name, _attributes)) => {
-                            let (types, display_name_belongs_to) =
-                                read_types_and_pub_computer(reader)?;
-
-                            // we're now back in `<wsdp:Relationship Type=$WSDP_RELATIONSHIP_TYPE_HOST>`
-                            // and we have to go one level up to `<wsx:MetadataSection>`
-                            // so we pop the closing element `</wsdp:Relationship Type=$WSDP_RELATIONSHIP_TYPE_HOST>`
-                            loop {
-                                let event = reader.next()?;
-
-                                let XmlEvent::EndElement { name } = event else {
-                                    continue;
-                                };
-
-                                if name.borrow().local_name == constants::WSDP_RELATIONSHIP
-                                    && name.namespace_ref() == Some(constants::XML_WSDP_NAMESPACE)
-                                {
-                                    break;
-                                }
-                            }
-
-                            return Ok(Some((types, display_name_belongs_to)));
-                        },
-
-                        None => {
-                            // no `Host` to be found, so we have just closed the `WSDP_RELATIONSHIP`
-                            // we are now in `<wsx:MetadataSection>`
-
-                            return Ok(None);
-                        },
-                    }
-                } else {
-                    event!(
-                        Level::DEBUG,
-                        r#type = &attribute.value,
-                        "unknown relationship type"
-                    );
-
-                    break;
-                };
-            }
+        if name.borrow().local_name == constants::WSDP_RELATIONSHIP
+            && name.namespace_ref() == Some(constants::XML_WSDP_NAMESPACE)
+        {
+            break;
         }
     }
+
+    Ok(Some((types, display_name_belongs_to)))
 }
 
 fn read_types_and_pub_computer<R>(reader: &mut XmlReader<R>) -> ExtractHostPropsResult
