@@ -49,9 +49,17 @@ pub enum Change {
     DeleteLink { index: u32 },
 }
 
+/// Every link and address of one complete dump.
+#[derive(Debug)]
+pub struct NetworkState {
+    pub links: Vec<Link>,
+    pub addresses: Vec<InterfaceAddress>,
+}
+
 #[derive(Debug)]
 pub enum Command {
     Change(Change),
+    Resync(NetworkState),
     ClearDevices,
     ListDevices {
         devices_tx: Sender<(DeviceUri, WSDDiscoveredDevice)>,
@@ -201,6 +209,9 @@ where
                 Command::Change(change) => {
                     self.handle_change(change).await;
                 },
+                Command::Resync(state) => {
+                    self.handle_resync(state).await;
+                },
                 Command::ClearDevices => {
                     if self.config.discovery {
                         self.devices.write().await.clear_discovered();
@@ -261,6 +272,16 @@ where
             Change::DeleteLink { index } => {
                 self.handle_deleted_link(index);
             },
+        }
+    }
+
+    async fn handle_resync(&mut self, state: NetworkState) {
+        for link in state.links {
+            self.handle_change(Change::NewLink(link)).await;
+        }
+
+        for address in state.addresses {
+            self.handle_change(Change::NewAddress(address)).await;
         }
     }
 
@@ -619,7 +640,7 @@ mod tests {
     use crate::max_size_deque::MaxSizeDeque;
     use crate::network_address::NetworkAddress;
     use crate::network_handler::{
-        Change, Command, InterfaceAddress, LinkState, NetworkHandler, Reason,
+        Change, Command, InterfaceAddress, Link, LinkState, NetworkHandler, NetworkState, Reason,
     };
     use crate::network_interface::{DevName, MockResolveInterfaceName, NetworkInterface};
     use crate::test_utils::{build_config, find_first_non_lo_network_interface};
@@ -1017,6 +1038,41 @@ mod tests {
         assert_matches!(
             network_handler.is_address_handled(&address_on_eth0()),
             Err(Reason::UnknownLink)
+        );
+    }
+
+    #[tokio::test]
+    async fn resync_applies_its_links_and_addresses() {
+        let mut network_handler = build_network_handler(build_config(Uuid::now_v7(), 1));
+
+        let address = address_on_eth0();
+
+        network_handler
+            .interfaces
+            .insert(2, Arc::clone(&address.interface));
+
+        network_handler
+            .handle_resync(NetworkState {
+                links: vec![Link {
+                    index: 2,
+                    flags: (libc::IFF_RUNNING | libc::IFF_MULTICAST).cast_unsigned(),
+                }],
+                addresses: vec![InterfaceAddress {
+                    address: address.address,
+                    scope: 0,
+                    index: 2,
+                }],
+            })
+            .await;
+
+        assert!(matches!(
+            network_handler.links.get(&2),
+            Some(&LinkState::Usable)
+        ));
+        assert!(
+            network_handler
+                .known_addresses
+                .contains(&(address.address, 2))
         );
     }
 }

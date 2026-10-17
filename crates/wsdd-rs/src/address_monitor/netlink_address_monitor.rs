@@ -23,7 +23,7 @@ use zerocopy::IntoBytes as _;
 use zerocopy::byteorder::native_endian::{I32, U16, U32};
 
 use crate::config::{BindTo, Config};
-use crate::network_handler::{Change, Command, InterfaceAddress, Link};
+use crate::network_handler::{Change, Command, InterfaceAddress, Link, NetworkState};
 use crate::rtnetlink::{
     AddressValue, Attribute, Attributes, Message, Messages, ReceiveBuffer, RecvBuf,
 };
@@ -98,16 +98,22 @@ impl NetlinkAddressMonitor {
                 Exit::Cancelled => {
                     return Ok(());
                 },
-                Exit::Resync => {
-                    if let Err(error) =
-                        resync(&self.config, &self.cancellation_token, &self.command_tx).await
-                    {
+                Exit::Resync => match resync(&self.config).await {
+                    Ok(state) => {
+                        let _r = announce(
+                            Command::Resync(state),
+                            &self.cancellation_token,
+                            &self.command_tx,
+                        )
+                        .await;
+                    },
+                    Err(error) => {
                         event!(
                             Level::ERROR,
                             ?error,
                             "Failed to read the current network state"
                         );
-                    }
+                    },
                 },
             }
         }
@@ -192,11 +198,7 @@ where
     }
 }
 
-async fn resync(
-    config: &Config,
-    cancellation_token: &CancellationToken,
-    command_tx: &Sender<Command>,
-) -> Result<(), eyre::Report> {
+async fn resync(config: &Config) -> Result<NetworkState, eyre::Report> {
     let socket = netlink_socket(0)?;
 
     let mut buffer = ReceiveBuffer::new();
@@ -204,56 +206,64 @@ async fn resync(
     loop {
         request_links(&socket)?;
 
-        let links = forward_dump(&socket, &mut buffer, cancellation_token, command_tx).await?;
+        let links = read_dump(&socket, &mut buffer).await?;
 
         request_addresses(config, &socket)?;
 
-        let addresses = forward_dump(&socket, &mut buffer, cancellation_token, command_tx).await?;
+        let addresses = read_dump(&socket, &mut buffer).await?;
 
-        if let (Dump::Complete, Dump::Complete) = (links, addresses) {
-            return Ok(());
+        if let (Dump::Complete(links), Dump::Complete(addresses)) = (links, addresses) {
+            return Ok(network_state(links.into_iter().chain(addresses)));
         }
     }
 }
 
 enum Dump {
-    Complete,
+    Complete(Vec<Change>),
     Interrupted,
 }
 
-async fn forward_dump<R>(
-    recv_buf: R,
-    buffer: &mut ReceiveBuffer,
-    cancellation_token: &CancellationToken,
-    command_tx: &Sender<Command>,
-) -> Result<Dump, eyre::Report>
+async fn read_dump<R>(recv_buf: R, buffer: &mut ReceiveBuffer) -> Result<Dump, eyre::Report>
 where
     R: for<'a> RecvBuf<&'a mut [MaybeUninit<u8>]>,
 {
-    let mut dump = Dump::Complete;
+    let mut changes = Vec::new();
+    let mut interrupted = false;
 
     loop {
         let messages = buffer.receive(&recv_buf).await?;
 
         let received = parse_netlink_response(messages)?;
 
-        for change in received.changes {
-            if announce(Command::Change(change), cancellation_token, command_tx)
-                .await
-                .is_break()
-            {
-                return Err(eyre::Report::msg("Command receiver gone"));
-            }
-        }
-
-        if received.dump_interrupted {
-            dump = Dump::Interrupted;
-        }
+        changes.extend(received.changes);
+        interrupted |= received.dump_interrupted;
 
         if received.done {
-            return Ok(dump);
+            return Ok(if interrupted {
+                Dump::Interrupted
+            } else {
+                Dump::Complete(changes)
+            });
         }
     }
+}
+
+fn network_state(changes: impl Iterator<Item = Change>) -> NetworkState {
+    let mut state = NetworkState {
+        links: Vec::new(),
+        addresses: Vec::new(),
+    };
+
+    for change in changes {
+        match change {
+            Change::NewLink(link) => state.links.push(link),
+            Change::NewAddress(address) => state.addresses.push(address),
+            // a dump only lists what exists
+            Change::DeleteLink { .. } | Change::DeleteAddress(_) => {},
+        }
+    }
+
+    state
 }
 
 fn netlink_socket(groups: u32) -> Result<tokio::net::UdpSocket, std::io::Error> {
@@ -556,14 +566,16 @@ mod tests {
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio::sync::watch;
     use tokio_util::sync::CancellationToken;
+    use uuid::Uuid;
     use zerocopy::IntoBytes as _;
     use zerocopy::byteorder::native_endian::{I32, U16, U32};
 
     use crate::address_monitor::netlink_address_monitor::{
-        Dump, Exit, SIZE_OF_SOCKADDR_NL, SkippedStates, forward_dump, process_changes,
+        Dump, Exit, SIZE_OF_SOCKADDR_NL, SkippedStates, process_changes, read_dump, resync,
     };
     use crate::network_handler::{Change, Command, InterfaceAddress, Link};
     use crate::rtnetlink::{RTA_ALIGNTO, ReceiveBuffer, RecvBuf};
+    use crate::test_utils::build_config;
     use crate::test_utils::netlink::{
         done_message, error_message, interrupted_message, link_message, netlink_message,
     };
@@ -1036,51 +1048,37 @@ mod tests {
         }
     }
 
-    async fn dump(
-        datagrams: Vec<Vec<u8>>,
-    ) -> (Result<Dump, color_eyre::eyre::Report>, Vec<Command>) {
-        let (command_tx, mut command_rx) = tokio::sync::mpsc::channel::<Command>(10);
-
+    async fn dump(datagrams: Vec<Vec<u8>>) -> Result<Dump, color_eyre::eyre::Report> {
         let socket = DatagramSocket {
             datagrams: RefCell::new(datagrams.into_iter().map(Ok).collect()),
         };
 
         let mut buffer = ReceiveBuffer::new();
 
-        let result =
-            forward_dump(&socket, &mut buffer, &CancellationToken::new(), &command_tx).await;
-
-        let mut commands = Vec::new();
-
-        while let Ok(command) = command_rx.try_recv() {
-            commands.push(command);
-        }
-
-        (result, commands)
+        read_dump(&socket, &mut buffer).await
     }
 
     #[tokio::test]
-    async fn dump_is_announced_until_done() {
+    async fn dump_is_read_until_done() {
         let flags = (IFF_UP | IFF_RUNNING | IFF_MULTICAST).cast_unsigned();
 
-        let (result, commands) = dump(vec![
+        let Ok(Dump::Complete(changes)) = dump(vec![
             link_message(RTM_NEWLINK, AF_UNSPEC, 3, flags),
             done_message(),
         ])
-        .await;
+        .await
+        else {
+            panic!("Dump not complete");
+        };
 
-        assert!(matches!(result, Ok(Dump::Complete)));
-        assert_matches!(
-            &*commands,
-            [Command::Change(Change::NewLink(Link { index: 3, .. }))]
-        );
+        assert_matches!(&*changes, [Change::NewLink(Link { index: 3, .. })]);
     }
 
     #[tokio::test]
     async fn interrupted_dump_is_reported() {
         let flags = (IFF_UP | IFF_RUNNING | IFF_MULTICAST).cast_unsigned();
 
-        let (result, _) = dump(vec![
+        let result = dump(vec![
             interrupted_message(&link_message(RTM_NEWLINK, AF_UNSPEC, 3, flags)),
             done_message(),
         ])
@@ -1091,8 +1089,16 @@ mod tests {
 
     #[tokio::test]
     async fn failed_dump_returns_its_error() {
-        let (result, _) = dump(vec![error_message(-EINVAL)]).await;
+        let result = dump(vec![error_message(-EINVAL)]).await;
 
         assert!(result.is_err());
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn resync_reports_the_loopback_link() {
+        let state = resync(&build_config(Uuid::now_v7(), 1)).await.unwrap();
+
+        assert!(state.links.iter().any(|link| link.index == 1));
     }
 }
