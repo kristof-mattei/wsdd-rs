@@ -62,6 +62,10 @@ pub enum HeaderParsingError {
     DuplicateHeader,
     #[error("Unsupported XML version: {}", .0)]
     UnsupportedXmlVersion(XmlVersion),
+    #[error("Not a SOAP 1.2 envelope: {}", .0)]
+    NotASoap12Envelope(Box<str>),
+    #[error("Unexpected child of soap:Envelope: {}", .0)]
+    UnexpectedEnvelopeChild(Box<str>),
 }
 
 impl From<xml::reader::Error> for HeaderParsingError {
@@ -176,12 +180,8 @@ where
             .create_reader(raw),
     );
 
-    let mut header = None;
-    let mut has_body = false;
-
-    // as per https://www.w3.org/TR/soap12/#soapenvelope, the Header, Body order is fixed. We don't need to code for Body, Header
     #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
-    loop {
+    let root = loop {
         // this is the only loop that should hit `XmlEvent::StartDocument` and `XmlEvent::Doctype`
         // in all other parsing functions we could theoretically mark them as `unreachable!()`
         match reader.next().map_err(HeaderParsingError::from)? {
@@ -191,23 +191,62 @@ where
             } => {
                 return Err(HeaderParsingError::UnsupportedXmlVersion(version).into());
             },
-            XmlEvent::StartElement { name, .. }
-                if name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE) =>
-            {
-                if name.local_name == "Header" {
-                    if header.is_some() {
-                        return Err(HeaderParsingError::DuplicateHeader.into());
-                    }
-
-                    header = Some(parse_header(&mut reader)?);
-                } else if name.local_name == "Body" {
-                    has_body = true;
-                    break;
-                } else {
-                    // ...
-                }
+            XmlEvent::StartElement { name, .. } => {
+                break name;
             },
             XmlEvent::EndDocument => {
+                return Err(HeaderParsingError::from(XmlError::MissingElement(Box::from(
+                    "soap:Envelope",
+                )))
+                .into());
+            },
+            _ => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
+            },
+        }
+    };
+
+    // the expanded name of the document element identifies a SOAP 1.2 message, see documentation/soap12-part1.pdf, 2.8
+    if root.namespace_ref() != Some(constants::XML_SOAP_NAMESPACE) || root.local_name != "Envelope"
+    {
+        return Err(
+            HeaderParsingError::NotASoap12Envelope(root.to_string().into_boxed_str()).into(),
+        );
+    }
+
+    let mut header = None;
+    let mut has_body = false;
+
+    // `soap:Envelope` holds an optional `soap:Header` and a mandatory `soap:Body`, in that order, see documentation/soap12-part1.pdf, 5.1
+    // every element here is a child of `soap:Envelope`, because `parse_header` reads up to and including `</soap:Header>`
+    #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
+    loop {
+        match reader.next().map_err(HeaderParsingError::from)? {
+            XmlEvent::StartElement { name, .. }
+                if name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE)
+                    && name.local_name == "Header" =>
+            {
+                if header.is_some() {
+                    return Err(HeaderParsingError::DuplicateHeader.into());
+                }
+
+                header = Some(parse_header(&mut reader)?);
+            },
+            XmlEvent::StartElement { name, .. }
+                if name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE)
+                    && name.local_name == "Body" =>
+            {
+                has_body = true;
+                break;
+            },
+            XmlEvent::StartElement { name, .. } => {
+                return Err(HeaderParsingError::UnexpectedEnvelopeChild(
+                    name.to_string().into_boxed_str(),
+                )
+                .into());
+            },
+            XmlEvent::EndElement { .. } | XmlEvent::EndDocument => {
                 break;
             },
             _ => {
@@ -599,6 +638,65 @@ mod tests {
             deconstruct_raw(probe.as_bytes()).err(),
             Some(MessageHandlerError::HeaderError(
                 HeaderParsingError::UnsupportedXmlVersion(XmlVersion::Version11)
+            ))
+        );
+    }
+
+    /// A Probe whose `soap:Envelope` also declares `xmlns:x="urn:example"` and `xmlns:s11` for SOAP 1.1.
+    fn probe_with_extra_namespaces() -> String {
+        message(constants::WSD_PROBE, "", "<wsd:Probe />").replace(
+            "xmlns:soap",
+            r#"xmlns:x="urn:example" xmlns:s11="http://schemas.xmlsoap.org/soap/envelope/" xmlns:soap"#,
+        )
+    }
+
+    #[test]
+    fn rejects_root_other_than_soap_envelope() {
+        let probe = probe_with_extra_namespaces().replace("soap:Envelope", "x:NotAnEnvelope");
+
+        assert_matches!(
+            deconstruct_raw(probe.as_bytes()).err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::NotASoap12Envelope(_)
+            ))
+        );
+    }
+
+    #[test]
+    fn rejects_soap_1_1_envelope() {
+        let probe = probe_with_extra_namespaces().replace("soap:Envelope", "s11:Envelope");
+
+        assert_matches!(
+            deconstruct_raw(probe.as_bytes()).err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::NotASoap12Envelope(_)
+            ))
+        );
+    }
+
+    #[test]
+    fn rejects_header_and_body_inside_another_element() {
+        let probe = probe_with_extra_namespaces()
+            .replace("<soap:Header>", "<x:Wrapper><soap:Header>")
+            .replace("</soap:Body>", "</soap:Body></x:Wrapper>");
+
+        assert_matches!(
+            deconstruct_raw(probe.as_bytes()).err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::UnexpectedEnvelopeChild(_)
+            ))
+        );
+    }
+
+    #[test]
+    fn rejects_element_between_header_and_body() {
+        let probe =
+            probe_with_extra_namespaces().replace("</soap:Header>", "</soap:Header><x:Extra />");
+
+        assert_matches!(
+            deconstruct_raw(probe.as_bytes()).err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::UnexpectedEnvelopeChild(_)
             ))
         );
     }
