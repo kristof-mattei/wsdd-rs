@@ -318,6 +318,35 @@ fn require_app_sequence(header: &Header) -> Result<AppSequence, HeaderParsingErr
     }
 }
 
+/// Reads past `</soap:Body>`, then requires `</soap:Envelope>`, see documentation/soap12-part1.pdf, 5.1.
+pub fn finish_envelope<R>(reader: &mut XmlReader<R>) -> Result<(), HeaderParsingError>
+where
+    R: Read,
+{
+    // `soap:Body` is at depth 2, and a body parser can stop anywhere inside it
+    while reader.depth() > 1 {
+        reader.next()?;
+    }
+
+    #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
+    loop {
+        match reader.next()? {
+            XmlEvent::StartElement { name, .. } => {
+                return Err(HeaderParsingError::UnexpectedEnvelopeChild(
+                    name.to_string().into_boxed_str(),
+                ));
+            },
+            XmlEvent::EndElement { .. } | XmlEvent::EndDocument => {
+                return Ok(());
+            },
+            _ => {
+                // these events are squelched by the parser config, or they're valid, but we ignore them
+                // or they just won't occur
+            },
+        }
+    }
+}
+
 fn parse_message_body(
     header: &Header,
     mut reader: XmlReader<&[u8]>,
@@ -351,6 +380,8 @@ fn parse_message_body(
         constants::WSD_RESOLVE => Ok(soap::parser::resolve::parse_resolve(&mut reader)?.into()),
         action => Err(MessageHandlerError::UnsupportedAction(Box::from(action))),
     }?;
+
+    finish_envelope(&mut reader)?;
 
     Ok(response)
 }
@@ -695,6 +726,40 @@ mod tests {
 
         assert_matches!(
             deconstruct_raw(probe.as_bytes()).err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::UnexpectedEnvelopeChild(_)
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_element_after_body() {
+        let probe =
+            probe_with_extra_namespaces().replace("</soap:Body>", "</soap:Body><x:Extra />");
+
+        let result = handler_for_tests(8)
+            .deconstruct_message(&probe, SOURCE)
+            .await;
+
+        assert_matches!(
+            result.err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::UnexpectedEnvelopeChild(_)
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_element_after_body_of_get() {
+        let get = message(constants::WSD_GET, "", "").replace(
+            "</soap:Body>",
+            r#"</soap:Body><x:Extra xmlns:x="urn:example" />"#,
+        );
+
+        let result = handler_for_tests(8).deconstruct_http_message(&get).await;
+
+        assert_matches!(
+            result.err(),
             Some(MessageHandlerError::HeaderError(
                 HeaderParsingError::UnexpectedEnvelopeChild(_)
             ))

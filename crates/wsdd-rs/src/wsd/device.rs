@@ -259,6 +259,8 @@ impl WSDDiscoveredDevice {
             }
         }
 
+        parser::finish_envelope(&mut reader)?;
+
         Ok(())
     }
 }
@@ -480,6 +482,7 @@ mod tests {
     use xml::reader::EventReader;
 
     use crate::constants;
+    use crate::soap::parser::HeaderParsingError;
     use crate::wsd::device::{
         WSDDiscoveredDevice, extract_wsdp_props, read_types_and_pub_computer,
     };
@@ -577,6 +580,21 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn rejects_element_after_body() {
+        let get_response = get_response(&[HOST_RELATIONSHIP]).replace(
+            "</soap:Body>",
+            r#"</soap:Body><x:Extra xmlns:x="urn:example" />"#,
+        );
+
+        let error = device_from(&get_response).map(|_| ()).unwrap_err();
+
+        assert_matches!(
+            error.downcast_ref::<HeaderParsingError>(),
+            Some(HeaderParsingError::UnexpectedEnvelopeChild(_))
+        );
     }
 
     #[test]
