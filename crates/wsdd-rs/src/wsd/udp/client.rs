@@ -2152,7 +2152,6 @@ mod tests {
                 constants::WSD_MAX_KNOWN_MESSAGES,
             ))),
         )
-        .await
         .unwrap();
 
         let xaddrs = vec![
