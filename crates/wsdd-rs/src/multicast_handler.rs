@@ -1,4 +1,5 @@
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use color_eyre::eyre::{self, Context as _};
@@ -427,6 +428,16 @@ impl MulticastHandler {
             .set_multicast_ttl_v4(config.hoplimit.into())
             .wrap_err("Failed to set IP_MULTICAST_TTL")?;
 
+        // IPv4 binds have no scope, and another interface can have the same address
+        // this comes after `IP_MULTICAST_IF`, which resolves that address to one of those interfaces and fails on a socket bound to another
+        mc_local_port_socket
+            .bind_device_by_index_v4(NonZeroU32::new(index))
+            .wrap_err("Failed to bind to the interface")?;
+
+        uc_wsd_port_socket
+            .bind_device_by_index_v4(NonZeroU32::new(index))
+            .wrap_err("Failed to bind to the interface")?;
+
         mc_local_port_socket
             .bind(&(SocketAddrV4::new(ipv4_net.addr(), config.source_port)).into())
             .wrap_err("Failed to bind to the socket")?;
@@ -503,16 +514,13 @@ impl MulticastHandler {
         let result = self
             .http_server
             .get_or_try_init(|| async {
-                let server = WSDHttpServer::init(
+                WSDHttpServer::init(
                     self.network_address.clone(),
                     self.cancellation_token.child_token(),
                     Arc::clone(&self.config),
                     self.http_listen_address,
                     Arc::clone(&self.recent_messages),
                 )
-                .await;
-
-                server
             })
             .await;
 
@@ -728,22 +736,57 @@ where
 #[cfg(test)]
 mod tests {
     use std::net::Ipv4Addr;
+    use std::num::NonZeroU32;
     use std::sync::Arc;
 
-    use ipnet::IpNet;
+    use ipnet::{IpNet, Ipv4Net};
     use libc::RT_SCOPE_SITE;
+    use pretty_assertions::assert_eq;
+    use socket2::Domain;
     use tokio::net::UdpSocket;
     use tokio::sync::oneshot;
     use tokio::time::Instant;
+    use uuid::Uuid;
 
     use crate::constants;
     use crate::multicast_handler::{
-        MessageSender, MulticastMessageSplitter, OutgoingMulticastMessage,
+        MessageSender, MulticastHandler, MulticastMessageSplitter, OutgoingMulticastMessage,
+        create_sockets,
     };
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
     use crate::soap::MulticastMessage;
+    use crate::test_utils::{build_config, find_first_non_lo_network_interface};
     use crate::udp_socket_with_addr::UdpSocketWithAddr;
+
+    #[cfg_attr(not(miri), test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    fn ipv4_sockets_bind_to_their_interface_when_another_interface_has_the_address() {
+        let (name, index) = find_first_non_lo_network_interface().unwrap();
+
+        let sockets = create_sockets(Domain::IPV4).unwrap();
+
+        MulticastHandler::init_v4(
+            Ipv4Net::new(Ipv4Addr::LOCALHOST, 8).unwrap(),
+            Arc::new(NetworkInterface::new_with_index(
+                name.into_string(),
+                RT_SCOPE_SITE,
+                index,
+            )),
+            &sockets,
+            &build_config(Uuid::now_v7(), 1_742_000_334),
+        )
+        .unwrap();
+
+        assert_eq!(
+            sockets.mc_local_port_socket.device_index_v4().unwrap(),
+            NonZeroU32::new(index)
+        );
+        assert_eq!(
+            sockets.uc_wsd_port_socket.device_index_v4().unwrap(),
+            NonZeroU32::new(index)
+        );
+    }
 
     #[cfg_attr(not(miri), tokio::test)]
     #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]

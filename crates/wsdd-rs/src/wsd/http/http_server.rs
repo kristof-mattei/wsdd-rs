@@ -1,8 +1,10 @@
 use std::net::SocketAddr;
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use axum::Router;
 use color_eyre::eyre;
+use socket2::{Domain, Socket, Type};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
@@ -24,7 +26,7 @@ pub struct WSDHttpServer {
 }
 
 impl WSDHttpServer {
-    pub async fn init(
+    pub fn init(
         bound_to: NetworkAddress,
         cancellation_token: CancellationToken,
         config: Arc<Config>,
@@ -35,7 +37,7 @@ impl WSDHttpServer {
 
         event!(Level::DEBUG, ?http_listen_address, "Trying to bind");
 
-        let listener = tokio::net::TcpListener::bind(http_listen_address).await?;
+        let listener = bind_listener(http_listen_address, bound_to.interface.index())?;
 
         let http_bound_to = listener.local_addr()?;
 
@@ -71,6 +73,31 @@ impl WSDHttpServer {
     }
 }
 
+fn bind_listener(
+    address: SocketAddr,
+    interface_index: u32,
+) -> Result<tokio::net::TcpListener, std::io::Error> {
+    // mirrors mio's backlog for `tokio::net::TcpListener::bind`, https://github.com/tokio-rs/mio/blob/79d1417c94e3a45c8bdd796e5422e22e8c488086/src/net/tcp/listener.rs#L92
+    const LISTEN_BACKLOG: i32 = 128;
+
+    let socket = Socket::new(Domain::for_address(address), Type::STREAM, None)?;
+
+    socket.set_nonblocking(true)?;
+    socket.set_reuse_address(true)?;
+
+    match address {
+        // IPv4 binds have no scope, and another interface can have the same address
+        SocketAddr::V4(_) => socket.bind_device_by_index_v4(NonZeroU32::new(interface_index))?,
+        // the scope id binds the socket to its interface
+        SocketAddr::V6(_) => {},
+    }
+
+    socket.bind(&address.into())?;
+    socket.listen(LISTEN_BACKLOG)?;
+
+    tokio::net::TcpListener::from_std(socket.into())
+}
+
 /// Set up server on a bound listener, with a router, and a cancellation token for graceful shutdown.
 ///
 /// # Errors
@@ -97,7 +124,7 @@ mod tests {
     use http::StatusCode;
     use ipnet::IpNet;
     use libc::RT_SCOPE_SITE;
-    use pretty_assertions::assert_eq;
+    use pretty_assertions::{assert_eq, assert_matches};
     use tokio::sync::RwLock;
     use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
@@ -105,10 +132,26 @@ mod tests {
     use crate::constants::{self, WSD_MAX_KNOWN_MESSAGES};
     use crate::max_size_deque::MaxSizeDeque;
     use crate::network_address::NetworkAddress;
-    use crate::network_interface::NetworkInterface;
-    use crate::test_utils::build_config;
+    use crate::network_interface::{NetworkInterface, if_nametoindex};
     use crate::test_utils::xml::to_string_pretty;
-    use crate::wsd::http::http_server::WSDHttpServer;
+    use crate::test_utils::{build_config, find_first_non_lo_network_interface};
+    use crate::wsd::http::http_server::{WSDHttpServer, bind_listener};
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn ipv4_listeners_on_different_interfaces_share_an_address() {
+        let (_name, index) = find_first_non_lo_network_interface().unwrap();
+
+        let first = bind_listener(
+            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)),
+            if_nametoindex("lo").unwrap(),
+        )
+        .unwrap();
+
+        let second = bind_listener(first.local_addr().unwrap(), index);
+
+        assert_matches!(second, Ok(_));
+    }
 
     #[cfg_attr(not(miri), tokio::test)]
     #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
@@ -123,14 +166,17 @@ mod tests {
         let http_server = WSDHttpServer::init(
             NetworkAddress::new(
                 IpNet::new(host_ip.into(), 8).unwrap(),
-                Arc::new(NetworkInterface::new_with_index("lo", RT_SCOPE_SITE, 5)),
+                Arc::new(NetworkInterface::new_with_index(
+                    "lo",
+                    RT_SCOPE_SITE,
+                    if_nametoindex("lo").unwrap(),
+                )),
             ),
             cancellation_token.child_token(),
             Arc::clone(&host_config),
             host_http_listening_address,
             Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES))),
         )
-        .await
         .unwrap();
 
         let body = format!(
@@ -185,14 +231,17 @@ mod tests {
         let http_server = WSDHttpServer::init(
             NetworkAddress::new(
                 IpNet::new(host_ip.into(), 8).unwrap(),
-                Arc::new(NetworkInterface::new_with_index("lo", RT_SCOPE_SITE, 5)),
+                Arc::new(NetworkInterface::new_with_index(
+                    "lo",
+                    RT_SCOPE_SITE,
+                    if_nametoindex("lo").unwrap(),
+                )),
             ),
             cancellation_token.child_token(),
             Arc::clone(&host_config),
             host_http_listening_address,
             Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES))),
         )
-        .await
         .unwrap();
 
         // the template's MessageID is fixed, so the same body twice is a duplicate
@@ -281,14 +330,17 @@ mod tests {
         let http_server = WSDHttpServer::init(
             NetworkAddress::new(
                 IpNet::new(host_ip.into(), 8).unwrap(),
-                Arc::new(NetworkInterface::new_with_index("lo", RT_SCOPE_SITE, 5)),
+                Arc::new(NetworkInterface::new_with_index(
+                    "lo",
+                    RT_SCOPE_SITE,
+                    if_nametoindex("lo").unwrap(),
+                )),
             ),
             cancellation_token.child_token(),
             Arc::clone(&host_config),
             host_http_listening_address,
             Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES))),
         )
-        .await
         .unwrap_or_else(|_| panic!("Failed to launch server on {}", host_http_listening_address));
 
         let builder = reqwest::ClientBuilder::new()
@@ -344,14 +396,17 @@ mod tests {
         let http_server = WSDHttpServer::init(
             NetworkAddress::new(
                 IpNet::new(host_ip.into(), 8).unwrap(),
-                Arc::new(NetworkInterface::new_with_index("lo", RT_SCOPE_SITE, 5)),
+                Arc::new(NetworkInterface::new_with_index(
+                    "lo",
+                    RT_SCOPE_SITE,
+                    if_nametoindex("lo").unwrap(),
+                )),
             ),
             cancellation_token.child_token(),
             Arc::clone(&host_config),
             host_http_listening_address,
             Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES))),
         )
-        .await
         .unwrap();
 
         let builder = reqwest::ClientBuilder::new()
