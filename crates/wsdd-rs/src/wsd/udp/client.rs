@@ -316,8 +316,114 @@ fn check_xaddrs(
     XAddrsCheck::Usable(xaddrs)
 }
 
+/// Runs the metadata exchanges of a client loop.
+struct ExchangeRunner {
+    client: reqwest::Client,
+    config: Arc<Config>,
+    devices: Arc<RwLock<Devices>>,
+    bound_to: NetworkAddress,
+}
+
+impl ExchangeRunner {
+    fn new(
+        client: reqwest::Client,
+        config: Arc<Config>,
+        devices: Arc<RwLock<Devices>>,
+        bound_to: NetworkAddress,
+    ) -> Self {
+        Self {
+            client,
+            config,
+            devices,
+            bound_to,
+        }
+    }
+
+    async fn perform(
+        &self,
+        endpoint: &DeviceUri,
+        exchange: Exchange,
+        xaddrs: Vec<XAddr>,
+    ) -> Result<(), eyre::Report> {
+        let body = match build_getmetadata_message(&self.config, endpoint) {
+            Ok(body) => Bytes::from_owner(body),
+            Err(error) => {
+                self.devices
+                    .write()
+                    .await
+                    .finish_exchange(endpoint, exchange);
+
+                return Err(error.into());
+            },
+        };
+
+        for xaddr in xaddrs {
+            let builder = self
+                .client
+                .post(xaddr.url().clone())
+                .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
+                .header("User-Agent", "wsdd-rs");
+
+            let request = async {
+                let response = builder
+                    .body(body.clone())
+                    .timeout(self.config.metadata_timeout)
+                    .send()
+                    .instrument(span!(Level::DEBUG, "http", host = %xaddr.host_str()))
+                    .await?;
+
+                response.error_for_status()?.bytes().await
+            };
+
+            let Some(response) = exchange.run_until_bye(request).await else {
+                self.devices
+                    .write()
+                    .await
+                    .finish_exchange(endpoint, exchange);
+
+                event!(Level::DEBUG, %endpoint, "Bye received during the metadata exchange, aborting it");
+
+                return Ok(());
+            };
+
+            match response {
+                Ok(response) => {
+                    return handle_metadata(
+                        &self.devices,
+                        &response,
+                        endpoint,
+                        exchange,
+                        &xaddr,
+                        &self.bound_to,
+                    )
+                    .await;
+                },
+                Err(error) => {
+                    let url = error.url().map(ToString::to_string);
+                    let url = url.as_deref().unwrap_or("Failed to get URL from error");
+
+                    if error.is_timeout() {
+                        event!(Level::WARN, url, "metadata exchange timed out");
+                    } else {
+                        event!(Level::WARN, ?error, url, "could not fetch metadata");
+                    }
+                },
+            }
+        }
+
+        self.devices
+            .write()
+            .await
+            .finish_exchange(endpoint, exchange);
+
+        event!(Level::WARN, %endpoint, "could not fetch metadata from any XAddr");
+
+        Ok(())
+    }
+}
+
 async fn handle_hello(
-    client: &reqwest::Client,
+    exchanges: &ExchangeRunner,
     config: &Config,
     devices: Arc<RwLock<Devices>>,
     bound_to: &NetworkAddress,
@@ -361,10 +467,7 @@ async fn handle_hello(
         Next::Fetch(exchange, xaddrs) => {
             event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), metadata_version, "Hello");
 
-            perform_metadata_exchange(
-                client, config, devices, bound_to, endpoint, exchange, xaddrs,
-            )
-            .await
+            exchanges.perform(&endpoint, exchange, xaddrs).await
         },
     }
 }
@@ -397,7 +500,7 @@ async fn handle_bye(
 
 #[expect(clippy::too_many_arguments, reason = "WIP")]
 async fn handle_probe_matches(
-    client: &reqwest::Client,
+    exchanges: &ExchangeRunner,
     config: &Config,
     devices: Arc<RwLock<Devices>>,
     bound_to: &NetworkAddress,
@@ -431,7 +534,7 @@ async fn handle_probe_matches(
     for probe_match in matches {
         // one failed match must not drop the others in the same message
         if let Err(error) = handle_probe_match(
-            client,
+            exchanges,
             config,
             Arc::clone(&devices),
             bound_to,
@@ -451,7 +554,7 @@ async fn handle_probe_matches(
 
 #[expect(clippy::too_many_arguments, reason = "WIP")]
 async fn handle_probe_match(
-    client: &reqwest::Client,
+    exchanges: &ExchangeRunner,
     config: &Config,
     devices: Arc<RwLock<Devices>>,
     bound_to: &NetworkAddress,
@@ -493,18 +596,13 @@ async fn handle_probe_match(
         Next::Fetch(exchange, xaddrs) => {
             event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), metadata_version, "ProbeMatch");
 
-            perform_metadata_exchange(
-                client, config, devices, bound_to, endpoint, exchange, xaddrs,
-            )
-            .await
+            exchanges.perform(&endpoint, exchange, xaddrs).await
         },
     }
 }
 
-#[expect(clippy::too_many_arguments, reason = "WIP")]
 async fn handle_resolve_matches(
-    client: &reqwest::Client,
-    config: &Config,
+    exchanges: &ExchangeRunner,
     devices: Arc<RwLock<Devices>>,
     bound_to: &NetworkAddress,
     relates_to: Option<MessageId>,
@@ -559,78 +657,7 @@ async fn handle_resolve_matches(
 
     event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), metadata_version, "ResolveMatch");
 
-    perform_metadata_exchange(
-        client, config, devices, bound_to, endpoint, exchange, xaddrs,
-    )
-    .await
-}
-
-async fn perform_metadata_exchange(
-    client: &reqwest::Client,
-    config: &Config,
-    devices: Arc<RwLock<Devices>>,
-    bound_to: &NetworkAddress,
-    endpoint: DeviceUri,
-    exchange: Exchange,
-    xaddrs: Vec<XAddr>,
-) -> Result<(), eyre::Report> {
-    let body = match build_getmetadata_message(config, &endpoint) {
-        Ok(body) => Bytes::from_owner(body),
-        Err(error) => {
-            devices.write().await.finish_exchange(&endpoint, exchange);
-
-            return Err(error.into());
-        },
-    };
-
-    for xaddr in xaddrs {
-        let builder = client
-            .post(xaddr.url().clone())
-            .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
-            .header("User-Agent", "wsdd-rs");
-
-        let request = async {
-            let response = builder
-                .body(body.clone())
-                .timeout(config.metadata_timeout)
-                .send()
-                .instrument(span!(Level::DEBUG, "http", host = %xaddr.host_str()))
-                .await?;
-
-            response.error_for_status()?.bytes().await
-        };
-
-        let Some(response) = exchange.run_until_bye(request).await else {
-            devices.write().await.finish_exchange(&endpoint, exchange);
-
-            event!(Level::DEBUG, %endpoint, "Bye received during the metadata exchange, aborting it");
-
-            return Ok(());
-        };
-
-        match response {
-            Ok(response) => {
-                return handle_metadata(devices, &response, endpoint, exchange, &xaddr, bound_to)
-                    .await;
-            },
-            Err(error) => {
-                let url = error.url().map(ToString::to_string);
-                let url = url.as_deref().unwrap_or("Failed to get URL from error");
-
-                if error.is_timeout() {
-                    event!(Level::WARN, url, "metadata exchange timed out");
-                } else {
-                    event!(Level::WARN, ?error, url, "could not fetch metadata");
-                }
-            },
-        }
-    }
-
-    devices.write().await.finish_exchange(&endpoint, exchange);
-
-    event!(Level::WARN, %endpoint, "could not fetch metadata from any XAddr");
-
-    Ok(())
+    exchanges.perform(&endpoint, exchange, xaddrs).await
 }
 
 fn build_getmetadata_message(
@@ -643,9 +670,9 @@ fn build_getmetadata_message(
 }
 
 async fn handle_metadata(
-    devices: Arc<RwLock<Devices>>,
+    devices: &RwLock<Devices>,
     meta: &[u8],
-    device_uri: DeviceUri,
+    endpoint: &DeviceUri,
     exchange: Exchange,
     xaddr: &XAddr,
     bound_to: &NetworkAddress,
@@ -653,13 +680,13 @@ async fn handle_metadata(
     let mut devices = devices.write().await;
 
     // another interface's loop can handle a Bye while the exchange runs
-    if devices.finish_exchange(&device_uri, exchange) {
-        event!(Level::DEBUG, %device_uri, "Bye received during the metadata exchange, discarding the metadata");
+    if devices.finish_exchange(endpoint, exchange) {
+        event!(Level::DEBUG, %endpoint, "Bye received during the metadata exchange, discarding the metadata");
 
         return Ok(());
     }
 
-    devices.store(device_uri, meta, xaddr, bound_to)
+    devices.store(endpoint, meta, xaddr, bound_to)
 }
 
 async fn listen_forever(
@@ -680,6 +707,13 @@ async fn listen_forever(
         .interface(bound_to.interface.name())
         .build()
         .expect("WSD Client cannot operate without HTTP Client");
+
+    let exchanges = ExchangeRunner::new(
+        client,
+        Arc::clone(&config),
+        Arc::clone(&devices),
+        bound_to.clone(),
+    );
 
     let mut resolves = HashMap::new();
 
@@ -708,7 +742,7 @@ async fn listen_forever(
         let response = match message {
             ClientMessage::Hello(hello) => {
                 handle_hello(
-                    &client,
+                    &exchanges,
                     &config,
                     Arc::clone(&devices),
                     &bound_to,
@@ -721,7 +755,7 @@ async fn listen_forever(
             ClientMessage::Bye(bye) => handle_bye(Arc::clone(&devices), bye).await,
             ClientMessage::ProbeMatches(probe_matches) => {
                 handle_probe_matches(
-                    &client,
+                    &exchanges,
                     &config,
                     Arc::clone(&devices),
                     &bound_to,
@@ -736,8 +770,7 @@ async fn listen_forever(
             },
             ClientMessage::ResolveMatches(resolve_matches) => {
                 handle_resolve_matches(
-                    &client,
-                    &config,
+                    &exchanges,
                     Arc::clone(&devices),
                     &bound_to,
                     header.relates_to,
@@ -806,9 +839,9 @@ mod tests {
     use crate::wsd::devices::{Devices, Exchange, Observation};
     use crate::wsd::http::http_server::WSDHttpServer;
     use crate::wsd::udp::client::{
-        LastCopy, WSDClient, XAddrsCheck, check_xaddrs, handle_bye, handle_hello, handle_metadata,
-        handle_probe_match, handle_probe_matches, handle_resolve_matches, parse_xaddrs,
-        perform_metadata_exchange,
+        ExchangeRunner, LastCopy, WSDClient, XAddrsCheck, check_xaddrs, handle_bye, handle_hello,
+        handle_metadata, handle_probe_match, handle_probe_matches, handle_resolve_matches,
+        parse_xaddrs,
     };
 
     #[test]
@@ -862,6 +895,19 @@ mod tests {
         (client_config, client_devices)
     }
 
+    fn exchange_runner(
+        config: &Arc<crate::config::Config>,
+        devices: &Arc<RwLock<Devices>>,
+        bound_to: &NetworkAddress,
+    ) -> ExchangeRunner {
+        ExchangeRunner::new(
+            reqwest::ClientBuilder::new().build().unwrap(),
+            Arc::clone(config),
+            Arc::clone(devices),
+            bound_to.clone(),
+        )
+    }
+
     async fn mock_server() -> Server {
         Server::new_with_opts_async(ServerOpts {
             // a host in IPv4 form ensures we bind to an IPv4 address
@@ -902,7 +948,7 @@ mod tests {
 
     /// Returns whether the Hello sent a Resolve.
     async fn hello(
-        config: &crate::config::Config,
+        config: &Arc<crate::config::Config>,
         devices: &Arc<RwLock<Devices>>,
         bound_to: &NetworkAddress,
         endpoint: &DeviceUri,
@@ -925,7 +971,7 @@ mod tests {
 
     /// Returns whether `hello` sent a Resolve.
     async fn receive_hello(
-        config: &crate::config::Config,
+        config: &Arc<crate::config::Config>,
         devices: &Arc<RwLock<Devices>>,
         bound_to: &NetworkAddress,
         hello: Hello,
@@ -933,7 +979,7 @@ mod tests {
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
         handle_hello(
-            &reqwest::ClientBuilder::new().build().unwrap(),
+            &exchange_runner(config, devices, bound_to),
             config,
             Arc::clone(devices),
             bound_to,
@@ -992,15 +1038,15 @@ mod tests {
     }
 
     async fn finish_exchange_with_synology(
-        devices: &Arc<RwLock<Devices>>,
+        devices: &RwLock<Devices>,
         endpoint: &DeviceUri,
         exchange: Exchange,
         bound_to: &NetworkAddress,
     ) -> Result<(), eyre::Report> {
         handle_metadata(
-            Arc::clone(devices),
+            devices,
             synology_metadata().as_bytes(),
-            endpoint.clone(),
+            endpoint,
             exchange,
             &XAddr::try_from("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721")
                 .unwrap(),
@@ -1044,8 +1090,10 @@ mod tests {
 
         let mut resolves = HashMap::new();
 
+        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
+
         let result = handle_hello(
-            &reqwest::ClientBuilder::new().build().unwrap(),
+            &exchanges,
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
@@ -1138,8 +1186,10 @@ mod tests {
 
         let mut resolves = HashMap::new();
 
+        let exchanges = exchange_runner(&client_config, &client_devices, &bound_to);
+
         let result = handle_hello(
-            &reqwest::ClientBuilder::new().build().unwrap(),
+            &exchanges,
             &client_config,
             Arc::clone(&client_devices),
             &bound_to,
@@ -1283,8 +1333,10 @@ mod tests {
 
         let mut resolves = HashMap::new();
 
+        let exchanges = exchange_runner(&client_config, &client_devices, &network_address);
+
         let result = handle_hello(
-            &reqwest::ClientBuilder::new().build().unwrap(),
+            &exchanges,
             &client_config,
             Arc::clone(&client_devices),
             &network_address,
@@ -1550,8 +1602,10 @@ mod tests {
 
         let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(1);
 
+        let exchanges = exchange_runner(&client_config, &client_devices, &network_address);
+
         let result = handle_probe_match(
-            &reqwest::ClientBuilder::new().build().unwrap(),
+            &exchanges,
             &client_config,
             Arc::clone(&client_devices),
             &network_address,
@@ -1597,9 +1651,10 @@ mod tests {
         let mut resolves =
             HashMap::from([(resolve_message_id.clone(), LastCopy::Sent(Instant::now()))]);
 
+        let exchanges = exchange_runner(&client_config, &client_devices, &network_address);
+
         let result = handle_resolve_matches(
-            &reqwest::ClientBuilder::new().build().unwrap(),
-            &client_config,
+            &exchanges,
             Arc::clone(&client_devices),
             &network_address,
             Some(resolve_message_id),
@@ -1671,8 +1726,10 @@ mod tests {
 
         let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(1);
 
+        let exchanges = exchange_runner(&client_config, &client_devices, &network_address);
+
         let result = handle_probe_match(
-            &reqwest::ClientBuilder::new().build().unwrap(),
+            &exchanges,
             &client_config,
             Arc::clone(&client_devices),
             &network_address,
@@ -1718,9 +1775,10 @@ mod tests {
         let mut resolves =
             HashMap::from([(resolve_message_id.clone(), LastCopy::Sent(Instant::now()))]);
 
+        let exchanges = exchange_runner(&client_config, &client_devices, &network_address);
+
         let result = handle_resolve_matches(
-            &reqwest::ClientBuilder::new().build().unwrap(),
-            &client_config,
+            &exchanges,
             Arc::clone(&client_devices),
             &network_address,
             Some(resolve_message_id),
@@ -1998,16 +2056,9 @@ mod tests {
 
         let exchange = client_devices.write().await.start_exchange(&device_uri);
 
-        let result = perform_metadata_exchange(
-            &reqwest::ClientBuilder::new().build().unwrap(),
-            &client_config,
-            Arc::clone(&client_devices),
-            &client_network_address,
-            device_uri.clone(),
-            exchange,
-            xaddrs,
-        )
-        .await;
+        let result = exchange_runner(&client_config, &client_devices, &client_network_address)
+            .perform(&device_uri, exchange, xaddrs)
+            .await;
 
         assert_matches!(result, Ok(()));
 
@@ -2055,19 +2106,15 @@ mod tests {
             bye(&client_devices, &device_uri, AppSequence::new(1, None, 1)).await
         };
 
-        let client = reqwest::ClientBuilder::new().build().unwrap();
+        let exchanges = exchange_runner(
+            &Arc::new(client_config),
+            &client_devices,
+            &client_network_address,
+        );
 
         let exchange = client_devices.write().await.start_exchange(&device_uri);
 
-        let exchange = Box::pin(perform_metadata_exchange(
-            &client,
-            &client_config,
-            Arc::clone(&client_devices),
-            &client_network_address,
-            device_uri.clone(),
-            exchange,
-            vec![xaddr],
-        ));
+        let exchange = Box::pin(exchanges.perform(&device_uri, exchange, vec![xaddr]));
 
         let (result, bye_result, ()) = tokio::time::timeout(Duration::from_secs(10), async {
             tokio::join!(exchange, bye, host)
@@ -2111,16 +2158,9 @@ mod tests {
 
         let exchange = client_devices.write().await.start_exchange(&device_uri);
 
-        let result = perform_metadata_exchange(
-            &reqwest::ClientBuilder::new().build().unwrap(),
-            &client_config,
-            Arc::clone(&client_devices),
-            &client_network_address,
-            device_uri,
-            exchange,
-            xaddrs,
-        )
-        .await;
+        let result = exchange_runner(&client_config, &client_devices, &client_network_address)
+            .perform(&device_uri, exchange, xaddrs)
+            .await;
 
         assert_matches!(result, Ok(()));
 
@@ -2171,16 +2211,9 @@ mod tests {
             .await
             .start_exchange(&host_config.uuid_as_device_uri);
 
-        let result = perform_metadata_exchange(
-            &reqwest::ClientBuilder::new().build().unwrap(),
-            &client_config,
-            Arc::clone(&client_devices),
-            &network_address,
-            host_config.uuid_as_device_uri.clone(),
-            exchange,
-            xaddrs,
-        )
-        .await;
+        let result = exchange_runner(&client_config, &client_devices, &network_address)
+            .perform(&host_config.uuid_as_device_uri, exchange, xaddrs)
+            .await;
 
         http_server.teardown().await;
 
@@ -2320,9 +2353,9 @@ mod tests {
         let exchange = client_devices.write().await.start_exchange(&device_uri);
 
         let result = handle_metadata(
-            Arc::clone(&client_devices),
+            &client_devices,
             metadata.as_bytes(),
-            device_uri.clone(),
+            &device_uri,
             exchange,
             &XAddr::try_from("http://192.168.100.50:8018/wsd").unwrap(),
             &client_network_address,
@@ -2380,9 +2413,9 @@ mod tests {
         let exchange = client_devices.write().await.start_exchange(&device_uri);
 
         let result = handle_metadata(
-            Arc::clone(&client_devices),
+            &client_devices,
             metadata.as_bytes(),
-            device_uri.clone(),
+            &device_uri,
             exchange,
             &XAddr::try_from("http://192.168.100.71:5357/18de7c97-6277-43fe-9552-cac98a7610f5/")
                 .unwrap(),
@@ -2472,8 +2505,10 @@ mod tests {
 
         let mut resolves = HashMap::new();
 
+        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
+
         let result = handle_probe_matches(
-            &reqwest::ClientBuilder::new().build().unwrap(),
+            &exchanges,
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
@@ -2556,8 +2591,10 @@ mod tests {
 
         let mut resolves = HashMap::new();
 
+        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
+
         let result = handle_probe_matches(
-            &reqwest::ClientBuilder::new().build().unwrap(),
+            &exchanges,
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
@@ -2642,8 +2679,10 @@ mod tests {
 
         let mut resolves = HashMap::new();
 
+        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
+
         let result = handle_probe_matches(
-            &reqwest::ClientBuilder::new().build().unwrap(),
+            &exchanges,
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
@@ -2737,8 +2776,10 @@ mod tests {
 
         let mut resolves = HashMap::new();
 
+        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
+
         let result = handle_probe_matches(
-            &reqwest::ClientBuilder::new().build().unwrap(),
+            &exchanges,
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
@@ -2834,9 +2875,10 @@ mod tests {
 
         let resolve_matches = message.into_resolve_matches().unwrap();
 
+        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
+
         let result = handle_resolve_matches(
-            &reqwest::ClientBuilder::new().build().unwrap(),
-            &client_config,
+            &exchanges,
             Arc::clone(&client_devices),
             &client_network_address,
             header.relates_to,
@@ -2888,9 +2930,10 @@ mod tests {
             LastCopy::Sent(Instant::now()),
         )]);
 
+        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
+
         let result = handle_resolve_matches(
-            &reqwest::ClientBuilder::new().build().unwrap(),
-            &client_config,
+            &exchanges,
             Arc::clone(&client_devices),
             &client_network_address,
             header.relates_to,
@@ -2950,9 +2993,10 @@ mod tests {
         let resolve_matches = message.into_resolve_matches().unwrap();
 
         // no resolve with the message's `RelatesTo` was sent by us
+        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
+
         let result = handle_resolve_matches(
-            &reqwest::ClientBuilder::new().build().unwrap(),
-            &client_config,
+            &exchanges,
             Arc::clone(&client_devices),
             &client_network_address,
             header.relates_to,
@@ -3027,9 +3071,10 @@ mod tests {
 
         let resolve_matches = message.into_resolve_matches().unwrap();
 
+        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
+
         let result = handle_resolve_matches(
-            &reqwest::ClientBuilder::new().build().unwrap(),
-            &client_config,
+            &exchanges,
             Arc::clone(&client_devices),
             &client_network_address,
             header.relates_to,

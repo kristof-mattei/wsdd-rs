@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 use color_eyre::eyre;
 use hashbrown::HashMap;
-use hashbrown::hash_map::{Entry, EntryRef};
+use hashbrown::hash_map::EntryRef;
 use ringmap::{Equivalent, RingMap};
 use tokio_util::sync::CancellationToken;
 
@@ -187,21 +187,21 @@ impl Devices {
 
     pub fn store(
         &mut self,
-        endpoint: DeviceUri,
+        endpoint: &DeviceUri,
         meta: &[u8],
         xaddr: &XAddr,
         bound_to: &NetworkAddress,
     ) -> Result<(), eyre::Report> {
-        match self.discovered.entry(endpoint) {
-            Entry::Occupied(occupied_entry) => {
-                let (key, value) = occupied_entry.into_entry();
-
-                value.update(key, meta, xaddr, bound_to)?;
+        match self.discovered.entry_ref(endpoint) {
+            EntryRef::Occupied(occupied_entry) => {
+                occupied_entry
+                    .into_mut()
+                    .update(endpoint, meta, xaddr, bound_to)?;
             },
-            Entry::Vacant(vacant_entry) => {
-                let new = WSDDiscoveredDevice::new(vacant_entry.key(), meta, xaddr, bound_to)?;
+            EntryRef::Vacant(vacant_entry_ref) => {
+                let new = WSDDiscoveredDevice::new(endpoint, meta, xaddr, bound_to)?;
 
-                vacant_entry.insert(new);
+                vacant_entry_ref.insert_with_key(endpoint.clone(), new);
             },
         }
 
