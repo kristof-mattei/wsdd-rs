@@ -636,6 +636,30 @@ mod tests {
     }
 
     #[test]
+    fn second_newer_instance_counts_every_older_entry() {
+        let mut devices = Devices::default();
+
+        devices.observe(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:a"), 5));
+        devices.observe(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:b"), 5));
+
+        // takes over the entry of sequence b
+        devices.observe(&endpoint(0), &AppSequence::new(2, Some("urn:uuid:c"), 5));
+
+        // takes over the entry of sequence c, the entry of sequence a stays
+        devices.observe(&endpoint(0), &AppSequence::new(3, Some("urn:uuid:d"), 5));
+
+        // the last one evicts the entry of sequence a
+        for id in 1..MAX_SEQUENCES {
+            devices.observe(&endpoint(id), &sequence(1, 5));
+        }
+
+        assert_eq!(
+            devices.observe(&endpoint(0), &AppSequence::new(3, Some("urn:uuid:d"), 4)),
+            Observation::Stale
+        );
+    }
+
+    #[test]
     fn full_state_forgets_the_first_inserted() {
         let mut devices = Devices::default();
 
