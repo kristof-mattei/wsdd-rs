@@ -80,11 +80,10 @@ struct Target {
     older: usize,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum Observation {
-    Current,
-    /// Older than an earlier message of the same Target Service.
-    Stale,
+/// A Target Service whose message `Devices::observe` recorded as current.
+pub struct Current<'d> {
+    devices: &'d mut Devices,
+    endpoint: &'d DeviceUri,
 }
 
 #[derive(Default)]
@@ -122,19 +121,14 @@ impl Exchange {
     }
 }
 
-impl Devices {
-    /// Starts a metadata exchange with the Target Service at `endpoint` on the interface with `interface_index`.
+impl Current<'_> {
+    /// Starts a metadata exchange with the Target Service on the interface with `interface_index`.
     /// Returns `None` while one already runs there, that one then runs once more with `xaddrs`.
-    pub fn start_exchange(
-        &mut self,
-        endpoint: &DeviceUri,
-        interface_index: u32,
-        xaddrs: Vec<XAddr>,
-    ) -> Option<Fetch> {
-        let exchanges = match self.exchanges.entry_ref(endpoint) {
+    pub fn start_exchange(self, interface_index: u32, xaddrs: Vec<XAddr>) -> Option<Fetch> {
+        let exchanges = match self.devices.exchanges.entry_ref(self.endpoint) {
             EntryRef::Occupied(occupied_entry) => occupied_entry.into_mut(),
             EntryRef::Vacant(vacant_entry_ref) => {
-                vacant_entry_ref.insert_with_key(endpoint.clone(), Exchanges::default())
+                vacant_entry_ref.insert_with_key(self.endpoint.clone(), Exchanges::default())
             },
         };
 
@@ -158,6 +152,21 @@ impl Devices {
         }
     }
 
+    /// Removes the device, stops its running metadata exchanges, and drops their pending reruns.
+    pub fn depart(self) -> Option<WSDDiscoveredDevice> {
+        if let Some(exchanges) = self.devices.exchanges.get_mut(self.endpoint) {
+            std::mem::take(&mut exchanges.bye).cancel();
+
+            for rerun in exchanges.running.values_mut() {
+                *rerun = None;
+            }
+        }
+
+        self.devices.discovered.remove(self.endpoint)
+    }
+}
+
+impl Devices {
     pub fn finish_exchange(
         &mut self,
         endpoint: &DeviceUri,
@@ -229,22 +238,30 @@ impl Devices {
     }
 
     /// Records the `AppSequence` of a message of the Target Service at `endpoint`, unless it is older than the recorded order.
-    pub fn observe(&mut self, endpoint: &DeviceUri, app_sequence: &AppSequence) -> Observation {
+    /// Returns `None` for an older message.
+    pub fn observe<'d>(
+        &'d mut self,
+        endpoint: &'d DeviceUri,
+        app_sequence: &AppSequence,
+    ) -> Option<Current<'d>> {
         let take_over = match self.targets.get_mut(endpoint) {
             None => false,
             Some(target) => match app_sequence.instance_id().cmp(&target.instance_id) {
-                Ordering::Less => return Observation::Stale,
+                Ordering::Less => return None,
                 Ordering::Equal => {
                     let key = SequenceKeyRef::new(endpoint, app_sequence);
 
                     if let Some(last) = self.sequences.get_mut(&key) {
                         if app_sequence.message_number() < *last {
-                            return Observation::Stale;
+                            return None;
                         }
 
                         *last = app_sequence.message_number();
 
-                        return Observation::Current;
+                        return Some(Current {
+                            devices: self,
+                            endpoint,
+                        });
                     }
 
                     target.older > 0
@@ -265,13 +282,25 @@ impl Devices {
             self.push(endpoint, app_sequence);
         }
 
-        Observation::Current
+        Some(Current {
+            devices: self,
+            endpoint,
+        })
     }
 
     /// Records a `ProbeMatch` or `ResolveMatch` of the Target Service at `endpoint`.
     /// A match is never stale, and an older one leaves the order as it is.
-    pub fn observe_match(&mut self, endpoint: &DeviceUri, app_sequence: &AppSequence) {
+    pub fn observe_match<'d>(
+        &'d mut self,
+        endpoint: &'d DeviceUri,
+        app_sequence: &AppSequence,
+    ) -> Current<'d> {
         self.observe(endpoint, app_sequence);
+
+        Current {
+            devices: self,
+            endpoint,
+        }
     }
 
     pub fn store(
@@ -295,19 +324,6 @@ impl Devices {
         }
 
         Ok(())
-    }
-
-    /// Removes the device at `endpoint`, stops its running metadata exchanges, and drops their pending reruns.
-    pub fn depart(&mut self, endpoint: &DeviceUri) -> Option<WSDDiscoveredDevice> {
-        if let Some(exchanges) = self.exchanges.get_mut(endpoint) {
-            std::mem::take(&mut exchanges.bye).cancel();
-
-            for rerun in exchanges.running.values_mut() {
-                *rerun = None;
-            }
-        }
-
-        self.discovered.remove(endpoint)
     }
 
     pub fn clear_discovered(&mut self) {
@@ -418,7 +434,7 @@ mod tests {
     use crate::soap::parser::app_sequence::AppSequence;
     use crate::soap::parser::xaddrs::XAddr;
     use crate::wsd::device::DeviceUri;
-    use crate::wsd::devices::{Devices, Exchange, Fetch, MAX_SEQUENCES, Observation};
+    use crate::wsd::devices::{Devices, Exchange, Fetch, MAX_SEQUENCES};
 
     fn endpoint(id: usize) -> DeviceUri {
         DeviceUri::new(format!("urn:uuid:00000000-0000-0000-0000-{:012}", id).into_boxed_str())
@@ -436,10 +452,7 @@ mod tests {
     fn first_message_is_current() {
         let mut devices = Devices::default();
 
-        assert_eq!(
-            devices.observe(&endpoint(1), &sequence(1, 5)),
-            Observation::Current
-        );
+        assert!(devices.observe(&endpoint(1), &sequence(1, 5)).is_some());
     }
 
     #[test]
@@ -448,10 +461,7 @@ mod tests {
 
         devices.observe(&endpoint(1), &sequence(1, 5));
 
-        assert_eq!(
-            devices.observe(&endpoint(1), &sequence(1, 4)),
-            Observation::Stale
-        );
+        assert!(devices.observe(&endpoint(1), &sequence(1, 4)).is_none());
     }
 
     #[test]
@@ -460,10 +470,7 @@ mod tests {
 
         devices.observe(&endpoint(1), &sequence(1, 5));
 
-        assert_eq!(
-            devices.observe(&endpoint(1), &sequence(1, 5)),
-            Observation::Current
-        );
+        assert!(devices.observe(&endpoint(1), &sequence(1, 5)).is_some());
     }
 
     #[test]
@@ -474,10 +481,7 @@ mod tests {
 
         devices.clear_discovered();
 
-        assert_eq!(
-            devices.observe(&endpoint(1), &sequence(1, 4)),
-            Observation::Stale
-        );
+        assert!(devices.observe(&endpoint(1), &sequence(1, 4)).is_none());
     }
 
     #[test]
@@ -487,10 +491,7 @@ mod tests {
         devices.observe(&endpoint(1), &sequence(1, 5));
         devices.observe(&endpoint(1), &sequence(1, 3));
 
-        assert_eq!(
-            devices.observe(&endpoint(1), &sequence(1, 4)),
-            Observation::Stale
-        );
+        assert!(devices.observe(&endpoint(1), &sequence(1, 4)).is_none());
     }
 
     #[test]
@@ -499,10 +500,7 @@ mod tests {
 
         devices.observe(&endpoint(1), &sequence(2, 0));
 
-        assert_eq!(
-            devices.observe(&endpoint(1), &sequence(1, 9)),
-            Observation::Stale
-        );
+        assert!(devices.observe(&endpoint(1), &sequence(1, 9)).is_none());
     }
 
     #[test]
@@ -511,9 +509,10 @@ mod tests {
 
         devices.observe(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 5));
 
-        assert_eq!(
-            devices.observe(&endpoint(1), &in_sequence(Some("urn:uuid:b"), 3)),
-            Observation::Current
+        assert!(
+            devices
+                .observe(&endpoint(1), &in_sequence(Some("urn:uuid:b"), 3))
+                .is_some()
         );
     }
 
@@ -524,9 +523,10 @@ mod tests {
         devices.observe(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 5));
         devices.observe(&endpoint(1), &in_sequence(Some("urn:uuid:b"), 3));
 
-        assert_eq!(
-            devices.observe(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 4)),
-            Observation::Stale
+        assert!(
+            devices
+                .observe(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 4))
+                .is_none()
         );
     }
 
@@ -537,19 +537,22 @@ mod tests {
         devices.observe(&endpoint(1), &in_sequence(None, 5));
         devices.observe(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 3));
 
-        assert_eq!(
-            devices.observe(&endpoint(1), &in_sequence(None, 4)),
-            Observation::Stale
+        assert!(
+            devices
+                .observe(&endpoint(1), &in_sequence(None, 4))
+                .is_none()
         );
 
-        assert_eq!(
-            devices.observe(&endpoint(1), &in_sequence(Some("urn:uuid:b"), 1)),
-            Observation::Current
+        assert!(
+            devices
+                .observe(&endpoint(1), &in_sequence(Some("urn:uuid:b"), 1))
+                .is_some()
         );
 
-        assert_eq!(
-            devices.observe(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 2)),
-            Observation::Stale
+        assert!(
+            devices
+                .observe(&endpoint(1), &in_sequence(Some("urn:uuid:a"), 2))
+                .is_none()
         );
     }
 
@@ -560,14 +563,16 @@ mod tests {
         devices.observe(&endpoint(1), &AppSequence::new(1, Some("urn:uuid:a"), 5));
         devices.observe(&endpoint(1), &AppSequence::new(2, Some("urn:uuid:b"), 5));
 
-        assert_eq!(
-            devices.observe(&endpoint(1), &AppSequence::new(2, Some("urn:uuid:a"), 0)),
-            Observation::Current
+        assert!(
+            devices
+                .observe(&endpoint(1), &AppSequence::new(2, Some("urn:uuid:a"), 0))
+                .is_some()
         );
 
-        assert_eq!(
-            devices.observe(&endpoint(1), &AppSequence::new(1, Some("urn:uuid:a"), 9)),
-            Observation::Stale
+        assert!(
+            devices
+                .observe(&endpoint(1), &AppSequence::new(1, Some("urn:uuid:a"), 9))
+                .is_none()
         );
     }
 
@@ -587,17 +592,19 @@ mod tests {
         // evicts the entry of sequence a
         devices.observe(&endpoint(MAX_SEQUENCES - 1), &sequence(1, 5));
 
-        assert_eq!(
-            devices.observe(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:d"), 9)),
-            Observation::Stale
+        assert!(
+            devices
+                .observe(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:d"), 9))
+                .is_none()
         );
 
         // evicts the entry that sequence c replaced
         devices.observe(&endpoint(MAX_SEQUENCES), &sequence(1, 5));
 
-        assert_eq!(
-            devices.observe(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:d"), 9)),
-            Observation::Current
+        assert!(
+            devices
+                .observe(&endpoint(0), &AppSequence::new(1, Some("urn:uuid:d"), 9))
+                .is_some()
         );
     }
 
@@ -621,9 +628,10 @@ mod tests {
         // evicts the entry of sequence d
         devices.observe(&endpoint(MAX_SEQUENCES - 1), &sequence(1, 5));
 
-        assert_eq!(
-            devices.observe(&endpoint(0), &AppSequence::new(2, Some("urn:uuid:c"), 4)),
-            Observation::Stale
+        assert!(
+            devices
+                .observe(&endpoint(0), &AppSequence::new(2, Some("urn:uuid:c"), 4))
+                .is_none()
         );
     }
 
@@ -635,15 +643,9 @@ mod tests {
             devices.observe(&endpoint(id), &sequence(1, 5));
         }
 
-        assert_eq!(
-            devices.observe(&endpoint(1), &sequence(1, 4)),
-            Observation::Stale
-        );
+        assert!(devices.observe(&endpoint(1), &sequence(1, 4)).is_none());
 
-        assert_eq!(
-            devices.observe(&endpoint(0), &sequence(1, 4)),
-            Observation::Current
-        );
+        assert!(devices.observe(&endpoint(0), &sequence(1, 4)).is_some());
     }
 
     #[test]
@@ -658,10 +660,7 @@ mod tests {
 
         devices.observe(&endpoint(MAX_SEQUENCES), &sequence(1, 5));
 
-        assert_eq!(
-            devices.observe(&endpoint(0), &sequence(1, 5)),
-            Observation::Current
-        );
+        assert!(devices.observe(&endpoint(0), &sequence(1, 5)).is_some());
     }
 
     #[test]
@@ -670,10 +669,7 @@ mod tests {
 
         devices.observe_match(&endpoint(1), &sequence(1, 7));
 
-        assert_eq!(
-            devices.observe(&endpoint(1), &sequence(1, 6)),
-            Observation::Stale
-        );
+        assert!(devices.observe(&endpoint(1), &sequence(1, 6)).is_none());
     }
 
     #[test]
@@ -684,10 +680,7 @@ mod tests {
 
         devices.observe_match(&endpoint(1), &sequence(1, 5));
 
-        assert_eq!(
-            devices.observe(&endpoint(1), &sequence(1, 7)),
-            Observation::Stale
-        );
+        assert!(devices.observe(&endpoint(1), &sequence(1, 7)).is_none());
     }
 
     fn xaddrs(path: &str) -> Vec<XAddr> {
@@ -698,12 +691,24 @@ mod tests {
         xaddrs.iter().map(XAddr::url).collect()
     }
 
+    fn trigger(devices: &mut Devices, interface_index: u32, path: &str) -> Option<Fetch> {
+        devices
+            .observe_match(&endpoint(1), &sequence(1, 5))
+            .start_exchange(interface_index, xaddrs(path))
+    }
+
     fn start(devices: &mut Devices, interface_index: u32) -> Exchange {
-        let Fetch { exchange, .. } = devices
-            .start_exchange(&endpoint(1), interface_index, xaddrs("first"))
-            .expect("no exchange runs on this interface");
+        let Fetch { exchange, .. } =
+            trigger(devices, interface_index, "first").expect("no exchange runs on this interface");
 
         exchange
+    }
+
+    fn depart(devices: &mut Devices) {
+        devices
+            .observe(&endpoint(1), &sequence(1, 5))
+            .expect("a Bye equal to the last message is current")
+            .depart();
     }
 
     #[test]
@@ -712,7 +717,7 @@ mod tests {
 
         let exchange = start(&mut devices, 1);
 
-        devices.depart(&endpoint(1));
+        depart(&mut devices);
 
         assert!(devices.finish_exchange(&endpoint(1), exchange).departed);
     }
@@ -727,7 +732,7 @@ mod tests {
             tokio::join!(
                 exchange.run_until_bye(std::future::pending::<()>()),
                 async {
-                    devices.depart(&endpoint(1));
+                    depart(&mut devices);
                 }
             )
         })
@@ -743,7 +748,7 @@ mod tests {
 
         let before = start(&mut devices, 1);
 
-        devices.depart(&endpoint(1));
+        depart(&mut devices);
 
         let after = start(&mut devices, 2);
 
@@ -755,7 +760,7 @@ mod tests {
     fn bye_before_an_exchange_does_not_depart() {
         let mut devices = Devices::default();
 
-        devices.depart(&endpoint(1));
+        depart(&mut devices);
 
         let exchange = start(&mut devices, 1);
 
@@ -768,7 +773,7 @@ mod tests {
 
         let before = start(&mut devices, 1);
 
-        devices.depart(&endpoint(1));
+        depart(&mut devices);
 
         let after = start(&mut devices, 2);
 
@@ -783,7 +788,7 @@ mod tests {
         let first = start(&mut devices, 1);
         let second = start(&mut devices, 2);
 
-        devices.depart(&endpoint(1));
+        depart(&mut devices);
 
         devices.finish_exchange(&endpoint(1), first);
 
@@ -798,7 +803,7 @@ mod tests {
     fn bye_without_an_exchange_leaves_no_state() {
         let mut devices = Devices::default();
 
-        devices.depart(&endpoint(1));
+        depart(&mut devices);
 
         assert!(!devices.has_running_exchanges());
     }
@@ -809,11 +814,7 @@ mod tests {
 
         let _first = start(&mut devices, 1);
 
-        assert!(
-            devices
-                .start_exchange(&endpoint(1), 2, xaddrs("second"))
-                .is_some()
-        );
+        assert!(trigger(&mut devices, 2, "second").is_some());
     }
 
     #[test]
@@ -822,16 +823,8 @@ mod tests {
 
         let first = start(&mut devices, 1);
 
-        assert!(
-            devices
-                .start_exchange(&endpoint(1), 1, xaddrs("second"))
-                .is_none()
-        );
-        assert!(
-            devices
-                .start_exchange(&endpoint(1), 1, xaddrs("third"))
-                .is_none()
-        );
+        assert!(trigger(&mut devices, 1, "second").is_none());
+        assert!(trigger(&mut devices, 1, "third").is_none());
 
         let Fetch {
             exchange: rerun,
@@ -854,13 +847,9 @@ mod tests {
 
         let first = start(&mut devices, 1);
 
-        assert!(
-            devices
-                .start_exchange(&endpoint(1), 1, xaddrs("second"))
-                .is_none()
-        );
+        assert!(trigger(&mut devices, 1, "second").is_none());
 
-        devices.depart(&endpoint(1));
+        depart(&mut devices);
 
         let finished = devices.finish_exchange(&endpoint(1), first);
 
@@ -876,21 +865,13 @@ mod tests {
 
         let first = start(&mut devices, 1);
 
-        assert!(
-            devices
-                .start_exchange(&endpoint(1), 1, xaddrs("second"))
-                .is_none()
-        );
+        assert!(trigger(&mut devices, 1, "second").is_none());
 
         devices.cancel_exchange(&endpoint(1), first);
 
         assert!(!devices.has_running_exchanges());
 
-        assert!(
-            devices
-                .start_exchange(&endpoint(1), 1, xaddrs("third"))
-                .is_some()
-        );
+        assert!(trigger(&mut devices, 1, "third").is_some());
     }
 
     #[tokio::test]
@@ -899,13 +880,9 @@ mod tests {
 
         let first = start(&mut devices, 1);
 
-        devices.depart(&endpoint(1));
+        depart(&mut devices);
 
-        assert!(
-            devices
-                .start_exchange(&endpoint(1), 1, xaddrs("second"))
-                .is_none()
-        );
+        assert!(trigger(&mut devices, 1, "second").is_none());
 
         let finished = devices.finish_exchange(&endpoint(1), first);
 

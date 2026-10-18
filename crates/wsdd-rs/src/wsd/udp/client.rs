@@ -32,7 +32,7 @@ use crate::task_tracker_ext::TaskTrackerExt as _;
 use crate::utils::SliceDisplay;
 use crate::utils::task::spawn_with_name;
 use crate::wsd::device::DeviceUri;
-use crate::wsd::devices::{Devices, Exchange, Fetch, Finished, Observation};
+use crate::wsd::devices::{Devices, Exchange, Fetch, Finished};
 
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
@@ -483,11 +483,11 @@ async fn handle_hello(
     let next = {
         let mut guard = devices.write().await;
 
-        if guard.observe(&endpoint, &app_sequence) == Observation::Stale {
+        let Some(current) = guard.observe(&endpoint, &app_sequence) else {
             event!(Level::DEBUG, %endpoint, ?app_sequence, "stale Hello, ignoring");
 
             return Ok(());
-        }
+        };
 
         match check_xaddrs(bound_to.address, "Hello", &endpoint, raw_xaddrs) {
             XAddrsCheck::Unusable => return Ok(()),
@@ -495,7 +495,7 @@ async fn handle_hello(
             XAddrsCheck::Usable(xaddrs) => {
                 event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), metadata_version, "Hello");
 
-                match guard.start_exchange(&endpoint, bound_to.interface.index(), xaddrs) {
+                match current.start_exchange(bound_to.interface.index(), xaddrs) {
                     Some(fetch) => Next::Fetch(fetch),
                     None => Next::Rerun,
                 }
@@ -537,13 +537,13 @@ async fn handle_bye(
 ) -> Result<(), eyre::Report> {
     let mut guard = devices.write().await;
 
-    if guard.observe(&endpoint, &app_sequence) == Observation::Stale {
+    let Some(current) = guard.observe(&endpoint, &app_sequence) else {
         event!(Level::DEBUG, %endpoint, ?app_sequence, "stale Bye, ignoring");
 
         return Ok(());
-    }
+    };
 
-    if guard.depart(&endpoint).is_none() {
+    if current.depart().is_none() {
         event!(
             Level::DEBUG,
             endpoint = &*endpoint,
@@ -626,7 +626,7 @@ async fn handle_probe_match(
     let next = {
         let mut guard = devices.write().await;
 
-        guard.observe_match(&endpoint, app_sequence);
+        let current = guard.observe_match(&endpoint, app_sequence);
 
         match check_xaddrs(bound_to.address, "ProbeMatch", &endpoint, raw_xaddrs) {
             XAddrsCheck::Unusable => return Ok(()),
@@ -634,7 +634,7 @@ async fn handle_probe_match(
             XAddrsCheck::Usable(xaddrs) => {
                 event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), metadata_version, "ProbeMatch");
 
-                match guard.start_exchange(&endpoint, bound_to.interface.index(), xaddrs) {
+                match current.start_exchange(bound_to.interface.index(), xaddrs) {
                     Some(fetch) => Next::Fetch(fetch),
                     None => Next::Rerun,
                 }
@@ -710,7 +710,7 @@ async fn handle_resolve_matches(
     let started = {
         let mut guard = devices.write().await;
 
-        guard.observe_match(&endpoint, &app_sequence);
+        let current = guard.observe_match(&endpoint, &app_sequence);
 
         match check_xaddrs(bound_to.address, "ResolveMatch", &endpoint, raw_xaddrs) {
             XAddrsCheck::Unusable => return Ok(()),
@@ -722,7 +722,7 @@ async fn handle_resolve_matches(
             XAddrsCheck::Usable(xaddrs) => {
                 event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), metadata_version, "ResolveMatch");
 
-                guard.start_exchange(&endpoint, bound_to.interface.index(), xaddrs)
+                current.start_exchange(bound_to.interface.index(), xaddrs)
             },
         }
     };
@@ -923,7 +923,7 @@ mod tests {
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler_with_network_address};
     use crate::wsd::device::DeviceUri;
-    use crate::wsd::devices::{Devices, Exchange, Fetch, Observation};
+    use crate::wsd::devices::{Devices, Exchange, Fetch};
     use crate::wsd::http::http_server::WSDHttpServer;
     use crate::wsd::udp::client::{
         ExchangeRunner, LastCopy, WSDClient, XAddrsCheck, check_xaddrs, handle_bye, handle_hello,
@@ -999,12 +999,15 @@ mod tests {
     async fn start_exchange(
         devices: &RwLock<Devices>,
         endpoint: &DeviceUri,
+        app_sequence: &AppSequence,
         bound_to: &NetworkAddress,
     ) -> Exchange {
         let Fetch { exchange, .. } = devices
             .write()
             .await
-            .start_exchange(endpoint, bound_to.interface.index(), Vec::new())
+            .observe(endpoint, app_sequence)
+            .expect("the Hello is current")
+            .start_exchange(bound_to.interface.index(), Vec::new())
             .expect("no exchange runs for a new endpoint");
 
         exchange
@@ -1566,12 +1569,12 @@ mod tests {
 
         assert_matches!(result, Ok(false));
 
-        assert_eq!(
+        assert!(
             client_devices
                 .write()
                 .await
-                .observe(&endpoint, &AppSequence::new(1, None, 5)),
-            Observation::Stale
+                .observe(&endpoint, &AppSequence::new(1, None, 5))
+                .is_none()
         );
     }
 
@@ -1807,12 +1810,13 @@ mod tests {
 
         let endpoint = new_endpoint();
 
-        client_devices
-            .write()
-            .await
-            .observe(&endpoint, &AppSequence::new(1, None, 5));
-
-        let exchange = start_exchange(&client_devices, &endpoint, &network_address).await;
+        let exchange = start_exchange(
+            &client_devices,
+            &endpoint,
+            &AppSequence::new(1, None, 5),
+            &network_address,
+        )
+        .await;
 
         let result =
             finish_exchange_with_synology(&client_devices, &endpoint, exchange, &network_address)
@@ -1939,12 +1943,13 @@ mod tests {
 
         let endpoint = new_endpoint();
 
-        client_devices
-            .write()
-            .await
-            .observe(&endpoint, &AppSequence::new(1, None, 5));
-
-        let exchange = start_exchange(&client_devices, &endpoint, &network_address).await;
+        let exchange = start_exchange(
+            &client_devices,
+            &endpoint,
+            &AppSequence::new(1, None, 5),
+            &network_address,
+        )
+        .await;
 
         let result =
             finish_exchange_with_synology(&client_devices, &endpoint, exchange, &network_address)
@@ -1970,12 +1975,13 @@ mod tests {
 
         let endpoint = new_endpoint();
 
-        client_devices
-            .write()
-            .await
-            .observe(&endpoint, &AppSequence::new(1, None, 5));
-
-        let exchange = start_exchange(&client_devices, &endpoint, &network_address).await;
+        let exchange = start_exchange(
+            &client_devices,
+            &endpoint,
+            &AppSequence::new(1, None, 5),
+            &network_address,
+        )
+        .await;
 
         // another interface's loop handles the Bye while this one awaits the metadata
         let result = bye(&client_devices, &endpoint, AppSequence::new(1, None, 4)).await;
@@ -2002,12 +2008,13 @@ mod tests {
 
         let endpoint = new_endpoint();
 
-        client_devices
-            .write()
-            .await
-            .observe(&endpoint, &AppSequence::new(1, Some("urn:uuid:a"), 5));
-
-        let exchange = start_exchange(&client_devices, &endpoint, &network_address).await;
+        let exchange = start_exchange(
+            &client_devices,
+            &endpoint,
+            &AppSequence::new(1, Some("urn:uuid:a"), 5),
+            &network_address,
+        )
+        .await;
 
         // another interface's loop handles the Bye while this one awaits the metadata
         let result = bye(
@@ -2176,7 +2183,13 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let exchange = start_exchange(&client_devices, &device_uri, &client_network_address).await;
+        let exchange = start_exchange(
+            &client_devices,
+            &device_uri,
+            &AppSequence::new(1, None, 1),
+            &client_network_address,
+        )
+        .await;
 
         let result = exchange_runner(&client_config, &client_devices, &client_network_address)
             .perform(&device_uri, Fetch { exchange, xaddrs })
@@ -2234,7 +2247,13 @@ mod tests {
             &client_network_address,
         );
 
-        let exchange = start_exchange(&client_devices, &device_uri, &client_network_address).await;
+        let exchange = start_exchange(
+            &client_devices,
+            &device_uri,
+            &AppSequence::new(1, None, 1),
+            &client_network_address,
+        )
+        .await;
 
         let exchange = Box::pin(exchanges.perform(
             &device_uri,
@@ -2284,7 +2303,13 @@ mod tests {
                 .unwrap(),
         ];
 
-        let exchange = start_exchange(&client_devices, &device_uri, &client_network_address).await;
+        let exchange = start_exchange(
+            &client_devices,
+            &device_uri,
+            &AppSequence::new(1, None, 1),
+            &client_network_address,
+        )
+        .await;
 
         let result = exchange_runner(&client_config, &client_devices, &client_network_address)
             .perform(&device_uri, Fetch { exchange, xaddrs })
@@ -2337,6 +2362,7 @@ mod tests {
         let exchange = start_exchange(
             &client_devices,
             &host_config.uuid_as_device_uri,
+            &AppSequence::new(1, None, 1),
             &network_address,
         )
         .await;
@@ -2388,7 +2414,13 @@ mod tests {
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
-        let exchange = start_exchange(&client_devices, &device_uri, &client_network_address).await;
+        let exchange = start_exchange(
+            &client_devices,
+            &device_uri,
+            &AppSequence::new(1, None, 1),
+            &client_network_address,
+        )
+        .await;
 
         // another interface's loop handles the Bye while this one awaits the metadata
         assert_matches!(
@@ -2420,7 +2452,13 @@ mod tests {
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
-        let exchange = start_exchange(&client_devices, &device_uri, &client_network_address).await;
+        let exchange = start_exchange(
+            &client_devices,
+            &device_uri,
+            &AppSequence::new(1, None, 1),
+            &client_network_address,
+        )
+        .await;
 
         let result = finish_exchange_with_synology(
             &client_devices,
@@ -2480,7 +2518,13 @@ mod tests {
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
-        let exchange = start_exchange(&client_devices, &device_uri, &client_network_address).await;
+        let exchange = start_exchange(
+            &client_devices,
+            &device_uri,
+            &AppSequence::new(1, None, 1),
+            &client_network_address,
+        )
+        .await;
 
         let result = handle_metadata(
             &client_devices,
@@ -2540,7 +2584,13 @@ mod tests {
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
-        let exchange = start_exchange(&client_devices, &device_uri, &client_network_address).await;
+        let exchange = start_exchange(
+            &client_devices,
+            &device_uri,
+            &AppSequence::new(1, None, 1),
+            &client_network_address,
+        )
+        .await;
 
         let result = handle_metadata(
             &client_devices,
