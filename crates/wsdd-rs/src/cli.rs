@@ -88,7 +88,7 @@ pub struct Cli {
     )]
     no_host: bool,
 
-    #[arg(long, default_value = "2.0", value_parser = float_to_duration_parser, help = "set timeout for HTTP-based metadata exchange")]
+    #[arg(long, default_value = "30.0", value_parser = float_to_duration_parser, help = "set timeout for HTTP-based metadata exchange")]
     metadata_timeout: Duration,
 
     #[arg(
