@@ -1,4 +1,68 @@
 <!-- header goes here -->
+## [0.10.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.9.3..v0.10.0) - 2026-10-18
+
+### 🚀 Features
+
+- Log the error that ends the process through tracing by [@kristof-mattei](https://github.com/kristof-mattei) ([`0113011`](https://github.com/kristof-mattei/wsdd-rs/commit/0113011fe6483a6786b0a4e96f445ebf0823e3c5))
+- Accept scoped IPv6 addresses in `--interface` by [@kristof-mattei](https://github.com/kristof-mattei) ([`f093683`](https://github.com/kristof-mattei/wsdd-rs/commit/f093683fdd1fb840d8d81cf2449027eae2206386))
+- Warn when an `--interface` filter matches no handled address by [@kristof-mattei](https://github.com/kristof-mattei) ([`c19305a`](https://github.com/kristof-mattei/wsdd-rs/commit/c19305a698995f6c5782238a270409edb03191f5))
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update rust crate tokio to v1.53.3 by [@renovate[bot]](https://github.com/renovate[bot]) ([`aa20185`](https://github.com/kristof-mattei/wsdd-rs/commit/aa2018516508744eecf4aaa7235c3622813b7258))
+- Flush stdout before re-raising the signal by [@kristof-mattei](https://github.com/kristof-mattei) ([`78534d5`](https://github.com/kristof-mattei/wsdd-rs/commit/78534d5aa8b13e61b02819dcc7ca78469d7aa6c7))
+- Report an invalid `RUST_LOG` as an operational failure by [@kristof-mattei](https://github.com/kristof-mattei) ([`8a56c81`](https://github.com/kristof-mattei/wsdd-rs/commit/8a56c81de4d09209510fa82b5e46a9c90f50de55))
+- Include the chroot error in the operational failure by [@kristof-mattei](https://github.com/kristof-mattei) ([`ce423bf`](https://github.com/kristof-mattei/wsdd-rs/commit/ce423bf37431310fce69915f64a2435b677b8427))
+- [**breaking**] Use clap's built-in `--help` and `--version` by [@kristof-mattei](https://github.com/kristof-mattei) ([`d6b7f85`](https://github.com/kristof-mattei/wsdd-rs/commit/d6b7f8579442d8a578c80b632fd09415e11c3339))
+- [**breaking**] Validate `--interface` while parsing the command line by [@kristof-mattei](https://github.com/kristof-mattei) ([`3d1d143`](https://github.com/kristof-mattei/wsdd-rs/commit/3d1d143287298ff3ea44e21e4c002e23b7f20e95))
+- Separate `error=true` from the `skip` list in the Dockerfile `check` directive by [@kristof-mattei](https://github.com/kristof-mattei) ([`a2d3c17`](https://github.com/kristof-mattei/wsdd-rs/commit/a2d3c17ccf0b8155d91fb1861f92a09056706246))
+- Register signal listeners before startup by [@kristof-mattei](https://github.com/kristof-mattei) ([`1a92783`](https://github.com/kristof-mattei/wsdd-rs/commit/1a92783f66bfeb5cbed8573bcfff8c476531a822))
+- Log the full error chain in `wrap_and_report!` by [@kristof-mattei](https://github.com/kristof-mattei) ([`837f7a3`](https://github.com/kristof-mattei/wsdd-rs/commit/837f7a32f699211046f572a53f4c486b971ced0c))
+- Report the `Shutdown::from` caller as the error's location by [@kristof-mattei](https://github.com/kristof-mattei) ([`baeb2d6`](https://github.com/kristof-mattei/wsdd-rs/commit/baeb2d63681011acacac1133bdae72a21a9f206f))
+- Show the alias-label hint only for alias labels by [@kristof-mattei](https://github.com/kristof-mattei) ([`47da77c`](https://github.com/kristof-mattei/wsdd-rs/commit/47da77c3dc9e8ad1e9a4fe5c6d6b38ccf8917d94))
+- Match the kernel's validation of interface names by [@kristof-mattei](https://github.com/kristof-mattei) ([`a00f11d`](https://github.com/kristof-mattei/wsdd-rs/commit/a00f11dc327cf6a4d6cf7196504c8dcbda660596))
+- Include the drop-privileges error in the operational failure by [@kristof-mattei](https://github.com/kristof-mattei) ([`bb8cb1f`](https://github.com/kristof-mattei/wsdd-rs/commit/bb8cb1f68d4158c4bb07a0f19f774eb306973d48))
+- Reject `%` in interface names by [@kristof-mattei](https://github.com/kristof-mattei) ([`4390502`](https://github.com/kristof-mattei/wsdd-rs/commit/43905021685c0cb03f35f80390995f9819075694))
+- Reject a zone on a non-link-local address in `--interface` by [@kristof-mattei](https://github.com/kristof-mattei) ([`15056d1`](https://github.com/kristof-mattei/wsdd-rs/commit/15056d174417e901769fc164408210394a211cfb))
+- Keep the host metadata when a Relationship section has no `wsdp:Host` by [@kristof-mattei](https://github.com/kristof-mattei) ([`1c2f320`](https://github.com/kristof-mattei/wsdd-rs/commit/1c2f320fb68b3132d3f05f4f18c48d3e031ba66a))
+- Bind IPv4 handler sockets and the HTTP listener to their interface by [@kristof-mattei](https://github.com/kristof-mattei) ([`b80a338`](https://github.com/kristof-mattei/wsdd-rs/commit/b80a338a8d4fa1320e13c726fbd3080a5bbc58dc))
+- Require a SOAP 1.2 `Envelope` root with `Header` and `Body` as its direct children by [@kristof-mattei](https://github.com/kristof-mattei) ([`5bc872c`](https://github.com/kristof-mattei/wsdd-rs/commit/5bc872cd79e0759f6eff83139497d2433dc72a93))
+- Reject an element after `soap:Body` by [@kristof-mattei](https://github.com/kristof-mattei) ([`c266d12`](https://github.com/kristof-mattei/wsdd-rs/commit/c266d121a0a737faa68a0c049441a3ea372c1c40))
+- Reject a document type declaration by [@kristof-mattei](https://github.com/kristof-mattei) ([`c4a14d6`](https://github.com/kristof-mattei/wsdd-rs/commit/c4a14d65317165cad19172adc2e6d4b5fcbb4d4c))
+- Run metadata exchanges off the client loop by [@kristof-mattei](https://github.com/kristof-mattei) ([`d756d55`](https://github.com/kristof-mattei/wsdd-rs/commit/d756d55752762717a227302aabe62f16f3efe64a))
+- Raise the default `--metadata-timeout` to 30 s by [@kristof-mattei](https://github.com/kristof-mattei) ([`8e430c4`](https://github.com/kristof-mattei/wsdd-rs/commit/8e430c4829a9117e72f3ccd72397b56c521eaad4))
+
+### 🚜 Refactor
+
+- Remove the unused `Display` impl for `Shutdown` by [@kristof-mattei](https://github.com/kristof-mattei) ([`959c169`](https://github.com/kristof-mattei/wsdd-rs/commit/959c169d763c57c1cd77f0c58b52a077af07e898))
+- Return `Shutdown` from `main` by [@kristof-mattei](https://github.com/kristof-mattei) ([`868341b`](https://github.com/kristof-mattei/wsdd-rs/commit/868341bfa616df884e783f502ddabcd483f20bc7))
+- Rename `CliArgs` to `Cli` by [@kristof-mattei](https://github.com/kristof-mattei) ([`578e9b9`](https://github.com/kristof-mattei/wsdd-rs/commit/578e9b9eb69478f37ce89b99f535a8d4dad113ab))
+- Parse the command line with `Cli::parse` by [@kristof-mattei](https://github.com/kristof-mattei) ([`6c206ef`](https://github.com/kristof-mattei/wsdd-rs/commit/6c206ef4f1d5ab7f9af20a2c725dd50778801434))
+- Pass `Config` to `start_tasks` by [@kristof-mattei](https://github.com/kristof-mattei) ([`e5c3e7b`](https://github.com/kristof-mattei/wsdd-rs/commit/e5c3e7b2e800a8cac2a40290724a0daff221279a))
+- Move `set_up_handler` into its own module by [@kristof-mattei](https://github.com/kristof-mattei) ([`f762a06`](https://github.com/kristof-mattei/wsdd-rs/commit/f762a0637f4079312c330954ef9f05016ed117eb))
+- Build the signal handlers on Windows by [@kristof-mattei](https://github.com/kristof-mattei) ([`d92a8d8`](https://github.com/kristof-mattei/wsdd-rs/commit/d92a8d8efe646935a7d5aba8fae67fe7ab9e370a))
+- Use constants for the signal numbers by [@kristof-mattei](https://github.com/kristof-mattei) ([`197c35e`](https://github.com/kristof-mattei/wsdd-rs/commit/197c35ede04e19e48bd352f87e9cff59fde85ad4))
+- Move `flatten_shutdown_handle` into `utils` by [@kristof-mattei](https://github.com/kristof-mattei) ([`94b3b6a`](https://github.com/kristof-mattei/wsdd-rs/commit/94b3b6ab836491310c96d559ce161d33bb78790b))
+- Handle each command in its own function by [@kristof-mattei](https://github.com/kristof-mattei) ([`d84d1b3`](https://github.com/kristof-mattei/wsdd-rs/commit/d84d1b3ece018f8cbae9ed425681087361d092c7))
+- Match one interface filter in its own function by [@kristof-mattei](https://github.com/kristof-mattei) ([`990c426`](https://github.com/kristof-mattei/wsdd-rs/commit/990c42696f326151e4bc2c85f9fadda907b74867))
+- Send netlink commands through one function by [@kristof-mattei](https://github.com/kristof-mattei) ([`1b2c2e5`](https://github.com/kristof-mattei/wsdd-rs/commit/1b2c2e50eb383d7879a9711aa2a91860cc37de0e))
+- Read only the first `wsdp:Relationship` of a section by [@kristof-mattei](https://github.com/kristof-mattei) ([`261b094`](https://github.com/kristof-mattei/wsdd-rs/commit/261b094b23e5b04545531adb271b4995fbb71e75))
+- Name the HTTP listen backlog after mio's by [@kristof-mattei](https://github.com/kristof-mattei) ([`cb335e5`](https://github.com/kristof-mattei/wsdd-rs/commit/cb335e52ae0e5fb63623f45efd496cd637ef9623))
+- Run metadata exchanges through an `ExchangeRunner` by [@kristof-mattei](https://github.com/kristof-mattei) ([`f80a539`](https://github.com/kristof-mattei/wsdd-rs/commit/f80a53930b05c2edce135ac0e06981476d956397))
+
+### 🧪 Testing
+
+- `MessageSender::teardown` waits for queued messages by [@kristof-mattei](https://github.com/kristof-mattei) ([`c7442b7`](https://github.com/kristof-mattei/wsdd-rs/commit/c7442b7d66e8d5623665c9c968d66d653302ec06))
+- Run the signal tests only on Unix by [@kristof-mattei](https://github.com/kristof-mattei) ([`00b00c0`](https://github.com/kristof-mattei/wsdd-rs/commit/00b00c0894fa07e596bcdd7177cd0d57b616cdd6))
+- Drop the crate name from the signal test's child marker by [@kristof-mattei](https://github.com/kristof-mattei) ([`0fe2826`](https://github.com/kristof-mattei/wsdd-rs/commit/0fe2826b0182964b49b7c53b3d9a6d868f3a2e45))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Check new ballot entries by default by [@kristof-mattei](https://github.com/kristof-mattei) ([`5289fde`](https://github.com/kristof-mattei/wsdd-rs/commit/5289fde59cfc0439d843f2c8f37df2f7e91fac56))
+- *(release)* Verify the release commit against the rendered ballot by [@kristof-mattei](https://github.com/kristof-mattei) ([`4de328a`](https://github.com/kristof-mattei/wsdd-rs/commit/4de328a3550b5e4972c766d8c36296d4ca8ce8be))
+- *(release)* Exclude superseded dependency bumps through `.cliffignore` by [@kristof-mattei](https://github.com/kristof-mattei) ([`029c3c1`](https://github.com/kristof-mattei/wsdd-rs/commit/029c3c143158eef954188717243b1a6abc37839e))
+- Preload the `docker/scout-action` binary with a token by [@kristof-mattei](https://github.com/kristof-mattei) ([`590641a`](https://github.com/kristof-mattei/wsdd-rs/commit/590641abb20536d4b3d3d522513dbc806d6ba24e))
+- Remove the TODO about exit code 3 for `--user` by [@kristof-mattei](https://github.com/kristof-mattei) ([`c15e180`](https://github.com/kristof-mattei/wsdd-rs/commit/c15e180b053e06dd8dcbd72200e537e1a9dc1780))
 ## [0.9.3](https://github.com/kristof-mattei/wsdd-rs/compare/v0.9.2..v0.9.3) - 2026-10-12
 
 ### 🐛 Bug Fixes
