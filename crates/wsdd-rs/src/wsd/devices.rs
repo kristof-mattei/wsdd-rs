@@ -653,9 +653,10 @@ mod tests {
             devices.observe(&endpoint(id), &sequence(1, 5));
         }
 
-        assert_eq!(
-            devices.observe(&endpoint(0), &AppSequence::new(3, Some("urn:uuid:d"), 4)),
-            Observation::Stale
+        assert!(
+            devices
+                .observe(&endpoint(0), &AppSequence::new(3, Some("urn:uuid:d"), 4))
+                .is_none()
         );
     }
 
