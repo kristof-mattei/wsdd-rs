@@ -14,6 +14,7 @@ use crate::config::{AppSequence, BindTo, Config, InterfaceFilter, PortOrSocket};
 use crate::ffi::listen_fds;
 use crate::network_interface::DevName;
 use crate::security::parse_userspec;
+use crate::soap::InstanceId;
 use crate::wsd::device::DeviceUri;
 
 #[expect(clippy::struct_excessive_bools, reason = "CLI flags")]
@@ -190,7 +191,10 @@ pub fn to_config(args: Cli) -> Result<Config, eyre::Report> {
         no_host: args.no_host,
         metadata_timeout: args.metadata_timeout,
         source_port: args.source_port,
-        app_sequence: AppSequence::new(now().as_secs(), sequence_id().to_string().into_boxed_str()),
+        app_sequence: AppSequence::new(
+            InstanceId::new(now().as_secs()),
+            sequence_id().to_string().into_boxed_str(),
+        ),
     };
 
     Ok(config)

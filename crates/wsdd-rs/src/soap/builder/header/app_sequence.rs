@@ -4,11 +4,12 @@ use xml::writer::XmlEvent;
 
 use crate::config::AppSequence;
 use crate::constants;
+use crate::soap::MessageNumber;
 use crate::soap::builder::WriteExtraHeaders;
 
 pub struct AppSequenceHeader<'s> {
     app_sequence: &'s AppSequence,
-    message_number: u64,
+    message_number: MessageNumber,
 }
 
 impl<'s> AppSequenceHeader<'s> {

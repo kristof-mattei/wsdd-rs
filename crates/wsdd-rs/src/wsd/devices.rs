@@ -9,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 use crate::network_address::NetworkAddress;
 use crate::soap::parser::app_sequence::AppSequence;
 use crate::soap::parser::xaddrs::XAddr;
+use crate::soap::{InstanceId, MessageNumber};
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 
 /// The most sequences tracked, across all Target Services.
@@ -20,7 +21,7 @@ const MAX_SEQUENCES: usize = 128;
 pub struct Devices {
     discovered: HashMap<DeviceUri, WSDDiscoveredDevice>,
     /// The last `MessageNumber` of each sequence.
-    sequences: RingMap<SequenceKey, u64>,
+    sequences: RingMap<SequenceKey, MessageNumber>,
     /// The Target Services in `sequences`.
     targets: HashMap<DeviceUri, Target>,
     /// The Target Services with a metadata exchange in progress.
@@ -30,7 +31,7 @@ pub struct Devices {
 #[derive(Debug, Hash, PartialEq, Eq)]
 struct SequenceKey {
     endpoint: DeviceUri,
-    instance_id: u64,
+    instance_id: InstanceId,
     sequence_id: Option<Box<str>>,
 }
 
@@ -48,7 +49,7 @@ impl SequenceKey {
 #[derive(Hash)]
 struct SequenceKeyRef<'a> {
     endpoint: &'a str,
-    instance_id: u64,
+    instance_id: InstanceId,
     sequence_id: Option<&'a str>,
 }
 
@@ -73,7 +74,7 @@ impl Equivalent<SequenceKey> for SequenceKeyRef<'_> {
 /// The entries of one Target Service in `sequences`.
 struct Target {
     /// The highest `InstanceId`.
-    instance_id: u64,
+    instance_id: InstanceId,
     /// How many entries that instance has.
     current: usize,
     /// How many entries older instances have.
