@@ -5,6 +5,7 @@ use hashbrown::HashMap;
 use hashbrown::hash_map::{Entry, EntryRef};
 use ringmap::{Equivalent, RingMap};
 use tokio_util::sync::CancellationToken;
+use vec1::Vec1;
 
 use crate::network_address::NetworkAddress;
 use crate::soap::parser::app_sequence::AppSequence;
@@ -92,7 +93,7 @@ struct Exchanges {
     /// Cancelled by a Bye and then replaced, so an exchange that starts after the Bye runs.
     bye: CancellationToken,
     /// The interface index of each running exchange, with the `XAddrs` of the last trigger that arrived while it ran.
-    running: HashMap<u32, Option<Vec<XAddr>>>,
+    running: HashMap<u32, Option<Vec1<XAddr>>>,
 }
 
 /// A metadata exchange started with `Devices::start_exchange`.
@@ -104,7 +105,7 @@ pub struct Exchange {
 /// A metadata exchange to run, and the `XAddrs` it fetches from.
 pub struct Fetch {
     pub exchange: Exchange,
-    pub xaddrs: Vec<XAddr>,
+    pub xaddrs: Vec1<XAddr>,
 }
 
 /// The outcome of `Devices::finish_exchange`.
@@ -125,7 +126,7 @@ impl Exchange {
 impl Current<'_> {
     /// Starts a metadata exchange with the Target Service on the interface with `interface_index`.
     /// Returns `None` while one already runs there, that one then runs once more with `xaddrs`.
-    pub fn start_exchange(self, interface_index: u32, xaddrs: Vec<XAddr>) -> Option<Fetch> {
+    pub fn start_exchange(self, interface_index: u32, xaddrs: Vec1<XAddr>) -> Option<Fetch> {
         let exchanges = match self.devices.exchanges.entry_ref(self.endpoint) {
             EntryRef::Occupied(occupied_entry) => occupied_entry.into_mut(),
             EntryRef::Vacant(vacant_entry_ref) => {
@@ -431,6 +432,7 @@ mod tests {
 
     use pretty_assertions::assert_eq;
     use url::Url;
+    use vec1::{Vec1, vec1};
 
     use crate::soap::parser::app_sequence::AppSequence;
     use crate::soap::parser::xaddrs::XAddr;
@@ -709,8 +711,8 @@ mod tests {
         assert!(devices.observe(&endpoint(1), &sequence(1, 7)).is_none());
     }
 
-    fn xaddrs(path: &str) -> Vec<XAddr> {
-        vec![XAddr::try_from(format!("http://192.168.100.5:5357/{}", path).as_str()).unwrap()]
+    fn xaddrs(path: &str) -> Vec1<XAddr> {
+        vec1![XAddr::try_from(format!("http://192.168.100.5:5357/{}", path).as_str()).unwrap()]
     }
 
     fn urls(xaddrs: &[XAddr]) -> Vec<&Url> {

@@ -81,6 +81,7 @@ uuid = { version = "=1.28.0", default-features = false, features = [
     "v5",
     "v7",
 ] }
+vec1 = "=1.12.1"
 xml = "=1.4.0"
 zerocopy.workspace = true
 
