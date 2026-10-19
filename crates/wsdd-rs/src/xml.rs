@@ -62,7 +62,7 @@ where
                 | XmlEvent::Comment(_)
                 | XmlEvent::Characters(_)
                 | XmlEvent::Whitespace(_)
-                | XmlEvent::Doctype { .. } => (),
+                | XmlEvent::Doctype { .. } => {},
             }
         }
 

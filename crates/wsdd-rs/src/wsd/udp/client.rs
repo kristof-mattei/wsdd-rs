@@ -867,7 +867,7 @@ async fn listen_forever(
         };
 
         match response {
-            Ok(()) => (),
+            Ok(()) => {},
             Err(error) => {
                 event!(
                     Level::ERROR,
