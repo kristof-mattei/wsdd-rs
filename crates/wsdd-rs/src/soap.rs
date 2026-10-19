@@ -40,6 +40,44 @@ impl std::fmt::Display for MessageId {
     }
 }
 
+/// The `InstanceId` of a `wsd:AppSequence`, see documentation/ws-discovery.pdf, Appendix I.
+///
+/// Appendix I types it as `xs:unsignedInt` (32 bits), which an `InstanceId` in Unix seconds exceeds on 2106-02-07.
+/// WSDAPI holds it as `ULONGLONG` (`WSD_APP_SEQUENCE`), so this is a `u64`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InstanceId(u64);
+
+impl InstanceId {
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+impl std::fmt::Display for InstanceId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// The `MessageNumber` of a `wsd:AppSequence`, see documentation/ws-discovery.pdf, Appendix I.
+///
+/// Appendix I types it as `xs:unsignedInt` (32 bits), which a Target Service exceeds after 2^32 messages.
+/// WSDAPI holds it as `ULONGLONG` (`WSD_APP_SEQUENCE`), so this is a `u64`.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct MessageNumber(u64);
+
+impl MessageNumber {
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+impl std::fmt::Display for MessageNumber {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 pub trait MessageType {
     fn message_type(&self) -> &str;
 }

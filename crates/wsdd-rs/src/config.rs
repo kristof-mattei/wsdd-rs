@@ -8,6 +8,7 @@ use tracing::{Level, event};
 use uuid::Uuid;
 
 use crate::network_interface::DevName;
+use crate::soap::{InstanceId, MessageNumber};
 use crate::wsd::device::DeviceUri;
 
 #[expect(clippy::struct_excessive_bools, reason = "Main config")]
@@ -33,19 +34,15 @@ pub struct Config {
 }
 
 /// WS-Discovery, Appendix I. `MessageNumber` orders every message of the Target Service, so all interfaces share this counter.
-///
-/// Appendix I types `InstanceId` and `MessageNumber` as `xs:unsignedInt` (32 bits).
-/// The `InstanceId` in Unix seconds exceeds that on 2106-02-07, and `MessageNumber` after 2^32 messages.
-/// WSDAPI holds both as `ULONGLONG` (`WSD_APP_SEQUENCE`), so these are `u64`.
 #[derive(Debug)]
 pub struct AppSequence {
-    instance_id: u64,
+    instance_id: InstanceId,
     sequence_id: Box<str>,
     message_number: AtomicU64,
 }
 
 impl AppSequence {
-    pub fn new(instance_id: u64, sequence_id: Box<str>) -> Self {
+    pub fn new(instance_id: InstanceId, sequence_id: Box<str>) -> Self {
         Self {
             instance_id,
             sequence_id,
@@ -53,7 +50,7 @@ impl AppSequence {
         }
     }
 
-    pub fn instance_id(&self) -> u64 {
+    pub fn instance_id(&self) -> InstanceId {
         self.instance_id
     }
 
@@ -61,8 +58,8 @@ impl AppSequence {
         &self.sequence_id
     }
 
-    pub fn next_message_number(&self) -> u64 {
-        self.message_number.fetch_add(1, Ordering::Relaxed)
+    pub fn next_message_number(&self) -> MessageNumber {
+        MessageNumber::new(self.message_number.fetch_add(1, Ordering::Relaxed))
     }
 }
 

@@ -14,6 +14,7 @@ use crate::config::{AppSequence, Config};
 use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::{NetworkInterface, if_nametoindex};
+use crate::soap::InstanceId;
 use crate::soap::parser::MessageHandler;
 
 pub mod xml {
@@ -125,8 +126,10 @@ pub fn build_config(endpoint_uuid: Uuid, instance_id: u64) -> Config {
     .unwrap();
 
     // instance ID is not settable with commandline
-    config.app_sequence =
-        AppSequence::new(instance_id, Box::from(config.app_sequence.sequence_id()));
+    config.app_sequence = AppSequence::new(
+        InstanceId::new(instance_id),
+        Box::from(config.app_sequence.sequence_id()),
+    );
 
     config
 }

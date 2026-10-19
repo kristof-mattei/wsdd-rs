@@ -2,13 +2,14 @@ use thiserror::Error;
 use xml::attribute::OwnedAttribute;
 
 use crate::soap::parser::generic::parse_unsigned_int;
+use crate::soap::{InstanceId, MessageNumber};
 
 /// The `wsd:AppSequence` header block of a received message, see documentation/ws-discovery.pdf, Appendix I.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AppSequence {
-    instance_id: u64,
+    instance_id: InstanceId,
     sequence_id: Option<Box<str>>,
-    message_number: u64,
+    message_number: MessageNumber,
 }
 
 #[derive(Error, Clone, Debug, PartialEq)]
@@ -27,13 +28,13 @@ impl AppSequence {
     #[cfg(test)]
     pub fn new(instance_id: u64, sequence_id: Option<&str>, message_number: u64) -> Self {
         Self {
-            instance_id,
+            instance_id: InstanceId::new(instance_id),
             sequence_id: sequence_id.map(Box::from),
-            message_number,
+            message_number: MessageNumber::new(message_number),
         }
     }
 
-    pub fn instance_id(&self) -> u64 {
+    pub fn instance_id(&self) -> InstanceId {
         self.instance_id
     }
 
@@ -41,7 +42,7 @@ impl AppSequence {
         self.sequence_id.as_deref()
     }
 
-    pub fn message_number(&self) -> u64 {
+    pub fn message_number(&self) -> MessageNumber {
         self.message_number
     }
 
@@ -57,16 +58,25 @@ impl AppSequence {
 
             match &*attribute.name.local_name {
                 "InstanceId" => {
-                    instance_id = Some(parse_unsigned_int(&attribute.value).ok_or_else(|| {
-                        InvalidAppSequence::InvalidInstanceId(Box::from(&*attribute.value))
-                    })?);
+                    instance_id = Some(
+                        parse_unsigned_int(&attribute.value)
+                            .map(InstanceId::new)
+                            .ok_or_else(|| {
+                                InvalidAppSequence::InvalidInstanceId(Box::from(&*attribute.value))
+                            })?,
+                    );
                 },
                 "SequenceId" => sequence_id = Some(Box::from(&*attribute.value)),
                 "MessageNumber" => {
-                    message_number =
-                        Some(parse_unsigned_int(&attribute.value).ok_or_else(|| {
-                            InvalidAppSequence::InvalidMessageNumber(Box::from(&*attribute.value))
-                        })?);
+                    message_number = Some(
+                        parse_unsigned_int(&attribute.value)
+                            .map(MessageNumber::new)
+                            .ok_or_else(|| {
+                                InvalidAppSequence::InvalidMessageNumber(Box::from(
+                                    &*attribute.value,
+                                ))
+                            })?,
+                    );
                 },
                 _ => {},
             }
