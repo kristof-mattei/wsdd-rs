@@ -26,12 +26,11 @@ where
     W: Write,
 {
     fn namespaces(&self) -> impl Iterator<Item = (impl Into<String>, impl Into<String>)> {
-        [
-            ("pub", constants::XML_PUB_NAMESPACE),
-            ("wsd", constants::XML_WSD_NAMESPACE),
-            ("wsdp", constants::XML_WSDP_NAMESPACE),
-        ]
-        .into_iter()
+        [("wsd", constants::XML_WSD_NAMESPACE)].into_iter().chain(
+            constants::ADVERTISED_TYPES
+                .iter()
+                .map(|r#type| (r#type.prefix, r#type.namespace)),
+        )
     }
 
     fn write_body(
@@ -46,7 +45,7 @@ where
 
         // Technically `Types` are optional in `Hello`, but omitted `Types` have no implied value, so a client could only match us by Type after a `Probe` or `Resolve`, see documentation/ws-discovery.pdf, Section 4.1
         // omitting them hides nothing, because `ProbeMatch` and `ResolveMatch` return the same `Types`
-        add_types(writer, constants::WSDP_TYPE_DEVICE_COMPUTER)?;
+        add_types(writer, &constants::ADVERTISED_TYPES)?;
 
         // WSDAPI sends one identical `Hello` on every interface, so `XAddrs` in it would list the addresses of every network the host is on, on each of those networks, and WSDAPI omits `XAddrs` instead, see documentation/windows-win32-wsdapi.pdf, "Hello and XAddrs" and "Discovery in a multi-homed environment"
         // each address here sends its own `Hello` from that address, so the datagram's source address already reveals the address in `XAddrs`, and omitting it would only cost clients a `Resolve` round trip

@@ -15,6 +15,7 @@ use xml::writer::XmlEvent;
 
 use crate::config::Config;
 use crate::constants;
+use crate::soap::PrefixedName;
 use crate::url_ip_addr::UrlIpAddr;
 use crate::wsd::device::DeviceUri;
 
@@ -48,13 +49,36 @@ fn add_endpoint_reference<W: Write>(
     Ok(())
 }
 
-fn add_types<W>(writer: &mut EventWriter<W>, types: &str) -> Result<(), xml::writer::Error>
+fn add_types<W>(
+    writer: &mut EventWriter<W>,
+    types: &[PrefixedName],
+) -> Result<(), xml::writer::Error>
 where
     W: Write,
 {
     writer.write(XmlEvent::start_element("wsd:Types"))?;
-    writer.write(XmlEvent::Characters(types))?;
+    add_qnames(writer, types)?;
     writer.write(XmlEvent::end_element())?;
+
+    Ok(())
+}
+
+fn add_qnames<W>(
+    writer: &mut EventWriter<W>,
+    names: &[PrefixedName],
+) -> Result<(), xml::writer::Error>
+where
+    W: Write,
+{
+    for (index, name) in names.iter().enumerate() {
+        if index > 0 {
+            writer.write(XmlEvent::Characters(" "))?;
+        }
+
+        writer.write(XmlEvent::Characters(name.prefix))?;
+        writer.write(XmlEvent::Characters(":"))?;
+        writer.write(XmlEvent::Characters(name.local_name))?;
+    }
 
     Ok(())
 }

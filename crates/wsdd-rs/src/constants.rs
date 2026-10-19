@@ -4,6 +4,8 @@ use std::time::Duration;
 
 use const_str::format as const_format;
 
+use crate::soap::PrefixedName;
+
 pub const WSA_URI: &str = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
 pub const WSD_URI: &str = "http://schemas.xmlsoap.org/ws/2005/04/discovery";
 pub const WSDP_URI: &str = "http://schemas.xmlsoap.org/ws/2006/02/devprof";
@@ -37,9 +39,20 @@ pub const WSDP_RELATIONSHIP_HOST: &str = "host";
 pub const WSDP_RELATIONSHIP_TYPE_HOST: &str =
     const_format!("{}/{}", WSDP_URI, WSDP_RELATIONSHIP_HOST);
 
-pub const WSDP_TYPE_DEVICE: &str = "wsdp:Device";
-pub const PUB_COMPUTER: &str = "pub:Computer";
-pub const WSDP_TYPE_DEVICE_COMPUTER: &str = const_format!("{} {}", WSDP_TYPE_DEVICE, PUB_COMPUTER);
+pub const WSDP_DEVICE: PrefixedName = PrefixedName {
+    prefix: "wsdp",
+    namespace: XML_WSDP_NAMESPACE,
+    local_name: "Device",
+};
+
+pub const PUB_COMPUTER: PrefixedName = PrefixedName {
+    prefix: "pub",
+    namespace: XML_PUB_NAMESPACE,
+    local_name: "Computer",
+};
+
+/// The Types of this Target Service, see documentation/ws-discovery.pdf, Section 4.1.
+pub const ADVERTISED_TYPES: [PrefixedName; 2] = [WSDP_DEVICE, PUB_COMPUTER];
 
 pub const WSD_MCAST_GRP_V4: Ipv4Addr = Ipv4Addr::new(239, 255, 255, 250);
 pub const WSD_MCAST_GRP_V6: Ipv6Addr = Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 0xc);

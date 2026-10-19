@@ -78,6 +78,13 @@ impl std::fmt::Display for MessageNumber {
     }
 }
 
+/// An `xs:QName`, with the prefix that the built messages declare for its namespace.
+pub struct PrefixedName {
+    pub prefix: &'static str,
+    pub namespace: &'static str,
+    pub local_name: &'static str,
+}
+
 pub trait MessageType {
     fn message_type(&self) -> &str;
 }

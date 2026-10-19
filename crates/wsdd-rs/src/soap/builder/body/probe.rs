@@ -24,7 +24,10 @@ where
     fn namespaces(&self) -> impl Iterator<Item = (impl Into<String>, impl Into<String>)> {
         [
             ("wsd", constants::XML_WSD_NAMESPACE),
-            ("wsdp", constants::XML_WSDP_NAMESPACE),
+            (
+                constants::WSDP_DEVICE.prefix,
+                constants::WSDP_DEVICE.namespace,
+            ),
         ]
         .into_iter()
     }
@@ -36,7 +39,7 @@ where
     ) -> Result<(), xml::writer::Error> {
         writer.write(XmlEvent::start_element("wsd:Probe"))?;
 
-        add_types(writer, constants::WSDP_TYPE_DEVICE)?;
+        add_types(writer, &[constants::WSDP_DEVICE])?;
 
         writer.write(XmlEvent::end_element())?;
 
