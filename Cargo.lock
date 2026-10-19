@@ -2503,6 +2503,7 @@ dependencies = [
  "mimalloc",
  "mockall",
  "mockito",
+ "parking_lot",
  "pin-project",
  "pretty_assertions",
  "rand 0.10.3",
