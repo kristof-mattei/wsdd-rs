@@ -33,7 +33,7 @@ use crate::task_tracker_ext::TaskTrackerExt as _;
 use crate::utils::SliceDisplay;
 use crate::utils::task::spawn_with_name;
 use crate::wsd::device::DeviceUri;
-use crate::wsd::devices::{Devices, Exchange, Fetch, Finished};
+use crate::wsd::devices::{Devices, Exchange, Fetch};
 
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
@@ -348,16 +348,16 @@ impl ExchangeRunner {
         }
     }
 
-    fn spawn(&self, endpoint: DeviceUri, fetch: Fetch) {
+    fn spawn(&self, fetch: Fetch) {
         let runner = self.clone();
 
         self.tracker.spawn_with_name(
-            format!("metadata exchange ({})", endpoint).as_str(),
+            format!("metadata exchange ({})", fetch.exchange.endpoint()).as_str(),
             async move {
                 let mut next = Some(fetch);
 
                 while let Some(fetch) = next {
-                    next = runner.perform(&endpoint, fetch).await;
+                    next = runner.perform(fetch).await;
                 }
             },
         );
@@ -368,23 +368,16 @@ impl ExchangeRunner {
         self.tracker.wait().await;
     }
 
-    /// Fetches the metadata of `endpoint` from the first `XAddr` that answers, and returns the exchange to run next.
-    async fn perform(
-        &self,
-        endpoint: &DeviceUri,
-        Fetch { exchange, xaddrs }: Fetch,
-    ) -> Option<Fetch> {
+    /// Fetches the metadata of the Target Service from the first `XAddr` that answers, and returns the exchange to run next.
+    async fn perform(&self, Fetch { exchange, xaddrs }: Fetch) -> Option<Fetch> {
+        let endpoint = exchange.endpoint();
+
         let body = match build_getmetadata_message(&self.config, endpoint) {
             Ok(body) => Bytes::from_owner(body),
             Err(error) => {
                 event!(Level::ERROR, %endpoint, ?error, "Failed to build the metadata request");
 
-                return self
-                    .devices
-                    .write()
-                    .await
-                    .finish_exchange(endpoint, exchange)
-                    .rerun;
+                return self.devices.write().await.finish_exchange(exchange);
             },
         };
 
@@ -411,10 +404,7 @@ impl ExchangeRunner {
                 .run_until_cancelled(exchange.run_until_bye(request))
                 .await
             else {
-                self.devices
-                    .write()
-                    .await
-                    .cancel_exchange(endpoint, exchange);
+                self.devices.write().await.cancel_exchange(exchange);
 
                 return None;
             };
@@ -422,12 +412,7 @@ impl ExchangeRunner {
             let Some(response) = response else {
                 event!(Level::DEBUG, %endpoint, "Bye received during the metadata exchange, aborting it");
 
-                return self
-                    .devices
-                    .write()
-                    .await
-                    .finish_exchange(endpoint, exchange)
-                    .rerun;
+                return self.devices.write().await.finish_exchange(exchange);
             };
 
             match response {
@@ -435,7 +420,6 @@ impl ExchangeRunner {
                     return handle_metadata(
                         &self.devices,
                         &response,
-                        endpoint,
                         exchange,
                         &xaddr,
                         &self.bound_to,
@@ -457,11 +441,7 @@ impl ExchangeRunner {
 
         event!(Level::WARN, %endpoint, "could not fetch metadata from any XAddr");
 
-        self.devices
-            .write()
-            .await
-            .finish_exchange(endpoint, exchange)
-            .rerun
+        self.devices.write().await.finish_exchange(exchange)
     }
 }
 
@@ -515,7 +495,7 @@ async fn handle_hello(
             Ok(())
         },
         Next::Fetch(fetch) => {
-            exchanges.spawn(endpoint, fetch);
+            exchanges.spawn(fetch);
 
             Ok(())
         },
@@ -651,7 +631,7 @@ async fn handle_probe_match(
             Ok(())
         },
         Next::Fetch(fetch) => {
-            exchanges.spawn(endpoint, fetch);
+            exchanges.spawn(fetch);
 
             Ok(())
         },
@@ -717,7 +697,7 @@ async fn handle_resolve_matches(
     };
 
     match started {
-        Some(fetch) => exchanges.spawn(endpoint, fetch),
+        Some(fetch) => exchanges.spawn(fetch),
         None => {
             event!(Level::DEBUG, %endpoint, "metadata exchange running, rerun queued");
         },
@@ -735,30 +715,29 @@ fn build_getmetadata_message(
     Ok(message)
 }
 
-/// Ends `exchange`, stores `meta` unless the Target Service sent a Bye while the exchange ran, and returns the exchange to run next.
+/// Stores `meta` unless the Target Service sent a Bye while the exchange ran, ends `exchange`, and returns the exchange to run next.
 async fn handle_metadata(
     devices: &RwLock<Devices>,
     meta: &[u8],
-    endpoint: &DeviceUri,
     exchange: Exchange,
     xaddr: &XAddr,
     bound_to: &NetworkAddress,
 ) -> Option<Fetch> {
     let mut devices = devices.write().await;
 
-    let Finished { departed, rerun } = devices.finish_exchange(endpoint, exchange);
+    let endpoint = exchange.endpoint();
 
-    if departed {
+    if exchange.departed() {
         event!(Level::DEBUG, %endpoint, "Bye received during the metadata exchange, discarding the metadata");
 
-        return rerun;
+        return devices.finish_exchange(exchange);
     }
 
     if let Err(error) = devices.store(endpoint, meta, xaddr, bound_to) {
         event!(Level::ERROR, %endpoint, ?error, "Failed to store the metadata");
     }
 
-    rerun
+    devices.finish_exchange(exchange)
 }
 
 async fn listen_forever(
@@ -1141,14 +1120,12 @@ mod tests {
 
     async fn finish_exchange_with_synology(
         devices: &RwLock<Devices>,
-        endpoint: &DeviceUri,
         exchange: Exchange,
         bound_to: &NetworkAddress,
     ) -> Option<Fetch> {
         handle_metadata(
             devices,
             synology_metadata().as_bytes(),
-            endpoint,
             exchange,
             &XAddr::try_from("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721")
                 .unwrap(),
@@ -1810,8 +1787,7 @@ mod tests {
         .await;
 
         let result =
-            finish_exchange_with_synology(&client_devices, &endpoint, exchange, &network_address)
-                .await;
+            finish_exchange_with_synology(&client_devices, exchange, &network_address).await;
 
         assert!(result.is_none());
 
@@ -1943,8 +1919,7 @@ mod tests {
         .await;
 
         let result =
-            finish_exchange_with_synology(&client_devices, &endpoint, exchange, &network_address)
-                .await;
+            finish_exchange_with_synology(&client_devices, exchange, &network_address).await;
 
         assert!(result.is_none());
 
@@ -1980,8 +1955,7 @@ mod tests {
         assert_matches!(result, Ok(()));
 
         let result =
-            finish_exchange_with_synology(&client_devices, &endpoint, exchange, &network_address)
-                .await;
+            finish_exchange_with_synology(&client_devices, exchange, &network_address).await;
 
         assert!(result.is_none());
 
@@ -2018,8 +1992,7 @@ mod tests {
         assert_matches!(result, Ok(()));
 
         let result =
-            finish_exchange_with_synology(&client_devices, &endpoint, exchange, &network_address)
-                .await;
+            finish_exchange_with_synology(&client_devices, exchange, &network_address).await;
 
         assert!(result.is_none());
 
@@ -2186,7 +2159,7 @@ mod tests {
         .await;
 
         let result = exchange_runner(&client_config, &client_devices, &client_network_address)
-            .perform(&device_uri, Fetch { exchange, xaddrs })
+            .perform(Fetch { exchange, xaddrs })
             .await;
 
         assert!(result.is_none());
@@ -2249,13 +2222,10 @@ mod tests {
         )
         .await;
 
-        let exchange = Box::pin(exchanges.perform(
-            &device_uri,
-            Fetch {
-                exchange,
-                xaddrs: vec1![xaddr],
-            },
-        ));
+        let exchange = Box::pin(exchanges.perform(Fetch {
+            exchange,
+            xaddrs: vec1![xaddr],
+        }));
 
         let (result, bye_result, ()) = tokio::time::timeout(Duration::from_secs(10), async {
             tokio::join!(exchange, bye, host)
@@ -2306,7 +2276,7 @@ mod tests {
         .await;
 
         let result = exchange_runner(&client_config, &client_devices, &client_network_address)
-            .perform(&device_uri, Fetch { exchange, xaddrs })
+            .perform(Fetch { exchange, xaddrs })
             .await;
 
         assert!(result.is_none());
@@ -2362,7 +2332,7 @@ mod tests {
         .await;
 
         let result = exchange_runner(&client_config, &client_devices, &network_address)
-            .perform(&host_config.uuid_as_device_uri, Fetch { exchange, xaddrs })
+            .perform(Fetch { exchange, xaddrs })
             .await;
 
         http_server.teardown().await;
@@ -2422,13 +2392,8 @@ mod tests {
             Ok(())
         );
 
-        let result = finish_exchange_with_synology(
-            &client_devices,
-            &device_uri,
-            exchange,
-            &client_network_address,
-        )
-        .await;
+        let result =
+            finish_exchange_with_synology(&client_devices, exchange, &client_network_address).await;
 
         assert!(result.is_none());
 
@@ -2454,13 +2419,8 @@ mod tests {
         )
         .await;
 
-        let result = finish_exchange_with_synology(
-            &client_devices,
-            &device_uri,
-            exchange,
-            &client_network_address,
-        )
-        .await;
+        let result =
+            finish_exchange_with_synology(&client_devices, exchange, &client_network_address).await;
 
         assert!(result.is_none());
 
@@ -2523,7 +2483,6 @@ mod tests {
         let result = handle_metadata(
             &client_devices,
             metadata.as_bytes(),
-            &device_uri,
             exchange,
             &XAddr::try_from("http://192.168.100.50:8018/wsd").unwrap(),
             &client_network_address,
@@ -2589,7 +2548,6 @@ mod tests {
         let result = handle_metadata(
             &client_devices,
             metadata.as_bytes(),
-            &device_uri,
             exchange,
             &XAddr::try_from("http://192.168.100.71:5357/18de7c97-6277-43fe-9552-cac98a7610f5/")
                 .unwrap(),
