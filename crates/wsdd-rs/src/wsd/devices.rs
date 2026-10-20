@@ -96,8 +96,9 @@ struct Exchanges {
     running: HashMap<u32, Option<Vec1<XAddr>>>,
 }
 
-/// A metadata exchange started with `Devices::start_exchange`.
+/// A metadata exchange started with `Current::start_exchange`.
 pub struct Exchange {
+    endpoint: DeviceUri,
     bye: CancellationToken,
     interface_index: u32,
 }
@@ -108,15 +109,17 @@ pub struct Fetch {
     pub xaddrs: Vec1<XAddr>,
 }
 
-/// The outcome of `Devices::finish_exchange`.
-pub struct Finished {
-    /// The Target Service sent a Bye while the exchange ran.
-    pub departed: bool,
-    /// The exchange to run next, for the triggers that arrived while it ran.
-    pub rerun: Option<Fetch>,
-}
-
 impl Exchange {
+    /// The Target Service whose metadata the exchange fetches.
+    pub fn endpoint(&self) -> &DeviceUri {
+        &self.endpoint
+    }
+
+    /// The Target Service sent a Bye since the exchange started.
+    pub fn departed(&self) -> bool {
+        self.bye.is_cancelled()
+    }
+
     /// Runs `future` unless the Target Service sends a Bye first, then returns `None`.
     pub async fn run_until_bye<F: Future>(&self, future: F) -> Option<F::Output> {
         self.bye.run_until_cancelled(future).await
@@ -145,6 +148,7 @@ impl Current<'_> {
 
                 Some(Fetch {
                     exchange: Exchange {
+                        endpoint: self.endpoint.clone(),
                         bye: exchanges.bye.clone(),
                         interface_index,
                     },
@@ -169,21 +173,17 @@ impl Current<'_> {
 }
 
 impl Devices {
+    /// Ends `exchange`, and returns the exchange to run next, for the triggers that arrived while it ran.
     pub fn finish_exchange(
         &mut self,
-        endpoint: &DeviceUri,
         Exchange {
-            bye,
+            endpoint,
             interface_index,
+            ..
         }: Exchange,
-    ) -> Finished {
-        let departed = bye.is_cancelled();
-
-        let EntryRef::Occupied(mut occupied_entry) = self.exchanges.entry_ref(endpoint) else {
-            return Finished {
-                departed,
-                rerun: None,
-            };
+    ) -> Option<Fetch> {
+        let EntryRef::Occupied(mut occupied_entry) = self.exchanges.entry_ref(&endpoint) else {
+            return None;
         };
 
         let exchanges = occupied_entry.get_mut();
@@ -200,33 +200,31 @@ impl Devices {
                 occupied_entry.remove();
             }
 
-            return Finished {
-                departed,
-                rerun: None,
-            };
+            return None;
         };
 
-        Finished {
-            departed,
-            rerun: Some(Fetch {
-                exchange: Exchange {
-                    bye: exchanges.bye.clone(),
-                    interface_index,
-                },
-                xaddrs,
-            }),
-        }
+        let bye = exchanges.bye.clone();
+
+        Some(Fetch {
+            exchange: Exchange {
+                endpoint,
+                bye,
+                interface_index,
+            },
+            xaddrs,
+        })
     }
 
-    /// Ends `exchange` of the Target Service at `endpoint`, and drops its pending rerun.
+    /// Ends `exchange`, and drops its pending rerun.
     pub fn cancel_exchange(
         &mut self,
-        endpoint: &DeviceUri,
         Exchange {
-            interface_index, ..
+            endpoint,
+            interface_index,
+            ..
         }: Exchange,
     ) {
-        let EntryRef::Occupied(mut occupied_entry) = self.exchanges.entry_ref(endpoint) else {
+        let EntryRef::Occupied(mut occupied_entry) = self.exchanges.entry_ref(&endpoint) else {
             return;
         };
 
@@ -747,7 +745,7 @@ mod tests {
 
         depart(&mut devices);
 
-        assert!(devices.finish_exchange(&endpoint(1), exchange).departed);
+        assert!(exchange.departed());
     }
 
     #[tokio::test]
@@ -792,7 +790,7 @@ mod tests {
 
         let exchange = start(&mut devices, 1);
 
-        assert!(!devices.finish_exchange(&endpoint(1), exchange).departed);
+        assert!(!exchange.departed());
     }
 
     #[test]
@@ -805,8 +803,8 @@ mod tests {
 
         let after = start(&mut devices, 2);
 
-        assert!(devices.finish_exchange(&endpoint(1), before).departed);
-        assert!(!devices.finish_exchange(&endpoint(1), after).departed);
+        assert!(before.departed());
+        assert!(!after.departed());
     }
 
     #[test]
@@ -818,11 +816,11 @@ mod tests {
 
         depart(&mut devices);
 
-        devices.finish_exchange(&endpoint(1), first);
+        devices.finish_exchange(first);
 
         assert!(devices.has_running_exchanges());
 
-        devices.finish_exchange(&endpoint(1), second);
+        devices.finish_exchange(second);
 
         assert!(!devices.has_running_exchanges());
     }
@@ -858,13 +856,12 @@ mod tests {
             exchange: rerun,
             xaddrs: rerun_xaddrs,
         } = devices
-            .finish_exchange(&endpoint(1), first)
-            .rerun
+            .finish_exchange(first)
             .expect("triggers arrived while the exchange ran");
 
         assert_eq!(urls(&rerun_xaddrs), urls(&xaddrs("third")));
 
-        assert!(devices.finish_exchange(&endpoint(1), rerun).rerun.is_none());
+        assert!(devices.finish_exchange(rerun).is_none());
 
         assert!(!devices.has_running_exchanges());
     }
@@ -879,10 +876,8 @@ mod tests {
 
         depart(&mut devices);
 
-        let finished = devices.finish_exchange(&endpoint(1), first);
-
-        assert!(finished.departed);
-        assert!(finished.rerun.is_none());
+        assert!(first.departed());
+        assert!(devices.finish_exchange(first).is_none());
 
         assert!(!devices.has_running_exchanges());
     }
@@ -895,7 +890,7 @@ mod tests {
 
         assert!(trigger(&mut devices, 1, "second").is_none());
 
-        devices.cancel_exchange(&endpoint(1), first);
+        devices.cancel_exchange(first);
 
         assert!(!devices.has_running_exchanges());
 
@@ -912,13 +907,13 @@ mod tests {
 
         assert!(trigger(&mut devices, 1, "second").is_none());
 
-        let finished = devices.finish_exchange(&endpoint(1), first);
-
-        assert!(finished.departed);
+        assert!(first.departed());
 
         let Fetch {
             exchange: rerun, ..
-        } = finished.rerun.expect("a trigger arrived after the Bye");
+        } = devices
+            .finish_exchange(first)
+            .expect("a trigger arrived after the Bye");
 
         assert_eq!(rerun.run_until_bye(async { 1 }).await, Some(1));
     }
