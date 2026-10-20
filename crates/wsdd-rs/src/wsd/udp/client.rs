@@ -7,8 +7,8 @@ use color_eyre::eyre;
 use hashbrown::HashMap;
 use ipnet::IpNet;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::oneshot;
 use tokio::sync::oneshot::error::TryRecvError;
-use tokio::sync::{RwLock, oneshot};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -38,7 +38,7 @@ use crate::wsd::devices::{Devices, Exchange, Fetch};
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
     _bound_to: NetworkAddress,
-    _devices: Arc<RwLock<Devices>>,
+    _devices: Arc<parking_lot::RwLock<Devices>>,
     handle: tokio::task::JoinHandle<()>,
     probe_tx: Sender<()>,
 }
@@ -90,7 +90,7 @@ impl WSDClient {
     pub fn init(
         cancellation_token: CancellationToken,
         config: Arc<Config>,
-        devices: Arc<RwLock<Devices>>,
+        devices: Arc<parking_lot::RwLock<Devices>>,
         bound_to: NetworkAddress,
         incoming_rx: Receiver<IncomingClientMessage>,
         mc_local_port_tx: Sender<OutgoingMulticastMessage>,
@@ -285,7 +285,7 @@ fn check_xaddrs(
 struct ExchangeRunner {
     client: reqwest::Client,
     config: Arc<Config>,
-    devices: Arc<RwLock<Devices>>,
+    devices: Arc<parking_lot::RwLock<Devices>>,
     bound_to: NetworkAddress,
     cancellation_token: CancellationToken,
     tracker: TaskTracker,
@@ -295,7 +295,7 @@ impl ExchangeRunner {
     fn new(
         client: reqwest::Client,
         config: Arc<Config>,
-        devices: Arc<RwLock<Devices>>,
+        devices: Arc<parking_lot::RwLock<Devices>>,
         bound_to: NetworkAddress,
         cancellation_token: CancellationToken,
     ) -> Self {
@@ -338,7 +338,7 @@ impl ExchangeRunner {
             Err(error) => {
                 event!(Level::ERROR, %endpoint, ?error, "Failed to build the metadata request");
 
-                return self.devices.write().await.finish_exchange(exchange);
+                return self.devices.write().finish_exchange(exchange);
             },
         };
 
@@ -365,7 +365,7 @@ impl ExchangeRunner {
                 .run_until_cancelled(exchange.run_until_bye(request))
                 .await
             else {
-                self.devices.write().await.cancel_exchange(exchange);
+                self.devices.write().cancel_exchange(exchange);
 
                 return None;
             };
@@ -373,7 +373,7 @@ impl ExchangeRunner {
             let Some(response) = response else {
                 event!(Level::DEBUG, %endpoint, "Bye received during the metadata exchange, aborting it");
 
-                return self.devices.write().await.finish_exchange(exchange);
+                return self.devices.write().finish_exchange(exchange);
             };
 
             match response {
@@ -384,8 +384,7 @@ impl ExchangeRunner {
                         exchange,
                         &xaddr,
                         &self.bound_to,
-                    )
-                    .await;
+                    );
                 },
                 Err(error) => {
                     let url = error.url().map(ToString::to_string);
@@ -402,7 +401,7 @@ impl ExchangeRunner {
 
         event!(Level::WARN, %endpoint, "could not fetch metadata from any XAddr");
 
-        self.devices.write().await.finish_exchange(exchange)
+        self.devices.write().finish_exchange(exchange)
     }
 }
 
@@ -410,7 +409,7 @@ impl ExchangeRunner {
 struct ClientLoop {
     exchanges: ExchangeRunner,
     config: Arc<Config>,
-    devices: Arc<RwLock<Devices>>,
+    devices: Arc<parking_lot::RwLock<Devices>>,
     bound_to: NetworkAddress,
     mc_local_port_tx: Sender<OutgoingMulticastMessage>,
     probes: HashMap<MessageId, LastCopy>,
@@ -438,7 +437,7 @@ impl ClientLoop {
         } = self;
 
         let next = {
-            let mut guard = devices.write().await;
+            let mut guard = devices.write();
 
             let Some(current) = guard.observe(&endpoint, &app_sequence) else {
                 event!(Level::DEBUG, %endpoint, ?app_sequence, "stale Hello, ignoring");
@@ -535,7 +534,7 @@ impl ClientLoop {
         } = self;
 
         let next = {
-            let mut guard = devices.write().await;
+            let mut guard = devices.write();
 
             let current = guard.observe_match(&endpoint, app_sequence);
 
@@ -580,7 +579,7 @@ impl ClientLoop {
         }
     }
 
-    async fn handle_resolve_matches(
+    fn handle_resolve_matches(
         &mut self,
         received_at: Instant,
         ResolveMatches {
@@ -588,7 +587,7 @@ impl ClientLoop {
             app_sequence,
             resolve_match,
         }: ResolveMatches,
-    ) -> Result<(), eyre::Report> {
+    ) {
         let &mut Self {
             ref exchanges,
             ref devices,
@@ -604,7 +603,7 @@ impl ClientLoop {
 
         if !fresh {
             event!(Level::DEBUG, %relates_to, "unknown or outdated resolve");
-            return Ok(());
+            return;
         }
 
         let Some(ResolveMatch {
@@ -615,20 +614,20 @@ impl ClientLoop {
         else {
             event!(Level::DEBUG, %relates_to, "ResolveMatches without a match, nothing to do");
 
-            return Ok(());
+            return;
         };
 
         let started = {
-            let mut guard = devices.write().await;
+            let mut guard = devices.write();
 
             let current = guard.observe_match(&endpoint, &app_sequence);
 
             match check_xaddrs(bound_to.address, "ResolveMatch", &endpoint, raw_xaddrs) {
-                XAddrsCheck::Unusable => return Ok(()),
+                XAddrsCheck::Unusable => return,
                 XAddrsCheck::Missing => {
                     event!(Level::DEBUG, "ResolveMatch without xaddr, nothing to do");
 
-                    return Ok(());
+                    return;
                 },
                 XAddrsCheck::Usable(xaddrs) => {
                     event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), metadata_version, "ResolveMatch");
@@ -644,24 +643,22 @@ impl ClientLoop {
                 event!(Level::DEBUG, %endpoint, "metadata exchange running, rerun queued");
             },
         }
-
-        Ok(())
     }
 }
 
-async fn handle_bye(
-    devices: Arc<RwLock<Devices>>,
+fn handle_bye(
+    devices: &parking_lot::RwLock<Devices>,
     Bye {
         app_sequence,
         endpoint,
     }: Bye,
-) -> Result<(), eyre::Report> {
-    let mut guard = devices.write().await;
+) {
+    let mut guard = devices.write();
 
     let Some(current) = guard.observe(&endpoint, &app_sequence) else {
         event!(Level::DEBUG, %endpoint, ?app_sequence, "stale Bye, ignoring");
 
-        return Ok(());
+        return;
     };
 
     if current.depart().is_none() {
@@ -671,8 +668,6 @@ async fn handle_bye(
             "Received bye, but not record of that endpoint"
         );
     }
-
-    Ok(())
 }
 
 fn build_getmetadata_message(
@@ -685,14 +680,14 @@ fn build_getmetadata_message(
 }
 
 /// Stores `meta` unless the Target Service sent a Bye while the exchange ran, ends `exchange`, and returns the exchange to run next.
-async fn handle_metadata(
-    devices: &RwLock<Devices>,
+fn handle_metadata(
+    devices: &parking_lot::RwLock<Devices>,
     meta: &[u8],
     exchange: Exchange,
     xaddr: &XAddr,
     bound_to: &NetworkAddress,
 ) -> Option<Fetch> {
-    let mut devices = devices.write().await;
+    let mut devices = devices.write();
 
     let endpoint = exchange.endpoint();
 
@@ -713,7 +708,7 @@ async fn listen_forever(
     bound_to: NetworkAddress,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    devices: Arc<RwLock<Devices>>,
+    devices: Arc<parking_lot::RwLock<Devices>>,
     mut incoming_rx: Receiver<IncomingClientMessage>,
     mc_local_port_tx: Sender<OutgoingMulticastMessage>,
     mut probe_rx: Receiver<()>,
@@ -775,16 +770,20 @@ async fn listen_forever(
         // dispatch based on the SOAP Action header
         let response = match message {
             ClientMessage::Hello(hello) => client_loop.handle_hello(hello).await,
-            ClientMessage::Bye(bye) => handle_bye(Arc::clone(&client_loop.devices), bye).await,
+            ClientMessage::Bye(bye) => {
+                handle_bye(&client_loop.devices, bye);
+
+                Ok(())
+            },
             ClientMessage::ProbeMatches(probe_matches) => {
                 client_loop
                     .handle_probe_matches(received_at, probe_matches)
                     .await
             },
             ClientMessage::ResolveMatches(resolve_matches) => {
-                client_loop
-                    .handle_resolve_matches(received_at, resolve_matches)
-                    .await
+                client_loop.handle_resolve_matches(received_at, resolve_matches);
+
+                Ok(())
             },
         };
 
@@ -808,12 +807,9 @@ async fn listen_forever(
 
 #[cfg(test)]
 mod tests {
-    use std::future::poll_fn;
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4};
-    use std::pin::pin;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::task::Poll;
     use std::time::Duration;
 
     use color_eyre::eyre;
@@ -899,16 +895,19 @@ mod tests {
         assert!(!last_copy.accepts(Instant::now()));
     }
 
-    fn setup_client() -> (Arc<crate::config::Config>, Arc<RwLock<Devices>>) {
+    fn setup_client() -> (
+        Arc<crate::config::Config>,
+        Arc<parking_lot::RwLock<Devices>>,
+    ) {
         let client_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_335));
-        let client_devices = Arc::new(RwLock::new(Devices::default()));
+        let client_devices = Arc::new(parking_lot::RwLock::new(Devices::default()));
 
         (client_config, client_devices)
     }
 
     fn exchange_runner(
         config: &Arc<crate::config::Config>,
-        devices: &Arc<RwLock<Devices>>,
+        devices: &Arc<parking_lot::RwLock<Devices>>,
         bound_to: &NetworkAddress,
     ) -> ExchangeRunner {
         ExchangeRunner::new(
@@ -922,7 +921,7 @@ mod tests {
 
     fn client_loop(
         config: &Arc<crate::config::Config>,
-        devices: &Arc<RwLock<Devices>>,
+        devices: &Arc<parking_lot::RwLock<Devices>>,
         bound_to: &NetworkAddress,
         mc_local_port_tx: &Sender<OutgoingMulticastMessage>,
     ) -> ClientLoop {
@@ -937,15 +936,14 @@ mod tests {
         }
     }
 
-    async fn start_exchange(
-        devices: &RwLock<Devices>,
+    fn start_exchange(
+        devices: &parking_lot::RwLock<Devices>,
         endpoint: &DeviceUri,
         app_sequence: &AppSequence,
         bound_to: &NetworkAddress,
     ) -> Exchange {
         let Fetch { exchange, .. } = devices
             .write()
-            .await
             .observe(endpoint, app_sequence)
             .expect("the Hello is current")
             .start_exchange(
@@ -998,7 +996,7 @@ mod tests {
     /// Returns whether the Hello sent a Resolve.
     async fn hello(
         config: &Arc<crate::config::Config>,
-        devices: &Arc<RwLock<Devices>>,
+        devices: &Arc<parking_lot::RwLock<Devices>>,
         bound_to: &NetworkAddress,
         endpoint: &DeviceUri,
         app_sequence: AppSequence,
@@ -1021,7 +1019,7 @@ mod tests {
     /// Returns whether `hello` sent a Resolve.
     async fn receive_hello(
         config: &Arc<crate::config::Config>,
-        devices: &Arc<RwLock<Devices>>,
+        devices: &Arc<parking_lot::RwLock<Devices>>,
         bound_to: &NetworkAddress,
         hello: Hello,
     ) -> Result<bool, eyre::Report> {
@@ -1067,23 +1065,22 @@ mod tests {
         message.into_hello().unwrap()
     }
 
-    async fn bye(
-        devices: &Arc<RwLock<Devices>>,
+    fn bye(
+        devices: &Arc<parking_lot::RwLock<Devices>>,
         endpoint: &DeviceUri,
         app_sequence: AppSequence,
-    ) -> Result<(), eyre::Report> {
+    ) {
         handle_bye(
-            Arc::clone(devices),
+            devices,
             Bye {
                 app_sequence,
                 endpoint: endpoint.clone(),
             },
-        )
-        .await
+        );
     }
 
-    async fn finish_exchange_with_synology(
-        devices: &RwLock<Devices>,
+    fn finish_exchange_with_synology(
+        devices: &parking_lot::RwLock<Devices>,
         exchange: Exchange,
         bound_to: &NetworkAddress,
     ) -> Option<Fetch> {
@@ -1095,7 +1092,6 @@ mod tests {
                 .unwrap(),
             bound_to,
         )
-        .await
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1240,7 +1236,7 @@ mod tests {
         // ensure the mock is hit
         mock.assert_async().await;
 
-        let client_devices = client_devices.read().await;
+        let client_devices = client_devices.read();
 
         let device = client_devices.get(&host_config.uuid_as_device_uri);
 
@@ -1278,7 +1274,7 @@ mod tests {
         );
 
         // client
-        let client_devices = Arc::new(RwLock::new(Devices::default()));
+        let client_devices = Arc::new(parking_lot::RwLock::new(Devices::default()));
 
         // host
         let host_ip = Ipv4Addr::new(192, 168, 100, 5);
@@ -1300,9 +1296,7 @@ mod tests {
 
         let bye = message.into_bye().unwrap();
 
-        let result = handle_bye(Arc::clone(&client_devices), bye).await;
-
-        assert_matches!(result, Ok(()));
+        handle_bye(&client_devices, bye);
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1385,7 +1379,6 @@ mod tests {
         assert!(
             client_devices
                 .read()
-                .await
                 .contains_key(&host_config.uuid_as_device_uri)
         );
 
@@ -1406,15 +1399,12 @@ mod tests {
 
         let bye = message.into_bye().unwrap();
 
-        let result = handle_bye(Arc::clone(&client_devices), bye).await;
-
-        assert_matches!(result, Ok(()));
+        handle_bye(&client_devices, bye);
 
         // ensure the host is no longer present
         assert!(
             !client_devices
                 .read()
-                .await
                 .contains_key(&host_config.uuid_as_device_uri)
         );
     }
@@ -1434,9 +1424,7 @@ mod tests {
 
         let endpoint = new_endpoint();
 
-        let result = bye(&client_devices, &endpoint, AppSequence::new(1, None, 6)).await;
-
-        assert_matches!(result, Ok(()));
+        bye(&client_devices, &endpoint, AppSequence::new(1, None, 6));
 
         let result = hello(
             &client_config,
@@ -1452,7 +1440,7 @@ mod tests {
 
         metadata_exchange.assert_async().await;
 
-        assert!(client_devices.read().await.is_empty());
+        assert!(client_devices.read().is_empty());
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1482,7 +1470,6 @@ mod tests {
         assert!(
             client_devices
                 .write()
-                .await
                 .observe(&endpoint, &AppSequence::new(1, None, 5))
                 .is_none()
         );
@@ -1579,17 +1566,13 @@ mod tests {
 
         client_devices
             .write()
-            .await
             .observe(&endpoint, &AppSequence::new(1, Some("urn:uuid:a"), 5));
 
-        let result = bye(
+        bye(
             &client_devices,
             &endpoint,
             AppSequence::new(1, Some("urn:uuid:a"), 6),
-        )
-        .await;
-
-        assert_matches!(result, Ok(()));
+        );
 
         let result = hello(
             &client_config,
@@ -1605,7 +1588,7 @@ mod tests {
 
         metadata_exchange.assert_async().await;
 
-        assert!(client_devices.read().await.contains_key(&endpoint));
+        assert!(client_devices.read().contains_key(&endpoint));
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1623,9 +1606,7 @@ mod tests {
 
         let endpoint = new_endpoint();
 
-        let result = bye(&client_devices, &endpoint, AppSequence::new(1, None, 7)).await;
-
-        assert_matches!(result, Ok(()));
+        bye(&client_devices, &endpoint, AppSequence::new(1, None, 7));
 
         let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(1);
         let mut client = client_loop(
@@ -1652,7 +1633,7 @@ mod tests {
 
         metadata_exchange.assert_async().await;
 
-        assert!(client_devices.read().await.contains_key(&endpoint));
+        assert!(client_devices.read().contains_key(&endpoint));
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1670,9 +1651,7 @@ mod tests {
 
         let endpoint = new_endpoint();
 
-        let result = bye(&client_devices, &endpoint, AppSequence::new(1, None, 7)).await;
-
-        assert_matches!(result, Ok(()));
+        bye(&client_devices, &endpoint, AppSequence::new(1, None, 7));
 
         let resolve_message_id = MessageId::from(Uuid::now_v7().urn());
 
@@ -1690,28 +1669,24 @@ mod tests {
             )
         };
 
-        let result = client
-            .handle_resolve_matches(
-                Instant::now(),
-                ResolveMatches {
-                    relates_to: resolve_message_id,
-                    app_sequence: AppSequence::new(1, None, 6),
-                    resolve_match: Some(ResolveMatch {
-                        endpoint: endpoint.clone(),
-                        raw_xaddrs: Some(xaddrs_of(&server)),
-                        metadata_version: 1,
-                    }),
-                },
-            )
-            .await;
+        client.handle_resolve_matches(
+            Instant::now(),
+            ResolveMatches {
+                relates_to: resolve_message_id,
+                app_sequence: AppSequence::new(1, None, 6),
+                resolve_match: Some(ResolveMatch {
+                    endpoint: endpoint.clone(),
+                    raw_xaddrs: Some(xaddrs_of(&server)),
+                    metadata_version: 1,
+                }),
+            },
+        );
 
         client.exchanges.wait().await;
 
-        assert_matches!(result, Ok(()));
-
         metadata_exchange.assert_async().await;
 
-        assert!(client_devices.read().await.contains_key(&endpoint));
+        assert!(client_devices.read().contains_key(&endpoint));
     }
 
     #[tokio::test]
@@ -1721,7 +1696,7 @@ mod tests {
         );
 
         // client
-        let client_devices = Arc::new(RwLock::new(Devices::default()));
+        let client_devices = Arc::new(parking_lot::RwLock::new(Devices::default()));
 
         let endpoint = new_endpoint();
 
@@ -1730,19 +1705,15 @@ mod tests {
             &endpoint,
             &AppSequence::new(1, None, 5),
             &network_address,
-        )
-        .await;
+        );
 
-        let result =
-            finish_exchange_with_synology(&client_devices, exchange, &network_address).await;
+        let result = finish_exchange_with_synology(&client_devices, exchange, &network_address);
 
         assert!(result.is_none());
 
-        let result = bye(&client_devices, &endpoint, AppSequence::new(1, None, 4)).await;
+        bye(&client_devices, &endpoint, AppSequence::new(1, None, 4));
 
-        assert_matches!(result, Ok(()));
-
-        assert!(client_devices.read().await.contains_key(&endpoint));
+        assert!(client_devices.read().contains_key(&endpoint));
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1785,11 +1756,9 @@ mod tests {
 
         metadata_exchange.assert_async().await;
 
-        let result = bye(&client_devices, &endpoint, AppSequence::new(1, None, 6)).await;
+        bye(&client_devices, &endpoint, AppSequence::new(1, None, 6));
 
-        assert_matches!(result, Ok(()));
-
-        assert!(client_devices.read().await.contains_key(&endpoint));
+        assert!(client_devices.read().contains_key(&endpoint));
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1823,32 +1792,26 @@ mod tests {
             )
         };
 
-        let result = client
-            .handle_resolve_matches(
-                Instant::now(),
-                ResolveMatches {
-                    relates_to: resolve_message_id,
-                    app_sequence: AppSequence::new(1, None, 7),
-                    resolve_match: Some(ResolveMatch {
-                        endpoint: endpoint.clone(),
-                        raw_xaddrs: Some(xaddrs_of(&server)),
-                        metadata_version: 1,
-                    }),
-                },
-            )
-            .await;
+        client.handle_resolve_matches(
+            Instant::now(),
+            ResolveMatches {
+                relates_to: resolve_message_id,
+                app_sequence: AppSequence::new(1, None, 7),
+                resolve_match: Some(ResolveMatch {
+                    endpoint: endpoint.clone(),
+                    raw_xaddrs: Some(xaddrs_of(&server)),
+                    metadata_version: 1,
+                }),
+            },
+        );
 
         client.exchanges.wait().await;
 
-        assert_matches!(result, Ok(()));
-
         metadata_exchange.assert_async().await;
 
-        let result = bye(&client_devices, &endpoint, AppSequence::new(1, None, 6)).await;
+        bye(&client_devices, &endpoint, AppSequence::new(1, None, 6));
 
-        assert_matches!(result, Ok(()));
-
-        assert!(client_devices.read().await.contains_key(&endpoint));
+        assert!(client_devices.read().contains_key(&endpoint));
     }
 
     #[tokio::test]
@@ -1858,7 +1821,7 @@ mod tests {
         );
 
         // client
-        let client_devices = Arc::new(RwLock::new(Devices::default()));
+        let client_devices = Arc::new(parking_lot::RwLock::new(Devices::default()));
 
         let endpoint = new_endpoint();
 
@@ -1867,19 +1830,15 @@ mod tests {
             &endpoint,
             &AppSequence::new(1, None, 5),
             &network_address,
-        )
-        .await;
+        );
 
-        let result =
-            finish_exchange_with_synology(&client_devices, exchange, &network_address).await;
+        let result = finish_exchange_with_synology(&client_devices, exchange, &network_address);
 
         assert!(result.is_none());
 
-        let result = bye(&client_devices, &endpoint, AppSequence::new(1, None, 5)).await;
+        bye(&client_devices, &endpoint, AppSequence::new(1, None, 5));
 
-        assert_matches!(result, Ok(()));
-
-        assert!(client_devices.read().await.is_empty());
+        assert!(client_devices.read().is_empty());
     }
 
     #[tokio::test]
@@ -1889,7 +1848,7 @@ mod tests {
         );
 
         // client
-        let client_devices = Arc::new(RwLock::new(Devices::default()));
+        let client_devices = Arc::new(parking_lot::RwLock::new(Devices::default()));
 
         let endpoint = new_endpoint();
 
@@ -1898,20 +1857,16 @@ mod tests {
             &endpoint,
             &AppSequence::new(1, None, 5),
             &network_address,
-        )
-        .await;
+        );
 
         // another interface's loop handles the Bye while this one awaits the metadata
-        let result = bye(&client_devices, &endpoint, AppSequence::new(1, None, 4)).await;
+        bye(&client_devices, &endpoint, AppSequence::new(1, None, 4));
 
-        assert_matches!(result, Ok(()));
-
-        let result =
-            finish_exchange_with_synology(&client_devices, exchange, &network_address).await;
+        let result = finish_exchange_with_synology(&client_devices, exchange, &network_address);
 
         assert!(result.is_none());
 
-        assert!(client_devices.read().await.contains_key(&endpoint));
+        assert!(client_devices.read().contains_key(&endpoint));
     }
 
     #[tokio::test]
@@ -1921,7 +1876,7 @@ mod tests {
         );
 
         // client
-        let client_devices = Arc::new(RwLock::new(Devices::default()));
+        let client_devices = Arc::new(parking_lot::RwLock::new(Devices::default()));
 
         let endpoint = new_endpoint();
 
@@ -1930,91 +1885,20 @@ mod tests {
             &endpoint,
             &AppSequence::new(1, Some("urn:uuid:a"), 5),
             &network_address,
-        )
-        .await;
+        );
 
         // another interface's loop handles the Bye while this one awaits the metadata
-        let result = bye(
+        bye(
             &client_devices,
             &endpoint,
             AppSequence::new(1, Some("urn:uuid:b"), 0),
-        )
-        .await;
+        );
 
-        assert_matches!(result, Ok(()));
-
-        let result =
-            finish_exchange_with_synology(&client_devices, exchange, &network_address).await;
+        let result = finish_exchange_with_synology(&client_devices, exchange, &network_address);
 
         assert!(result.is_none());
 
-        assert!(client_devices.read().await.is_empty());
-    }
-
-    #[cfg_attr(not(miri), tokio::test)]
-    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
-    async fn newer_bye_queued_behind_a_hello_stops_its_exchange() {
-        let (_message_handler, network_address) = build_message_handler_with_network_address(
-            IpNet::new(Ipv4Addr::LOCALHOST.into(), 8).unwrap(),
-        );
-
-        // client
-        let (client_config, client_devices) = setup_client();
-
-        // host
-        let mut server = mock_server().await;
-
-        let metadata_exchange = server
-            .mock("POST", mockito::Matcher::Any)
-            .with_status(200)
-            .with_body(synology_metadata())
-            .expect_at_most(1)
-            .create_async()
-            .await;
-
-        let endpoint = new_endpoint();
-
-        let mut queued_hello = pin!(hello(
-            &client_config,
-            &client_devices,
-            &network_address,
-            &endpoint,
-            AppSequence::new(1, None, 5),
-            Some(xaddrs_of(&server)),
-        ));
-
-        let mut queued_bye = pin!(bye(
-            &client_devices,
-            &endpoint,
-            AppSequence::new(1, None, 6)
-        ));
-
-        // tokio's `RwLock` is fair: the Hello takes the lock first, the Bye right after
-        let guard = client_devices.write().await;
-
-        poll_fn(|context| {
-            assert!(queued_hello.as_mut().poll(context).is_pending());
-            assert!(queued_bye.as_mut().poll(context).is_pending());
-
-            Poll::Ready(())
-        })
-        .await;
-
-        drop(guard);
-
-        let (hello_result, bye_result) = tokio::time::timeout(Duration::from_secs(10), async {
-            tokio::join!(queued_hello, queued_bye)
-        })
-        .await
-        .unwrap();
-
-        assert_matches!(hello_result, Ok(false));
-        assert_matches!(bye_result, Ok(()));
-
-        metadata_exchange.assert_async().await;
-
-        assert!(client_devices.read().await.is_empty());
-        assert!(!client_devices.read().await.has_running_exchanges());
+        assert!(client_devices.read().is_empty());
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -2107,8 +1991,7 @@ mod tests {
             &device_uri,
             &AppSequence::new(1, None, 1),
             &client_network_address,
-        )
-        .await;
+        );
 
         let result = exchange_runner(&client_config, &client_devices, &client_network_address)
             .perform(Fetch { exchange, xaddrs })
@@ -2119,8 +2002,8 @@ mod tests {
         failing.assert_async().await;
         working.assert_async().await;
 
-        assert!(client_devices.read().await.contains_key(&device_uri));
-        assert!(!client_devices.read().await.has_running_exchanges());
+        assert!(client_devices.read().contains_key(&device_uri));
+        assert!(!client_devices.read().has_running_exchanges());
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -2133,7 +2016,7 @@ mod tests {
         // client
         let mut client_config = build_config(Uuid::now_v7(), 1_742_000_335);
         client_config.metadata_timeout = Duration::from_secs(60);
-        let client_devices = Arc::new(RwLock::new(Devices::default()));
+        let client_devices = Arc::new(parking_lot::RwLock::new(Devices::default()));
 
         // host, which never answers
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
@@ -2157,7 +2040,7 @@ mod tests {
         let bye = async {
             received_rx.await.unwrap();
 
-            bye(&client_devices, &device_uri, AppSequence::new(1, None, 1)).await
+            bye(&client_devices, &device_uri, AppSequence::new(1, None, 1));
         };
 
         let exchanges = exchange_runner(
@@ -2171,25 +2054,23 @@ mod tests {
             &device_uri,
             &AppSequence::new(1, None, 1),
             &client_network_address,
-        )
-        .await;
+        );
 
         let exchange = Box::pin(exchanges.perform(Fetch {
             exchange,
             xaddrs: vec1![xaddr],
         }));
 
-        let (result, bye_result, ()) = tokio::time::timeout(Duration::from_secs(10), async {
+        let (result, (), ()) = tokio::time::timeout(Duration::from_secs(10), async {
             tokio::join!(exchange, bye, host)
         })
         .await
         .unwrap();
 
         assert!(result.is_none());
-        assert_matches!(bye_result, Ok(()));
 
-        assert!(client_devices.read().await.is_empty());
-        assert!(!client_devices.read().await.has_running_exchanges());
+        assert!(client_devices.read().is_empty());
+        assert!(!client_devices.read().has_running_exchanges());
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -2224,8 +2105,7 @@ mod tests {
             &device_uri,
             &AppSequence::new(1, None, 1),
             &client_network_address,
-        )
-        .await;
+        );
 
         let result = exchange_runner(&client_config, &client_devices, &client_network_address)
             .perform(Fetch { exchange, xaddrs })
@@ -2235,8 +2115,8 @@ mod tests {
 
         failing.assert_async().await;
 
-        assert!(client_devices.read().await.is_empty());
-        assert!(!client_devices.read().await.has_running_exchanges());
+        assert!(client_devices.read().is_empty());
+        assert!(!client_devices.read().has_running_exchanges());
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -2280,8 +2160,7 @@ mod tests {
             &host_config.uuid_as_device_uri,
             &AppSequence::new(1, None, 1),
             &network_address,
-        )
-        .await;
+        );
 
         let result = exchange_runner(&client_config, &client_devices, &network_address)
             .perform(Fetch { exchange, xaddrs })
@@ -2291,7 +2170,7 @@ mod tests {
 
         assert!(result.is_none());
 
-        let client_devices = client_devices.read().await;
+        let client_devices = client_devices.read();
 
         let device = client_devices.get(&host_config.uuid_as_device_uri).unwrap();
 
@@ -2326,7 +2205,7 @@ mod tests {
         );
 
         // client
-        let client_devices = Arc::new(RwLock::new(Devices::default()));
+        let client_devices = Arc::new(parking_lot::RwLock::new(Devices::default()));
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
@@ -2335,21 +2214,17 @@ mod tests {
             &device_uri,
             &AppSequence::new(1, None, 1),
             &client_network_address,
-        )
-        .await;
-
-        // another interface's loop handles the Bye while this one awaits the metadata
-        assert_matches!(
-            bye(&client_devices, &device_uri, AppSequence::new(1, None, 1)).await,
-            Ok(())
         );
 
+        // another interface's loop handles the Bye while this one awaits the metadata
+        bye(&client_devices, &device_uri, AppSequence::new(1, None, 1));
+
         let result =
-            finish_exchange_with_synology(&client_devices, exchange, &client_network_address).await;
+            finish_exchange_with_synology(&client_devices, exchange, &client_network_address);
 
         assert!(result.is_none());
 
-        assert!(client_devices.read().await.is_empty());
+        assert!(client_devices.read().is_empty());
     }
 
     #[tokio::test]
@@ -2359,7 +2234,7 @@ mod tests {
         );
 
         // client
-        let client_devices = Arc::new(RwLock::new(Devices::default()));
+        let client_devices = Arc::new(parking_lot::RwLock::new(Devices::default()));
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
@@ -2368,15 +2243,14 @@ mod tests {
             &device_uri,
             &AppSequence::new(1, None, 1),
             &client_network_address,
-        )
-        .await;
+        );
 
         let result =
-            finish_exchange_with_synology(&client_devices, exchange, &client_network_address).await;
+            finish_exchange_with_synology(&client_devices, exchange, &client_network_address);
 
         assert!(result.is_none());
 
-        let client_devices = client_devices.read().await;
+        let client_devices = client_devices.read();
 
         let device = client_devices.get(&device_uri);
 
@@ -2414,7 +2288,7 @@ mod tests {
         );
 
         // client
-        let client_devices = Arc::new(RwLock::new(Devices::default()));
+        let client_devices = Arc::new(parking_lot::RwLock::new(Devices::default()));
 
         let metadata: String = format!(
             include_str!("../../test/get-response-samsung-printer.xml"),
@@ -2429,8 +2303,7 @@ mod tests {
             &device_uri,
             &AppSequence::new(1, None, 1),
             &client_network_address,
-        )
-        .await;
+        );
 
         let result = handle_metadata(
             &client_devices,
@@ -2438,12 +2311,11 @@ mod tests {
             exchange,
             &XAddr::try_from("http://192.168.100.50:8018/wsd").unwrap(),
             &client_network_address,
-        )
-        .await;
+        );
 
         assert!(result.is_none());
 
-        let client_devices = client_devices.read().await;
+        let client_devices = client_devices.read();
 
         let device = client_devices.get(&device_uri);
 
@@ -2479,7 +2351,7 @@ mod tests {
         );
 
         // client
-        let client_devices = Arc::new(RwLock::new(Devices::default()));
+        let client_devices = Arc::new(parking_lot::RwLock::new(Devices::default()));
 
         let metadata: String = format!(
             include_str!("../../test/get-response-windows.xml"),
@@ -2494,8 +2366,7 @@ mod tests {
             &device_uri,
             &AppSequence::new(1, None, 1),
             &client_network_address,
-        )
-        .await;
+        );
 
         let result = handle_metadata(
             &client_devices,
@@ -2504,12 +2375,11 @@ mod tests {
             &XAddr::try_from("http://192.168.100.71:5357/18de7c97-6277-43fe-9552-cac98a7610f5/")
                 .unwrap(),
             &client_network_address,
-        )
-        .await;
+        );
 
         assert!(result.is_none());
 
-        let client_devices = client_devices.read().await;
+        let client_devices = client_devices.read();
 
         let device = client_devices.get(&device_uri);
 
@@ -2876,7 +2746,7 @@ mod tests {
         assert_matches!(multicast_rx.try_recv(), Err(TryRecvError::Empty));
         assert!(client.resolves.is_empty());
 
-        let client_devices = client_devices.read().await;
+        let client_devices = client_devices.read();
 
         assert_matches!(client_devices.get(&host_config.uuid_as_device_uri), Some(_));
     }
@@ -2962,18 +2832,14 @@ mod tests {
             )
         };
 
-        let result = client
-            .handle_resolve_matches(Instant::now(), resolve_matches)
-            .await;
+        client.handle_resolve_matches(Instant::now(), resolve_matches);
 
         client.exchanges.wait().await;
-
-        assert_matches!(result, Ok(()));
 
         // ensure the mock is hit
         mock.assert_async().await;
 
-        let client_devices = client_devices.read().await;
+        let client_devices = client_devices.read();
 
         assert_matches!(client_devices.get(&host_config.uuid_as_device_uri), Some(_));
     }
@@ -3021,15 +2887,11 @@ mod tests {
             )
         };
 
-        let result = client
-            .handle_resolve_matches(Instant::now(), resolve_matches)
-            .await;
+        client.handle_resolve_matches(Instant::now(), resolve_matches);
 
         client.exchanges.wait().await;
 
-        assert_matches!(result, Ok(()));
-
-        assert!(client_devices.read().await.is_empty());
+        assert!(client_devices.read().is_empty());
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -3086,18 +2948,14 @@ mod tests {
             &multicast_tx,
         );
 
-        let result = client
-            .handle_resolve_matches(Instant::now(), resolve_matches)
-            .await;
+        client.handle_resolve_matches(Instant::now(), resolve_matches);
 
         client.exchanges.wait().await;
-
-        assert_matches!(result, Ok(()));
 
         // ensure the mock is not hit
         mock.assert_async().await;
 
-        assert!(client_devices.read().await.is_empty());
+        assert!(client_devices.read().is_empty());
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -3168,21 +3026,17 @@ mod tests {
             )
         };
 
-        let result = client
-            .handle_resolve_matches(
-                last_copy_sent_at + constants::MATCH_TIMEOUT,
-                resolve_matches,
-            )
-            .await;
+        client.handle_resolve_matches(
+            last_copy_sent_at + constants::MATCH_TIMEOUT,
+            resolve_matches,
+        );
 
         client.exchanges.wait().await;
-
-        assert_matches!(result, Ok(()));
 
         // ensure the mock is not hit
         mock.assert_async().await;
 
-        assert!(client_devices.read().await.is_empty());
+        assert!(client_devices.read().is_empty());
     }
 
     /// Reads one HTTP request, up to the end of its body.
@@ -3303,8 +3157,8 @@ mod tests {
 
         assert_eq!(requests.load(Ordering::SeqCst), 2);
 
-        assert!(client_devices.read().await.contains_key(&endpoint));
-        assert!(!client_devices.read().await.has_running_exchanges());
+        assert!(client_devices.read().contains_key(&endpoint));
+        assert!(!client_devices.read().has_running_exchanges());
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -3318,7 +3172,7 @@ mod tests {
         let mut client_config = build_config(Uuid::now_v7(), 1_742_000_335);
         client_config.metadata_timeout = Duration::from_secs(60);
         let client_config = Arc::new(client_config);
-        let client_devices = Arc::new(RwLock::new(Devices::default()));
+        let client_devices = Arc::new(parking_lot::RwLock::new(Devices::default()));
 
         // host, which never answers
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
@@ -3390,8 +3244,8 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert!(client_devices.read().await.is_empty());
-        assert!(!client_devices.read().await.has_running_exchanges());
+        assert!(client_devices.read().is_empty());
+        assert!(!client_devices.read().has_running_exchanges());
     }
 
     fn new_endpoint() -> DeviceUri {

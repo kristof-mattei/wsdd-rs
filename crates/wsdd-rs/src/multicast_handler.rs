@@ -42,7 +42,7 @@ pub struct MulticastHandler {
     config: Arc<Config>,
 
     /// Shared reference to all discovered devices.
-    devices: Arc<RwLock<Devices>>,
+    devices: Arc<parking_lot::RwLock<Devices>>,
 
     recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
 
@@ -100,7 +100,7 @@ impl MulticastHandler {
         network_address: NetworkAddress,
         cancellation_token: CancellationToken,
         config: Arc<Config>,
-        devices: Arc<RwLock<Devices>>,
+        devices: Arc<parking_lot::RwLock<Devices>>,
         recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
     ) -> Result<Self, eyre::Report> {
         let domain = match network_address.address {

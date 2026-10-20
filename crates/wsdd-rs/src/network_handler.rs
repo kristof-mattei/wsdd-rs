@@ -104,7 +104,7 @@ pub struct NetworkHandler<R = LibcInterfaceNameResolver> {
     active: bool,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
-    devices: Arc<RwLock<Devices>>,
+    devices: Arc<parking_lot::RwLock<Devices>>,
     interfaces: HashMap<u32, Arc<NetworkInterface>>,
     links: HashMap<u32, LinkState>,
     /// Every address and interface index reported as new and not since reported as deleted.
@@ -159,7 +159,7 @@ where
             active: false,
             config: Arc::clone(config),
             cancellation_token,
-            devices: Arc::new(RwLock::new(Devices::default())),
+            devices: Arc::new(parking_lot::RwLock::new(Devices::default())),
             interfaces: HashMap::new(),
             links: HashMap::new(),
             known_addresses: HashSet::new(),
@@ -234,7 +234,7 @@ where
             },
             Command::ClearDevices => {
                 if self.config.discovery {
-                    self.devices.write().await.clear_discovered();
+                    self.devices.write().clear_discovered();
                 }
             },
             Command::ListDevices {
@@ -242,7 +242,7 @@ where
                 wsd_type_filter,
             } => {
                 if self.config.discovery {
-                    self.list_devices(devices_tx, wsd_type_filter).await;
+                    self.list_devices(devices_tx, wsd_type_filter.as_deref());
                 }
             },
             Command::SendProbes { interface_filter } => {
@@ -264,16 +264,16 @@ where
         self.report_filter_changes();
     }
 
-    async fn list_devices(
+    fn list_devices(
         &self,
         devices_tx: Sender<(DeviceUri, WSDDiscoveredDevice)>,
-        wsd_type_filter: Option<Box<str>>,
+        wsd_type_filter: Option<&str>,
     ) {
         // take the lock once, clone, store locally, and then yield items
         // that way we reduce the lifetime of the lock
-        let devices = self.devices.read().await;
+        let devices = self.devices.read();
 
-        let devices = if let Some(wsd_type) = wsd_type_filter.as_deref() {
+        let devices = if let Some(wsd_type) = wsd_type_filter {
             devices
                 .iter()
                 .filter_map(|(key, value)| {
