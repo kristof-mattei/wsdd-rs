@@ -15,6 +15,7 @@ use tokio_util::task::TaskTracker;
 use tracing::{Instrument as _, Level, event, span};
 use url::Host;
 use uuid::fmt::Urn;
+use vec1::Vec1;
 
 use crate::config::Config;
 use crate::constants;
@@ -288,7 +289,7 @@ enum XAddrsCheck {
     Missing,
     /// None of the `XAddrs` is an HTTP or HTTPS URL with a host.
     Unusable,
-    Usable(Vec<XAddr>),
+    Usable(Vec1<XAddr>),
 }
 
 /// The work left after the ordering lock is released.
@@ -309,13 +310,11 @@ fn check_xaddrs(
         return XAddrsCheck::Missing;
     };
 
-    let xaddrs = parse_xaddrs(bound_to, &raw_xaddrs);
-
-    if xaddrs.is_empty() {
+    let Ok(xaddrs) = Vec1::try_from_vec(parse_xaddrs(bound_to, &raw_xaddrs)) else {
         event!(Level::ERROR, %endpoint, kind, "No valid URL in xaddrs");
 
         return XAddrsCheck::Unusable;
-    }
+    };
 
     XAddrsCheck::Usable(xaddrs)
 }
@@ -907,6 +906,7 @@ mod tests {
     use tokio::time::Instant;
     use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
+    use vec1::{Vec1, vec1};
 
     use crate::constants;
     use crate::max_size_deque::MaxSizeDeque;
@@ -1007,7 +1007,10 @@ mod tests {
             .await
             .observe(endpoint, app_sequence)
             .expect("the Hello is current")
-            .start_exchange(bound_to.interface.index(), Vec::new())
+            .start_exchange(
+                bound_to.interface.index(),
+                vec1![XAddr::try_from("http://192.168.100.5:5357/").unwrap()],
+            )
             .expect("no exchange runs for a new endpoint");
 
         exchange
@@ -2175,13 +2178,16 @@ mod tests {
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
-        let xaddrs = ["failing", "working"]
-            .into_iter()
-            .map(|path| {
-                XAddr::try_from(format!("http://{}/{}", server.socket_address(), path).as_str())
-                    .unwrap()
-            })
-            .collect::<Vec<_>>();
+        let xaddrs = Vec1::try_from_vec(
+            ["failing", "working"]
+                .into_iter()
+                .map(|path| {
+                    XAddr::try_from(format!("http://{}/{}", server.socket_address(), path).as_str())
+                        .unwrap()
+                })
+                .collect(),
+        )
+        .unwrap();
 
         let exchange = start_exchange(
             &client_devices,
@@ -2259,7 +2265,7 @@ mod tests {
             &device_uri,
             Fetch {
                 exchange,
-                xaddrs: vec![xaddr],
+                xaddrs: vec1![xaddr],
             },
         ));
 
@@ -2298,7 +2304,7 @@ mod tests {
 
         let device_uri = DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
 
-        let xaddrs = vec![
+        let xaddrs = vec1![
             XAddr::try_from(format!("http://{}/failing", server.socket_address()).as_str())
                 .unwrap(),
         ];
@@ -2347,7 +2353,7 @@ mod tests {
         )
         .unwrap();
 
-        let xaddrs = vec![
+        let xaddrs = vec1![
             XAddr::try_from(
                 format!(
                     "http://{}/{}",
