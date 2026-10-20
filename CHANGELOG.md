@@ -1,5 +1,40 @@
 <!-- header goes here -->
+## [1.0.1](https://github.com/kristof-mattei/wsdd-rs/compare/v1.0.0..v1.0.1) - 2026-10-20
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update rust crate tokio to v1.54.0 by [@renovate[bot]](https://github.com/renovate[bot]) ([`55ec954`](https://github.com/kristof-mattei/wsdd-rs/commit/55ec95420589b5d9e34c38941f3948e6bff6e7a7))
+
+### 🚜 Refactor
+
+- Start exchanges and depart through the `Current` that `Devices::observe` returns by [@kristof-mattei](https://github.com/kristof-mattei) ([`6e06667`](https://github.com/kristof-mattei/wsdd-rs/commit/6e06667c5e2746f10a50c7d7b7f7b46587c81d72))
+- Wrap `InstanceId` and `MessageNumber` in types of their own by [@kristof-mattei](https://github.com/kristof-mattei) ([`120839b`](https://github.com/kristof-mattei/wsdd-rs/commit/120839ba48999f5292d96d6b6418762ae57b4870))
+- Write empty match arms as `{}` by [@kristof-mattei](https://github.com/kristof-mattei) ([`c696efb`](https://github.com/kristof-mattei/wsdd-rs/commit/c696efb1e43fda512ae30d5b0cd1b889c9ce1dcf))
+- Hold the usable XAddrs in a `Vec1` by [@kristof-mattei](https://github.com/kristof-mattei) ([`754e1db`](https://github.com/kristof-mattei/wsdd-rs/commit/754e1dbe69533c962618dfb06421127ad53cbd2f))
+- Move `RelatesTo` and `AppSequence` out of `Header` into the messages that require them by [@kristof-mattei](https://github.com/kristof-mattei) ([`19f4069`](https://github.com/kristof-mattei/wsdd-rs/commit/19f4069d3aa6c91618fa37e05f590d1216d5d5e9))
+- Let `Exchange` hold its endpoint by [@kristof-mattei](https://github.com/kristof-mattei) ([`ed82b60`](https://github.com/kristof-mattei/wsdd-rs/commit/ed82b60582aa561ed86339be2663c81d7ef9e0d6))
+- Let the client loop own `probes` by [@kristof-mattei](https://github.com/kristof-mattei) ([`0f940da`](https://github.com/kristof-mattei/wsdd-rs/commit/0f940da9780ba28e11ee7b3a3aae45c2a3ea281c))
+- Move the loop handlers to the clients by [@kristof-mattei](https://github.com/kristof-mattei) ([`92eed4c`](https://github.com/kristof-mattei/wsdd-rs/commit/92eed4ca503a8121daf71a3f4207274a6467b0ff))
+- Guard `Devices` with a `parking_lot::RwLock` by [@kristof-mattei](https://github.com/kristof-mattei) ([`9434d33`](https://github.com/kristof-mattei/wsdd-rs/commit/9434d330060466a66d416075bce8ab82d5d4f464))
+- Write and match the advertised Types from one list by [@kristof-mattei](https://github.com/kristof-mattei) ([`850677f`](https://github.com/kristof-mattei/wsdd-rs/commit/850677ff52b69de6508c07e5db192ac6324e8a88))
+
+### 🧪 Testing
+
+- Count the older entries when a second newer instance arrives by [@kristof-mattei](https://github.com/kristof-mattei) ([`6dfea71`](https://github.com/kristof-mattei/wsdd-rs/commit/6dfea71a723d02745842115405f7242103d04330))
+- Replace the removed `Observation::Stale` in `second_newer_instance_counts_every_older_entry` by [@kristof-mattei](https://github.com/kristof-mattei) ([`8574124`](https://github.com/kristof-mattei/wsdd-rs/commit/8574124d7b14038dc34f1d54d880f70ef00b51cc))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* List breaking changes in a section of their own by [@kristof-mattei](https://github.com/kristof-mattei) ([`e2a4a21`](https://github.com/kristof-mattei/wsdd-rs/commit/e2a4a2167f6921d49bc2b7d43b62b3c13a9d1e11))
+- Shorten the retag run wait below the `ubuntu-slim` 15-minute job limit by [@kristof-mattei](https://github.com/kristof-mattei) ([`e847e26`](https://github.com/kristof-mattei/wsdd-rs/commit/e847e266d79c0a7e97558b09659652cc2a58aed9))
 ## [1.0.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.9.3..v1.0.0) - 2026-10-18
+
+### ⚠️ Breaking Changes
+
+- Use clap's built-in `--help` and `--version` by [@kristof-mattei](https://github.com/kristof-mattei) ([`d6b7f85`](https://github.com/kristof-mattei/wsdd-rs/commit/d6b7f8579442d8a578c80b632fd09415e11c3339))
+- Validate `--interface` while parsing the command line by [@kristof-mattei](https://github.com/kristof-mattei) ([`3d1d143`](https://github.com/kristof-mattei/wsdd-rs/commit/3d1d143287298ff3ea44e21e4c002e23b7f20e95))
+  - An invalid `--interface` value exits with code 2 instead of 1
+- Graduate to stable by [@kristof-mattei](https://github.com/kristof-mattei) ([`0466736`](https://github.com/kristof-mattei/wsdd-rs/commit/0466736b4ec11096559e1d45cb83e265d43f7bfb))
 
 ### 🚀 Features
 
@@ -13,8 +48,6 @@
 - Flush stdout before re-raising the signal by [@kristof-mattei](https://github.com/kristof-mattei) ([`78534d5`](https://github.com/kristof-mattei/wsdd-rs/commit/78534d5aa8b13e61b02819dcc7ca78469d7aa6c7))
 - Report an invalid `RUST_LOG` as an operational failure by [@kristof-mattei](https://github.com/kristof-mattei) ([`8a56c81`](https://github.com/kristof-mattei/wsdd-rs/commit/8a56c81de4d09209510fa82b5e46a9c90f50de55))
 - Include the chroot error in the operational failure by [@kristof-mattei](https://github.com/kristof-mattei) ([`ce423bf`](https://github.com/kristof-mattei/wsdd-rs/commit/ce423bf37431310fce69915f64a2435b677b8427))
-- [**breaking**] Use clap's built-in `--help` and `--version` by [@kristof-mattei](https://github.com/kristof-mattei) ([`d6b7f85`](https://github.com/kristof-mattei/wsdd-rs/commit/d6b7f8579442d8a578c80b632fd09415e11c3339))
-- [**breaking**] Validate `--interface` while parsing the command line by [@kristof-mattei](https://github.com/kristof-mattei) ([`3d1d143`](https://github.com/kristof-mattei/wsdd-rs/commit/3d1d143287298ff3ea44e21e4c002e23b7f20e95))
 - Separate `error=true` from the `skip` list in the Dockerfile `check` directive by [@kristof-mattei](https://github.com/kristof-mattei) ([`a2d3c17`](https://github.com/kristof-mattei/wsdd-rs/commit/a2d3c17ccf0b8155d91fb1861f92a09056706246))
 - Register signal listeners before startup by [@kristof-mattei](https://github.com/kristof-mattei) ([`1a92783`](https://github.com/kristof-mattei/wsdd-rs/commit/1a92783f66bfeb5cbed8573bcfff8c476531a822))
 - Log the full error chain in `wrap_and_report!` by [@kristof-mattei](https://github.com/kristof-mattei) ([`837f7a3`](https://github.com/kristof-mattei/wsdd-rs/commit/837f7a32f699211046f572a53f4c486b971ced0c))
@@ -31,7 +64,6 @@
 - Reject a document type declaration by [@kristof-mattei](https://github.com/kristof-mattei) ([`c4a14d6`](https://github.com/kristof-mattei/wsdd-rs/commit/c4a14d65317165cad19172adc2e6d4b5fcbb4d4c))
 - Run metadata exchanges off the client loop by [@kristof-mattei](https://github.com/kristof-mattei) ([`d756d55`](https://github.com/kristof-mattei/wsdd-rs/commit/d756d55752762717a227302aabe62f16f3efe64a))
 - Raise the default `--metadata-timeout` to 30 s by [@kristof-mattei](https://github.com/kristof-mattei) ([`8e430c4`](https://github.com/kristof-mattei/wsdd-rs/commit/8e430c4829a9117e72f3ccd72397b56c521eaad4))
-- [**breaking**] Graduate to stable by [@kristof-mattei](https://github.com/kristof-mattei) ([`0466736`](https://github.com/kristof-mattei/wsdd-rs/commit/0466736b4ec11096559e1d45cb83e265d43f7bfb))
 
 ### 🚜 Refactor
 
@@ -302,6 +334,11 @@
 - Swap `OnEarlyDrop` and `TraceLayer` to make sure we can surface errors (but log them as debug) by [@kristof-mattei](https://github.com/kristof-mattei) ([`29e7cce`](https://github.com/kristof-mattei/wsdd-rs/commit/29e7cceecdbda3a6159283708508c90668b2e96f))
 ## [0.5.0](https://github.com/kristof-mattei/wsdd-rs/compare/v0.4.7..v0.5.0) - 2026-08-14
 
+### ⚠️ Breaking Changes
+
+- Drop `-v` and `-s` by [@kristof-mattei](https://github.com/kristof-mattei) ([`feb5dd3`](https://github.com/kristof-mattei/wsdd-rs/commit/feb5dd36132b8d6aa652d87df40fb8be15a1d928))
+  - `-v`, `--verbose`, `-s` and `--shortlog` are rejected as unknown arguments. A unit file or script passing them fails to start instead of ignoring them. Set `RUST_LOG` for level and per-target filtering.
+
 ### 🐛 Bug Fixes
 
 - *(ci)* Grant issues read so test result comments work in private repos by [@kristof-mattei](https://github.com/kristof-mattei) ([`d005c4c`](https://github.com/kristof-mattei/wsdd-rs/commit/d005c4c7eba096267cbbb1130e652ff6b71797f3))
@@ -333,7 +370,6 @@
 ### 🚜 Refactor
 
 - *(cli)* Switch clap from builder to derive API by [@kristof-mattei](https://github.com/kristof-mattei) ([`6f069df`](https://github.com/kristof-mattei/wsdd-rs/commit/6f069df83b8ef3acf9430b1504055ff38b5be989))
-- [**breaking**] Drop `-v` and `-s` by [@kristof-mattei](https://github.com/kristof-mattei) ([`feb5dd3`](https://github.com/kristof-mattei/wsdd-rs/commit/feb5dd36132b8d6aa652d87df40fb8be15a1d928))
 - Encapsulate the API server's listeners behind one `accept()` by [@kristof-mattei](https://github.com/kristof-mattei) ([`9521e61`](https://github.com/kristof-mattei/wsdd-rs/commit/9521e61cf75cb2304b8561ce3656e3bf47b67267))
 
 ### 🧪 Testing
