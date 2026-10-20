@@ -37,12 +37,10 @@ use crate::wsd::devices::{Devices, Exchange, Fetch};
 
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
-    config: Arc<Config>,
     _bound_to: NetworkAddress,
     _devices: Arc<RwLock<Devices>>,
     handle: tokio::task::JoinHandle<()>,
-    mc_local_port_tx: Sender<OutgoingMulticastMessage>,
-    probes: Arc<RwLock<HashMap<MessageId, LastCopy>>>,
+    probe_tx: Sender<()>,
 }
 
 /// The send time of the last copy of a repeated `Probe` or `Resolve`.
@@ -97,15 +95,12 @@ impl WSDClient {
         incoming_rx: Receiver<IncomingClientMessage>,
         mc_local_port_tx: Sender<OutgoingMulticastMessage>,
     ) -> Self {
-        let probes = Arc::new(RwLock::new(HashMap::<MessageId, LastCopy>::new()));
+        let (probe_tx, probe_rx) = tokio::sync::mpsc::channel(1);
 
         let handle = {
             let cancellation_token = cancellation_token.clone();
-            let config = Arc::clone(&config);
             let bound_to = bound_to.clone();
             let devices = Arc::clone(&devices);
-            let mc_local_port_tx = mc_local_port_tx.clone();
-            let probes = Arc::clone(&probes);
 
             spawn_with_name(
                 format!("wsd client ({})", bound_to.address).as_str(),
@@ -116,19 +111,17 @@ impl WSDClient {
                     devices,
                     incoming_rx,
                     mc_local_port_tx,
-                    probes,
+                    probe_rx,
                 ),
             )
         };
 
         let client = Self {
             cancellation_token,
-            config,
             _bound_to: bound_to,
             _devices: devices,
             handle,
-            mc_local_port_tx,
-            probes,
+            probe_tx,
         };
 
         client.schedule_send_probe();
@@ -139,17 +132,13 @@ impl WSDClient {
     pub async fn teardown(self) {
         self.cancellation_token.cancel();
 
-        self.remove_outdated_probes().await;
-
         let _r = self.handle.await;
     }
 
     // WS-Discovery, Section 4.3, Probe message
     fn schedule_send_probe(&self) {
         let cancellation_token = self.cancellation_token.clone();
-        let config = Arc::clone(&self.config);
-        let probes = Arc::clone(&self.probes);
-        let mc_local_port_tx = self.mc_local_port_tx.clone();
+        let probe_tx = self.probe_tx.clone();
 
         tokio::task::spawn(async move {
             // avoid packet storm when hosts come up by delaying initial probe
@@ -159,79 +148,51 @@ impl WSDClient {
                 () = tokio::time::sleep(rand::random_range(Duration::from_millis(0)..=constants::APP_MAX_DELAY)) => { }
             }
 
-            if let Err(error) =
-                send_probe(&cancellation_token, &config, &probes, &mc_local_port_tx).await
-            {
-                event!(Level::ERROR, ?error, "Failed to send probe");
-            }
+            // fails only once the client loop has ended
+            let _r = probe_tx.send(()).await;
         });
     }
 
+    /// Asks the client loop to send a Probe.
     pub async fn send_probe(&self) -> Result<(), eyre::Report> {
-        send_probe(
-            &self.cancellation_token,
-            &self.config,
-            &self.probes,
-            &self.mc_local_port_tx,
-        )
-        .await
-    }
-
-    async fn remove_outdated_probes(&self) {
-        remove_outdated_probes(&self.probes).await;
+        self.probe_tx
+            .send(())
+            .await
+            .map_err(|_| eyre::Report::msg("Client loop gone, failed to send probe"))
     }
 }
 
+/// Sends a Probe, and records it in `probes` to accept its matches.
 async fn send_probe(
-    cancellation_token: &CancellationToken,
-    config: &Arc<Config>,
-    probes: &Arc<RwLock<HashMap<MessageId, LastCopy>>>,
+    config: &Config,
+    probes: &mut HashMap<MessageId, LastCopy>,
     mc_local_port_tx: &Sender<OutgoingMulticastMessage>,
 ) -> Result<(), eyre::Report> {
-    let future = async move {
-        remove_outdated_probes(probes).await;
+    let (probe, message_id) = Builder::build_probe(config)?;
 
-        let (probe, message_id) = Builder::build_probe(config)?;
+    let probe = record(probes, message_id, probe);
 
-        let (probe, last_copy) = LastCopy::track(probe);
-
-        probes.write().await.insert(message_id.into(), last_copy);
-
-        mc_local_port_tx
-            .send(probe)
-            .await
-            .map_err(|_| eyre::Report::msg("Receiver gone, failed to send probe"))
-    };
-
-    cancellation_token
-        .run_until_cancelled(future)
+    mc_local_port_tx
+        .send(probe)
         .await
-        .unwrap_or(Ok(()))
+        .map_err(|_| eyre::Report::msg("Receiver gone, failed to send probe"))
 }
 
-async fn remove_outdated_probes(probes: &Arc<RwLock<HashMap<MessageId, LastCopy>>>) {
-    let now = Instant::now();
-
-    probes
-        .write()
-        .await
-        .retain(|_, last_copy| last_copy.accepts(now));
-}
-
-fn record_resolve(
-    resolves: &mut HashMap<MessageId, LastCopy>,
+/// Records a `Probe` or `Resolve` in `sent` to accept its matches, after dropping the ones whose matches are no longer accepted.
+fn record(
+    sent: &mut HashMap<MessageId, LastCopy>,
     message_id: Urn,
-    resolve: MulticastMessage,
+    message: MulticastMessage,
 ) -> OutgoingMulticastMessage {
     let now = Instant::now();
 
-    resolves.retain(|_, last_copy| last_copy.accepts(now));
+    sent.retain(|_, last_copy| last_copy.accepts(now));
 
-    let (resolve, last_copy) = LastCopy::track(resolve);
+    let (message, last_copy) = LastCopy::track(message);
 
-    resolves.insert(message_id.into(), last_copy);
+    sent.insert(message_id.into(), last_copy);
 
-    resolve
+    message
 }
 
 fn parse_xaddrs(bound_to: IpNet, raw_xaddrs: &str) -> Vec<XAddr> {
@@ -488,7 +449,7 @@ async fn handle_hello(
 
             let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
 
-            let message = record_resolve(resolves, message_id, message);
+            let message = record(resolves, message_id, message);
 
             multicast.send(message).await?;
 
@@ -540,7 +501,7 @@ async fn handle_probe_matches(
     devices: Arc<RwLock<Devices>>,
     bound_to: &NetworkAddress,
     received_at: Instant,
-    probes: Arc<RwLock<HashMap<MessageId, LastCopy>>>,
+    probes: &mut HashMap<MessageId, LastCopy>,
     mc_local_port_tx: &Sender<OutgoingMulticastMessage>,
     resolves: &mut HashMap<MessageId, LastCopy>,
     ProbeMatches {
@@ -551,8 +512,6 @@ async fn handle_probe_matches(
 ) -> Result<(), eyre::Report> {
     // only accept probe matches for probes we sent recently
     let fresh = probes
-        .write()
-        .await
         .get_mut(&relates_to)
         .is_some_and(|last_copy| last_copy.accepts(received_at));
 
@@ -624,7 +583,7 @@ async fn handle_probe_match(
 
             let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
 
-            let message = record_resolve(resolves, message_id, message);
+            let message = record(resolves, message_id, message);
 
             mc_local_port_tx.send(message).await?;
 
@@ -747,7 +706,7 @@ async fn listen_forever(
     devices: Arc<RwLock<Devices>>,
     mut incoming_rx: Receiver<IncomingClientMessage>,
     mc_local_port_tx: Sender<OutgoingMulticastMessage>,
-    probes: Arc<RwLock<HashMap<MessageId, LastCopy>>>,
+    mut probe_rx: Receiver<()>,
 ) {
     // Note: we bind on the interface's name.
     // This is to ensure we send out requests via the interface that we received the XML message on
@@ -767,27 +726,35 @@ async fn listen_forever(
         cancellation_token.child_token(),
     );
 
+    let mut probes = HashMap::new();
     let mut resolves = HashMap::new();
 
     loop {
-        let message = tokio::select! {
-            () = cancellation_token.cancelled() => {
-                break;
-            },
-            message = incoming_rx.recv() => {
-                message
-            },
-        };
-
-        let Some(IncomingClientMessage {
+        let IncomingClientMessage {
             from: _from,
             received_at,
             header,
             message,
-        }) = message
-        else {
-            // the end, but we just got it before the cancellation
-            break;
+        } = tokio::select! {
+            biased;
+            () = cancellation_token.cancelled() => {
+                break;
+            },
+            Some(()) = probe_rx.recv() => {
+                if let Err(error) = send_probe(&config, &mut probes, &mc_local_port_tx).await {
+                    event!(Level::ERROR, ?error, "Failed to send probe");
+                }
+
+                continue;
+            },
+            message = incoming_rx.recv() => {
+                let Some(message) = message else {
+                    // the end, but we just got it before the cancellation
+                    break;
+                };
+
+                message
+            },
         };
 
         // dispatch based on the SOAP Action header
@@ -812,7 +779,7 @@ async fn listen_forever(
                     Arc::clone(&devices),
                     &bound_to,
                     received_at,
-                    Arc::clone(&probes),
+                    &mut probes,
                     &mc_local_port_tx,
                     &mut resolves,
                     probe_matches,
@@ -2622,7 +2589,7 @@ mod tests {
             .await
             .unwrap();
 
-        let probes = {
+        let mut probes = {
             let mut hash_map = HashMap::new();
 
             hash_map.insert(
@@ -2630,7 +2597,7 @@ mod tests {
                 LastCopy::Sent(Instant::now()),
             );
 
-            Arc::new(RwLock::new(hash_map))
+            hash_map
         };
 
         let probe_matches = message.into_probe_matches().unwrap();
@@ -2645,7 +2612,7 @@ mod tests {
             Arc::clone(&client_devices),
             &client_network_address,
             Instant::now(),
-            probes,
+            &mut probes,
             &multicast_tx,
             &mut resolves,
             probe_matches,
@@ -2709,7 +2676,7 @@ mod tests {
             .await
             .unwrap();
 
-        let probes = {
+        let mut probes = {
             let mut hash_map = HashMap::new();
 
             hash_map.insert(
@@ -2717,7 +2684,7 @@ mod tests {
                 LastCopy::Sent(Instant::now()),
             );
 
-            Arc::new(RwLock::new(hash_map))
+            hash_map
         };
 
         let probe_matches = message.into_probe_matches().unwrap();
@@ -2732,7 +2699,7 @@ mod tests {
             Arc::clone(&client_devices),
             &client_network_address,
             Instant::now(),
-            probes,
+            &mut probes,
             &multicast_tx,
             &mut resolves,
             probe_matches,
@@ -2798,7 +2765,7 @@ mod tests {
 
         let last_copy_sent_at = Instant::now();
 
-        let probes = {
+        let mut probes = {
             let mut hash_map = HashMap::new();
 
             hash_map.insert(
@@ -2806,7 +2773,7 @@ mod tests {
                 LastCopy::Sent(last_copy_sent_at),
             );
 
-            Arc::new(RwLock::new(hash_map))
+            hash_map
         };
 
         let probe_matches = message.into_probe_matches().unwrap();
@@ -2821,7 +2788,7 @@ mod tests {
             Arc::clone(&client_devices),
             &client_network_address,
             last_copy_sent_at + constants::MATCH_TIMEOUT,
-            probes,
+            &mut probes,
             &multicast_tx,
             &mut resolves,
             probe_matches,
@@ -2896,7 +2863,7 @@ mod tests {
             .await
             .unwrap();
 
-        let probes = {
+        let mut probes = {
             let mut hash_map = HashMap::new();
 
             hash_map.insert(
@@ -2904,7 +2871,7 @@ mod tests {
                 LastCopy::Sent(Instant::now()),
             );
 
-            Arc::new(RwLock::new(hash_map))
+            hash_map
         };
 
         let probe_matches = message.into_probe_matches().unwrap();
@@ -2919,7 +2886,7 @@ mod tests {
             Arc::clone(&client_devices),
             &client_network_address,
             Instant::now(),
-            probes,
+            &mut probes,
             &multicast_tx,
             &mut resolves,
             probe_matches,
