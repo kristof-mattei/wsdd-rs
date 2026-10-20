@@ -5,14 +5,14 @@ use crate::soap::parser::generic::parse_unsigned_int;
 use crate::soap::{InstanceId, MessageNumber};
 
 /// The `wsd:AppSequence` header block of a received message, see documentation/ws-discovery.pdf, Appendix I.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct AppSequence {
     instance_id: InstanceId,
     sequence_id: Option<Box<str>>,
     message_number: MessageNumber,
 }
 
-#[derive(Error, Clone, Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq)]
 pub enum InvalidAppSequence {
     #[error("Missing InstanceId")]
     MissingInstanceId,

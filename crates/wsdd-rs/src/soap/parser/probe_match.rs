@@ -3,6 +3,7 @@ use std::io::Read;
 use xml::reader::XmlEvent;
 
 use crate::constants;
+use crate::soap::MessageId;
 use crate::soap::parser::BodyParsingError;
 use crate::soap::parser::app_sequence::AppSequence;
 use crate::soap::parser::generic::{
@@ -14,6 +15,8 @@ use crate::xml::{XmlError, XmlReader, find_child};
 type ParsedProbeMatchesResult = Result<ProbeMatches, BodyParsingError>;
 
 pub struct ProbeMatches {
+    /// The `[message id]` of the Probe it answers.
+    pub relates_to: MessageId,
     pub app_sequence: AppSequence,
     pub matches: Vec<ProbeMatch>,
 }
@@ -30,6 +33,7 @@ pub struct ProbeMatch {
 /// should the structure XML be invalid (e.g. missing `Address`).
 pub fn parse_probe_matches<R>(
     reader: &mut XmlReader<R>,
+    relates_to: MessageId,
     app_sequence: AppSequence,
 ) -> ParsedProbeMatchesResult
 where
@@ -93,6 +97,7 @@ where
     }
 
     Ok(ProbeMatches {
+        relates_to,
         app_sequence,
         matches,
     })
@@ -104,6 +109,7 @@ mod tests {
     use xml::ParserConfig;
 
     use crate::constants;
+    use crate::soap::MessageId;
     use crate::soap::parser::BodyParsingError;
     use crate::soap::parser::app_sequence::AppSequence;
     use crate::soap::parser::probe_match::{ProbeMatches, parse_probe_matches};
@@ -135,7 +141,11 @@ mod tests {
                 .create_reader(xml.as_bytes()),
         );
 
-        parse_probe_matches(&mut reader, AppSequence::new(1, None, 0))
+        parse_probe_matches(
+            &mut reader,
+            MessageId::new(Box::from("urn:uuid:00000000-0000-0000-0000-000000000000")),
+            AppSequence::new(1, None, 0),
+        )
     }
 
     #[test]

@@ -559,21 +559,16 @@ async fn handle_probe_matches(
     config: &Config,
     devices: Arc<RwLock<Devices>>,
     bound_to: &NetworkAddress,
-    relates_to: Option<MessageId>,
     received_at: Instant,
     probes: Arc<RwLock<HashMap<MessageId, LastCopy>>>,
     mc_local_port_tx: &Sender<OutgoingMulticastMessage>,
     resolves: &mut HashMap<MessageId, LastCopy>,
     ProbeMatches {
+        relates_to,
         app_sequence,
         matches,
     }: ProbeMatches,
 ) -> Result<(), eyre::Report> {
-    let Some(relates_to) = relates_to else {
-        event!(Level::DEBUG, "missing `RelatesTo`");
-        return Ok(());
-    };
-
     // only accept probe matches for probes we sent recently
     let fresh = probes
         .write()
@@ -672,19 +667,14 @@ async fn handle_resolve_matches(
     exchanges: &ExchangeRunner,
     devices: Arc<RwLock<Devices>>,
     bound_to: &NetworkAddress,
-    relates_to: Option<MessageId>,
     received_at: Instant,
     resolves: &mut HashMap<MessageId, LastCopy>,
     ResolveMatches {
+        relates_to,
         app_sequence,
         resolve_match,
     }: ResolveMatches,
 ) -> Result<(), eyre::Report> {
-    let Some(relates_to) = relates_to else {
-        event!(Level::DEBUG, "missing `RelatesTo`");
-        return Ok(());
-    };
-
     // only accept resolve matches for resolves we sent recently
     let fresh = resolves
         .get_mut(&relates_to)
@@ -842,7 +832,6 @@ async fn listen_forever(
                     &config,
                     Arc::clone(&devices),
                     &bound_to,
-                    header.relates_to,
                     received_at,
                     Arc::clone(&probes),
                     &mc_local_port_tx,
@@ -856,7 +845,6 @@ async fn listen_forever(
                     &exchanges,
                     Arc::clone(&devices),
                     &bound_to,
-                    header.relates_to,
                     received_at,
                     &mut resolves,
                     resolve_matches,
@@ -1779,10 +1767,10 @@ mod tests {
             &exchanges,
             Arc::clone(&client_devices),
             &network_address,
-            Some(resolve_message_id),
             Instant::now(),
             &mut resolves,
             ResolveMatches {
+                relates_to: resolve_message_id,
                 app_sequence: AppSequence::new(1, None, 6),
                 resolve_match: Some(ResolveMatch {
                     endpoint: endpoint.clone(),
@@ -1908,10 +1896,10 @@ mod tests {
             &exchanges,
             Arc::clone(&client_devices),
             &network_address,
-            Some(resolve_message_id),
             Instant::now(),
             &mut resolves,
             ResolveMatches {
+                relates_to: resolve_message_id,
                 app_sequence: AppSequence::new(1, None, 7),
                 resolve_match: Some(ResolveMatch {
                     endpoint: endpoint.clone(),
@@ -2668,7 +2656,7 @@ mod tests {
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let (header, message) = message_handler
+        let (_, message) = message_handler
             .deconstruct_message(
                 &probe_matches,
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
@@ -2698,7 +2686,6 @@ mod tests {
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
-            header.relates_to,
             Instant::now(),
             probes,
             &multicast_tx,
@@ -2756,7 +2743,7 @@ mod tests {
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(2);
 
-        let (header, message) = message_handler
+        let (_, message) = message_handler
             .deconstruct_message(
                 &probe_matches,
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
@@ -2786,7 +2773,6 @@ mod tests {
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
-            header.relates_to,
             Instant::now(),
             probes,
             &multicast_tx,
@@ -2844,7 +2830,7 @@ mod tests {
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let (header, message) = message_handler
+        let (_, message) = message_handler
             .deconstruct_message(
                 &probe_matches,
                 SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
@@ -2876,7 +2862,6 @@ mod tests {
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
-            header.relates_to,
             last_copy_sent_at + constants::MATCH_TIMEOUT,
             probes,
             &multicast_tx,
@@ -2945,7 +2930,7 @@ mod tests {
 
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let (header, message) = message_handler
+        let (_, message) = message_handler
             .deconstruct_message(
                 &probe_matches,
                 SocketAddr::new(server.socket_address().ip(), 5000),
@@ -2975,7 +2960,6 @@ mod tests {
             &client_config,
             Arc::clone(&client_devices),
             &client_network_address,
-            header.relates_to,
             Instant::now(),
             probes,
             &multicast_tx,
@@ -3048,7 +3032,7 @@ mod tests {
             1,
         );
 
-        let (header, message) = message_handler
+        let (_, message) = message_handler
             .deconstruct_message(
                 &resolve_matches,
                 SocketAddr::new(server.socket_address().ip(), 5000),
@@ -3075,7 +3059,6 @@ mod tests {
             &exchanges,
             Arc::clone(&client_devices),
             &client_network_address,
-            header.relates_to,
             Instant::now(),
             &mut resolves,
             resolve_matches,
@@ -3111,7 +3094,7 @@ mod tests {
             resolve_message_id.urn(),
         );
 
-        let (header, message) = message_handler
+        let (_, message) = message_handler
             .deconstruct_message(
                 &resolve_matches,
                 SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(192, 168, 100, 5), 5000)),
@@ -3132,7 +3115,6 @@ mod tests {
             &exchanges,
             Arc::clone(&client_devices),
             &client_network_address,
-            header.relates_to,
             Instant::now(),
             &mut resolves,
             resolve_matches,
@@ -3180,7 +3162,7 @@ mod tests {
             1,
         );
 
-        let (header, message) = message_handler
+        let (_, message) = message_handler
             .deconstruct_message(
                 &resolve_matches,
                 SocketAddr::new(server.socket_address().ip(), 5000),
@@ -3197,7 +3179,6 @@ mod tests {
             &exchanges,
             Arc::clone(&client_devices),
             &client_network_address,
-            header.relates_to,
             Instant::now(),
             &mut HashMap::new(),
             resolve_matches,
@@ -3248,7 +3229,7 @@ mod tests {
             1,
         );
 
-        let (header, message) = message_handler
+        let (_, message) = message_handler
             .deconstruct_message(
                 &resolve_matches,
                 SocketAddr::new(server.socket_address().ip(), 5000),
@@ -3277,7 +3258,6 @@ mod tests {
             &exchanges,
             Arc::clone(&client_devices),
             &client_network_address,
-            header.relates_to,
             last_copy_sent_at + constants::MATCH_TIMEOUT,
             &mut resolves,
             resolve_matches,

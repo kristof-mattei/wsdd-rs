@@ -3,6 +3,7 @@ use std::io::Read;
 use xml::reader::XmlEvent;
 
 use crate::constants;
+use crate::soap::MessageId;
 use crate::soap::parser::BodyParsingError;
 use crate::soap::parser::app_sequence::AppSequence;
 use crate::soap::parser::generic::{
@@ -15,6 +16,8 @@ use crate::xml::{XmlError, XmlReader, find_child};
 type ParsedResolveMatchesResult = Result<ResolveMatches, BodyParsingError>;
 
 pub struct ResolveMatches {
+    /// The `[message id]` of the Resolve it answers.
+    pub relates_to: MessageId,
     pub app_sequence: AppSequence,
     pub resolve_match: Option<ResolveMatch>,
 }
@@ -32,6 +35,7 @@ pub struct ResolveMatch {
 /// should the structure XML be invalid (e.g. missing `Address`).
 pub fn parse_resolve_matches<R>(
     reader: &mut XmlReader<R>,
+    relates_to: MessageId,
     app_sequence: AppSequence,
 ) -> ParsedResolveMatchesResult
 where
@@ -104,6 +108,7 @@ where
     }
 
     Ok(ResolveMatches {
+        relates_to,
         app_sequence,
         resolve_match,
     })
@@ -115,6 +120,7 @@ mod tests {
     use xml::ParserConfig;
 
     use crate::constants;
+    use crate::soap::MessageId;
     use crate::soap::parser::BodyParsingError;
     use crate::soap::parser::app_sequence::AppSequence;
     use crate::soap::parser::resolve_match::{ResolveMatches, parse_resolve_matches};
@@ -140,7 +146,11 @@ mod tests {
                 .create_reader(xml.as_bytes()),
         );
 
-        parse_resolve_matches(&mut reader, AppSequence::new(1, None, 0))
+        parse_resolve_matches(
+            &mut reader,
+            MessageId::new(Box::from("urn:uuid:00000000-0000-0000-0000-000000000000")),
+            AppSequence::new(1, None, 0),
+        )
     }
 
     #[test]
