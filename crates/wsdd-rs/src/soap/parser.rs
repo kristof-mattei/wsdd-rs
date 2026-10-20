@@ -35,13 +35,19 @@ pub struct MessageHandler {
     recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
 }
 
+/// The header blocks of every message.
 pub struct Header {
     pub to: Option<DeviceUri>,
     pub action: Box<str>,
     pub message_id: MessageId,
-    pub relates_to: Option<MessageId>,
+}
+
+/// Every header block that was read, before the action decides which of them the message requires.
+pub struct RawHeader {
+    header: Header,
+    relates_to: Option<MessageId>,
     /// `None` when the block is absent.
-    pub app_sequence: Option<Result<AppSequence, InvalidAppSequence>>,
+    app_sequence: Option<Result<AppSequence, InvalidAppSequence>>,
 }
 
 #[derive(Error, Debug)]
@@ -52,6 +58,8 @@ pub enum HeaderParsingError {
     MissingMessageId,
     #[error("Missing Action")]
     MissingAction,
+    #[error("Missing RelatesTo")]
+    MissingRelatesTo,
     #[error("Missing wsd:AppSequence")]
     MissingAppSequence,
     #[error("Invalid wsd:AppSequence: {}", .0)]
@@ -108,7 +116,7 @@ impl From<TextReadError> for BodyParsingError {
     }
 }
 
-type ParsedHeaderResult = Result<Header, HeaderParsingError>;
+type ParsedHeaderResult = Result<RawHeader, HeaderParsingError>;
 
 #[derive(Error, Debug)]
 pub enum MessageHandlerError {
@@ -167,7 +175,7 @@ impl MessageHandlerError {
     }
 }
 
-type RawMessageResult<R> = Result<(Header, bool, XmlReader<R>), MessageHandlerError>;
+type RawMessageResult<R> = Result<(RawHeader, bool, XmlReader<R>), MessageHandlerError>;
 
 pub fn deconstruct_raw<R>(raw: R) -> RawMessageResult<R>
 where
@@ -316,12 +324,19 @@ fn validate_action_body(
 }
 
 /// A Target Service MUST include `wsd:AppSequence`, see documentation/ws-discovery.pdf, 4.1 and 5.3.
-fn require_app_sequence(header: &Header) -> Result<AppSequence, HeaderParsingError> {
-    match header.app_sequence {
+fn require_app_sequence(
+    app_sequence: Option<Result<AppSequence, InvalidAppSequence>>,
+) -> Result<AppSequence, HeaderParsingError> {
+    match app_sequence {
         None => Err(HeaderParsingError::MissingAppSequence),
-        Some(Err(ref error)) => Err(HeaderParsingError::InvalidAppSequence(error.clone())),
-        Some(Ok(ref app_sequence)) => Ok(app_sequence.clone()),
+        Some(Err(error)) => Err(HeaderParsingError::InvalidAppSequence(error)),
+        Some(Ok(app_sequence)) => Ok(app_sequence),
     }
+}
+
+/// A Probe Match or Resolve Match MUST relate to the Probe or Resolve it answers, see documentation/ws-discovery.pdf, 5.3 and 6.2.
+fn require_relates_to(relates_to: Option<MessageId>) -> Result<MessageId, HeaderParsingError> {
+    relates_to.ok_or(HeaderParsingError::MissingRelatesTo)
 }
 
 /// Reads past `</soap:Body>`, then requires `</soap:Envelope>`, see documentation/soap12-part1.pdf, 5.1.
@@ -353,34 +368,46 @@ where
     }
 }
 
+/// Parses the body of `action`, and moves the header blocks that the action requires into the message.
 fn parse_message_body(
-    header: &Header,
+    action: &str,
+    relates_to: Option<MessageId>,
+    app_sequence: Option<Result<AppSequence, InvalidAppSequence>>,
     mut reader: XmlReader<&[u8]>,
 ) -> Result<WSDMessage, MessageHandlerError> {
-    let response = match &*header.action {
+    let response = match action {
         constants::WSD_GET => Ok(Get {}.into()),
         constants::WSD_HELLO => {
-            let app_sequence = require_app_sequence(header)?;
+            let app_sequence = require_app_sequence(app_sequence)?;
 
             Ok(soap::parser::hello::parse_hello(&mut reader, app_sequence)?.into())
         },
         constants::WSD_BYE => {
-            let app_sequence = require_app_sequence(header)?;
+            let app_sequence = require_app_sequence(app_sequence)?;
 
             Ok(soap::parser::bye::parse_bye(&mut reader, app_sequence)?.into())
         },
         constants::WSD_PROBE_MATCH => {
-            let app_sequence = require_app_sequence(header)?;
+            let relates_to = require_relates_to(relates_to)?;
+            let app_sequence = require_app_sequence(app_sequence)?;
 
-            Ok(soap::parser::probe_match::parse_probe_matches(&mut reader, app_sequence)?.into())
+            Ok(soap::parser::probe_match::parse_probe_matches(
+                &mut reader,
+                relates_to,
+                app_sequence,
+            )?
+            .into())
         },
         constants::WSD_RESOLVE_MATCH => {
-            let app_sequence = require_app_sequence(header)?;
+            let relates_to = require_relates_to(relates_to)?;
+            let app_sequence = require_app_sequence(app_sequence)?;
 
-            Ok(
-                soap::parser::resolve_match::parse_resolve_matches(&mut reader, app_sequence)?
-                    .into(),
-            )
+            Ok(soap::parser::resolve_match::parse_resolve_matches(
+                &mut reader,
+                relates_to,
+                app_sequence,
+            )?
+            .into())
         },
         constants::WSD_PROBE => Ok(soap::parser::probe::parse_probe(&mut reader)?.into()),
         constants::WSD_RESOLVE => Ok(soap::parser::resolve::parse_resolve(&mut reader)?.into()),
@@ -431,7 +458,15 @@ impl MessageHandler {
         raw: &[u8],
         source: Option<SocketAddr>,
     ) -> Result<(Header, WSDMessage), MessageHandlerError> {
-        let (header, has_body, reader) = deconstruct_raw(raw)?;
+        let (
+            RawHeader {
+                header,
+                relates_to,
+                app_sequence,
+            },
+            has_body,
+            reader,
+        ) = deconstruct_raw(raw)?;
 
         // check for duplicates
         if self.is_duplicated_msg(&header.message_id).await {
@@ -451,7 +486,7 @@ impl MessageHandler {
             has_body,
         )?;
 
-        let body = parse_message_body(&header, reader)?;
+        let body = parse_message_body(&header.action, relates_to, app_sequence, reader)?;
 
         Ok((header, body))
     }
@@ -561,10 +596,12 @@ where
         return Err(HeaderParsingError::MissingAction);
     };
 
-    Ok(Header {
-        to,
-        action,
-        message_id,
+    Ok(RawHeader {
+        header: Header {
+            to,
+            action,
+            message_id,
+        },
         relates_to,
         app_sequence,
     })
@@ -787,7 +824,7 @@ mod tests {
         );
     }
 
-    fn message(action: &str, app_sequence: &str, body: &str) -> String {
+    fn message(action: &str, header_blocks: &str, body: &str) -> String {
         format!(
             r#"<soap:Envelope xmlns:soap="{}" xmlns:wsa="{}" xmlns:wsd="{}"><soap:Header><wsa:To>{}</wsa:To><wsa:Action>{}</wsa:Action><wsa:MessageID>{}</wsa:MessageID>{}</soap:Header><soap:Body>{}</soap:Body></soap:Envelope>"#,
             constants::XML_SOAP_NAMESPACE,
@@ -796,7 +833,7 @@ mod tests {
             constants::WSA_DISCOVERY,
             action,
             Uuid::now_v7().urn(),
-            app_sequence,
+            header_blocks,
             body
         )
     }
@@ -829,6 +866,9 @@ mod tests {
     fn full_app_sequence() -> AppSequence {
         AppSequence::new(3, Some("urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9"), 7)
     }
+
+    const RELATES_TO: &str =
+        "<wsa:RelatesTo>urn:uuid:00000000-0000-0000-0000-000000000002</wsa:RelatesTo>";
 
     const SOURCE: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 1, 2, 4), 3702));
 
@@ -901,7 +941,7 @@ mod tests {
     async fn accepts_probe_matches_with_app_sequence() {
         let probe_matches = message(
             constants::WSD_PROBE_MATCH,
-            FULL_APP_SEQUENCE,
+            &format!("{}{}", FULL_APP_SEQUENCE, RELATES_TO),
             &probe_matches_body(1),
         );
 
@@ -922,7 +962,7 @@ mod tests {
     async fn accepts_resolve_matches_with_app_sequence() {
         let resolve_matches = message(
             constants::WSD_RESOLVE_MATCH,
-            FULL_APP_SEQUENCE,
+            &format!("{}{}", FULL_APP_SEQUENCE, RELATES_TO),
             &resolve_matches_body(1),
         );
 
@@ -936,6 +976,92 @@ mod tests {
                 .into_resolve_matches()
                 .map(|resolve_matches| resolve_matches.app_sequence),
             Some(full_app_sequence())
+        );
+    }
+
+    #[tokio::test]
+    async fn parses_relates_to_of_probe_matches() {
+        let probe_matches = message(
+            constants::WSD_PROBE_MATCH,
+            &format!("{}{}", APP_SEQUENCE, RELATES_TO),
+            &probe_matches_body(1),
+        );
+
+        let (_, message) = handler_for_tests(8)
+            .deconstruct_message(&probe_matches, SOURCE)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            message
+                .into_probe_matches()
+                .map(|probe_matches| probe_matches.relates_to),
+            Some(MessageId::new(Box::from(
+                "urn:uuid:00000000-0000-0000-0000-000000000002"
+            )))
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_probe_matches_without_relates_to() {
+        let probe_matches = message(
+            constants::WSD_PROBE_MATCH,
+            APP_SEQUENCE,
+            &probe_matches_body(1),
+        );
+
+        let result = handler_for_tests(8)
+            .deconstruct_message(&probe_matches, SOURCE)
+            .await;
+
+        assert_matches!(
+            result.err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::MissingRelatesTo
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn parses_relates_to_of_resolve_matches() {
+        let resolve_matches = message(
+            constants::WSD_RESOLVE_MATCH,
+            &format!("{}{}", APP_SEQUENCE, RELATES_TO),
+            &resolve_matches_body(1),
+        );
+
+        let (_, message) = handler_for_tests(8)
+            .deconstruct_message(&resolve_matches, SOURCE)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            message
+                .into_resolve_matches()
+                .map(|resolve_matches| resolve_matches.relates_to),
+            Some(MessageId::new(Box::from(
+                "urn:uuid:00000000-0000-0000-0000-000000000002"
+            )))
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_resolve_matches_without_relates_to() {
+        let resolve_matches = message(
+            constants::WSD_RESOLVE_MATCH,
+            APP_SEQUENCE,
+            &resolve_matches_body(1),
+        );
+
+        let result = handler_for_tests(8)
+            .deconstruct_message(&resolve_matches, SOURCE)
+            .await;
+
+        assert_matches!(
+            result.err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::MissingRelatesTo
+            ))
         );
     }
 
@@ -962,7 +1088,7 @@ mod tests {
     async fn parses_metadata_version_of_probe_match() {
         let probe_matches = message(
             constants::WSD_PROBE_MATCH,
-            APP_SEQUENCE,
+            &format!("{}{}", APP_SEQUENCE, RELATES_TO),
             &probe_matches_body(u64::from(u32::MAX) + 1),
         );
 
@@ -987,7 +1113,7 @@ mod tests {
     async fn parses_metadata_version_of_resolve_match() {
         let resolve_matches = message(
             constants::WSD_RESOLVE_MATCH,
-            APP_SEQUENCE,
+            &format!("{}{}", APP_SEQUENCE, RELATES_TO),
             &resolve_matches_body(u64::from(u32::MAX) + 1),
         );
 
