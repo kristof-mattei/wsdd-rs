@@ -140,11 +140,9 @@ impl Probe {
     pub fn matches(&self) -> bool {
         self.types.as_ref().is_none_or(|types| {
             types.iter().all(|&(ref namespace, ref name)| {
-                matches!(
-                    (&**namespace, &**name),
-                    (constants::XML_WSDP_NAMESPACE, "Device")
-                        | (constants::XML_PUB_NAMESPACE, "Computer")
-                )
+                constants::ADVERTISED_TYPES.iter().any(|advertised| {
+                    advertised.namespace == &**namespace && advertised.local_name == &**name
+                })
             })
         })
     }

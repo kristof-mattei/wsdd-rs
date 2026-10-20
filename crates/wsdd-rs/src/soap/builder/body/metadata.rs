@@ -1,12 +1,13 @@
 use std::io::Write;
 
 use xml::EventWriter;
+use xml::name::Name;
 use xml::writer::XmlEvent;
 
 use crate::config::Config;
 use crate::constants;
 use crate::soap::builder::WriteBody;
-use crate::soap::builder::body::add_endpoint_reference;
+use crate::soap::builder::body::{add_endpoint_reference, add_qnames};
 
 pub struct MetaData;
 
@@ -23,7 +24,10 @@ where
     fn namespaces(&self) -> impl Iterator<Item = (impl Into<String>, impl Into<String>)> {
         [
             ("pnpx", constants::XML_PNPX_NAMESPACE),
-            ("pub", constants::XML_PUB_NAMESPACE),
+            (
+                constants::PUB_COMPUTER.prefix,
+                constants::PUB_COMPUTER.namespace,
+            ),
             ("wsx", constants::XML_WSX_NAMESPACE),
             ("wsdp", constants::XML_WSDP_NAMESPACE),
         ]
@@ -104,14 +108,17 @@ where
         add_endpoint_reference(writer, &config.uuid_as_device_uri)?;
 
         writer.write(XmlEvent::start_element("wsdp:Types"))?;
-        writer.write(XmlEvent::Characters(constants::PUB_COMPUTER))?;
+        add_qnames(writer, &[constants::PUB_COMPUTER])?;
         writer.write(XmlEvent::end_element())?;
 
         writer.write(XmlEvent::start_element("wsdp:ServiceId"))?;
         writer.write(XmlEvent::Characters(&config.uuid_as_device_uri))?;
         writer.write(XmlEvent::end_element())?;
 
-        writer.write(XmlEvent::start_element(constants::PUB_COMPUTER))?;
+        writer.write(XmlEvent::start_element(Name::prefixed(
+            constants::PUB_COMPUTER.local_name,
+            constants::PUB_COMPUTER.prefix,
+        )))?;
         writer.write(XmlEvent::Characters(&config.full_hostname))?;
         writer.write(XmlEvent::end_element())?;
 

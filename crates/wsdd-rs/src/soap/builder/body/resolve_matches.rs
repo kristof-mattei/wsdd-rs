@@ -26,12 +26,11 @@ where
     W: Write,
 {
     fn namespaces(&self) -> impl Iterator<Item = (impl Into<String>, impl Into<String>)> {
-        [
-            ("pub", constants::XML_PUB_NAMESPACE),
-            ("wsd", constants::XML_WSD_NAMESPACE),
-            ("wsdp", constants::XML_WSDP_NAMESPACE),
-        ]
-        .into_iter()
+        [("wsd", constants::XML_WSD_NAMESPACE)].into_iter().chain(
+            constants::ADVERTISED_TYPES
+                .iter()
+                .map(|r#type| (r#type.prefix, r#type.namespace)),
+        )
     }
 
     fn write_body(
@@ -43,7 +42,7 @@ where
         writer.write(XmlEvent::start_element("wsd:ResolveMatch"))?;
 
         add_endpoint_reference(writer, &config.uuid_as_device_uri)?;
-        add_types(writer, constants::WSDP_TYPE_DEVICE_COMPUTER)?;
+        add_types(writer, &constants::ADVERTISED_TYPES)?;
         add_xaddr(writer, config, self.address)?;
         add_metadata_version(writer, config)?;
 
