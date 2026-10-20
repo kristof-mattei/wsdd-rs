@@ -406,65 +406,246 @@ impl ExchangeRunner {
     }
 }
 
-async fn handle_hello(
-    exchanges: &ExchangeRunner,
-    config: &Config,
+/// State of one `listen_forever` loop.
+struct ClientLoop {
+    exchanges: ExchangeRunner,
+    config: Arc<Config>,
     devices: Arc<RwLock<Devices>>,
-    bound_to: &NetworkAddress,
-    multicast: &Sender<OutgoingMulticastMessage>,
-    resolves: &mut HashMap<MessageId, LastCopy>,
-    Hello {
-        app_sequence,
-        endpoint,
-        raw_xaddrs,
-        metadata_version,
-    }: Hello,
-) -> Result<(), eyre::Report> {
-    let next = {
-        let mut guard = devices.write().await;
+    bound_to: NetworkAddress,
+    mc_local_port_tx: Sender<OutgoingMulticastMessage>,
+    probes: HashMap<MessageId, LastCopy>,
+    resolves: HashMap<MessageId, LastCopy>,
+}
 
-        let Some(current) = guard.observe(&endpoint, &app_sequence) else {
-            event!(Level::DEBUG, %endpoint, ?app_sequence, "stale Hello, ignoring");
+impl ClientLoop {
+    async fn handle_hello(
+        &mut self,
+        Hello {
+            app_sequence,
+            endpoint,
+            raw_xaddrs,
+            metadata_version,
+        }: Hello,
+    ) -> Result<(), eyre::Report> {
+        let &mut Self {
+            ref exchanges,
+            ref config,
+            ref devices,
+            ref bound_to,
+            ref mc_local_port_tx,
+            ref mut resolves,
+            ..
+        } = self;
+
+        let next = {
+            let mut guard = devices.write().await;
+
+            let Some(current) = guard.observe(&endpoint, &app_sequence) else {
+                event!(Level::DEBUG, %endpoint, ?app_sequence, "stale Hello, ignoring");
+
+                return Ok(());
+            };
+
+            match check_xaddrs(bound_to.address, "Hello", &endpoint, raw_xaddrs) {
+                XAddrsCheck::Unusable => return Ok(()),
+                XAddrsCheck::Missing => Next::Resolve,
+                XAddrsCheck::Usable(xaddrs) => {
+                    event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), metadata_version, "Hello");
+
+                    match current.start_exchange(bound_to.interface.index(), xaddrs) {
+                        Some(fetch) => Next::Fetch(fetch),
+                        None => Next::Rerun,
+                    }
+                },
+            }
+        };
+
+        match next {
+            Next::Resolve => {
+                event!(Level::INFO, %endpoint, metadata_version, "Hello without XAddrs, sending resolve");
+
+                let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
+
+                let message = record(resolves, message_id, message);
+
+                mc_local_port_tx.send(message).await?;
+
+                Ok(())
+            },
+            Next::Fetch(fetch) => {
+                exchanges.spawn(fetch);
+
+                Ok(())
+            },
+            Next::Rerun => {
+                event!(Level::DEBUG, %endpoint, "metadata exchange running, rerun queued");
+
+                Ok(())
+            },
+        }
+    }
+
+    async fn handle_probe_matches(
+        &mut self,
+        received_at: Instant,
+        ProbeMatches {
+            relates_to,
+            app_sequence,
+            matches,
+        }: ProbeMatches,
+    ) -> Result<(), eyre::Report> {
+        // only accept probe matches for probes we sent recently
+        let fresh = self
+            .probes
+            .get_mut(&relates_to)
+            .is_some_and(|last_copy| last_copy.accepts(received_at));
+
+        if !fresh {
+            event!(Level::DEBUG, %relates_to, "unknown or outdated probe");
+            return Ok(());
+        }
+
+        for probe_match in matches {
+            // one failed match must not drop the others in the same message
+            if let Err(error) = self.handle_probe_match(&app_sequence, probe_match).await {
+                event!(Level::ERROR, ?error, "Failure to handle ProbeMatch");
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_probe_match(
+        &mut self,
+        app_sequence: &AppSequence,
+        ProbeMatch {
+            endpoint,
+            raw_xaddrs,
+            metadata_version,
+        }: ProbeMatch,
+    ) -> Result<(), eyre::Report> {
+        let &mut Self {
+            ref exchanges,
+            ref config,
+            ref devices,
+            ref bound_to,
+            ref mc_local_port_tx,
+            ref mut resolves,
+            ..
+        } = self;
+
+        let next = {
+            let mut guard = devices.write().await;
+
+            let current = guard.observe_match(&endpoint, app_sequence);
+
+            match check_xaddrs(bound_to.address, "ProbeMatch", &endpoint, raw_xaddrs) {
+                XAddrsCheck::Unusable => return Ok(()),
+                XAddrsCheck::Missing => Next::Resolve,
+                XAddrsCheck::Usable(xaddrs) => {
+                    event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), metadata_version, "ProbeMatch");
+
+                    match current.start_exchange(bound_to.interface.index(), xaddrs) {
+                        Some(fetch) => Next::Fetch(fetch),
+                        None => Next::Rerun,
+                    }
+                },
+            }
+        };
+
+        match next {
+            //  If no XAddrs are included in the ProbeMatches message, then the client may send a
+            //  Resolve message by UDP multicast to port 3702.
+            Next::Resolve => {
+                event!(Level::INFO, %endpoint, metadata_version, "ProbeMatch without XAddrs, sending resolve");
+
+                let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
+
+                let message = record(resolves, message_id, message);
+
+                mc_local_port_tx.send(message).await?;
+
+                Ok(())
+            },
+            Next::Fetch(fetch) => {
+                exchanges.spawn(fetch);
+
+                Ok(())
+            },
+            Next::Rerun => {
+                event!(Level::DEBUG, %endpoint, "metadata exchange running, rerun queued");
+
+                Ok(())
+            },
+        }
+    }
+
+    async fn handle_resolve_matches(
+        &mut self,
+        received_at: Instant,
+        ResolveMatches {
+            relates_to,
+            app_sequence,
+            resolve_match,
+        }: ResolveMatches,
+    ) -> Result<(), eyre::Report> {
+        let &mut Self {
+            ref exchanges,
+            ref devices,
+            ref bound_to,
+            ref mut resolves,
+            ..
+        } = self;
+
+        // only accept resolve matches for resolves we sent recently
+        let fresh = resolves
+            .get_mut(&relates_to)
+            .is_some_and(|last_copy| last_copy.accepts(received_at));
+
+        if !fresh {
+            event!(Level::DEBUG, %relates_to, "unknown or outdated resolve");
+            return Ok(());
+        }
+
+        let Some(ResolveMatch {
+            endpoint,
+            raw_xaddrs,
+            metadata_version,
+        }) = resolve_match
+        else {
+            event!(Level::DEBUG, %relates_to, "ResolveMatches without a match, nothing to do");
 
             return Ok(());
         };
 
-        match check_xaddrs(bound_to.address, "Hello", &endpoint, raw_xaddrs) {
-            XAddrsCheck::Unusable => return Ok(()),
-            XAddrsCheck::Missing => Next::Resolve,
-            XAddrsCheck::Usable(xaddrs) => {
-                event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), metadata_version, "Hello");
+        let started = {
+            let mut guard = devices.write().await;
 
-                match current.start_exchange(bound_to.interface.index(), xaddrs) {
-                    Some(fetch) => Next::Fetch(fetch),
-                    None => Next::Rerun,
-                }
+            let current = guard.observe_match(&endpoint, &app_sequence);
+
+            match check_xaddrs(bound_to.address, "ResolveMatch", &endpoint, raw_xaddrs) {
+                XAddrsCheck::Unusable => return Ok(()),
+                XAddrsCheck::Missing => {
+                    event!(Level::DEBUG, "ResolveMatch without xaddr, nothing to do");
+
+                    return Ok(());
+                },
+                XAddrsCheck::Usable(xaddrs) => {
+                    event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), metadata_version, "ResolveMatch");
+
+                    current.start_exchange(bound_to.interface.index(), xaddrs)
+                },
+            }
+        };
+
+        match started {
+            Some(fetch) => exchanges.spawn(fetch),
+            None => {
+                event!(Level::DEBUG, %endpoint, "metadata exchange running, rerun queued");
             },
         }
-    };
 
-    match next {
-        Next::Resolve => {
-            event!(Level::INFO, %endpoint, metadata_version, "Hello without XAddrs, sending resolve");
-
-            let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
-
-            let message = record(resolves, message_id, message);
-
-            multicast.send(message).await?;
-
-            Ok(())
-        },
-        Next::Fetch(fetch) => {
-            exchanges.spawn(fetch);
-
-            Ok(())
-        },
-        Next::Rerun => {
-            event!(Level::DEBUG, %endpoint, "metadata exchange running, rerun queued");
-
-            Ok(())
-        },
+        Ok(())
     }
 }
 
@@ -489,177 +670,6 @@ async fn handle_bye(
             endpoint = &*endpoint,
             "Received bye, but not record of that endpoint"
         );
-    }
-
-    Ok(())
-}
-
-#[expect(clippy::too_many_arguments, reason = "WIP")]
-async fn handle_probe_matches(
-    exchanges: &ExchangeRunner,
-    config: &Config,
-    devices: Arc<RwLock<Devices>>,
-    bound_to: &NetworkAddress,
-    received_at: Instant,
-    probes: &mut HashMap<MessageId, LastCopy>,
-    mc_local_port_tx: &Sender<OutgoingMulticastMessage>,
-    resolves: &mut HashMap<MessageId, LastCopy>,
-    ProbeMatches {
-        relates_to,
-        app_sequence,
-        matches,
-    }: ProbeMatches,
-) -> Result<(), eyre::Report> {
-    // only accept probe matches for probes we sent recently
-    let fresh = probes
-        .get_mut(&relates_to)
-        .is_some_and(|last_copy| last_copy.accepts(received_at));
-
-    if !fresh {
-        event!(Level::DEBUG, %relates_to, "unknown or outdated probe");
-        return Ok(());
-    }
-
-    for probe_match in matches {
-        // one failed match must not drop the others in the same message
-        if let Err(error) = handle_probe_match(
-            exchanges,
-            config,
-            Arc::clone(&devices),
-            bound_to,
-            mc_local_port_tx,
-            resolves,
-            &app_sequence,
-            probe_match,
-        )
-        .await
-        {
-            event!(Level::ERROR, ?error, "Failure to handle ProbeMatch");
-        }
-    }
-
-    Ok(())
-}
-
-#[expect(clippy::too_many_arguments, reason = "WIP")]
-async fn handle_probe_match(
-    exchanges: &ExchangeRunner,
-    config: &Config,
-    devices: Arc<RwLock<Devices>>,
-    bound_to: &NetworkAddress,
-    mc_local_port_tx: &Sender<OutgoingMulticastMessage>,
-    resolves: &mut HashMap<MessageId, LastCopy>,
-    app_sequence: &AppSequence,
-    ProbeMatch {
-        endpoint,
-        raw_xaddrs,
-        metadata_version,
-    }: ProbeMatch,
-) -> Result<(), eyre::Report> {
-    let next = {
-        let mut guard = devices.write().await;
-
-        let current = guard.observe_match(&endpoint, app_sequence);
-
-        match check_xaddrs(bound_to.address, "ProbeMatch", &endpoint, raw_xaddrs) {
-            XAddrsCheck::Unusable => return Ok(()),
-            XAddrsCheck::Missing => Next::Resolve,
-            XAddrsCheck::Usable(xaddrs) => {
-                event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), metadata_version, "ProbeMatch");
-
-                match current.start_exchange(bound_to.interface.index(), xaddrs) {
-                    Some(fetch) => Next::Fetch(fetch),
-                    None => Next::Rerun,
-                }
-            },
-        }
-    };
-
-    match next {
-        //  If no XAddrs are included in the ProbeMatches message, then the client may send a
-        //  Resolve message by UDP multicast to port 3702.
-        Next::Resolve => {
-            event!(Level::INFO, %endpoint, metadata_version, "ProbeMatch without XAddrs, sending resolve");
-
-            let (message, message_id) = Builder::build_resolve(config, &endpoint)?;
-
-            let message = record(resolves, message_id, message);
-
-            mc_local_port_tx.send(message).await?;
-
-            Ok(())
-        },
-        Next::Fetch(fetch) => {
-            exchanges.spawn(fetch);
-
-            Ok(())
-        },
-        Next::Rerun => {
-            event!(Level::DEBUG, %endpoint, "metadata exchange running, rerun queued");
-
-            Ok(())
-        },
-    }
-}
-
-async fn handle_resolve_matches(
-    exchanges: &ExchangeRunner,
-    devices: Arc<RwLock<Devices>>,
-    bound_to: &NetworkAddress,
-    received_at: Instant,
-    resolves: &mut HashMap<MessageId, LastCopy>,
-    ResolveMatches {
-        relates_to,
-        app_sequence,
-        resolve_match,
-    }: ResolveMatches,
-) -> Result<(), eyre::Report> {
-    // only accept resolve matches for resolves we sent recently
-    let fresh = resolves
-        .get_mut(&relates_to)
-        .is_some_and(|last_copy| last_copy.accepts(received_at));
-
-    if !fresh {
-        event!(Level::DEBUG, %relates_to, "unknown or outdated resolve");
-        return Ok(());
-    }
-
-    let Some(ResolveMatch {
-        endpoint,
-        raw_xaddrs,
-        metadata_version,
-    }) = resolve_match
-    else {
-        event!(Level::DEBUG, %relates_to, "ResolveMatches without a match, nothing to do");
-
-        return Ok(());
-    };
-
-    let started = {
-        let mut guard = devices.write().await;
-
-        let current = guard.observe_match(&endpoint, &app_sequence);
-
-        match check_xaddrs(bound_to.address, "ResolveMatch", &endpoint, raw_xaddrs) {
-            XAddrsCheck::Unusable => return Ok(()),
-            XAddrsCheck::Missing => {
-                event!(Level::DEBUG, "ResolveMatch without xaddr, nothing to do");
-
-                return Ok(());
-            },
-            XAddrsCheck::Usable(xaddrs) => {
-                event!(Level::INFO, %bound_to, %endpoint, xaddrs = %SliceDisplay(&xaddrs), metadata_version, "ResolveMatch");
-
-                current.start_exchange(bound_to.interface.index(), xaddrs)
-            },
-        }
-    };
-
-    match started {
-        Some(fetch) => exchanges.spawn(fetch),
-        None => {
-            event!(Level::DEBUG, %endpoint, "metadata exchange running, rerun queued");
-        },
     }
 
     Ok(())
@@ -718,16 +728,21 @@ async fn listen_forever(
         .build()
         .expect("WSD Client cannot operate without HTTP Client");
 
-    let exchanges = ExchangeRunner::new(
-        client,
-        Arc::clone(&config),
-        Arc::clone(&devices),
-        bound_to.clone(),
-        cancellation_token.child_token(),
-    );
-
-    let mut probes = HashMap::new();
-    let mut resolves = HashMap::new();
+    let mut client_loop = ClientLoop {
+        exchanges: ExchangeRunner::new(
+            client,
+            Arc::clone(&config),
+            Arc::clone(&devices),
+            bound_to.clone(),
+            cancellation_token.child_token(),
+        ),
+        config,
+        devices,
+        bound_to,
+        mc_local_port_tx,
+        probes: HashMap::new(),
+        resolves: HashMap::new(),
+    };
 
     loop {
         let IncomingClientMessage {
@@ -741,7 +756,7 @@ async fn listen_forever(
                 break;
             },
             Some(()) = probe_rx.recv() => {
-                if let Err(error) = send_probe(&config, &mut probes, &mc_local_port_tx).await {
+                if let Err(error) = send_probe(&client_loop.config, &mut client_loop.probes, &client_loop.mc_local_port_tx).await {
                     event!(Level::ERROR, ?error, "Failed to send probe");
                 }
 
@@ -759,43 +774,17 @@ async fn listen_forever(
 
         // dispatch based on the SOAP Action header
         let response = match message {
-            ClientMessage::Hello(hello) => {
-                handle_hello(
-                    &exchanges,
-                    &config,
-                    Arc::clone(&devices),
-                    &bound_to,
-                    &mc_local_port_tx,
-                    &mut resolves,
-                    hello,
-                )
-                .await
-            },
-            ClientMessage::Bye(bye) => handle_bye(Arc::clone(&devices), bye).await,
+            ClientMessage::Hello(hello) => client_loop.handle_hello(hello).await,
+            ClientMessage::Bye(bye) => handle_bye(Arc::clone(&client_loop.devices), bye).await,
             ClientMessage::ProbeMatches(probe_matches) => {
-                handle_probe_matches(
-                    &exchanges,
-                    &config,
-                    Arc::clone(&devices),
-                    &bound_to,
-                    received_at,
-                    &mut probes,
-                    &mc_local_port_tx,
-                    &mut resolves,
-                    probe_matches,
-                )
-                .await
+                client_loop
+                    .handle_probe_matches(received_at, probe_matches)
+                    .await
             },
             ClientMessage::ResolveMatches(resolve_matches) => {
-                handle_resolve_matches(
-                    &exchanges,
-                    Arc::clone(&devices),
-                    &bound_to,
-                    received_at,
-                    &mut resolves,
-                    resolve_matches,
-                )
-                .await
+                client_loop
+                    .handle_resolve_matches(received_at, resolve_matches)
+                    .await
             },
         };
 
@@ -814,7 +803,7 @@ async fn listen_forever(
         }
     }
 
-    exchanges.wait().await;
+    client_loop.exchanges.wait().await;
 }
 
 #[cfg(test)]
@@ -835,6 +824,7 @@ mod tests {
     use pretty_assertions::{assert_eq, assert_matches};
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tokio::net::{TcpListener, TcpStream};
+    use tokio::sync::mpsc::Sender;
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio::sync::{RwLock, oneshot};
     use tokio::time::Instant;
@@ -844,6 +834,7 @@ mod tests {
 
     use crate::constants;
     use crate::max_size_deque::MaxSizeDeque;
+    use crate::multicast_handler::OutgoingMulticastMessage;
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
     use crate::soap::MessageId;
@@ -860,9 +851,8 @@ mod tests {
     use crate::wsd::devices::{Devices, Exchange, Fetch};
     use crate::wsd::http::http_server::WSDHttpServer;
     use crate::wsd::udp::client::{
-        ExchangeRunner, LastCopy, WSDClient, XAddrsCheck, check_xaddrs, handle_bye, handle_hello,
-        handle_metadata, handle_probe_match, handle_probe_matches, handle_resolve_matches,
-        parse_xaddrs,
+        ClientLoop, ExchangeRunner, LastCopy, WSDClient, XAddrsCheck, check_xaddrs, handle_bye,
+        handle_metadata, parse_xaddrs,
     };
 
     #[test]
@@ -928,6 +918,23 @@ mod tests {
             bound_to.clone(),
             CancellationToken::new(),
         )
+    }
+
+    fn client_loop(
+        config: &Arc<crate::config::Config>,
+        devices: &Arc<RwLock<Devices>>,
+        bound_to: &NetworkAddress,
+        mc_local_port_tx: &Sender<OutgoingMulticastMessage>,
+    ) -> ClientLoop {
+        ClientLoop {
+            exchanges: exchange_runner(config, devices, bound_to),
+            config: Arc::clone(config),
+            devices: Arc::clone(devices),
+            bound_to: bound_to.clone(),
+            mc_local_port_tx: mc_local_port_tx.clone(),
+            probes: HashMap::new(),
+            resolves: HashMap::new(),
+        }
     }
 
     async fn start_exchange(
@@ -1019,21 +1026,11 @@ mod tests {
         hello: Hello,
     ) -> Result<bool, eyre::Report> {
         let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
+        let mut client = client_loop(config, devices, bound_to, &multicast_tx);
 
-        let exchanges = exchange_runner(config, devices, bound_to);
+        let result = client.handle_hello(hello).await;
 
-        let result = handle_hello(
-            &exchanges,
-            config,
-            Arc::clone(devices),
-            bound_to,
-            &multicast_tx,
-            &mut HashMap::new(),
-            hello,
-        )
-        .await;
-
-        exchanges.wait().await;
+        client.exchanges.wait().await;
 
         result?;
 
@@ -1133,28 +1130,25 @@ mod tests {
             .unwrap();
 
         let hello = message.into_hello().unwrap();
-
-        let mut resolves = HashMap::new();
-
-        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
-
-        let result = handle_hello(
-            &exchanges,
+        let mut client = client_loop(
             &client_config,
-            Arc::clone(&client_devices),
+            &client_devices,
             &client_network_address,
             &multicast_tx,
-            &mut resolves,
-            hello,
-        )
-        .await;
+        );
 
-        exchanges.wait().await;
+        let result = client.handle_hello(hello).await;
+
+        client.exchanges.wait().await;
 
         assert_matches!(result, Ok(()));
 
         // the resolve's message id must be recorded to accept the future ResolveMatches
-        assert!(resolves.contains_key(&MessageId::from(Uuid::nil().urn())));
+        assert!(
+            client
+                .resolves
+                .contains_key(&MessageId::from(Uuid::nil().urn()))
+        );
 
         let expected = format!(
             include_str!("../../test/resolve-template.xml"),
@@ -1231,29 +1225,17 @@ mod tests {
             .unwrap();
 
         let hello = message.into_hello().unwrap();
+        let mut client = client_loop(&client_config, &client_devices, &bound_to, &multicast_tx);
 
-        let mut resolves = HashMap::new();
+        let result = client.handle_hello(hello).await;
 
-        let exchanges = exchange_runner(&client_config, &client_devices, &bound_to);
-
-        let result = handle_hello(
-            &exchanges,
-            &client_config,
-            Arc::clone(&client_devices),
-            &bound_to,
-            &multicast_tx,
-            &mut resolves,
-            hello,
-        )
-        .await;
-
-        exchanges.wait().await;
+        client.exchanges.wait().await;
 
         assert_matches!(result, Ok(()));
 
         // we expect no resolve to be sent
         assert_matches!(multicast_rx.try_recv(), Err(TryRecvError::Empty));
-        assert!(resolves.is_empty());
+        assert!(client.resolves.is_empty());
 
         // ensure the mock is hit
         mock.assert_async().await;
@@ -1380,29 +1362,22 @@ mod tests {
             .unwrap();
 
         let hello = message.into_hello().unwrap();
-
-        let mut resolves = HashMap::new();
-
-        let exchanges = exchange_runner(&client_config, &client_devices, &network_address);
-
-        let result = handle_hello(
-            &exchanges,
+        let mut client = client_loop(
             &client_config,
-            Arc::clone(&client_devices),
+            &client_devices,
             &network_address,
             &multicast_tx,
-            &mut resolves,
-            hello,
-        )
-        .await;
+        );
 
-        exchanges.wait().await;
+        let result = client.handle_hello(hello).await;
+
+        client.exchanges.wait().await;
 
         assert_matches!(result, Ok(()));
 
         // we expect no resolve to be sent
         assert_matches!(multicast_rx.try_recv(), Err(TryRecvError::Empty));
-        assert!(resolves.is_empty());
+        assert!(client.resolves.is_empty());
 
         // ensure the mock is hit
         mock.assert_async().await;
@@ -1653,26 +1628,25 @@ mod tests {
         assert_matches!(result, Ok(()));
 
         let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(1);
-
-        let exchanges = exchange_runner(&client_config, &client_devices, &network_address);
-
-        let result = handle_probe_match(
-            &exchanges,
+        let mut client = client_loop(
             &client_config,
-            Arc::clone(&client_devices),
+            &client_devices,
             &network_address,
             &multicast_tx,
-            &mut HashMap::new(),
-            &AppSequence::new(1, None, 6),
-            ProbeMatch {
-                endpoint: endpoint.clone(),
-                raw_xaddrs: Some(xaddrs_of(&server)),
-                metadata_version: 1,
-            },
-        )
-        .await;
+        );
 
-        exchanges.wait().await;
+        let result = client
+            .handle_probe_match(
+                &AppSequence::new(1, None, 6),
+                ProbeMatch {
+                    endpoint: endpoint.clone(),
+                    raw_xaddrs: Some(xaddrs_of(&server)),
+                    metadata_version: 1,
+                },
+            )
+            .await;
+
+        client.exchanges.wait().await;
 
         assert_matches!(result, Ok(()));
 
@@ -1702,30 +1676,36 @@ mod tests {
 
         let resolve_message_id = MessageId::from(Uuid::now_v7().urn());
 
-        let mut resolves =
+        let resolves =
             HashMap::from([(resolve_message_id.clone(), LastCopy::Sent(Instant::now()))]);
+        let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let exchanges = exchange_runner(&client_config, &client_devices, &network_address);
+        let mut client = ClientLoop {
+            resolves,
+            ..client_loop(
+                &client_config,
+                &client_devices,
+                &network_address,
+                &multicast_tx,
+            )
+        };
 
-        let result = handle_resolve_matches(
-            &exchanges,
-            Arc::clone(&client_devices),
-            &network_address,
-            Instant::now(),
-            &mut resolves,
-            ResolveMatches {
-                relates_to: resolve_message_id,
-                app_sequence: AppSequence::new(1, None, 6),
-                resolve_match: Some(ResolveMatch {
-                    endpoint: endpoint.clone(),
-                    raw_xaddrs: Some(xaddrs_of(&server)),
-                    metadata_version: 1,
-                }),
-            },
-        )
-        .await;
+        let result = client
+            .handle_resolve_matches(
+                Instant::now(),
+                ResolveMatches {
+                    relates_to: resolve_message_id,
+                    app_sequence: AppSequence::new(1, None, 6),
+                    resolve_match: Some(ResolveMatch {
+                        endpoint: endpoint.clone(),
+                        raw_xaddrs: Some(xaddrs_of(&server)),
+                        metadata_version: 1,
+                    }),
+                },
+            )
+            .await;
 
-        exchanges.wait().await;
+        client.exchanges.wait().await;
 
         assert_matches!(result, Ok(()));
 
@@ -1781,26 +1761,25 @@ mod tests {
         let endpoint = new_endpoint();
 
         let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(1);
-
-        let exchanges = exchange_runner(&client_config, &client_devices, &network_address);
-
-        let result = handle_probe_match(
-            &exchanges,
+        let mut client = client_loop(
             &client_config,
-            Arc::clone(&client_devices),
+            &client_devices,
             &network_address,
             &multicast_tx,
-            &mut HashMap::new(),
-            &AppSequence::new(1, None, 7),
-            ProbeMatch {
-                endpoint: endpoint.clone(),
-                raw_xaddrs: Some(xaddrs_of(&server)),
-                metadata_version: 1,
-            },
-        )
-        .await;
+        );
 
-        exchanges.wait().await;
+        let result = client
+            .handle_probe_match(
+                &AppSequence::new(1, None, 7),
+                ProbeMatch {
+                    endpoint: endpoint.clone(),
+                    raw_xaddrs: Some(xaddrs_of(&server)),
+                    metadata_version: 1,
+                },
+            )
+            .await;
+
+        client.exchanges.wait().await;
 
         assert_matches!(result, Ok(()));
 
@@ -1830,30 +1809,36 @@ mod tests {
 
         let resolve_message_id = MessageId::from(Uuid::now_v7().urn());
 
-        let mut resolves =
+        let resolves =
             HashMap::from([(resolve_message_id.clone(), LastCopy::Sent(Instant::now()))]);
+        let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let exchanges = exchange_runner(&client_config, &client_devices, &network_address);
+        let mut client = ClientLoop {
+            resolves,
+            ..client_loop(
+                &client_config,
+                &client_devices,
+                &network_address,
+                &multicast_tx,
+            )
+        };
 
-        let result = handle_resolve_matches(
-            &exchanges,
-            Arc::clone(&client_devices),
-            &network_address,
-            Instant::now(),
-            &mut resolves,
-            ResolveMatches {
-                relates_to: resolve_message_id,
-                app_sequence: AppSequence::new(1, None, 7),
-                resolve_match: Some(ResolveMatch {
-                    endpoint: endpoint.clone(),
-                    raw_xaddrs: Some(xaddrs_of(&server)),
-                    metadata_version: 1,
-                }),
-            },
-        )
-        .await;
+        let result = client
+            .handle_resolve_matches(
+                Instant::now(),
+                ResolveMatches {
+                    relates_to: resolve_message_id,
+                    app_sequence: AppSequence::new(1, None, 7),
+                    resolve_match: Some(ResolveMatch {
+                        endpoint: endpoint.clone(),
+                        raw_xaddrs: Some(xaddrs_of(&server)),
+                        metadata_version: 1,
+                    }),
+                },
+            )
+            .await;
 
-        exchanges.wait().await;
+        client.exchanges.wait().await;
 
         assert_matches!(result, Ok(()));
 
@@ -2589,7 +2574,7 @@ mod tests {
             .await
             .unwrap();
 
-        let mut probes = {
+        let probes = {
             let mut hash_map = HashMap::new();
 
             hash_map.insert(
@@ -2601,30 +2586,30 @@ mod tests {
         };
 
         let probe_matches = message.into_probe_matches().unwrap();
+        let mut client = ClientLoop {
+            probes,
+            ..client_loop(
+                &client_config,
+                &client_devices,
+                &client_network_address,
+                &multicast_tx,
+            )
+        };
 
-        let mut resolves = HashMap::new();
+        let result = client
+            .handle_probe_matches(Instant::now(), probe_matches)
+            .await;
 
-        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
-
-        let result = handle_probe_matches(
-            &exchanges,
-            &client_config,
-            Arc::clone(&client_devices),
-            &client_network_address,
-            Instant::now(),
-            &mut probes,
-            &multicast_tx,
-            &mut resolves,
-            probe_matches,
-        )
-        .await;
-
-        exchanges.wait().await;
+        client.exchanges.wait().await;
 
         assert_matches!(result, Ok(()));
 
         // the resolve's message id must be recorded to accept the future ResolveMatches
-        assert!(resolves.contains_key(&MessageId::from(Uuid::nil().urn())));
+        assert!(
+            client
+                .resolves
+                .contains_key(&MessageId::from(Uuid::nil().urn()))
+        );
 
         let expected = format!(
             include_str!("../../test/resolve-template.xml"),
@@ -2676,7 +2661,7 @@ mod tests {
             .await
             .unwrap();
 
-        let mut probes = {
+        let probes = {
             let mut hash_map = HashMap::new();
 
             hash_map.insert(
@@ -2688,25 +2673,21 @@ mod tests {
         };
 
         let probe_matches = message.into_probe_matches().unwrap();
+        let mut client = ClientLoop {
+            probes,
+            ..client_loop(
+                &client_config,
+                &client_devices,
+                &client_network_address,
+                &multicast_tx,
+            )
+        };
 
-        let mut resolves = HashMap::new();
+        let result = client
+            .handle_probe_matches(Instant::now(), probe_matches)
+            .await;
 
-        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
-
-        let result = handle_probe_matches(
-            &exchanges,
-            &client_config,
-            Arc::clone(&client_devices),
-            &client_network_address,
-            Instant::now(),
-            &mut probes,
-            &multicast_tx,
-            &mut resolves,
-            probe_matches,
-        )
-        .await;
-
-        exchanges.wait().await;
+        client.exchanges.wait().await;
 
         assert_matches!(result, Ok(()));
 
@@ -2765,7 +2746,7 @@ mod tests {
 
         let last_copy_sent_at = Instant::now();
 
-        let mut probes = {
+        let probes = {
             let mut hash_map = HashMap::new();
 
             hash_map.insert(
@@ -2777,31 +2758,27 @@ mod tests {
         };
 
         let probe_matches = message.into_probe_matches().unwrap();
+        let mut client = ClientLoop {
+            probes,
+            ..client_loop(
+                &client_config,
+                &client_devices,
+                &client_network_address,
+                &multicast_tx,
+            )
+        };
 
-        let mut resolves = HashMap::new();
+        let result = client
+            .handle_probe_matches(last_copy_sent_at + constants::MATCH_TIMEOUT, probe_matches)
+            .await;
 
-        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
-
-        let result = handle_probe_matches(
-            &exchanges,
-            &client_config,
-            Arc::clone(&client_devices),
-            &client_network_address,
-            last_copy_sent_at + constants::MATCH_TIMEOUT,
-            &mut probes,
-            &multicast_tx,
-            &mut resolves,
-            probe_matches,
-        )
-        .await;
-
-        exchanges.wait().await;
+        client.exchanges.wait().await;
 
         assert_matches!(result, Ok(()));
 
         // we expect no resolve to be sent
         assert_matches!(multicast_rx.try_recv(), Err(TryRecvError::Empty));
-        assert!(resolves.is_empty());
+        assert!(client.resolves.is_empty());
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -2863,7 +2840,7 @@ mod tests {
             .await
             .unwrap();
 
-        let mut probes = {
+        let probes = {
             let mut hash_map = HashMap::new();
 
             hash_map.insert(
@@ -2875,25 +2852,21 @@ mod tests {
         };
 
         let probe_matches = message.into_probe_matches().unwrap();
+        let mut client = ClientLoop {
+            probes,
+            ..client_loop(
+                &client_config,
+                &client_devices,
+                &client_network_address,
+                &multicast_tx,
+            )
+        };
 
-        let mut resolves = HashMap::new();
+        let result = client
+            .handle_probe_matches(Instant::now(), probe_matches)
+            .await;
 
-        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
-
-        let result = handle_probe_matches(
-            &exchanges,
-            &client_config,
-            Arc::clone(&client_devices),
-            &client_network_address,
-            Instant::now(),
-            &mut probes,
-            &multicast_tx,
-            &mut resolves,
-            probe_matches,
-        )
-        .await;
-
-        exchanges.wait().await;
+        client.exchanges.wait().await;
 
         assert_matches!(result, Ok(()));
 
@@ -2901,7 +2874,7 @@ mod tests {
         mock.assert_async().await;
 
         assert_matches!(multicast_rx.try_recv(), Err(TryRecvError::Empty));
-        assert!(resolves.is_empty());
+        assert!(client.resolves.is_empty());
 
         let client_devices = client_devices.read().await;
 
@@ -2965,7 +2938,7 @@ mod tests {
             .await
             .unwrap();
 
-        let mut resolves = {
+        let resolves = {
             let mut hash_map = HashMap::new();
 
             hash_map.insert(
@@ -2977,20 +2950,23 @@ mod tests {
         };
 
         let resolve_matches = message.into_resolve_matches().unwrap();
+        let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
+        let mut client = ClientLoop {
+            resolves,
+            ..client_loop(
+                &client_config,
+                &client_devices,
+                &client_network_address,
+                &multicast_tx,
+            )
+        };
 
-        let result = handle_resolve_matches(
-            &exchanges,
-            Arc::clone(&client_devices),
-            &client_network_address,
-            Instant::now(),
-            &mut resolves,
-            resolve_matches,
-        )
-        .await;
+        let result = client
+            .handle_resolve_matches(Instant::now(), resolve_matches)
+            .await;
 
-        exchanges.wait().await;
+        client.exchanges.wait().await;
 
         assert_matches!(result, Ok(()));
 
@@ -3029,24 +3005,27 @@ mod tests {
 
         let resolve_matches = message.into_resolve_matches().unwrap();
 
-        let mut resolves = HashMap::from([(
+        let resolves = HashMap::from([(
             MessageId::from(resolve_message_id.urn()),
             LastCopy::Sent(Instant::now()),
         )]);
+        let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
+        let mut client = ClientLoop {
+            resolves,
+            ..client_loop(
+                &client_config,
+                &client_devices,
+                &client_network_address,
+                &multicast_tx,
+            )
+        };
 
-        let result = handle_resolve_matches(
-            &exchanges,
-            Arc::clone(&client_devices),
-            &client_network_address,
-            Instant::now(),
-            &mut resolves,
-            resolve_matches,
-        )
-        .await;
+        let result = client
+            .handle_resolve_matches(Instant::now(), resolve_matches)
+            .await;
 
-        exchanges.wait().await;
+        client.exchanges.wait().await;
 
         assert_matches!(result, Ok(()));
 
@@ -3098,19 +3077,20 @@ mod tests {
         let resolve_matches = message.into_resolve_matches().unwrap();
 
         // no resolve with the message's `RelatesTo` was sent by us
-        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
+        let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let result = handle_resolve_matches(
-            &exchanges,
-            Arc::clone(&client_devices),
+        let mut client = client_loop(
+            &client_config,
+            &client_devices,
             &client_network_address,
-            Instant::now(),
-            &mut HashMap::new(),
-            resolve_matches,
-        )
-        .await;
+            &multicast_tx,
+        );
 
-        exchanges.wait().await;
+        let result = client
+            .handle_resolve_matches(Instant::now(), resolve_matches)
+            .await;
+
+        client.exchanges.wait().await;
 
         assert_matches!(result, Ok(()));
 
@@ -3164,7 +3144,7 @@ mod tests {
 
         let last_copy_sent_at = Instant::now();
 
-        let mut resolves = {
+        let resolves = {
             let mut hash_map = HashMap::new();
 
             hash_map.insert(
@@ -3176,20 +3156,26 @@ mod tests {
         };
 
         let resolve_matches = message.into_resolve_matches().unwrap();
+        let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(1);
 
-        let exchanges = exchange_runner(&client_config, &client_devices, &client_network_address);
+        let mut client = ClientLoop {
+            resolves,
+            ..client_loop(
+                &client_config,
+                &client_devices,
+                &client_network_address,
+                &multicast_tx,
+            )
+        };
 
-        let result = handle_resolve_matches(
-            &exchanges,
-            Arc::clone(&client_devices),
-            &client_network_address,
-            last_copy_sent_at + constants::MATCH_TIMEOUT,
-            &mut resolves,
-            resolve_matches,
-        )
-        .await;
+        let result = client
+            .handle_resolve_matches(
+                last_copy_sent_at + constants::MATCH_TIMEOUT,
+                resolve_matches,
+            )
+            .await;
 
-        exchanges.wait().await;
+        client.exchanges.wait().await;
 
         assert_matches!(result, Ok(()));
 
@@ -3283,34 +3269,32 @@ mod tests {
 
         let endpoint = new_endpoint();
 
-        let exchanges = exchange_runner(&client_config, &client_devices, &network_address);
-
         let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(1);
+
+        let mut client = client_loop(
+            &client_config,
+            &client_devices,
+            &network_address,
+            &multicast_tx,
+        );
 
         tokio::time::timeout(Duration::from_secs(10), async {
             for message_number in 1..=3 {
-                let result = handle_hello(
-                    &exchanges,
-                    &client_config,
-                    Arc::clone(&client_devices),
-                    &network_address,
-                    &multicast_tx,
-                    &mut HashMap::new(),
-                    Hello {
+                let result = client
+                    .handle_hello(Hello {
                         app_sequence: AppSequence::new(1, None, message_number),
                         endpoint: endpoint.clone(),
                         raw_xaddrs: Some(raw_xaddrs.clone()),
                         metadata_version: 1,
-                    },
-                )
-                .await;
+                    })
+                    .await;
 
                 assert_matches!(result, Ok(()));
             }
 
             release_tx.send(()).unwrap();
 
-            exchanges.wait().await;
+            client.exchanges.wait().await;
         })
         .await
         .unwrap();
@@ -3356,35 +3340,36 @@ mod tests {
 
         let cancellation_token = CancellationToken::new();
 
-        let exchanges = ExchangeRunner::new(
-            reqwest::ClientBuilder::new().build().unwrap(),
-            Arc::clone(&client_config),
-            Arc::clone(&client_devices),
-            network_address.clone(),
-            cancellation_token.clone(),
-        );
-
         let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(1);
+
+        let mut client = ClientLoop {
+            exchanges: ExchangeRunner::new(
+                reqwest::ClientBuilder::new().build().unwrap(),
+                Arc::clone(&client_config),
+                Arc::clone(&client_devices),
+                network_address.clone(),
+                cancellation_token.clone(),
+            ),
+            config: Arc::clone(&client_config),
+            devices: Arc::clone(&client_devices),
+            bound_to: network_address.clone(),
+            mc_local_port_tx: multicast_tx,
+            probes: HashMap::new(),
+            resolves: HashMap::new(),
+        };
 
         let endpoint = new_endpoint();
 
         // the second Hello queues a rerun behind the hung exchange
         for message_number in 1..=2 {
-            let result = handle_hello(
-                &exchanges,
-                &client_config,
-                Arc::clone(&client_devices),
-                &network_address,
-                &multicast_tx,
-                &mut HashMap::new(),
-                Hello {
+            let result = client
+                .handle_hello(Hello {
                     app_sequence: AppSequence::new(1, None, message_number),
                     endpoint: endpoint.clone(),
                     raw_xaddrs: Some(raw_xaddrs.clone()),
                     metadata_version: 1,
-                },
-            )
-            .await;
+                })
+                .await;
 
             assert_matches!(result, Ok(()));
         }
@@ -3396,7 +3381,7 @@ mod tests {
 
         cancellation_token.cancel();
 
-        tokio::time::timeout(Duration::from_secs(5), exchanges.wait())
+        tokio::time::timeout(Duration::from_secs(5), client.exchanges.wait())
             .await
             .unwrap();
 
