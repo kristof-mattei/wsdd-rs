@@ -8,7 +8,8 @@ use color_eyre::eyre;
 use ipnet::IpNet;
 use libc::{
     AF_INET, AF_INET6, AF_UNSPEC, IFA_F_DADFAILED, IFA_F_DEPRECATED, IFA_F_HOMEADDRESS,
-    IFA_F_TENTATIVE, NETLINK_ROUTE, NLM_F_ACK, NLM_F_DUMP, NLM_F_REQUEST, RTEXT_FILTER_SKIP_STATS,
+    IFA_F_TENTATIVE, NETLINK_ROUTE, NLM_F_ACK, NLM_F_DUMP, NLM_F_REQUEST, RT_SCOPE_HOST,
+    RT_SCOPE_LINK, RT_SCOPE_NOWHERE, RT_SCOPE_SITE, RT_SCOPE_UNIVERSE, RTEXT_FILTER_SKIP_STATS,
     RTM_GETADDR, RTM_GETLINK, RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR, RTMGRP_LINK,
 };
 use shared::netlink::{LinkRequest, NetlinkRequest, ifaddrmsg, ifinfomsg, nlmsghdr, rtattr};
@@ -358,6 +359,35 @@ impl fmt::Display for SkippedStates {
     }
 }
 
+/// An `ifa_family` by its `AF_*` name, or by its number when it has none here.
+struct Family(u8);
+
+impl fmt::Display for Family {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match i32::from(self.0) {
+            AF_INET => f.write_str("AF_INET"),
+            AF_INET6 => f.write_str("AF_INET6"),
+            family => write!(f, "{}", family),
+        }
+    }
+}
+
+/// An `ifa_scope` by its `RT_SCOPE_*` name, or by its number for a user-defined scope.
+struct Scope(u8);
+
+impl fmt::Display for Scope {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            RT_SCOPE_UNIVERSE => f.write_str("RT_SCOPE_UNIVERSE"),
+            RT_SCOPE_SITE => f.write_str("RT_SCOPE_SITE"),
+            RT_SCOPE_LINK => f.write_str("RT_SCOPE_LINK"),
+            RT_SCOPE_HOST => f.write_str("RT_SCOPE_HOST"),
+            RT_SCOPE_NOWHERE => f.write_str("RT_SCOPE_NOWHERE"),
+            scope => write!(f, "{}", scope),
+        }
+    }
+}
+
 #[derive(Default)]
 struct Received {
     done: bool,
@@ -476,9 +506,9 @@ async fn announce(
     name = "address",
     skip_all,
     fields(
-        ifa_family = ifa.ifa_family,
+        ifa_family = %Family(ifa.ifa_family),
         ifa_flags = ifa.ifa_flags,
-        ifa_scope = ifa.ifa_scope,
+        ifa_scope = %Scope(ifa.ifa_scope),
         ifa_index = ifa.ifa_index.get(),
     )
 )]
@@ -530,7 +560,7 @@ mod tests {
     use libc::{
         AF_INET, AF_INET6, AF_PHONET, AF_UNSPEC, EINVAL, IFA_ADDRESS, IFA_F_DADFAILED,
         IFA_F_DEPRECATED, IFA_F_PERMANENT, IFA_F_TENTATIVE, IFA_LOCAL, IFF_MULTICAST, IFF_RUNNING,
-        IFF_UP, NLMSG_DONE, RTM_DELADDR, RTM_NEWADDR, RTM_NEWLINK,
+        IFF_UP, NLMSG_DONE, RT_SCOPE_LINK, RTM_DELADDR, RTM_NEWADDR, RTM_NEWLINK,
     };
     use pretty_assertions::{assert_eq, assert_matches};
     use shared::netlink::{ifaddrmsg, ifinfomsg, rtattr};
@@ -542,7 +572,8 @@ mod tests {
     use zerocopy::byteorder::native_endian::{I32, U16, U32};
 
     use crate::address_monitor::netlink_address_monitor::{
-        Dump, Exit, SIZE_OF_SOCKADDR_NL, SkippedStates, forward_dump, process_changes, resync,
+        Dump, Exit, Family, SIZE_OF_SOCKADDR_NL, Scope, SkippedStates, forward_dump,
+        process_changes, resync,
     };
     use crate::network_handler::Command;
     use crate::rtnetlink::{RTA_ALIGNTO, ReceiveBuffer, RecvBuf};
@@ -881,6 +912,29 @@ mod tests {
         let states = SkippedStates::from_bits_truncate(IFA_F_DEPRECATED | IFA_F_PERMANENT);
 
         assert_eq!(states.to_string(), "IFA_F_DEPRECATED");
+    }
+
+    #[test]
+    fn family_is_written_by_name() {
+        assert_eq!(
+            Family(u8::try_from(AF_INET6).unwrap()).to_string(),
+            "AF_INET6"
+        );
+    }
+
+    #[test]
+    fn family_without_name_is_written_as_a_number() {
+        assert_eq!(Family(u8::try_from(AF_PHONET).unwrap()).to_string(), "35");
+    }
+
+    #[test]
+    fn scope_is_written_by_name() {
+        assert_eq!(Scope(RT_SCOPE_LINK).to_string(), "RT_SCOPE_LINK");
+    }
+
+    #[test]
+    fn user_defined_scope_is_written_as_a_number() {
+        assert_eq!(Scope(100).to_string(), "100");
     }
 
     #[test]
