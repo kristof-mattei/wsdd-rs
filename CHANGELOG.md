@@ -1,4 +1,11 @@
 <!-- header goes here -->
+## [1.1.2](https://github.com/kristof-mattei/wsdd-rs/compare/v1.1.1..v1.1.2) - 2026-10-21
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* Github Actions lockfile by [@kristof-mattei](https://github.com/kristof-mattei) ([`b558e44`](https://github.com/kristof-mattei/wsdd-rs/commit/b558e4470ae4f1e1bed56797bfb658f0648ee8b1))
+- *(ci)* Github Actions lockfile by [@kristof-mattei](https://github.com/kristof-mattei) ([`cbb2c25`](https://github.com/kristof-mattei/wsdd-rs/commit/cbb2c25d049203198a0d136334cf72546363c1e6))
+- *(ci)* Allow ref-pinned actions in `zizmor` since `actions.lock` pins them by [@kristof-mattei](https://github.com/kristof-mattei) ([`7b78db9`](https://github.com/kristof-mattei/wsdd-rs/commit/7b78db9c9c257e04524ad83949334b7bc1af6ecc))
 ## [1.1.1](https://github.com/kristof-mattei/wsdd-rs/compare/v1.1.0..v1.1.1) - 2026-10-21
 
 ### 🐛 Bug Fixes
