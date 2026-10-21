@@ -79,12 +79,6 @@ impl ReceiveBuffer {
             socket.recv_buf(&mut cursor).await?
         };
 
-        event!(
-            Level::TRACE,
-            length = bytes_read,
-            "netlink message received"
-        );
-
         // SAFETY: `recv_buf` initialized the first `bytes_read` bytes
         let received = unsafe { self.0[..bytes_read].assume_init_ref() };
 
@@ -113,6 +107,13 @@ impl ReceiveBuffer {
 }
 
 pub struct Messages<'a>(&'a [u8]);
+
+impl Messages<'_> {
+    /// The number of bytes received.
+    pub fn byte_len(&self) -> usize {
+        self.0.len()
+    }
+}
 
 pub struct Header {
     pub dump_interrupted: bool,

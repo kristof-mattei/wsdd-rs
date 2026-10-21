@@ -16,7 +16,7 @@ use socket2::SockAddrStorage;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
-use tracing::{Level, event};
+use tracing::{Level, event, instrument};
 use wsdd_rs::define_typed_size;
 use zerocopy::IntoBytes as _;
 use zerocopy::byteorder::native_endian::{I32, U16, U32};
@@ -364,11 +364,14 @@ struct Received {
     dump_interrupted: bool,
 }
 
+#[instrument(level = "trace", name = "netlink", skip_all, fields(length = messages.byte_len()))]
 async fn parse_netlink_response(
     messages: Messages<'_>,
     cancellation_token: &CancellationToken,
     command_tx: &Sender<Command>,
 ) -> Result<Received, eyre::Report> {
+    event!(Level::TRACE, "netlink message received");
+
     let mut received = Received::default();
 
     for (header, message) in messages {
@@ -468,16 +471,18 @@ async fn announce(
     ))
 }
 
-fn parse_address_message(ifa: &ifaddrmsg, attributes: Attributes<'_>) -> Option<IpNet> {
-    event!(
-        Level::TRACE,
+#[instrument(
+    level = "trace",
+    name = "address",
+    skip_all,
+    fields(
         ifa_family = ifa.ifa_family,
         ifa_flags = ifa.ifa_flags,
         ifa_scope = ifa.ifa_scope,
         ifa_index = ifa.ifa_index.get(),
-        "address message"
-    );
-
+    )
+)]
+fn parse_address_message(ifa: &ifaddrmsg, attributes: Attributes<'_>) -> Option<IpNet> {
     let mut ifa_address = None;
     let mut ifa_local = None;
 
