@@ -1,4 +1,14 @@
 <!-- header goes here -->
+## [1.1.0](https://github.com/kristof-mattei/wsdd-rs/compare/v1.0.1..v1.1.0) - 2026-10-21
+
+### 🚀 Features
+
+- Nest netlink trace events in `netlink` and `address` spans by [@kristof-mattei](https://github.com/kristof-mattei) ([`79a58f1`](https://github.com/kristof-mattei/wsdd-rs/commit/79a58f1f5052c6e7d296cbf36f3e9bfc401887c0))
+- Trace `ifa_family` and `ifa_scope` by their constant names by [@kristof-mattei](https://github.com/kristof-mattei) ([`0c87cdf`](https://github.com/kristof-mattei/wsdd-rs/commit/0c87cdf11663f8a536032c00993965259a2f3a04))
+
+### 🐛 Bug Fixes
+
+- Log the netlink attribute `label` without quotes by [@kristof-mattei](https://github.com/kristof-mattei) ([`b6812d3`](https://github.com/kristof-mattei/wsdd-rs/commit/b6812d359dc0f4f6c68a772e7c70787769cfd83e))
 ## [1.0.1](https://github.com/kristof-mattei/wsdd-rs/compare/v1.0.0..v1.0.1) - 2026-10-20
 
 ### 🐛 Bug Fixes
