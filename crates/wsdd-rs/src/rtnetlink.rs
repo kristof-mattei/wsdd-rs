@@ -9,7 +9,7 @@ use libc::{
 };
 use shared::netlink::{ifaddrmsg, ifinfomsg, nlmsgerr, nlmsghdr, rtattr};
 use tokio::io::Interest;
-use tracing::{Level, event};
+use tracing::{Level, event, field};
 use zerocopy::FromBytes as _;
 
 use crate::ffi::getpagesize;
@@ -277,7 +277,7 @@ impl<'a> Iterator for Attributes<'a> {
             Level::TRACE,
             rta_len = rta.rta_len.get(),
             rta_type = rta.rta_type.get(),
-            label = rta.label(),
+            label = rta.label().map(field::display),
             "attribute"
         );
 
