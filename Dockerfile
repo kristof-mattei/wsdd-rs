@@ -13,7 +13,6 @@ RUN rm -f /etc/apt/apt.conf.d/docker-clean \
 RUN apt-get update \
     && apt-get upgrade --yes \
     && apt-get install --no-install-recommends --yes \
-        ca-certificates \
         make \
         patch \
         perl \
@@ -122,6 +121,14 @@ RUN [ ! -s version-bump.patch ] || patch --strip 1 < version-bump.patch
 # --release not needed, it is implied with install
 RUN cargo auditable install --frozen --path "./crates/${APPLICATION_NAME}/" --root /output --target "${TARGET}"
 
+# CA certificates, CI builds this stage without cache
+FROM --platform=${BUILDPLATFORM} debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS certs
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes ca-certificates
+
 # Final stage, no `BUILDPLATFORM`, this one is run where it is deployed
 FROM scratch
 
@@ -138,7 +145,7 @@ EOF
 COPY --from=rust-build /output/bin/${APPLICATION_NAME} /app/wsdd-rs
 
 # certificates
-COPY --from=rust-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 USER appuser
 
