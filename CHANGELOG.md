@@ -1,4 +1,9 @@
 <!-- header goes here -->
+## [1.1.1](https://github.com/kristof-mattei/wsdd-rs/compare/v1.1.0..v1.1.1) - 2026-10-21
+
+### 🐛 Bug Fixes
+
+- Build the CA bundle in an uncached `certs` stage by [@kristof-mattei](https://github.com/kristof-mattei) ([`02bffad`](https://github.com/kristof-mattei/wsdd-rs/commit/02bffad9f957ab24083fbb56c56cbccdcb17283e))
 ## [1.1.0](https://github.com/kristof-mattei/wsdd-rs/compare/v1.0.1..v1.1.0) - 2026-10-21
 
 ### 🚀 Features
