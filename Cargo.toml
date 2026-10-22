@@ -51,6 +51,8 @@ decimal_literal_representation = { level = "deny", priority = 127 }
 # No, false positives / false negatives
 # default_numeric_fallback = { level = "deny", priority = 127 }
 default_union_representation = { level = "deny", priority = 127 }
+# No, we don't want `mod.rs`
+# definition_in_module_root = { level = "deny", priority = 127 }
 deref_by_slicing = { level = "deny", priority = 127 }
 # No, we already have `non_ascii_idents` which is even better
 # disallowed_script_idents = { level = "deny", priority = 127 }
@@ -90,6 +92,9 @@ infinite_loop = { level = "deny", priority = 127 }
 inline_asm_x86_att_syntax = { level = "deny", priority = 127 }
 # We want intel
 # inline_asm_x86_intel_syntax = { level = "deny", priority = 127 }
+inline_modules = { level = "deny", priority = 127 }
+# No, we want inline bounds
+# inline_trait_bounds = { level = "deny", priority = 127 }
 # Debatable
 # integer_division = { level = "deny", priority = 127 }
 # Debatable
@@ -157,6 +162,8 @@ redundant_test_prefix = { level = "deny", priority = 127 }
 # ref_patterns = { level = "deny", priority = 127 }
 renamed_function_params = { level = "deny", priority = 127 }
 rest_pat_in_fully_bound_structs = { level = "deny", priority = 127 }
+# No, conflicts with `unneeded_field_pattern`
+# rest_pattern_accessible_field = { level = "deny", priority = 127 }
 return_and_then = { level = "deny", priority = 127 }
 # Debatable, but probably should be turned on in the future
 # same_name_method = { level = "deny", priority = 127 }
@@ -191,6 +198,8 @@ todo = { level = "deny", priority = 127 }
 try_err = { level = "deny", priority = 127 }
 undocumented_unsafe_blocks = { level = "deny", priority = 127 }
 unimplemented = { level = "deny", priority = 127 }
+# No, we already have `rest_pat_in_fully_bound_structs`
+# unnecessary_rest_pattern = { level = "deny", priority = 127 }
 unnecessary_safety_comment = { level = "deny", priority = 127 }
 unnecessary_safety_doc = { level = "deny", priority = 127 }
 unnecessary_self_imports = { level = "deny", priority = 127 }
