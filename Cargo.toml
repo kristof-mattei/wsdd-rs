@@ -238,5 +238,49 @@ redundant_else = { level = "allow", priority = 127 }
 uninlined_format_args = { level = "allow", priority = 127 }
 
 [workspace.lints.rust]
+ambiguous_negative_literals = { level = "deny", priority = 127 }
+closure_returning_async_block = { level = "deny", priority = 127 }
+dead_code_pub_in_binary = { level = "deny", priority = 127 }
+deprecated_in_future = { level = "deny", priority = 127 }
+deref_into_dyn_supertrait = { level = "deny", priority = 127 }
+elided_lifetimes_in_paths = { level = "deny", priority = 127 }
+explicit_outlives_requirements = { level = "deny", priority = 127 }
+ffi_unwind_calls = { level = "deny", priority = 127 }
+impl_trait_redundant_captures = { level = "deny", priority = 127 }
 let_underscore_drop = { level = "deny", priority = 127 }
+# No, reports linker output, not code
+# linker_info = { level = "deny", priority = 127 }
+macro_use_extern_crate = { level = "deny", priority = 127 }
+# No, false positives
+# meta_variable_misuse = { level = "deny", priority = 127 }
+# No, we only derive what is used
+# missing_copy_implementations = { level = "deny", priority = 127 }
+# No, we only derive what is used
+# missing_debug_implementations = { level = "deny", priority = 127 }
+# No
+# missing_docs = { level = "deny", priority = 127 }
 non_ascii_idents = { level = "deny", priority = 127 }
+redundant_imports = { level = "deny", priority = 127 }
+redundant_lifetimes = { level = "deny", priority = 127 }
+single_use_lifetimes = { level = "deny", priority = 127 }
+trivial_casts = { level = "deny", priority = 127 }
+# No, we already have `clippy::unnecessary_cast`
+# trivial_numeric_casts = { level = "deny", priority = 127 }
+# No, we already have `clippy::let_unit_value`
+# unit_bindings = { level = "deny", priority = 127 }
+unnameable_types = { level = "deny", priority = 127 }
+unreachable_pub = { level = "deny", priority = 127 }
+# No
+# unsafe_code = { level = "deny", priority = 127 }
+# No, the toolchain is stable
+# unstable_features = { level = "deny", priority = 127 }
+# No, integration test crates link every dependency
+# unused_crate_dependencies = { level = "deny", priority = 127 }
+unused_extern_crates = { level = "deny", priority = 127 }
+unused_import_braces = { level = "deny", priority = 127 }
+unused_lifetimes = { level = "deny", priority = 127 }
+unused_macro_rules = { level = "deny", priority = 127 }
+unused_qualifications = { level = "deny", priority = 127 }
+unused_results = { level = "deny", priority = 127 }
+# No, we already have `clippy::large_enum_variant`
+# variant_size_differences = { level = "deny", priority = 127 }
