@@ -29,7 +29,7 @@ type Monitor = route_socket_address_monitor::RouteSocketAddressMonitor;
 )))]
 type Monitor = !;
 
-pub fn create_address_monitor(
+pub(crate) fn create_address_monitor(
     cancellation_token: CancellationToken,
     new_address_tx: Sender<Command>,
     start_rx: Receiver<()>,

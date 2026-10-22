@@ -5,7 +5,7 @@ use tokio::io::{self, AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream, UnixListener, UnixStream};
 
 #[pin_project(project = GenericReadHalfProjection)]
-pub enum GenericReadHalf {
+pub(crate) enum GenericReadHalf {
     Tcp(#[pin] tokio::net::tcp::OwnedReadHalf),
     Unix(#[pin] tokio::net::unix::OwnedReadHalf),
 }
@@ -36,7 +36,7 @@ impl From<tokio::net::unix::OwnedReadHalf> for GenericReadHalf {
 }
 
 #[pin_project(project = GenericWriteHalfProjection)]
-pub enum GenericWriteHalf {
+pub(crate) enum GenericWriteHalf {
     Tcp(#[pin] tokio::net::tcp::OwnedWriteHalf),
     Unix(#[pin] tokio::net::unix::OwnedWriteHalf),
 }
@@ -87,7 +87,7 @@ impl From<tokio::net::unix::OwnedWriteHalf> for GenericWriteHalf {
 }
 
 #[pin_project(project = GenericStreamProjection)]
-pub enum GenericStream {
+pub(crate) enum GenericStream {
     Tcp {
         #[pin]
         tcp_stream: TcpStream,
@@ -101,7 +101,7 @@ pub enum GenericStream {
 }
 
 impl GenericStream {
-    pub fn into_split(self) -> (GenericReadHalf, GenericWriteHalf) {
+    pub(crate) fn into_split(self) -> (GenericReadHalf, GenericWriteHalf) {
         match self {
             GenericStream::Tcp {
                 tcp_stream,
@@ -192,7 +192,7 @@ impl From<(UnixStream, tokio::net::unix::SocketAddr)> for GenericStream {
     }
 }
 
-pub enum GenericListener {
+pub(crate) enum GenericListener {
     Tcp(TcpListener),
     Unix(UnixListener),
 }
@@ -210,7 +210,7 @@ impl From<UnixListener> for GenericListener {
 }
 
 impl GenericListener {
-    pub async fn accept(&self) -> io::Result<GenericStream> {
+    pub(crate) async fn accept(&self) -> io::Result<GenericStream> {
         match *self {
             GenericListener::Tcp(ref tcp_listener) => tcp_listener.accept().await.map(Into::into),
             GenericListener::Unix(ref unix_listener) => {
@@ -220,7 +220,7 @@ impl GenericListener {
     }
 }
 
-pub enum Listeners {
+pub(crate) enum Listeners {
     Single(GenericListener),
     PerFamily {
         v4: GenericListener,
@@ -229,7 +229,7 @@ pub enum Listeners {
 }
 
 impl Listeners {
-    pub async fn accept(&self) -> io::Result<GenericStream> {
+    pub(crate) async fn accept(&self) -> io::Result<GenericStream> {
         match *self {
             Listeners::Single(ref listener) => listener.accept().await,
             Listeners::PerFamily { ref v4, ref v6 } => tokio::select! {

@@ -4,7 +4,7 @@ use delegate::delegate;
 use ringmap::set::{IntoIter, Iter};
 use ringmap::{Equivalent, RingSet};
 
-pub struct MaxSizeDeque<T> {
+pub(crate) struct MaxSizeDeque<T> {
     inner: RingSet<T>,
     maximum_size: usize,
 }
@@ -12,18 +12,18 @@ pub struct MaxSizeDeque<T> {
 impl<T> MaxSizeDeque<T> {
     delegate! {
         to self.inner {
-            pub fn contains<Q>(&self, value: &Q) -> bool
+            pub(crate) fn contains<Q>(&self, value: &Q) -> bool
             where
                 Q: ?Sized + Hash + Equivalent<T>;
-            pub fn len(&self) -> usize;
+            pub(crate) fn len(&self) -> usize;
             #[cfg_attr(not(test), expect(unused, reason = "API"))]
-            pub fn iter(&self) -> Iter<'_, T>;
+            pub(crate) fn iter(&self) -> Iter<'_, T>;
             #[cfg_attr(not(test), expect(unused, reason = "API"))]
-            pub fn into_iter(self) -> IntoIter<T>;
+            pub(crate) fn into_iter(self) -> IntoIter<T>;
         }
     }
 
-    pub fn new(maximum_size: usize) -> Self {
+    pub(crate) fn new(maximum_size: usize) -> Self {
         Self {
             inner: RingSet::new(),
             maximum_size,
@@ -39,7 +39,7 @@ impl<T> MaxSizeDeque<T> {
     /// and returns `true`.
     ///
     /// Computes in **O(1)** time (amortized average).
-    pub fn push_back(&mut self, value: T) -> bool
+    pub(crate) fn push_back(&mut self, value: T) -> bool
     where
         T: Eq + Hash,
     {
@@ -66,7 +66,7 @@ impl<T> MaxSizeDeque<T> {
     ///
     /// Computes in **O(1)** time (amortized average).
     #[cfg_attr(not(test), expect(unused, reason = ""))]
-    pub fn push_front(&mut self, value: T) -> bool
+    pub(crate) fn push_front(&mut self, value: T) -> bool
     where
         T: Eq + Hash,
     {

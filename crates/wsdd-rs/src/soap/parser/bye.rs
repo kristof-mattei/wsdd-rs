@@ -9,7 +9,7 @@ use crate::xml::{XmlReader, find_child};
 
 type ParsedByeResult = Result<Bye, BodyParsingError>;
 
-pub struct Bye {
+pub(crate) struct Bye {
     pub app_sequence: AppSequence,
     pub endpoint: DeviceUri,
 }
@@ -18,7 +18,7 @@ pub struct Bye {
 ///
 /// This function makes NO claims about the position of the reader
 /// should the structure XML be invalid (e.g. missing `Address`).
-pub fn parse_bye<R>(reader: &mut XmlReader<R>, app_sequence: AppSequence) -> ParsedByeResult
+pub(crate) fn parse_bye<R>(reader: &mut XmlReader<R>, app_sequence: AppSequence) -> ParsedByeResult
 where
     R: Read,
 {

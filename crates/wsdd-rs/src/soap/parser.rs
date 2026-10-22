@@ -1,13 +1,13 @@
-pub mod app_sequence;
-pub mod bye;
-pub mod generic;
-pub mod get;
-pub mod hello;
-pub mod probe;
-pub mod probe_match;
-pub mod resolve;
-pub mod resolve_match;
-pub mod xaddrs;
+pub(crate) mod app_sequence;
+pub(crate) mod bye;
+pub(crate) mod generic;
+pub(crate) mod get;
+pub(crate) mod hello;
+pub(crate) mod probe;
+pub(crate) mod probe_match;
+pub(crate) mod resolve;
+pub(crate) mod resolve_match;
+pub(crate) mod xaddrs;
 
 use std::io::Read;
 use std::net::SocketAddr;
@@ -30,20 +30,20 @@ use crate::soap::{self, MessageId, WSDMessage};
 use crate::wsd::device::DeviceUri;
 use crate::xml::{TextReadError, XmlError, XmlReader, read_text};
 
-pub struct MessageHandler {
+pub(crate) struct MessageHandler {
     network_address: NetworkAddress,
     recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
 }
 
 /// The header blocks of every message.
-pub struct Header {
+pub(crate) struct Header {
     pub to: Option<DeviceUri>,
     pub action: Box<str>,
     pub message_id: MessageId,
 }
 
 /// Every header block that was read, before the action decides which of them the message requires.
-pub struct RawHeader {
+pub(crate) struct RawHeader {
     header: Header,
     relates_to: Option<MessageId>,
     /// `None` when the block is absent.
@@ -51,7 +51,7 @@ pub struct RawHeader {
 }
 
 #[derive(Error, Debug)]
-pub enum HeaderParsingError {
+pub(crate) enum HeaderParsingError {
     #[error("Error parsing XML: {}", .0)]
     Xml(#[from] XmlError),
     #[error("Missing Message Id")]
@@ -91,7 +91,7 @@ impl From<TextReadError> for HeaderParsingError {
 }
 
 #[derive(Error, Debug)]
-pub enum BodyParsingError {
+pub(crate) enum BodyParsingError {
     #[error("Error parsing XML: {}", .0)]
     Xml(#[from] XmlError),
     #[error("Invalid element order")]
@@ -119,7 +119,7 @@ impl From<TextReadError> for BodyParsingError {
 type ParsedHeaderResult = Result<RawHeader, HeaderParsingError>;
 
 #[derive(Error, Debug)]
-pub enum MessageHandlerError {
+pub(crate) enum MessageHandlerError {
     #[error("Message already processed")]
     DuplicateMessage,
     #[error("Header parsing error: {}", .0)]
@@ -177,7 +177,7 @@ impl MessageHandlerError {
 
 type RawMessageResult<R> = Result<(RawHeader, bool, XmlReader<R>), MessageHandlerError>;
 
-pub fn deconstruct_raw<R>(raw: R) -> RawMessageResult<R>
+pub(crate) fn deconstruct_raw<R>(raw: R) -> RawMessageResult<R>
 where
     R: Read,
 {
@@ -340,7 +340,7 @@ fn require_relates_to(relates_to: Option<MessageId>) -> Result<MessageId, Header
 }
 
 /// Reads past `</soap:Body>`, then requires `</soap:Envelope>`, see documentation/soap12-part1.pdf, 5.1.
-pub fn finish_envelope<R>(reader: &mut XmlReader<R>) -> Result<(), HeaderParsingError>
+pub(crate) fn finish_envelope<R>(reader: &mut XmlReader<R>) -> Result<(), HeaderParsingError>
 where
     R: Read,
 {
@@ -420,7 +420,7 @@ fn parse_message_body(
 }
 
 impl MessageHandler {
-    pub fn new(
+    pub(crate) fn new(
         network_address: NetworkAddress,
         recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
     ) -> Self {
@@ -431,7 +431,7 @@ impl MessageHandler {
     }
 
     /// Handle a WSD message received over UDP.
-    pub async fn deconstruct_message<B>(
+    pub(crate) async fn deconstruct_message<B>(
         &self,
         raw: B,
         source: SocketAddr,
@@ -443,7 +443,7 @@ impl MessageHandler {
     }
 
     /// Handle a WSD message received over HTTP.
-    pub async fn deconstruct_http_message<B>(
+    pub(crate) async fn deconstruct_http_message<B>(
         &self,
         raw: B,
     ) -> Result<(Header, WSDMessage), MessageHandlerError>
@@ -497,7 +497,7 @@ impl MessageHandler {
     /// can insert and evict the same id before our write guard runs, so some
     /// in-flight duplicates may be reprocessed, but we avoid taking a write lock for
     /// every message.
-    pub async fn is_duplicated_msg(&self, message_id: &MessageId) -> bool {
+    pub(crate) async fn is_duplicated_msg(&self, message_id: &MessageId) -> bool {
         {
             let read_lock = self.recent_messages.read().await;
 

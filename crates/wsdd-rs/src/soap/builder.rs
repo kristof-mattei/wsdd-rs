@@ -28,7 +28,7 @@ use crate::soap::builder::header::reply_to_from::ReplyToFrom;
 use crate::soap::{MessageId, MulticastMessage, UnicastMessage};
 use crate::wsd::device::DeviceUri;
 
-pub struct Builder<'config> {
+pub(crate) struct Builder<'config> {
     config: &'config Config,
 }
 
@@ -174,7 +174,7 @@ impl<'config> Builder<'config> {
     }
 
     /// WS-Discovery, Section 4.1, Hello message.
-    pub fn build_hello(
+    pub(crate) fn build_hello(
         config: &Config,
         xaddr: IpAddr,
     ) -> Result<MulticastMessage, xml::writer::Error> {
@@ -192,7 +192,7 @@ impl<'config> Builder<'config> {
     }
 
     /// WS-Discovery, Section 4.2, Bye message.
-    pub fn build_bye(config: &Config) -> Result<MulticastMessage, xml::writer::Error> {
+    pub(crate) fn build_bye(config: &Config) -> Result<MulticastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
         let (message, _): (Vec<_>, _) = builder.build_message(
@@ -207,7 +207,9 @@ impl<'config> Builder<'config> {
     }
 
     // WS-Discovery, Section 4.3, Probe message
-    pub fn build_probe(config: &Config) -> Result<(MulticastMessage, Urn), xml::writer::Error> {
+    pub(crate) fn build_probe(
+        config: &Config,
+    ) -> Result<(MulticastMessage, Urn), xml::writer::Error> {
         let mut builder = Builder::new(config);
 
         let (message, urn): (Vec<_>, _) = builder.build_message(
@@ -222,7 +224,7 @@ impl<'config> Builder<'config> {
     }
 
     // WS-Discovery, Section 6.1, Resolve message
-    pub fn build_resolve(
+    pub(crate) fn build_resolve(
         config: &Config,
         endpoint: &DeviceUri,
     ) -> Result<(MulticastMessage, Urn), xml::writer::Error> {
@@ -239,7 +241,7 @@ impl<'config> Builder<'config> {
         Ok((MulticastMessage::Resolve(message.into_boxed_slice()), urn))
     }
 
-    pub fn build_resolve_matches(
+    pub(crate) fn build_resolve_matches(
         config: &Config,
         address: IpAddr,
         relates_to: &MessageId,
@@ -257,7 +259,7 @@ impl<'config> Builder<'config> {
         Ok(UnicastMessage::ResolveMatches(message.into_boxed_slice()))
     }
 
-    pub fn build_probe_matches(
+    pub(crate) fn build_probe_matches(
         config: &Config,
         relates_to: &MessageId,
     ) -> Result<UnicastMessage, xml::writer::Error> {
@@ -274,7 +276,10 @@ impl<'config> Builder<'config> {
         Ok(UnicastMessage::ProbeMatches(message.into_boxed_slice()))
     }
 
-    pub fn build_get(config: &Config, endpoint: &DeviceUri) -> Result<Vec<u8>, xml::writer::Error> {
+    pub(crate) fn build_get(
+        config: &Config,
+        endpoint: &DeviceUri,
+    ) -> Result<Vec<u8>, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
         builder
@@ -288,7 +293,7 @@ impl<'config> Builder<'config> {
             .map(|(m, _)| m)
     }
 
-    pub fn build_get_response(
+    pub(crate) fn build_get_response(
         config: &Config,
         relates_to: &MessageId,
     ) -> Result<UnicastMessage, xml::writer::Error> {

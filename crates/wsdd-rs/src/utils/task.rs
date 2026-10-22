@@ -1,7 +1,7 @@
 use tokio::task::{Builder, JoinHandle};
 
 #[track_caller]
-pub fn spawn_with_name<Fut>(name: &str, future: Fut) -> JoinHandle<Fut::Output>
+pub(crate) fn spawn_with_name<Fut>(name: &str, future: Fut) -> JoinHandle<Fut::Output>
 where
     Fut: Future + Send + 'static,
     Fut::Output: Send + 'static,

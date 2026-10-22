@@ -37,7 +37,7 @@ use crate::wsd::udp::host::WSDHost;
 
 /// A class for handling multicast traffic on a given interface for a
 /// given address family. It provides multicast sender and receiver sockets.
-pub struct MulticastHandler {
+pub(crate) struct MulticastHandler {
     cancellation_token: CancellationToken,
     config: Arc<Config>,
 
@@ -96,7 +96,7 @@ fn create_sockets(domain: Domain) -> Result<Sockets, eyre::Report> {
 }
 
 impl MulticastHandler {
-    pub fn new(
+    pub(crate) fn new(
         network_address: NetworkAddress,
         cancellation_token: CancellationToken,
         config: Arc<Config>,
@@ -226,7 +226,7 @@ impl MulticastHandler {
         }
     }
 
-    pub async fn teardown(self, graceful: bool) {
+    pub(crate) async fn teardown(self, graceful: bool) {
         if let Some(host) = self.wsd_host.into_inner() {
             // graceful teardown makes the host queue up a goodbye, so when we're here we have made an honest try to schedule the goodbye message
             host.teardown(graceful).await;
@@ -452,7 +452,7 @@ impl MulticastHandler {
         Ok((multicast_address, listen_address.into()))
     }
 
-    pub async fn enable_wsd_host(&mut self) {
+    pub(crate) async fn enable_wsd_host(&mut self) {
         self.wsd_host
             .get_or_init(|| async {
                 let (host_tx, host_rx) = tokio::sync::mpsc::channel(10);
@@ -479,11 +479,11 @@ impl MulticastHandler {
             .await;
     }
 
-    pub fn wsd_client(&self) -> Option<&WSDClient> {
+    pub(crate) fn wsd_client(&self) -> Option<&WSDClient> {
         self.wsd_client.get()
     }
 
-    pub async fn enable_wsd_client(&mut self) {
+    pub(crate) async fn enable_wsd_client(&mut self) {
         self.wsd_client
             .get_or_init(|| async {
                 let (client_tx, client_rx) = tokio::sync::mpsc::channel(10);
@@ -510,7 +510,7 @@ impl MulticastHandler {
             .await;
     }
 
-    pub async fn enable_http_server(&self) {
+    pub(crate) async fn enable_http_server(&self) {
         let result = self
             .http_server
             .get_or_try_init(|| async {
@@ -533,30 +533,30 @@ impl MulticastHandler {
         }
     }
 
-    pub fn get_network_address(&self) -> &NetworkAddress {
+    pub(crate) fn get_network_address(&self) -> &NetworkAddress {
         &self.network_address
     }
 }
 
-pub struct IncomingHostMessage {
+pub(crate) struct IncomingHostMessage {
     pub from: SocketAddr,
     pub header: Header,
     pub message: HostMessage,
 }
-pub struct IncomingClientMessage {
+pub(crate) struct IncomingClientMessage {
     pub from: SocketAddr,
     pub received_at: Instant,
     pub header: Header,
     pub message: ClientMessage,
 }
 
-pub struct OutgoingMessage {
+pub(crate) struct OutgoingMessage {
     pub to: SocketAddr,
     pub message: UnicastMessage,
 }
 
 #[derive(Debug)]
-pub struct OutgoingMulticastMessage {
+pub(crate) struct OutgoingMulticastMessage {
     pub message: MulticastMessage,
     /// Notified with the send time of the last copy.
     pub last_copy_tx: Option<oneshot::Sender<Instant>>,

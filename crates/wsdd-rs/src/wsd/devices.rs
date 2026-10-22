@@ -19,7 +19,7 @@ const MAX_SEQUENCES: usize = 128;
 /// The discovered devices, shared by the clients of every interface.
 /// It also orders the messages of each Target Service, see documentation/ws-discovery.pdf, Appendix I.
 #[derive(Default)]
-pub struct Devices {
+pub(crate) struct Devices {
     discovered: HashMap<DeviceUri, WSDDiscoveredDevice>,
     /// The last `MessageNumber` of each sequence.
     sequences: RingMap<SequenceKey, MessageNumber>,
@@ -83,7 +83,7 @@ struct Target {
 }
 
 /// A Target Service whose message `Devices::observe` recorded as current.
-pub struct Current<'d> {
+pub(crate) struct Current<'d> {
     devices: &'d mut Devices,
     endpoint: &'d DeviceUri,
 }
@@ -97,31 +97,31 @@ struct Exchanges {
 }
 
 /// A metadata exchange started with `Current::start_exchange`.
-pub struct Exchange {
+pub(crate) struct Exchange {
     endpoint: DeviceUri,
     bye: CancellationToken,
     interface_index: u32,
 }
 
 /// A metadata exchange to run, and the `XAddrs` it fetches from.
-pub struct Fetch {
+pub(crate) struct Fetch {
     pub exchange: Exchange,
     pub xaddrs: Vec1<XAddr>,
 }
 
 impl Exchange {
     /// The Target Service whose metadata the exchange fetches.
-    pub fn endpoint(&self) -> &DeviceUri {
+    pub(crate) fn endpoint(&self) -> &DeviceUri {
         &self.endpoint
     }
 
     /// The Target Service sent a Bye since the exchange started.
-    pub fn departed(&self) -> bool {
+    pub(crate) fn departed(&self) -> bool {
         self.bye.is_cancelled()
     }
 
     /// Runs `future` unless the Target Service sends a Bye first, then returns `None`.
-    pub async fn run_until_bye<F: Future>(&self, future: F) -> Option<F::Output> {
+    pub(crate) async fn run_until_bye<F: Future>(&self, future: F) -> Option<F::Output> {
         self.bye.run_until_cancelled(future).await
     }
 }
@@ -129,7 +129,7 @@ impl Exchange {
 impl Current<'_> {
     /// Starts a metadata exchange with the Target Service on the interface with `interface_index`.
     /// Returns `None` while one already runs there, that one then runs once more with `xaddrs`.
-    pub fn start_exchange(self, interface_index: u32, xaddrs: Vec1<XAddr>) -> Option<Fetch> {
+    pub(crate) fn start_exchange(self, interface_index: u32, xaddrs: Vec1<XAddr>) -> Option<Fetch> {
         let exchanges = match self.devices.exchanges.entry_ref(self.endpoint) {
             EntryRef::Occupied(occupied_entry) => occupied_entry.into_mut(),
             EntryRef::Vacant(vacant_entry_ref) => {
@@ -159,7 +159,7 @@ impl Current<'_> {
     }
 
     /// Removes the device, stops its running metadata exchanges, and drops their pending reruns.
-    pub fn depart(self) -> Option<WSDDiscoveredDevice> {
+    pub(crate) fn depart(self) -> Option<WSDDiscoveredDevice> {
         if let Some(exchanges) = self.devices.exchanges.get_mut(self.endpoint) {
             std::mem::take(&mut exchanges.bye).cancel();
 
@@ -174,7 +174,7 @@ impl Current<'_> {
 
 impl Devices {
     /// Ends `exchange`, and returns the exchange to run next, for the triggers that arrived while it ran.
-    pub fn finish_exchange(
+    pub(crate) fn finish_exchange(
         &mut self,
         Exchange {
             endpoint,
@@ -216,7 +216,7 @@ impl Devices {
     }
 
     /// Ends `exchange`, and drops its pending rerun.
-    pub fn cancel_exchange(
+    pub(crate) fn cancel_exchange(
         &mut self,
         Exchange {
             endpoint,
@@ -239,7 +239,7 @@ impl Devices {
 
     /// Records the `AppSequence` of a message of the Target Service at `endpoint`, unless it is older than the recorded order.
     /// Returns `None` for an older message.
-    pub fn observe<'d>(
+    pub(crate) fn observe<'d>(
         &'d mut self,
         endpoint: &'d DeviceUri,
         app_sequence: &AppSequence,
@@ -290,7 +290,7 @@ impl Devices {
 
     /// Records a `ProbeMatch` or `ResolveMatch` of the Target Service at `endpoint`.
     /// A match is never stale, and an older one leaves the order as it is.
-    pub fn observe_match<'d>(
+    pub(crate) fn observe_match<'d>(
         &'d mut self,
         endpoint: &'d DeviceUri,
         app_sequence: &AppSequence,
@@ -303,7 +303,7 @@ impl Devices {
         }
     }
 
-    pub fn store(
+    pub(crate) fn store(
         &mut self,
         endpoint: &DeviceUri,
         meta: &[u8],
@@ -326,31 +326,31 @@ impl Devices {
         Ok(())
     }
 
-    pub fn clear_discovered(&mut self) {
+    pub(crate) fn clear_discovered(&mut self) {
         self.discovered.clear();
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&DeviceUri, &WSDDiscoveredDevice)> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&DeviceUri, &WSDDiscoveredDevice)> {
         self.discovered.iter()
     }
 
     #[cfg(test)]
-    pub fn get(&self, endpoint: &DeviceUri) -> Option<&WSDDiscoveredDevice> {
+    pub(crate) fn get(&self, endpoint: &DeviceUri) -> Option<&WSDDiscoveredDevice> {
         self.discovered.get(endpoint)
     }
 
     #[cfg(test)]
-    pub fn contains_key(&self, endpoint: &DeviceUri) -> bool {
+    pub(crate) fn contains_key(&self, endpoint: &DeviceUri) -> bool {
         self.discovered.contains_key(endpoint)
     }
 
     #[cfg(test)]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.discovered.is_empty()
     }
 
     #[cfg(test)]
-    pub fn has_running_exchanges(&self) -> bool {
+    pub(crate) fn has_running_exchanges(&self) -> bool {
         !self.exchanges.is_empty()
     }
 

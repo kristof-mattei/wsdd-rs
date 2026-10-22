@@ -16,7 +16,7 @@ use crate::soap::{HostMessage, MessageId, UnicastMessage};
 use crate::utils::task::spawn_with_name;
 
 /// handles WSD requests coming from UDP datagrams.
-pub struct WSDHost {
+pub(crate) struct WSDHost {
     address: IpAddr,
     cancellation_token: CancellationToken,
     config: Arc<Config>,
@@ -24,7 +24,7 @@ pub struct WSDHost {
 }
 
 impl WSDHost {
-    pub fn init(
+    pub(crate) fn init(
         cancellation_token: CancellationToken,
         config: Arc<Config>,
         bound_to: NetworkAddress,
@@ -66,7 +66,7 @@ impl WSDHost {
     }
 
     // or async drop if you will?
-    pub async fn teardown(self, graceful: bool) {
+    pub(crate) async fn teardown(self, graceful: bool) {
         // this makes us stop listeneng for probes & resolves
         // note that this is a child token, so we only cancel ourselves
         self.cancellation_token.cancel();
@@ -133,7 +133,7 @@ async fn send_hello(
         .unwrap_or(Ok(()))
 }
 
-pub fn handle_probe(
+pub(crate) fn handle_probe(
     config: &Config,
     relates_to: &MessageId,
     probe: &Probe,

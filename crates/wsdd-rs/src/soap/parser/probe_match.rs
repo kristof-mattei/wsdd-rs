@@ -14,14 +14,14 @@ use crate::xml::{XmlError, XmlReader, find_child};
 
 type ParsedProbeMatchesResult = Result<ProbeMatches, BodyParsingError>;
 
-pub struct ProbeMatches {
+pub(crate) struct ProbeMatches {
     /// The `[message id]` of the Probe it answers.
     pub relates_to: MessageId,
     pub app_sequence: AppSequence,
     pub matches: Vec<ProbeMatch>,
 }
 
-pub struct ProbeMatch {
+pub(crate) struct ProbeMatch {
     pub endpoint: DeviceUri,
     pub raw_xaddrs: Option<Box<str>>,
     pub metadata_version: u64,
@@ -31,7 +31,7 @@ pub struct ProbeMatch {
 ///
 /// This function makes NO claims about the position of the reader
 /// should the structure XML be invalid (e.g. missing `Address`).
-pub fn parse_probe_matches<R>(
+pub(crate) fn parse_probe_matches<R>(
     reader: &mut XmlReader<R>,
     relates_to: MessageId,
     app_sequence: AppSequence,

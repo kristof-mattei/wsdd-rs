@@ -6,14 +6,14 @@ use crate::soap::{InstanceId, MessageNumber};
 
 /// The `wsd:AppSequence` header block of a received message, see documentation/ws-discovery.pdf, Appendix I.
 #[derive(Debug, PartialEq)]
-pub struct AppSequence {
+pub(crate) struct AppSequence {
     instance_id: InstanceId,
     sequence_id: Option<Box<str>>,
     message_number: MessageNumber,
 }
 
 #[derive(Error, Debug, PartialEq)]
-pub enum InvalidAppSequence {
+pub(crate) enum InvalidAppSequence {
     #[error("Missing InstanceId")]
     MissingInstanceId,
     #[error("Missing MessageNumber")]
@@ -26,7 +26,7 @@ pub enum InvalidAppSequence {
 
 impl AppSequence {
     #[cfg(test)]
-    pub fn new(instance_id: u64, sequence_id: Option<&str>, message_number: u64) -> Self {
+    pub(crate) fn new(instance_id: u64, sequence_id: Option<&str>, message_number: u64) -> Self {
         Self {
             instance_id: InstanceId::new(instance_id),
             sequence_id: sequence_id.map(Box::from),
@@ -34,19 +34,21 @@ impl AppSequence {
         }
     }
 
-    pub fn instance_id(&self) -> InstanceId {
+    pub(crate) fn instance_id(&self) -> InstanceId {
         self.instance_id
     }
 
-    pub fn sequence_id(&self) -> Option<&str> {
+    pub(crate) fn sequence_id(&self) -> Option<&str> {
         self.sequence_id.as_deref()
     }
 
-    pub fn message_number(&self) -> MessageNumber {
+    pub(crate) fn message_number(&self) -> MessageNumber {
         self.message_number
     }
 
-    pub fn from_attributes(attributes: &[OwnedAttribute]) -> Result<Self, InvalidAppSequence> {
+    pub(crate) fn from_attributes(
+        attributes: &[OwnedAttribute],
+    ) -> Result<Self, InvalidAppSequence> {
         let mut instance_id = None;
         let mut sequence_id = None;
         let mut message_number = None;

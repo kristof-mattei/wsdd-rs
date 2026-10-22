@@ -2,10 +2,10 @@ use tokio::task::JoinHandle;
 
 use crate::shutdown::Shutdown;
 
-pub mod env;
-pub mod task;
+pub(crate) mod env;
+pub(crate) mod task;
 
-pub async fn flatten_shutdown_handle(handle: JoinHandle<Shutdown>) -> Shutdown {
+pub(crate) async fn flatten_shutdown_handle(handle: JoinHandle<Shutdown>) -> Shutdown {
     match handle.await {
         Ok(shutdown) => shutdown,
         Err(join_error) => Shutdown::UnexpectedError(join_error.into()),
@@ -13,7 +13,7 @@ pub async fn flatten_shutdown_handle(handle: JoinHandle<Shutdown>) -> Shutdown {
 }
 
 /// Utility struct to format the elements using the Display trait instead of the Debug trait.
-pub struct SliceDisplay<'s, T>(pub &'s [T]);
+pub(crate) struct SliceDisplay<'s, T>(pub &'s [T]);
 
 impl<T: std::fmt::Display> std::fmt::Display for SliceDisplay<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -34,7 +34,7 @@ impl<T: std::fmt::Display> std::fmt::Display for SliceDisplay<'_, T> {
 }
 
 /// `const` cast a `u16` to `usize`. `usize::from(u16)` is not `const` yet.
-pub const fn u16_to_usize(from: u16) -> usize {
+pub(crate) const fn u16_to_usize(from: u16) -> usize {
     #[expect(clippy::as_conversions, reason = "Same as `usize::from(u16)`")]
     {
         from as usize
@@ -42,7 +42,7 @@ pub const fn u16_to_usize(from: u16) -> usize {
 }
 
 /// `const` cast a `u32` to `usize`. `usize::try_from(u32)` returns a `Result` on every target.
-pub const fn u32_to_usize(from: u32) -> usize {
+pub(crate) const fn u32_to_usize(from: u32) -> usize {
     const _: () = assert!(
         size_of::<usize>() >= size_of::<u32>(),
         "wsdd-rs requires a `usize` of at least 32 bits"
@@ -62,7 +62,7 @@ pub const fn u32_to_usize(from: u32) -> usize {
 /// # Panics
 ///
 /// If `from` is outside `0..=0xFF`.
-pub const fn i32_to_u8(from: i32) -> u8 {
+pub(crate) const fn i32_to_u8(from: i32) -> u8 {
     assert!(matches!(from, 0..=0xFF), "`from` must fit in a `u8`");
 
     #[expect(
@@ -81,7 +81,7 @@ pub const fn i32_to_u8(from: i32) -> u8 {
 /// # Panics
 ///
 /// If `from` is outside `0..=0xFFFF`.
-pub const fn i32_to_u16(from: i32) -> u16 {
+pub(crate) const fn i32_to_u16(from: i32) -> u16 {
     assert!(matches!(from, 0..=0xFFFF), "`from` must fit in a `u16`");
 
     #[expect(
@@ -100,7 +100,7 @@ pub const fn i32_to_u16(from: i32) -> u16 {
 /// # Panics
 ///
 /// If `from` is outside `0..=0xFFFF`.
-pub const fn usize_to_u16(from: usize) -> u16 {
+pub(crate) const fn usize_to_u16(from: usize) -> u16 {
     assert!(matches!(from, 0..=0xFFFF), "`from` must fit in a `u16`");
 
     #[expect(

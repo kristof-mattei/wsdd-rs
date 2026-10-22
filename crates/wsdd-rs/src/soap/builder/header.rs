@@ -1,11 +1,11 @@
-pub mod app_sequence;
-pub mod none;
-pub mod reply_to_from;
+pub(crate) mod app_sequence;
+pub(crate) mod none;
+pub(crate) mod reply_to_from;
 use std::io::Write;
 
 use xml::EventWriter;
 
-pub trait WriteExtraHeaders<W>
+pub(crate) trait WriteExtraHeaders<W>
 where
     W: Write,
 {

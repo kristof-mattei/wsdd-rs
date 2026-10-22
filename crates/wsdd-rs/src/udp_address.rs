@@ -6,13 +6,13 @@ use ipnet::IpNet;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
 
-pub struct UdpAddress {
+pub(crate) struct UdpAddress {
     _network_address: NetworkAddress,
     transport_address: SocketAddr,
 }
 
 impl UdpAddress {
-    pub fn new(
+    pub(crate) fn new(
         transport_address: SocketAddr,
         address: IpNet,
         interface: Arc<NetworkInterface>,
@@ -25,7 +25,7 @@ impl UdpAddress {
         }
     }
 
-    pub fn get_transport_address(&self) -> SocketAddr {
+    pub(crate) fn get_transport_address(&self) -> SocketAddr {
         self.transport_address
     }
 }

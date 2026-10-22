@@ -37,7 +37,7 @@ const DUMP_REQUEST_FLAGS: u16 = i32_to_u16(NLM_F_REQUEST | NLM_F_ACK | NLM_F_DUM
 
 const IFLA_EXT_MASK: u16 = 29;
 
-pub struct NetlinkAddressMonitor {
+pub(crate) struct NetlinkAddressMonitor {
     cancellation_token: CancellationToken,
     command_tx: Sender<Command>,
     config: Arc<Config>,
@@ -47,7 +47,7 @@ pub struct NetlinkAddressMonitor {
 
 impl NetlinkAddressMonitor {
     /// Implementation for Netlink sockets, i.e. Linux.
-    pub fn new(
+    pub(crate) fn new(
         cancellation_token: CancellationToken,
         command_tx: Sender<Command>,
         start_rx: watch::Receiver<()>,
@@ -74,11 +74,11 @@ impl NetlinkAddressMonitor {
         })
     }
 
-    pub fn teardown(self) {
+    pub(crate) fn teardown(self) {
         self.cancellation_token.cancel();
     }
 
-    pub async fn process_changes(&mut self) -> Result<(), eyre::Report> {
+    pub(crate) async fn process_changes(&mut self) -> Result<(), eyre::Report> {
         // we originally had this on the stack (array), but that pushed the spawned task's future past tokio's `BOX_FUTURE_THRESHOLD` in debug builds, so `spawn` boxed it
         let mut buffer = ReceiveBuffer::new();
 

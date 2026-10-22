@@ -20,7 +20,7 @@ use crate::wsd::device::DeviceUri;
 #[expect(clippy::struct_excessive_bools, reason = "CLI flags")]
 #[derive(Parser)]
 #[command(about, version)]
-pub struct Cli {
+pub(crate) struct Cli {
     #[arg(short, long, value_parser = to_interface_filter, help = "interface, address or scoped IPv6 address such as `fe80::1%eth0` to use")]
     interface: Vec<InterfaceFilter>,
 
@@ -107,7 +107,7 @@ fn float_to_duration_parser(value: &str) -> Result<Duration, String> {
 }
 
 #[cfg(test)]
-pub fn parse_cli_from<I, T>(from: I) -> Result<Config, eyre::Report>
+pub(crate) fn parse_cli_from<I, T>(from: I) -> Result<Config, eyre::Report>
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
@@ -115,7 +115,7 @@ where
     to_config(Cli::try_parse_from(from)?)
 }
 
-pub fn to_config(args: Cli) -> Result<Config, eyre::Report> {
+pub(crate) fn to_config(args: Cli) -> Result<Config, eyre::Report> {
     if args.interface.is_empty() {
         event!(Level::WARN, "no interface given, using all interfaces");
     }

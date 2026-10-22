@@ -242,3 +242,4 @@ uninlined_format_args = { level = "allow", priority = 127 }
 [workspace.lints.rust]
 let_underscore_drop = { level = "deny", priority = 127 }
 non_ascii_idents = { level = "deny", priority = 127 }
+unreachable_pub = { level = "deny", priority = 127 }

@@ -2,16 +2,16 @@ use thiserror::Error;
 use url::Url;
 
 #[derive(Debug)]
-pub struct XAddr {
+pub(crate) struct XAddr {
     url: Url,
 }
 
 impl XAddr {
-    pub fn url(&self) -> &Url {
+    pub(crate) fn url(&self) -> &Url {
         &self.url
     }
 
-    pub fn host_str(&self) -> &str {
+    pub(crate) fn host_str(&self) -> &str {
         self.url
             .host_str()
             .expect("XAddrs cannot be constructed from URLs that don't have a host")
@@ -25,7 +25,7 @@ impl std::fmt::Display for XAddr {
 }
 
 #[derive(Error, Debug)]
-pub enum XAddrError<'s> {
+pub(crate) enum XAddrError<'s> {
     #[error("Failed to parse XAddr as URL: {}", .0)]
     UrlParseError(#[from] url::ParseError),
     #[error("XAddr must be an HTTP/HTTPS URL with a host: {}", .0)]

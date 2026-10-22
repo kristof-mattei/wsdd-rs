@@ -29,7 +29,7 @@ use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 use crate::wsd::devices::Devices;
 
 #[derive(Debug)]
-pub enum Command {
+pub(crate) enum Command {
     NewAddress {
         address: IpNet,
         scope: u8,
@@ -61,7 +61,7 @@ pub enum Command {
 }
 
 #[derive(Debug, Error)]
-pub enum Reason {
+pub(crate) enum Reason {
     #[error("Application not active")]
     NotActive,
     #[error("IPv4 only")]
@@ -99,7 +99,7 @@ impl LinkState {
     }
 }
 
-pub struct NetworkHandler<R = LibcInterfaceNameResolver> {
+pub(crate) struct NetworkHandler<R = LibcInterfaceNameResolver> {
     resolver: R,
     active: bool,
     cancellation_token: CancellationToken,
@@ -118,13 +118,13 @@ pub struct NetworkHandler<R = LibcInterfaceNameResolver> {
 }
 
 #[derive(Debug, Error)]
-pub enum NetworkHandlerError {
+pub(crate) enum NetworkHandlerError {
     #[error("Interface Detection Failed: {}", .0)]
     InterfaceDetectionFailed(std::io::Error),
 }
 
 impl NetworkHandler {
-    pub fn new(
+    pub(crate) fn new(
         cancellation_token: CancellationToken,
         config: &Arc<Config>,
         command_rx: Receiver<Command>,
@@ -171,7 +171,7 @@ where
         }
     }
 
-    pub async fn process_commands(&mut self) {
+    pub(crate) async fn process_commands(&mut self) {
         loop {
             let command = tokio::select! {
                 () = self.cancellation_token.cancelled() => {
@@ -471,7 +471,7 @@ where
         self.matched_filters = Some(current);
     }
 
-    pub async fn handle_new_address(&mut self, network_address: NetworkAddress) {
+    pub(crate) async fn handle_new_address(&mut self, network_address: NetworkAddress) {
         let is_new = self
             .known_addresses
             .insert((network_address.address, network_address.interface.index()));
@@ -540,7 +540,7 @@ where
             .insert(&network_address, multicast_handler);
     }
 
-    pub async fn handle_deleted_address(&mut self, network_address: NetworkAddress) {
+    pub(crate) async fn handle_deleted_address(&mut self, network_address: NetworkAddress) {
         event!(Level::INFO, %network_address, "deleted address");
 
         self.known_addresses
@@ -633,7 +633,7 @@ where
         tasks.wait().await;
     }
 
-    pub async fn teardown(&mut self) {
+    pub(crate) async fn teardown(&mut self) {
         if !self.active {
             // Already stopped, nothing to do
             return;
@@ -654,7 +654,7 @@ where
         tasks.wait().await;
     }
 
-    pub fn start(&mut self) {
+    pub(crate) fn start(&mut self) {
         if self.active {
             return;
         }

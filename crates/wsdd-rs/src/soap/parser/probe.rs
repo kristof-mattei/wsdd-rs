@@ -16,7 +16,7 @@ type ParsedProbeResult = Result<Probe, BodyParsingError>;
 /// Namespace and local name.
 type QName = (Box<str>, Box<str>);
 
-pub struct Probe {
+pub(crate) struct Probe {
     /// `None` when the Probe has no `wsd:Types`, which implies any Type (WS-Discovery, Section 5.2).
     pub types: Option<HashSet<QName>>,
 }
@@ -52,7 +52,7 @@ impl ProbeChild {
 ///
 /// * `Ok(Probe {})`: when we were able to successfully decode the XML as a `Probe`
 /// * `Err(_)`: Anything went wrong trying to parse the XML
-pub fn parse_probe<R>(reader: &mut XmlReader<R>) -> ParsedProbeResult
+pub(crate) fn parse_probe<R>(reader: &mut XmlReader<R>) -> ParsedProbeResult
 where
     R: Read,
 {
@@ -137,7 +137,7 @@ fn parse_types(
 
 impl Probe {
     /// WS-Discovery, Section 5.1, for Types. Scopes are not matched.
-    pub fn matches(&self) -> bool {
+    pub(crate) fn matches(&self) -> bool {
         self.types.as_ref().is_none_or(|types| {
             types.iter().all(|&(ref namespace, ref name)| {
                 constants::ADVERTISED_TYPES.iter().any(|advertised| {

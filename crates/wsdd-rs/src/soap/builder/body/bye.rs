@@ -9,10 +9,10 @@ use crate::soap::builder::WriteBody;
 use crate::soap::builder::body::add_endpoint_reference;
 
 #[derive(Default)]
-pub struct Bye;
+pub(crate) struct Bye;
 
 impl Bye {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self
     }
 }

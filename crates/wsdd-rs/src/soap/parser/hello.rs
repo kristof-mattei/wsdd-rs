@@ -11,7 +11,7 @@ use crate::xml::{XmlReader, find_child};
 
 type ParsedHelloResult = Result<Hello, BodyParsingError>;
 
-pub struct Hello {
+pub(crate) struct Hello {
     pub app_sequence: AppSequence,
     pub endpoint: DeviceUri,
     pub raw_xaddrs: Option<Box<str>>,
@@ -22,7 +22,10 @@ pub struct Hello {
 ///
 /// This function makes NO claims about the position of the reader
 /// should the structure XML be invalid (e.g. missing `Address`).
-pub fn parse_hello<R>(reader: &mut XmlReader<R>, app_sequence: AppSequence) -> ParsedHelloResult
+pub(crate) fn parse_hello<R>(
+    reader: &mut XmlReader<R>,
+    app_sequence: AppSequence,
+) -> ParsedHelloResult
 where
     R: Read,
 {

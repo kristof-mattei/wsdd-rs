@@ -9,15 +9,15 @@ use crate::soap::parser::probe_match::ProbeMatches;
 use crate::soap::parser::resolve::Resolve;
 use crate::soap::parser::resolve_match::ResolveMatches;
 
-pub mod builder;
-pub mod parser;
+pub(crate) mod builder;
+pub(crate) mod parser;
 
 /// An incoming `[message id]` or `[relates to]`, an opaque `xs:anyURI` compared byte-wise.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct MessageId(Box<str>);
+pub(crate) struct MessageId(Box<str>);
 
 impl MessageId {
-    pub fn new(value: Box<str>) -> Self {
+    pub(crate) fn new(value: Box<str>) -> Self {
         Self(value)
     }
 }
@@ -45,10 +45,10 @@ impl std::fmt::Display for MessageId {
 /// Appendix I types it as `xs:unsignedInt` (32 bits), which an `InstanceId` in Unix seconds exceeds on 2106-02-07.
 /// WSDAPI holds it as `ULONGLONG` (`WSD_APP_SEQUENCE`), so this is a `u64`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct InstanceId(u64);
+pub(crate) struct InstanceId(u64);
 
 impl InstanceId {
-    pub const fn new(value: u64) -> Self {
+    pub(crate) const fn new(value: u64) -> Self {
         Self(value)
     }
 }
@@ -64,10 +64,10 @@ impl std::fmt::Display for InstanceId {
 /// Appendix I types it as `xs:unsignedInt` (32 bits), which a Target Service exceeds after 2^32 messages.
 /// WSDAPI holds it as `ULONGLONG` (`WSD_APP_SEQUENCE`), so this is a `u64`.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub struct MessageNumber(u64);
+pub(crate) struct MessageNumber(u64);
 
 impl MessageNumber {
-    pub const fn new(value: u64) -> Self {
+    pub(crate) const fn new(value: u64) -> Self {
         Self(value)
     }
 }
@@ -79,18 +79,18 @@ impl std::fmt::Display for MessageNumber {
 }
 
 /// An `xs:QName`, with the prefix that the built messages declare for its namespace.
-pub struct PrefixedName {
+pub(crate) struct PrefixedName {
     pub prefix: &'static str,
     pub namespace: &'static str,
     pub local_name: &'static str,
 }
 
-pub trait MessageType {
+pub(crate) trait MessageType {
     fn message_type(&self) -> &str;
 }
 
 #[derive(Debug)]
-pub enum UnicastMessage {
+pub(crate) enum UnicastMessage {
     GetResponse(Box<[u8]>),
     ProbeMatches(Box<[u8]>),
     ResolveMatches(Box<[u8]>),
@@ -127,7 +127,7 @@ impl IntoResponse for UnicastMessage {
 }
 
 #[derive(Debug)]
-pub enum MulticastMessage {
+pub(crate) enum MulticastMessage {
     Hello(Box<[u8]>),
     Bye(Box<[u8]>),
     Probe(Box<[u8]>),
@@ -155,7 +155,7 @@ impl MessageType for MulticastMessage {
     }
 }
 
-pub enum ClientMessage {
+pub(crate) enum ClientMessage {
     Hello(Hello),
     Bye(Bye),
     ProbeMatches(ProbeMatches),
@@ -168,7 +168,7 @@ impl From<ClientMessage> for WSDMessage {
     }
 }
 
-pub enum HostMessage {
+pub(crate) enum HostMessage {
     Get(Get),
     Probe(Probe),
     Resolve(Resolve),
@@ -180,7 +180,7 @@ impl From<HostMessage> for WSDMessage {
     }
 }
 
-pub enum WSDMessage {
+pub(crate) enum WSDMessage {
     ClientMessage(ClientMessage),
     HostMessage(HostMessage),
 }
@@ -272,7 +272,7 @@ impl From<ResolveMatches> for WSDMessage {
 #[cfg_attr(not(test), expect(unused, reason = "Only used in tests"))]
 impl WSDMessage {
     #[expect(unused, reason = "WIP")]
-    pub fn into_get(self) -> Option<Get> {
+    pub(crate) fn into_get(self) -> Option<Get> {
         let WSDMessage::HostMessage(HostMessage::Get(get)) = self else {
             return None;
         };
@@ -280,7 +280,7 @@ impl WSDMessage {
         Some(get)
     }
 
-    pub fn into_hello(self) -> Option<Hello> {
+    pub(crate) fn into_hello(self) -> Option<Hello> {
         let WSDMessage::ClientMessage(ClientMessage::Hello(hello)) = self else {
             return None;
         };
@@ -288,7 +288,7 @@ impl WSDMessage {
         Some(hello)
     }
 
-    pub fn into_bye(self) -> Option<Bye> {
+    pub(crate) fn into_bye(self) -> Option<Bye> {
         let WSDMessage::ClientMessage(ClientMessage::Bye(bye)) = self else {
             return None;
         };
@@ -296,7 +296,7 @@ impl WSDMessage {
         Some(bye)
     }
 
-    pub fn into_probe(self) -> Option<Probe> {
+    pub(crate) fn into_probe(self) -> Option<Probe> {
         let WSDMessage::HostMessage(HostMessage::Probe(probe)) = self else {
             return None;
         };
@@ -304,7 +304,7 @@ impl WSDMessage {
         Some(probe)
     }
 
-    pub fn into_resolve(self) -> Option<Resolve> {
+    pub(crate) fn into_resolve(self) -> Option<Resolve> {
         let WSDMessage::HostMessage(HostMessage::Resolve(resolve)) = self else {
             return None;
         };
@@ -312,7 +312,7 @@ impl WSDMessage {
         Some(resolve)
     }
 
-    pub fn into_probe_matches(self) -> Option<ProbeMatches> {
+    pub(crate) fn into_probe_matches(self) -> Option<ProbeMatches> {
         let WSDMessage::ClientMessage(ClientMessage::ProbeMatches(probe_matches)) = self else {
             return None;
         };
@@ -320,7 +320,7 @@ impl WSDMessage {
         Some(probe_matches)
     }
 
-    pub fn into_resolve_matches(self) -> Option<ResolveMatches> {
+    pub(crate) fn into_resolve_matches(self) -> Option<ResolveMatches> {
         let WSDMessage::ClientMessage(ClientMessage::ResolveMatches(resolve_matches)) = self else {
             return None;
         };

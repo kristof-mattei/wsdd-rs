@@ -5,7 +5,7 @@ use hashbrown::{HashMap, HashSet};
 use crate::network_address::NetworkAddress;
 
 /// Handlers by address and interface index. The kernel keeps one IPv4 address with several prefix lengths as separate entries, so a handler lives until the last entry of its address is deleted.
-pub struct AddressHandlers<H> {
+pub(crate) struct AddressHandlers<H> {
     handled: HashMap<(IpAddr, u32), Handled<H>>,
 }
 
@@ -31,7 +31,7 @@ impl<H> Default for AddressHandlers<H> {
 
 impl<H> AddressHandlers<H> {
     /// Adds the entry's prefix length to the handler of its address, `false` when that address has no handler yet.
-    pub fn add_prefix_if_handled(&mut self, network_address: &NetworkAddress) -> bool {
+    pub(crate) fn add_prefix_if_handled(&mut self, network_address: &NetworkAddress) -> bool {
         let Some(handled) = self.handled.get_mut(&key(network_address)) else {
             return false;
         };
@@ -43,7 +43,7 @@ impl<H> AddressHandlers<H> {
         true
     }
 
-    pub fn insert(&mut self, network_address: &NetworkAddress, handler: H) {
+    pub(crate) fn insert(&mut self, network_address: &NetworkAddress, handler: H) {
         self.handled.insert(
             key(network_address),
             Handled {
@@ -54,7 +54,7 @@ impl<H> AddressHandlers<H> {
     }
 
     /// Removes the prefix length. Returns the handler when no other prefix length of its address remains.
-    pub fn remove_prefix(&mut self, network_address: &NetworkAddress) -> Option<H> {
+    pub(crate) fn remove_prefix(&mut self, network_address: &NetworkAddress) -> Option<H> {
         let key = key(network_address);
 
         let handled = self.handled.get_mut(&key)?;
@@ -70,17 +70,17 @@ impl<H> AddressHandlers<H> {
         self.handled.remove(&key).map(|handled| handled.handler)
     }
 
-    pub fn remove_on_interface(&mut self, index: u32) -> impl Iterator<Item = H> {
+    pub(crate) fn remove_on_interface(&mut self, index: u32) -> impl Iterator<Item = H> {
         self.handled
             .extract_if(move |&(_, handled_index), _| handled_index == index)
             .map(|(_, handled)| handled.handler)
     }
 
-    pub fn handlers(&self) -> impl Iterator<Item = &H> {
+    pub(crate) fn handlers(&self) -> impl Iterator<Item = &H> {
         self.handled.values().map(|handled| &handled.handler)
     }
 
-    pub fn drain(&mut self) -> impl Iterator<Item = H> {
+    pub(crate) fn drain(&mut self) -> impl Iterator<Item = H> {
         self.handled.drain().map(|(_, handled)| handled.handler)
     }
 }

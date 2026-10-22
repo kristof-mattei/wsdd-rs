@@ -11,12 +11,12 @@ use crate::soap::builder::body::{
     add_endpoint_reference, add_metadata_version, add_types, add_xaddr,
 };
 
-pub struct Hello {
+pub(crate) struct Hello {
     xaddr: IpAddr,
 }
 
 impl Hello {
-    pub fn new(xaddr: IpAddr) -> Self {
+    pub(crate) fn new(xaddr: IpAddr) -> Self {
         Self { xaddr }
     }
 }

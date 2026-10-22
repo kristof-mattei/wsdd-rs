@@ -11,12 +11,12 @@ use crate::soap::builder::body::{
     add_endpoint_reference, add_metadata_version, add_types, add_xaddr,
 };
 
-pub struct ResolveMatches {
+pub(crate) struct ResolveMatches {
     address: IpAddr,
 }
 
 impl ResolveMatches {
-    pub fn new(address: IpAddr) -> Self {
+    pub(crate) fn new(address: IpAddr) -> Self {
         Self { address }
     }
 }

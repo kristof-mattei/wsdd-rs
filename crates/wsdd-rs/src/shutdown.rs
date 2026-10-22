@@ -6,7 +6,7 @@ use tracing::{Level, event};
 use crate::signal_handlers::{Signal, terminate_by_signal};
 
 /// Represents all ways the application can terminate.
-pub enum Shutdown {
+pub(crate) enum Shutdown {
     #[expect(unused, reason = "Application is a daemon")]
     Success,
     Signal(Signal),

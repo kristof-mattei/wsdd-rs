@@ -15,14 +15,14 @@ use crate::xml::{XmlError, XmlReader, find_child};
 
 type ParsedResolveMatchesResult = Result<ResolveMatches, BodyParsingError>;
 
-pub struct ResolveMatches {
+pub(crate) struct ResolveMatches {
     /// The `[message id]` of the Resolve it answers.
     pub relates_to: MessageId,
     pub app_sequence: AppSequence,
     pub resolve_match: Option<ResolveMatch>,
 }
 
-pub struct ResolveMatch {
+pub(crate) struct ResolveMatch {
     pub endpoint: DeviceUri,
     /// `None` when the list is empty.
     pub raw_xaddrs: Option<Box<str>>,
@@ -33,7 +33,7 @@ pub struct ResolveMatch {
 ///
 /// This function makes NO claims about the position of the reader
 /// should the structure XML be invalid (e.g. missing `Address`).
-pub fn parse_resolve_matches<R>(
+pub(crate) fn parse_resolve_matches<R>(
     reader: &mut XmlReader<R>,
     relates_to: MessageId,
     app_sequence: AppSequence,

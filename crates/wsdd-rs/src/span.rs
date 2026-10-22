@@ -11,14 +11,14 @@ const DEFAULT_MESSAGE_LEVEL: Level = Level::DEBUG;
 /// [`Span`]: tracing::Span
 /// [`DefaultMakeSpan`]: tower_http::trace::DefaultMakeSpan
 #[derive(Debug, Clone)]
-pub struct MakeSpanWithUuid {
+pub(crate) struct MakeSpanWithUuid {
     level: Level,
     include_headers: bool,
 }
 
 impl MakeSpanWithUuid {
     /// Create a new `MakeSpanWithUuid`.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             level: DEFAULT_MESSAGE_LEVEL,
             include_headers: false,
@@ -30,7 +30,7 @@ impl MakeSpanWithUuid {
     /// Defaults to [`Level::DEBUG`].
     ///
     /// [tracing span]: https://docs.rs/tracing/latest/tracing/#spans
-    pub fn level(mut self, level: Level) -> Self {
+    pub(crate) fn level(mut self, level: Level) -> Self {
         self.level = level;
         self
     }
@@ -41,7 +41,7 @@ impl MakeSpanWithUuid {
     ///
     /// [`Span`]: tracing::Span
     #[expect(unused, reason = "Copied from library")]
-    pub fn include_headers(mut self, include_headers: bool) -> Self {
+    pub(crate) fn include_headers(mut self, include_headers: bool) -> Self {
         self.include_headers = include_headers;
         self
     }

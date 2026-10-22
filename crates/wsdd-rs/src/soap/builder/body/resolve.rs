@@ -9,12 +9,12 @@ use crate::soap::builder::WriteBody;
 use crate::soap::builder::body::add_endpoint_reference;
 use crate::wsd::device::DeviceUri;
 
-pub struct Resolve<'e> {
+pub(crate) struct Resolve<'e> {
     endpoint: &'e DeviceUri,
 }
 
 impl<'e> Resolve<'e> {
-    pub fn new(endpoint: &'e DeviceUri) -> Self {
+    pub(crate) fn new(endpoint: &'e DeviceUri) -> Self {
         Self { endpoint }
     }
 }

@@ -29,7 +29,7 @@ const SIGTERM: u8 = libc::SIGTERM as u8;
 
 #[derive(Clone, Copy)]
 #[cfg_attr(miri, expect(dead_code, reason = "No signal listeners in Miri"))]
-pub enum Signal {
+pub(crate) enum Signal {
     Interrupt,
     #[cfg_attr(
         all(target_os = "windows", not(miri)),
@@ -39,7 +39,7 @@ pub enum Signal {
 }
 
 impl Signal {
-    pub const fn number(self) -> u8 {
+    pub(crate) const fn number(self) -> u8 {
         match self {
             Signal::Interrupt => SIGINT,
             Signal::Terminate => SIGTERM,
@@ -48,7 +48,7 @@ impl Signal {
 }
 
 /// A signal that arrives while no `wait` is running is buffered for a later `wait`.
-pub struct SignalListeners {
+pub(crate) struct SignalListeners {
     #[cfg(not(any(target_os = "windows", miri)))]
     terminate: unix::Signal,
     #[cfg(not(any(target_os = "windows", miri)))]
@@ -59,7 +59,7 @@ pub struct SignalListeners {
 
 impl SignalListeners {
     #[cfg(not(any(target_os = "windows", miri)))]
-    pub fn register() -> Result<Self, eyre::Report> {
+    pub(crate) fn register() -> Result<Self, eyre::Report> {
         let terminate = signal(SignalKind::terminate()).map_err(|error| {
             wrap_and_report!(Level::ERROR, error, "Failed to register SIGTERM handler")
         })?;
@@ -75,7 +75,7 @@ impl SignalListeners {
     }
 
     #[cfg(all(target_os = "windows", not(miri)))]
-    pub fn register() -> Result<Self, eyre::Report> {
+    pub(crate) fn register() -> Result<Self, eyre::Report> {
         let interrupt = windows::ctrl_c().map_err(|error| {
             wrap_and_report!(Level::ERROR, error, "Failed to register CTRL+c handler")
         })?;
@@ -84,11 +84,11 @@ impl SignalListeners {
     }
 
     #[cfg(miri)]
-    pub fn register() -> Result<Self, eyre::Report> {
+    pub(crate) fn register() -> Result<Self, eyre::Report> {
         Ok(Self {})
     }
 
-    pub async fn wait(&mut self) -> Signal {
+    pub(crate) async fn wait(&mut self) -> Signal {
         let signal = self.receive().await;
 
         match signal {
@@ -123,7 +123,7 @@ impl SignalListeners {
 /// Sets signal back to its default action and raises it, killing this process.
 /// Returns when the raise did not terminate the process: PID 1 of a PID namespace only receives signals it has a handler for, and the reset removes it.
 #[cfg(not(target_os = "windows"))]
-pub fn terminate_by_signal(signal: Signal) {
+pub(crate) fn terminate_by_signal(signal: Signal) {
     let signum = c_int::from(signal.number());
 
     // neither call can fail for SIGINT or SIGTERM
@@ -144,7 +144,7 @@ pub fn terminate_by_signal(signal: Signal) {
 }
 
 #[cfg(target_os = "windows")]
-pub fn terminate_by_signal(_signal: Signal) {}
+pub(crate) fn terminate_by_signal(_signal: Signal) {}
 
 #[cfg(test)]
 mod tests {

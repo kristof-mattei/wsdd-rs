@@ -17,10 +17,10 @@ use crate::network_interface::{NetworkInterface, if_nametoindex};
 use crate::soap::InstanceId;
 use crate::soap::parser::MessageHandler;
 
-pub mod xml {
+pub(crate) mod xml {
     use xml::{EmitterConfig, ParserConfig};
 
-    pub fn to_string_pretty(buffer: &[u8]) -> std::io::Result<String> {
+    pub(crate) fn to_string_pretty(buffer: &[u8]) -> std::io::Result<String> {
         let mut output = Vec::with_capacity(buffer.len());
 
         to_writer_pretty(&mut output, buffer)?;
@@ -62,13 +62,13 @@ pub mod xml {
     }
 }
 
-pub mod netlink {
+pub(crate) mod netlink {
     use libc::{NLM_F_DUMP_INTR, NLMSG_DONE, NLMSG_ERROR};
     use shared::netlink::{ifinfomsg, nlmsghdr};
     use zerocopy::byteorder::native_endian::{I32, U16, U32};
     use zerocopy::{FromBytes as _, FromZeros as _, IntoBytes as _};
 
-    pub fn netlink_message(nlmsg_type: u16, payload: &[u8]) -> Vec<u8> {
+    pub(crate) fn netlink_message(nlmsg_type: u16, payload: &[u8]) -> Vec<u8> {
         let header = nlmsghdr {
             nlmsg_len: U32::new(u32::try_from(size_of::<nlmsghdr>() + payload.len()).unwrap()),
             nlmsg_type: U16::new(nlmsg_type),
@@ -80,7 +80,7 @@ pub mod netlink {
         [header.as_bytes(), payload].concat()
     }
 
-    pub fn interrupted_message(message: &[u8]) -> Vec<u8> {
+    pub(crate) fn interrupted_message(message: &[u8]) -> Vec<u8> {
         let mut message = message.to_vec();
 
         let (header, _) = nlmsghdr::mut_from_prefix(&mut message).unwrap();
@@ -90,11 +90,11 @@ pub mod netlink {
         message
     }
 
-    pub fn done_message() -> Vec<u8> {
+    pub(crate) fn done_message() -> Vec<u8> {
         netlink_message(u16::try_from(NLMSG_DONE).unwrap(), 0_i32.as_bytes())
     }
 
-    pub fn link_message(nlmsg_type: u16, family: i32, index: i32, flags: u32) -> Vec<u8> {
+    pub(crate) fn link_message(nlmsg_type: u16, family: i32, index: i32, flags: u32) -> Vec<u8> {
         let ifi = ifinfomsg {
             ifi_family: u8::try_from(family).unwrap(),
             ifi_pad: 0,
@@ -107,7 +107,7 @@ pub mod netlink {
         netlink_message(nlmsg_type, ifi.as_bytes())
     }
 
-    pub fn error_message(error: i32) -> Vec<u8> {
+    pub(crate) fn error_message(error: i32) -> Vec<u8> {
         netlink_message(
             u16::try_from(NLMSG_ERROR).unwrap(),
             &[error.as_bytes(), nlmsghdr::new_zeroed().as_bytes()].concat(),
@@ -115,7 +115,7 @@ pub mod netlink {
     }
 }
 
-pub fn build_config(endpoint_uuid: Uuid, instance_id: u64) -> Config {
+pub(crate) fn build_config(endpoint_uuid: Uuid, instance_id: u64) -> Config {
     let mut config = cli::parse_cli_from([
         "-4",
         "--uuid",
@@ -134,7 +134,7 @@ pub fn build_config(endpoint_uuid: Uuid, instance_id: u64) -> Config {
     config
 }
 
-pub fn build_message_handler() -> MessageHandler {
+pub(crate) fn build_message_handler() -> MessageHandler {
     MessageHandler::new(
         NetworkAddress::new(
             Ipv4Net::new(Ipv4Addr::new(192, 168, 100, 1), 24)
@@ -146,7 +146,7 @@ pub fn build_message_handler() -> MessageHandler {
     )
 }
 
-pub fn find_first_non_lo_network_interface() -> Result<(Box<str>, u32), std::io::Error> {
+pub(crate) fn find_first_non_lo_network_interface() -> Result<(Box<str>, u32), std::io::Error> {
     let mut ifaddrs_p: *mut ifaddrs = std::ptr::null_mut();
 
     // SAFETY: libc call
@@ -191,7 +191,7 @@ pub fn find_first_non_lo_network_interface() -> Result<(Box<str>, u32), std::io:
     }
 }
 
-pub fn build_message_handler_with_network_address(
+pub(crate) fn build_message_handler_with_network_address(
     address: IpNet,
 ) -> (MessageHandler, NetworkAddress) {
     let (name, index) = if address.addr() == IpAddr::V4(Ipv4Addr::LOCALHOST) {

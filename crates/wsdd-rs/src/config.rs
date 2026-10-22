@@ -13,7 +13,7 @@ use crate::wsd::device::DeviceUri;
 
 #[expect(clippy::struct_excessive_bools, reason = "Main config")]
 #[derive(Debug)]
-pub struct Config {
+pub(crate) struct Config {
     pub interfaces: Vec<InterfaceFilter>,
     pub hoplimit: u8,
     pub uuid: Uuid,
@@ -35,14 +35,14 @@ pub struct Config {
 
 /// WS-Discovery, Appendix I. `MessageNumber` orders every message of the Target Service, so all interfaces share this counter.
 #[derive(Debug)]
-pub struct AppSequence {
+pub(crate) struct AppSequence {
     instance_id: InstanceId,
     sequence_id: Box<str>,
     message_number: AtomicU64,
 }
 
 impl AppSequence {
-    pub fn new(instance_id: InstanceId, sequence_id: Box<str>) -> Self {
+    pub(crate) fn new(instance_id: InstanceId, sequence_id: Box<str>) -> Self {
         Self {
             instance_id,
             sequence_id,
@@ -50,21 +50,21 @@ impl AppSequence {
         }
     }
 
-    pub fn instance_id(&self) -> InstanceId {
+    pub(crate) fn instance_id(&self) -> InstanceId {
         self.instance_id
     }
 
-    pub fn sequence_id(&self) -> &str {
+    pub(crate) fn sequence_id(&self) -> &str {
         &self.sequence_id
     }
 
-    pub fn next_message_number(&self) -> MessageNumber {
+    pub(crate) fn next_message_number(&self) -> MessageNumber {
         MessageNumber::new(self.message_number.fetch_add(1, Ordering::Relaxed))
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum InterfaceFilter {
+pub(crate) enum InterfaceFilter {
     Name(DevName),
     Address(IpAddr),
     ScopedAddress { address: Ipv6Addr, zone: DevName },
@@ -83,7 +83,7 @@ impl std::fmt::Display for InterfaceFilter {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum BindTo {
+pub(crate) enum BindTo {
     IPv4,
     IPv6,
     DualStack,
@@ -100,24 +100,24 @@ impl std::fmt::Display for BindTo {
 }
 
 impl BindTo {
-    pub fn ipv4_only(&self) -> bool {
+    pub(crate) fn ipv4_only(&self) -> bool {
         matches!(self, BindTo::IPv4)
     }
 
-    pub fn ipv6_only(&self) -> bool {
+    pub(crate) fn ipv6_only(&self) -> bool {
         matches!(self, BindTo::IPv6)
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum PortOrSocket {
+pub(crate) enum PortOrSocket {
     Port(u16),
     Socket(RawFd),
     SocketPath(PathBuf),
 }
 
 impl Config {
-    pub fn log(&self) {
+    pub(crate) fn log(&self) {
         event!(Level::INFO, ?self);
     }
 }

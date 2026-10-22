@@ -9,10 +9,10 @@ use crate::soap::builder::WriteBody;
 use crate::soap::builder::body::{add_endpoint_reference, add_metadata_version, add_types};
 
 #[derive(Default)]
-pub struct ProbeMatches;
+pub(crate) struct ProbeMatches;
 
 impl ProbeMatches {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self
     }
 }
