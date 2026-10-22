@@ -48,9 +48,3 @@ impl<'s> TryFrom<&'s str> for XAddr {
         }
     }
 }
-
-impl From<XAddr> for Url {
-    fn from(value: XAddr) -> Self {
-        value.url
-    }
-}
