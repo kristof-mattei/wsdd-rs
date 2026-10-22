@@ -6,12 +6,12 @@ use crate::constants;
 use crate::soap::builder::WriteExtraHeaders;
 use crate::wsd::device::DeviceUri;
 
-pub struct ReplyToFrom<'s> {
+pub(crate) struct ReplyToFrom<'s> {
     urn: &'s DeviceUri,
 }
 
 impl<'s> ReplyToFrom<'s> {
-    pub fn new(urn: &'s DeviceUri) -> Self {
+    pub(crate) fn new(urn: &'s DeviceUri) -> Self {
         Self { urn }
     }
 }

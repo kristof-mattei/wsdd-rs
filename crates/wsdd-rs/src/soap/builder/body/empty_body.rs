@@ -6,10 +6,10 @@ use crate::config::Config;
 use crate::soap::builder::WriteBody;
 
 #[derive(Default)]
-pub struct EmptyBody;
+pub(crate) struct EmptyBody;
 
 impl EmptyBody {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self
     }
 }

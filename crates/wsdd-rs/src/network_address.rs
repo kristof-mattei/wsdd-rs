@@ -5,13 +5,13 @@ use ipnet::IpNet;
 use crate::network_interface::NetworkInterface;
 
 #[derive(Clone, Debug)]
-pub struct NetworkAddress {
+pub(crate) struct NetworkAddress {
     pub address: IpNet,
     pub interface: Arc<NetworkInterface>,
 }
 
 impl NetworkAddress {
-    pub fn new(address: IpNet, interface: Arc<NetworkInterface>) -> Self {
+    pub(crate) fn new(address: IpNet, interface: Arc<NetworkInterface>) -> Self {
         Self { address, interface }
     }
 
@@ -19,7 +19,7 @@ impl NetworkAddress {
     // # Nah, this check is not optimal but there are no local flags for
     // # addresses, but it should be safe for IPv4 anyways
     // # (https://tools.ietf.org/html/rfc5735#page-3)
-    pub fn is_multicastable(&self) -> bool {
+    pub(crate) fn is_multicastable(&self) -> bool {
         match self.address {
             IpNet::V4(ipv4_net) => !ipv4_net.addr().is_loopback(),
             IpNet::V6(ipv6_net) => ipv6_net.addr().is_unicast_link_local(),

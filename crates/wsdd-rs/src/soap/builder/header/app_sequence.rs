@@ -7,13 +7,13 @@ use crate::constants;
 use crate::soap::MessageNumber;
 use crate::soap::builder::WriteExtraHeaders;
 
-pub struct AppSequenceHeader<'s> {
+pub(crate) struct AppSequenceHeader<'s> {
     app_sequence: &'s AppSequence,
     message_number: MessageNumber,
 }
 
 impl<'s> AppSequenceHeader<'s> {
-    pub fn next(app_sequence: &'s AppSequence) -> Self {
+    pub(crate) fn next(app_sequence: &'s AppSequence) -> Self {
         Self {
             app_sequence,
             message_number: app_sequence.next_message_number(),

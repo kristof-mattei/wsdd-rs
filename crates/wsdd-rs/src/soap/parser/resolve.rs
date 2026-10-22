@@ -10,7 +10,7 @@ use crate::xml::{XmlReader, find_child};
 
 type ParsedResolveResult = Result<Resolve, BodyParsingError>;
 
-pub struct Resolve {
+pub(crate) struct Resolve {
     pub addr_urn: Urn,
 }
 
@@ -18,7 +18,7 @@ pub struct Resolve {
 ///
 /// This function makes NO claims about the position of the reader
 /// should the structure XML be invalid (e.g. missing `Address`).
-pub fn parse_resolve<R>(reader: &mut XmlReader<R>) -> ParsedResolveResult
+pub(crate) fn parse_resolve<R>(reader: &mut XmlReader<R>) -> ParsedResolveResult
 where
     R: Read,
 {

@@ -7,14 +7,14 @@ use color_eyre::eyre;
 use libc::IF_NAMESIZE;
 
 #[derive(Debug)]
-pub struct NetworkInterface {
+pub(crate) struct NetworkInterface {
     name: Box<str>,
     index: u32,
     scope: u8,
 }
 
 impl NetworkInterface {
-    pub fn new<I: AsRef<str>>(name: I, scope: u8) -> Result<Self, std::io::Error> {
+    pub(crate) fn new<I: AsRef<str>>(name: I, scope: u8) -> Result<Self, std::io::Error> {
         let name: &str = name.as_ref();
 
         let index = if_nametoindex(name)?;
@@ -26,7 +26,11 @@ impl NetworkInterface {
         })
     }
 
-    pub fn new_with_index<'a, I: Into<Cow<'a, str>>>(name: I, scope: u8, index: u32) -> Self {
+    pub(crate) fn new_with_index<'a, I: Into<Cow<'a, str>>>(
+        name: I,
+        scope: u8,
+        index: u32,
+    ) -> Self {
         let name = name.into();
 
         Self {
@@ -36,11 +40,11 @@ impl NetworkInterface {
         }
     }
 
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         &self.name
     }
 
-    pub fn index(&self) -> u32 {
+    pub(crate) fn index(&self) -> u32 {
         self.index
     }
 }
@@ -51,7 +55,7 @@ impl std::fmt::Display for NetworkInterface {
     }
 }
 
-pub fn if_nametoindex(name: &str) -> Result<u32, std::io::Error> {
+pub(crate) fn if_nametoindex(name: &str) -> Result<u32, std::io::Error> {
     let name = CString::new(name).expect("Couldn't convert name to CString");
 
     // SAFETY: libc call
@@ -64,7 +68,7 @@ pub fn if_nametoindex(name: &str) -> Result<u32, std::io::Error> {
     }
 }
 
-pub fn if_indextoname(index: u32) -> Result<Box<str>, std::io::Error> {
+pub(crate) fn if_indextoname(index: u32) -> Result<Box<str>, std::io::Error> {
     let mut buffer = vec![0_u8; IF_NAMESIZE];
 
     // SAFETY: libc call
@@ -83,7 +87,7 @@ pub fn if_indextoname(index: u32) -> Result<Box<str>, std::io::Error> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DevName(Box<str>);
+pub(crate) struct DevName(Box<str>);
 
 impl TryFrom<Box<str>> for DevName {
     type Error = eyre::Report;
@@ -116,13 +120,13 @@ impl AsRef<str> for DevName {
 }
 
 #[cfg_attr(test, mockall::automock)]
-pub trait ResolveInterfaceName {
+pub(crate) trait ResolveInterfaceName {
     fn resolve(&self, index: u32) -> Result<Box<str>, std::io::Error>;
 
     fn index_of(&self, name: &str) -> Result<u32, std::io::Error>;
 }
 
-pub struct LibcInterfaceNameResolver;
+pub(crate) struct LibcInterfaceNameResolver;
 
 impl ResolveInterfaceName for LibcInterfaceNameResolver {
     fn resolve(&self, index: u32) -> Result<Box<str>, std::io::Error> {

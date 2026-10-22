@@ -9,14 +9,14 @@ use xml::reader::XmlEvent;
 use crate::constants;
 
 #[derive(Debug, Error)]
-pub enum TextReadError {
+pub(crate) enum TextReadError {
     #[error("Found non-text-contents: {:?}", .0)]
     NonTextContents(Box<XmlEvent>),
     #[error("Error parsing XML: {}", .0)]
     XmlError(#[from] xml::reader::Error),
 }
 
-pub struct XmlReader<R>
+pub(crate) struct XmlReader<R>
 where
     R: Read,
 {
@@ -29,7 +29,7 @@ impl<R> XmlReader<R>
 where
     R: Read,
 {
-    pub fn new(inner: EventReader<R>) -> XmlReader<R> {
+    pub(crate) fn new(inner: EventReader<R>) -> XmlReader<R> {
         Self {
             depth: 0,
             next: None,
@@ -37,11 +37,11 @@ where
         }
     }
 
-    pub fn depth(&self) -> usize {
+    pub(crate) fn depth(&self) -> usize {
         self.depth
     }
 
-    pub fn next(&mut self) -> Result<XmlEvent, xml::reader::Error> {
+    pub(crate) fn next(&mut self) -> Result<XmlEvent, xml::reader::Error> {
         let event = match self.next.take() {
             Some(stashed) => stashed,
             None => self.inner.next(),
@@ -70,7 +70,7 @@ where
     }
 
     #[cfg_attr(not(test), expect(unused, reason = "API not consumed yet"))]
-    pub fn peek(&mut self) -> Result<&XmlEvent, &xml::reader::Error> {
+    pub(crate) fn peek(&mut self) -> Result<&XmlEvent, &xml::reader::Error> {
         self.next.get_or_insert_with(|| self.inner.next()).as_ref()
     }
 }
@@ -81,7 +81,7 @@ where
 ///
 /// Errors:
 /// * When it encounters anything other than character data (including normalized white space and CDATA)
-pub fn read_text<R>(reader: &mut XmlReader<R>) -> Result<Option<String>, TextReadError>
+pub(crate) fn read_text<R>(reader: &mut XmlReader<R>) -> Result<Option<String>, TextReadError>
 where
     R: Read,
 {
@@ -126,7 +126,7 @@ where
 }
 
 #[derive(Debug, Error)]
-pub enum XmlError {
+pub(crate) enum XmlError {
     #[error("Error parsing XML: {}", .0)]
     ReaderError(#[from] xml::reader::Error),
     #[error("Error reading text: {}", .0)]
@@ -140,7 +140,7 @@ pub enum XmlError {
 type FindDescendantResult = Result<(OwnedName, Vec<OwnedAttribute>), XmlError>;
 
 /// Like [`find_optional_child`], but a missing child is an [`XmlError::MissingElement`].
-pub fn find_child<R>(
+pub(crate) fn find_child<R>(
     reader: &mut XmlReader<R>,
     namespace: Option<&str>,
     path: &str,
@@ -162,7 +162,7 @@ where
 /// Advances to the next direct child `{namespace}path` of the current element.
 ///
 /// Returns `None` when the current element or the document ends first.
-pub fn find_optional_child<R>(
+pub(crate) fn find_optional_child<R>(
     reader: &mut XmlReader<R>,
     namespace: Option<&str>,
     path: &str,

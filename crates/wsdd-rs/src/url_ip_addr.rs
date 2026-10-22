@@ -1,6 +1,6 @@
 use std::net::IpAddr;
 
-pub struct UrlIpAddr {
+pub(crate) struct UrlIpAddr {
     ip_addr: IpAddr,
 }
 

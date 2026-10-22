@@ -3,10 +3,10 @@ use std::io::Write;
 use crate::soap::builder::WriteExtraHeaders;
 
 #[derive(Default)]
-pub struct NoExtraHeaders;
+pub(crate) struct NoExtraHeaders;
 
 impl NoExtraHeaders {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self
     }
 }

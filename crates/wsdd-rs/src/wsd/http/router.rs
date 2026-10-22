@@ -20,7 +20,7 @@ use crate::soap::parser::{MessageHandler, MessageHandlerError};
 use crate::soap::{HostMessage, UnicastMessage, WSDMessage, builder};
 use crate::span::MakeSpanWithUuid;
 
-pub fn build_router(config: Arc<Config>, message_handler: MessageHandler) -> Router {
+pub(crate) fn build_router(config: Arc<Config>, message_handler: MessageHandler) -> Router {
     let post_path = format!("/{}", config.uuid);
 
     let router = Router::new()

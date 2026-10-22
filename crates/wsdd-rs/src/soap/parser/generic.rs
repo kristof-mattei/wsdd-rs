@@ -11,7 +11,7 @@ use crate::soap::parser::BodyParsingError;
 use crate::wsd::device::DeviceUri;
 use crate::xml::{XmlError, XmlReader, read_text};
 
-pub fn extract_endpoint_reference_address<R>(
+pub(crate) fn extract_endpoint_reference_address<R>(
     reader: &mut XmlReader<R>,
 ) -> Result<Box<str>, BodyParsingError>
 where
@@ -59,7 +59,7 @@ where
 
 /// Parses an `xs:unsignedInt` into a `u64`, see `config.rs::AppSequence` for why 64 bits.
 /// Only decimal digits, between XML white space, see documentation/xmlschema-2.pdf, 3.3.22.1 and 4.3.6.
-pub fn parse_unsigned_int(value: &str) -> Option<u64> {
+pub(crate) fn parse_unsigned_int(value: &str) -> Option<u64> {
     let digits = value.trim_matches(is_whitespace_char);
 
     if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -70,14 +70,17 @@ pub fn parse_unsigned_int(value: &str) -> Option<u64> {
 }
 
 /// Splits an `xs:list` value at XML white space, see documentation/xmlschema-2.pdf, 4.3.6.
-pub fn list_items(value: &str) -> impl Iterator<Item = &str> {
+pub(crate) fn list_items(value: &str) -> impl Iterator<Item = &str> {
     value
         .split(is_whitespace_char)
         .filter(|item| !item.is_empty())
 }
 
 /// Resolves an `xs:QName` to its namespace and local name, see documentation/xmlschema-2.pdf, 3.2.18.
-pub fn resolve_qname<'a>(raw: &'a str, namespaces: &'a Namespace) -> Option<(&'a str, &'a str)> {
+pub(crate) fn resolve_qname<'a>(
+    raw: &'a str,
+    namespaces: &'a Namespace,
+) -> Option<(&'a str, &'a str)> {
     match raw.split_once(':') {
         None => is_ncname(raw).then(|| (namespaces.get(NS_NO_PREFIX).unwrap_or(NS_EMPTY_URI), raw)),
         Some((prefix, local_name)) => {
@@ -134,14 +137,14 @@ impl EndpointMetadataChild {
 }
 
 #[derive(Debug)]
-pub enum RawXAddrs {
+pub(crate) enum RawXAddrs {
     Absent,
     Empty,
     Text(Box<str>),
 }
 
 impl RawXAddrs {
-    pub fn into_text(self) -> Option<Box<str>> {
+    pub(crate) fn into_text(self) -> Option<Box<str>> {
         match self {
             RawXAddrs::Absent | RawXAddrs::Empty => None,
             RawXAddrs::Text(raw_xaddrs) => Some(raw_xaddrs),
@@ -149,7 +152,7 @@ impl RawXAddrs {
     }
 }
 
-pub struct EndpointMetadata {
+pub(crate) struct EndpointMetadata {
     pub endpoint: DeviceUri,
     pub raw_xaddrs: RawXAddrs,
     /// `Err` holds the text of an invalid value.
@@ -158,7 +161,7 @@ pub struct EndpointMetadata {
     pub invalid_types: Option<Box<str>>,
 }
 
-pub fn require_valid_types(invalid_types: Option<Box<str>>) -> Result<(), BodyParsingError> {
+pub(crate) fn require_valid_types(invalid_types: Option<Box<str>>) -> Result<(), BodyParsingError> {
     match invalid_types {
         Some(raw_types) => Err(BodyParsingError::InvalidTypes(raw_types)),
         None => Ok(()),
@@ -166,7 +169,7 @@ pub fn require_valid_types(invalid_types: Option<Box<str>>) -> Result<(), BodyPa
 }
 
 /// Hello, `ProbeMatch` and `ResolveMatch` require a valid `MetadataVersion`, only Bye makes it optional, see documentation/ws-discovery.pdf, Appendix II.
-pub fn require_metadata_version(
+pub(crate) fn require_metadata_version(
     metadata_version: Option<Result<u64, Box<str>>>,
 ) -> Result<u64, BodyParsingError> {
     match metadata_version {
@@ -176,7 +179,7 @@ pub fn require_metadata_version(
     }
 }
 
-pub fn extract_endpoint_metadata<R>(
+pub(crate) fn extract_endpoint_metadata<R>(
     reader: &mut XmlReader<R>,
 ) -> Result<EndpointMetadata, BodyParsingError>
 where

@@ -1,11 +1,11 @@
-pub mod bye;
-pub mod empty_body;
-pub mod hello;
-pub mod metadata;
-pub mod probe;
-pub mod probe_matches;
-pub mod resolve;
-pub mod resolve_matches;
+pub(crate) mod bye;
+pub(crate) mod empty_body;
+pub(crate) mod hello;
+pub(crate) mod metadata;
+pub(crate) mod probe;
+pub(crate) mod probe_matches;
+pub(crate) mod resolve;
+pub(crate) mod resolve_matches;
 
 use std::io::Write;
 use std::net::IpAddr;
@@ -19,7 +19,7 @@ use crate::soap::PrefixedName;
 use crate::url_ip_addr::UrlIpAddr;
 use crate::wsd::device::DeviceUri;
 
-pub trait WriteBody<W>
+pub(crate) trait WriteBody<W>
 where
     W: Write,
 {

@@ -87,7 +87,7 @@ impl WSDClient {
     ///
     /// * `incoming_rx`: used to receive client messages from every subscribed socket
     /// * `mc_local_port_tx`: use to send multicast messages, from the local port to `WSD_PORT`
-    pub fn init(
+    pub(crate) fn init(
         cancellation_token: CancellationToken,
         config: Arc<Config>,
         devices: Arc<parking_lot::RwLock<Devices>>,
@@ -129,7 +129,7 @@ impl WSDClient {
         client
     }
 
-    pub async fn teardown(self) {
+    pub(crate) async fn teardown(self) {
         self.cancellation_token.cancel();
 
         let _r = self.handle.await;
@@ -154,7 +154,7 @@ impl WSDClient {
     }
 
     /// Asks the client loop to send a Probe.
-    pub async fn send_probe(&self) -> Result<(), eyre::Report> {
+    pub(crate) async fn send_probe(&self) -> Result<(), eyre::Report> {
         self.probe_tx
             .send(())
             .await

@@ -9,12 +9,12 @@ use tower_http::BoxError;
 use tower_service::Service as _;
 
 /// Alias for an `Iterator` trait object over `SocketAddr`.
-pub type Addrs = Box<dyn Iterator<Item = SocketAddr> + Send>;
+pub(crate) type Addrs = Box<dyn Iterator<Item = SocketAddr> + Send>;
 
 /// Alias for the `Future` type returned by a DNS resolver.
-pub type Resolving = Pin<Box<dyn Future<Output = Result<Addrs, BoxError>> + Send>>;
+pub(crate) type Resolving = Pin<Box<dyn Future<Output = Result<Addrs, BoxError>> + Send>>;
 
-pub struct GaiResolver {
+pub(crate) struct GaiResolver {
     inner: HyperGaiResolver,
 }
 
@@ -25,13 +25,13 @@ impl std::default::Default for GaiResolver {
 }
 
 impl GaiResolver {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             inner: HyperGaiResolver::new(),
         }
     }
 
-    pub fn resolve(&self, name: HyperName) -> Resolving {
+    pub(crate) fn resolve(&self, name: HyperName) -> Resolving {
         let mut this = self.inner.clone();
 
         Box::pin(async move {

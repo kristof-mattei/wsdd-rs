@@ -18,9 +18,9 @@ use crate::utils::{u16_to_usize, u32_to_usize};
 const NLMSG_ALIGNTO: usize = 4;
 
 /// Larger than `align_of::<rtattr>()`, which is 2.
-pub const RTA_ALIGNTO: usize = 4;
+pub(crate) const RTA_ALIGNTO: usize = 4;
 
-pub trait RecvBuf<B: BufMut> {
+pub(crate) trait RecvBuf<B: BufMut> {
     /// Returns the full length of the next datagram and leaves it queued.
     async fn peek_len(&self) -> io::Result<usize>;
 
@@ -46,10 +46,10 @@ impl<B: BufMut> RecvBuf<B> for &tokio::net::UdpSocket {
     }
 }
 
-pub struct ReceiveBuffer(Box<[MaybeUninit<u8>]>);
+pub(crate) struct ReceiveBuffer(Box<[MaybeUninit<u8>]>);
 
 impl ReceiveBuffer {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         // Can't have smaller than this on x86
         const MIN_PAGE_SIZE: usize = 4096;
         // `NLMSG_GOODSIZE` uses at most 8192 bytes, whatever the page size
@@ -62,7 +62,7 @@ impl ReceiveBuffer {
         Self(Box::new_uninit_slice(page_size))
     }
 
-    pub async fn receive<R>(&mut self, socket: &R) -> io::Result<Messages<'_>>
+    pub(crate) async fn receive<R>(&mut self, socket: &R) -> io::Result<Messages<'_>>
     where
         R: for<'a> RecvBuf<&'a mut [MaybeUninit<u8>]>,
     {
@@ -85,7 +85,7 @@ impl ReceiveBuffer {
         Ok(Messages(received))
     }
 
-    pub fn discard_queued<R>(&mut self, socket: &R) -> io::Result<()>
+    pub(crate) fn discard_queued<R>(&mut self, socket: &R) -> io::Result<()>
     where
         R: for<'a> RecvBuf<&'a mut [MaybeUninit<u8>]>,
     {
@@ -106,16 +106,16 @@ impl ReceiveBuffer {
     }
 }
 
-pub struct Messages<'a>(&'a [u8]);
+pub(crate) struct Messages<'a>(&'a [u8]);
 
 impl Messages<'_> {
     /// The number of bytes received.
-    pub fn byte_len(&self) -> usize {
+    pub(crate) fn byte_len(&self) -> usize {
         self.0.len()
     }
 }
 
-pub struct Header {
+pub(crate) struct Header {
     pub dump_interrupted: bool,
 }
 
@@ -142,7 +142,7 @@ impl<'a> Iterator for Messages<'a> {
     }
 }
 
-pub enum Message<'a> {
+pub(crate) enum Message<'a> {
     Done,
     /// An `NLMSG_ERROR` with error code 0.
     Ack,
@@ -257,7 +257,7 @@ impl IpFamily {
     }
 }
 
-pub struct Attributes<'a> {
+pub(crate) struct Attributes<'a> {
     family: IpFamily,
     buffer: &'a [u8],
 }
@@ -298,19 +298,19 @@ impl<'a> Iterator for Attributes<'a> {
     }
 }
 
-pub enum Attribute<'a> {
+pub(crate) enum Attribute<'a> {
     Address(AddressValue<'a>),
     Local(AddressValue<'a>),
     Other,
 }
 
-pub struct AddressValue<'a> {
+pub(crate) struct AddressValue<'a> {
     family: IpFamily,
     value: &'a [u8],
 }
 
 impl AddressValue<'_> {
-    pub fn decode(self) -> IpAddr {
+    pub(crate) fn decode(self) -> IpAddr {
         match self.family {
             IpFamily::V4 => {
                 let octets: [u8; 4] = self

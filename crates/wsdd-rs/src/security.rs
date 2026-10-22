@@ -9,7 +9,7 @@ use tracing::{Level, event};
 #[cfg(any(test, miri))]
 const I_DO_NOT_EXIST: &str = "I_DO_NOT_EXIST";
 
-pub fn parse_userspec(user_spec: &str) -> Result<(u32, u32), String> {
+pub(crate) fn parse_userspec(user_spec: &str) -> Result<(u32, u32), String> {
     let (user_id, group_id) = user_spec
         .split_once(':')
         .ok_or(String::from("Wrong format (expected `username:groupname`)"))?;
@@ -111,7 +111,7 @@ fn getgrname(group: &str) -> Result<u32, String> {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum DropPrivilegesError {
+pub(crate) enum DropPrivilegesError {
     #[error("could not switch to {}:{}, setgid/setegid failed: {}", .requested_uid, .requested_gid, .error)]
     Group {
         requested_uid: u32,
@@ -126,7 +126,7 @@ pub enum DropPrivilegesError {
     },
 }
 
-pub fn drop_privileges(uid: u32, gid: u32) -> Result<(), DropPrivilegesError> {
+pub(crate) fn drop_privileges(uid: u32, gid: u32) -> Result<(), DropPrivilegesError> {
     // SAFETY: libc calls
     if unsafe { -1 == setgid(gid) } || unsafe { -1 == setegid(gid) } {
         return Err(DropPrivilegesError::Group {
@@ -155,7 +155,7 @@ pub fn drop_privileges(uid: u32, gid: u32) -> Result<(), DropPrivilegesError> {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum ChrootError {
+pub(crate) enum ChrootError {
     #[error("invalid chroot path: {}", .0)]
     InvalidPath(NulError),
     #[error("could not chroot to {}: {}", .path.display(), .error)]
@@ -165,7 +165,7 @@ pub enum ChrootError {
 }
 
 /// Chroot into a separate directory to isolate ourself for increased security.
-pub fn chroot(root: &Path) -> Result<(), ChrootError> {
+pub(crate) fn chroot(root: &Path) -> Result<(), ChrootError> {
     let path = CString::new(root.as_os_str().as_bytes()).map_err(ChrootError::InvalidPath)?;
 
     // SAFETY: libc call

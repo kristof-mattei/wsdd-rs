@@ -16,7 +16,7 @@ use crate::soap::MessageId;
 use crate::soap::parser::MessageHandler;
 use crate::wsd::http::router::build_router;
 
-pub struct WSDHttpServer {
+pub(crate) struct WSDHttpServer {
     _bound_to: NetworkAddress,
     cancellation_token: CancellationToken,
     _config: Arc<Config>,
@@ -26,7 +26,7 @@ pub struct WSDHttpServer {
 }
 
 impl WSDHttpServer {
-    pub fn init(
+    pub(crate) fn init(
         bound_to: NetworkAddress,
         cancellation_token: CancellationToken,
         config: Arc<Config>,
@@ -62,11 +62,11 @@ impl WSDHttpServer {
     }
 
     #[cfg(test)]
-    pub fn http_bound_to(&self) -> SocketAddr {
+    pub(crate) fn http_bound_to(&self) -> SocketAddr {
         self.http_bound_to
     }
 
-    pub async fn teardown(self) {
+    pub(crate) async fn teardown(self) {
         self.cancellation_token.cancel();
 
         let _r = self.handle.await;
@@ -102,7 +102,7 @@ fn bind_listener(
 ///
 /// # Errors
 /// * Server failure
-pub async fn launch_http_server(
+pub(crate) async fn launch_http_server(
     cancellation_token: CancellationToken,
     listener: tokio::net::TcpListener,
     router: Router,

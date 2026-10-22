@@ -21,14 +21,14 @@ struct ClientHostListener {
     host_tx: Option<Sender<IncomingHostMessage>>,
     client_tx: Option<Sender<IncomingClientMessage>>,
 }
-pub struct MessageReceiver {
+pub(crate) struct MessageReceiver {
     cancellation_token: CancellationToken,
     handle: JoinHandle<()>,
     listeners: Arc<RwLock<ClientHostListener>>,
 }
 
 impl MessageReceiver {
-    pub fn new(
+    pub(crate) fn new(
         cancellation_token: CancellationToken,
         network_address: NetworkAddress,
         recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
@@ -61,7 +61,10 @@ impl MessageReceiver {
         }
     }
 
-    pub async fn subscribe_host(&mut self, tx: Sender<IncomingHostMessage>) -> Result<(), ()> {
+    pub(crate) async fn subscribe_host(
+        &mut self,
+        tx: Sender<IncomingHostMessage>,
+    ) -> Result<(), ()> {
         let mut writer = self.listeners.write().await;
 
         if writer.host_tx.is_some() {
@@ -73,7 +76,10 @@ impl MessageReceiver {
         Ok(())
     }
 
-    pub async fn subscribe_client(&mut self, tx: Sender<IncomingClientMessage>) -> Result<(), ()> {
+    pub(crate) async fn subscribe_client(
+        &mut self,
+        tx: Sender<IncomingClientMessage>,
+    ) -> Result<(), ()> {
         let mut writer = self.listeners.write().await;
 
         if writer.client_tx.is_some() {
@@ -85,7 +91,7 @@ impl MessageReceiver {
         Ok(())
     }
 
-    pub async fn teardown(self) {
+    pub(crate) async fn teardown(self) {
         self.cancellation_token.cancel();
 
         let _r = self.handle.await;

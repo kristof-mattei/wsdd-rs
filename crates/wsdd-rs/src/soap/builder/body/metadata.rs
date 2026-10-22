@@ -9,10 +9,10 @@ use crate::constants;
 use crate::soap::builder::WriteBody;
 use crate::soap::builder::body::{add_endpoint_reference, add_qnames};
 
-pub struct MetaData;
+pub(crate) struct MetaData;
 
 impl MetaData {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {}
     }
 }

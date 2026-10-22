@@ -8,7 +8,7 @@ use tracing::{Level, event};
 ///
 /// # Errors
 /// See the underlying `sd_listen_fds(3)` systemd function.
-pub fn listen_fds(unset_environment: bool) -> Result<Vec<i32>, std::io::Error> {
+pub(crate) fn listen_fds(unset_environment: bool) -> Result<Vec<i32>, std::io::Error> {
     #[link(name = "systemd")]
     unsafe extern "C" {
         fn sd_listen_fds(unset_environment: c_int) -> c_int;
@@ -30,12 +30,12 @@ pub fn listen_fds(unset_environment: bool) -> Result<Vec<i32>, std::io::Error> {
 
 #[cfg(not(feature = "systemd"))]
 #[expect(clippy::unnecessary_wraps, reason = "Mirror systemd API")]
-pub fn listen_fds(_unset_environment: bool) -> Result<Vec<i32>, std::io::Error> {
+pub(crate) fn listen_fds(_unset_environment: bool) -> Result<Vec<i32>, std::io::Error> {
     Ok(vec![])
 }
 
 #[cfg(not(miri))]
-pub fn getpagesize() -> usize {
+pub(crate) fn getpagesize() -> usize {
     use crate::utils::u32_to_usize;
 
     unsafe extern "C" {
@@ -49,6 +49,6 @@ pub fn getpagesize() -> usize {
 }
 
 #[cfg(miri)]
-pub fn getpagesize() -> usize {
+pub(crate) fn getpagesize() -> usize {
     const { 1024 * 8 }
 }

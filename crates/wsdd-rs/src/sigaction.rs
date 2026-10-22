@@ -15,7 +15,7 @@ use crate::wrap_and_report;
 /// `sig_handler` runs in signal context.
 /// It must only call async-signal-safe functions (signal-safety(7)), anything else is undefined behavior.
 /// That rules out allocation, locks, and most of std.
-pub unsafe fn set_up_handler(
+pub(crate) unsafe fn set_up_handler(
     signum: c_int,
     sig_handler: extern "C" fn(_: c_int),
 ) -> Result<(), eyre::Report> {

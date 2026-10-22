@@ -21,7 +21,7 @@ macro_rules! syscall {
 
 #[expect(unused, reason = "socket2 now supports all the settings we use")]
 /// Caller must ensure `T` is the correct type for `opt` and `val`.
-pub unsafe fn setsockopt<F: AsFd, T>(
+pub(crate) unsafe fn setsockopt<F: AsFd, T>(
     fd: F,
     opt: c_int,
     val: c_int,

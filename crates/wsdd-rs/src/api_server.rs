@@ -39,14 +39,14 @@ const ISO8601_SECOND_PRECISION: Iso8601<
     },
 > = Iso8601;
 
-pub struct ApiServer {
+pub(crate) struct ApiServer {
     cancellation_token: CancellationToken,
     command_tx: Sender<Command>,
     listeners: Listeners,
 }
 
 impl ApiServer {
-    pub fn new(
+    pub(crate) fn new(
         cancellation_token: CancellationToken,
         listen_on: &PortOrSocket,
         command_tx: Sender<Command>,
@@ -137,7 +137,7 @@ impl ApiServer {
         })
     }
 
-    pub async fn handle_connections(&self) -> Result<(), eyre::Report> {
+    pub(crate) async fn handle_connections(&self) -> Result<(), eyre::Report> {
         let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
 
         loop {
@@ -204,7 +204,7 @@ impl ApiServer {
         }
     }
 
-    pub fn teardown(self) {
+    pub(crate) fn teardown(self) {
         self.cancellation_token.cancel();
     }
 }

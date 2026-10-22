@@ -16,10 +16,10 @@ use crate::xml::{XmlError, XmlReader, find_child, find_optional_child, read_text
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[repr(transparent)]
 /// Represents an opaque Device URI.
-pub struct DeviceUri(Box<str>);
+pub(crate) struct DeviceUri(Box<str>);
 
 impl DeviceUri {
-    pub fn new<I: Into<Box<str>>>(device_uri: I) -> Self {
+    pub(crate) fn new<I: Into<Box<str>>>(device_uri: I) -> Self {
         Self(device_uri.into())
     }
 }
@@ -45,7 +45,7 @@ impl std::fmt::Display for DeviceUri {
 }
 
 #[derive(Clone, Debug)]
-pub struct WSDDiscoveredDevice {
+pub(crate) struct WSDDiscoveredDevice {
     addresses: HashMap<Box<str>, HashSet<Box<str>>>,
     props: HashMap<Box<str>, Box<str>>,
     display_name: Option<Box<str>>,
@@ -54,7 +54,7 @@ pub struct WSDDiscoveredDevice {
 }
 
 impl WSDDiscoveredDevice {
-    pub fn new(
+    pub(crate) fn new(
         device_uri: &DeviceUri,
         meta: &[u8],
         xaddr: &XAddr,
@@ -73,27 +73,27 @@ impl WSDDiscoveredDevice {
         Ok(device)
     }
 
-    pub fn addresses(&self) -> &HashMap<Box<str>, HashSet<Box<str>>> {
+    pub(crate) fn addresses(&self) -> &HashMap<Box<str>, HashSet<Box<str>>> {
         &self.addresses
     }
 
-    pub fn props(&self) -> &HashMap<Box<str>, Box<str>> {
+    pub(crate) fn props(&self) -> &HashMap<Box<str>, Box<str>> {
         &self.props
     }
 
-    pub fn display_name(&self) -> Option<&str> {
+    pub(crate) fn display_name(&self) -> Option<&str> {
         self.display_name.as_deref()
     }
 
-    pub fn last_seen(&self) -> &OffsetDateTime {
+    pub(crate) fn last_seen(&self) -> &OffsetDateTime {
         &self.last_seen
     }
 
-    pub fn types(&self) -> &HashSet<Box<str>> {
+    pub(crate) fn types(&self) -> &HashSet<Box<str>> {
         &self.types
     }
 
-    pub fn update(
+    pub(crate) fn update(
         &mut self,
         device_uri: &DeviceUri,
         meta: &[u8],

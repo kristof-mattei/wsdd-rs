@@ -2,7 +2,7 @@ use tokio::task::JoinHandle;
 
 use crate::utils::task::spawn_with_name;
 
-pub trait TaskTrackerExt {
+pub(crate) trait TaskTrackerExt {
     #[track_caller]
     fn spawn_with_name<F>(&self, name: &str, task: F) -> JoinHandle<F::Output>
     where
