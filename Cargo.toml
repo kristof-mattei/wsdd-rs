@@ -290,6 +290,7 @@ unused_import_braces = { level = "deny", priority = 127 }
 unused_lifetimes = { level = "deny", priority = 127 }
 unused_macro_rules = { level = "deny", priority = 127 }
 unused_qualifications = { level = "deny", priority = 127 }
-unused_results = { level = "deny", priority = 127 }
+# No, `unused_must_use` already covers results that matter
+# unused_results = { level = "deny", priority = 127 }
 # No, we already have `clippy::large_enum_variant`
 # variant_size_differences = { level = "deny", priority = 127 }
