@@ -1912,7 +1912,7 @@ mod tests {
         let (_incoming_tx, incoming_rx) = tokio::sync::mpsc::channel(10);
         let (mc_local_port_tx, mut mc_local_port_rx) = tokio::sync::mpsc::channel(10);
 
-        let bound_to = crate::network_address::NetworkAddress::new(
+        let bound_to = NetworkAddress::new(
             Ipv4Net::new(Ipv4Addr::new(192, 168, 100, 5), 24)
                 .unwrap()
                 .into(),

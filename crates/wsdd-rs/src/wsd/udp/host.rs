@@ -9,7 +9,7 @@ use tracing::{Level, event};
 use crate::config::Config;
 use crate::multicast_handler::{IncomingHostMessage, OutgoingMessage, OutgoingMulticastMessage};
 use crate::network_address::NetworkAddress;
-use crate::soap::builder::{self, Builder};
+use crate::soap::builder::Builder;
 use crate::soap::parser::probe::Probe;
 use crate::soap::parser::resolve::Resolve;
 use crate::soap::{HostMessage, MessageId, UnicastMessage};
@@ -139,9 +139,7 @@ pub(crate) fn handle_probe(
     probe: &Probe,
 ) -> Result<Option<UnicastMessage>, eyre::Report> {
     if probe.matches() {
-        Ok(Some(builder::Builder::build_probe_matches(
-            config, relates_to,
-        )?))
+        Ok(Some(Builder::build_probe_matches(config, relates_to)?))
     } else {
         event!(
             Level::DEBUG,
@@ -161,7 +159,7 @@ fn handle_resolve(
     resolve: &Resolve,
 ) -> Result<Option<UnicastMessage>, eyre::Report> {
     if resolve.addr_urn == target_uuid.urn() {
-        Ok(Some(builder::Builder::build_resolve_matches(
+        Ok(Some(Builder::build_resolve_matches(
             config, address, relates_to,
         )?))
     } else {

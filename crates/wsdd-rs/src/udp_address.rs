@@ -30,7 +30,7 @@ impl UdpAddress {
     }
 }
 
-impl std::cmp::PartialEq for UdpAddress {
+impl PartialEq for UdpAddress {
     fn eq(&self, other: &Self) -> bool {
         self.transport_address == other.transport_address
     }
