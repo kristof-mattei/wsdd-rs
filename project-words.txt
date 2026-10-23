@@ -189,6 +189,7 @@ startswith
 steffen
 strerror
 striptags
+supertrait
 syscall
 syscalls
 taiki
