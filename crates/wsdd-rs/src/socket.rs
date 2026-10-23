@@ -34,15 +34,15 @@ pub(crate) unsafe fn setsockopt<F: AsFd, T>(
         clippy::cast_possible_truncation,
         reason = "Compile-time assert guarantees no truncation, `as` is required until TryInto is available in `const`"
     )]
-    let length: libc::socklen_t = const {
-        let size = std::mem::size_of::<T>();
+    let length: socklen_t = const {
+        let size = size_of::<T>();
 
         assert!(
             size <= u32_to_usize(socklen_t::MAX),
             "Payload type T is too large to fit in a libc::socklen_t"
         );
 
-        size as libc::socklen_t
+        size as socklen_t
     };
 
     syscall!(

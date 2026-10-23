@@ -4,7 +4,6 @@ mod netlink_address_monitor;
 #[cfg(any(target_os = "freebsd", target_os = "macos", target_os = "openbsd"))]
 mod route_socket_address_monitor;
 
-use std::convert::Into;
 use std::sync::Arc;
 
 use color_eyre::eyre;

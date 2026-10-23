@@ -14,7 +14,7 @@ pub(crate) struct NetworkInterface {
 }
 
 impl NetworkInterface {
-    pub(crate) fn new<I: AsRef<str>>(name: I, scope: u8) -> Result<Self, std::io::Error> {
+    pub(crate) fn new<I: AsRef<str>>(name: I, scope: u8) -> Result<Self, Error> {
         let name: &str = name.as_ref();
 
         let index = if_nametoindex(name)?;
@@ -55,7 +55,7 @@ impl std::fmt::Display for NetworkInterface {
     }
 }
 
-pub(crate) fn if_nametoindex(name: &str) -> Result<u32, std::io::Error> {
+pub(crate) fn if_nametoindex(name: &str) -> Result<u32, Error> {
     let name = CString::new(name).expect("Couldn't convert name to CString");
 
     // SAFETY: libc call
@@ -68,7 +68,7 @@ pub(crate) fn if_nametoindex(name: &str) -> Result<u32, std::io::Error> {
     }
 }
 
-pub(crate) fn if_indextoname(index: u32) -> Result<Box<str>, std::io::Error> {
+pub(crate) fn if_indextoname(index: u32) -> Result<Box<str>, Error> {
     let mut buffer = vec![0_u8; IF_NAMESIZE];
 
     // SAFETY: libc call
@@ -81,7 +81,7 @@ pub(crate) fn if_indextoname(index: u32) -> Result<Box<str>, std::io::Error> {
     let ifname = CStr::from_bytes_until_nul(&buffer)
         .expect("We used oversized buffer, so not finding a null is impossible")
         .to_str()
-        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
+        .map_err(|error| Error::new(std::io::ErrorKind::InvalidInput, error))?;
 
     Ok(String::from(ifname).into_boxed_str())
 }
@@ -121,19 +121,19 @@ impl AsRef<str> for DevName {
 
 #[cfg_attr(test, mockall::automock)]
 pub(crate) trait ResolveInterfaceName {
-    fn resolve(&self, index: u32) -> Result<Box<str>, std::io::Error>;
+    fn resolve(&self, index: u32) -> Result<Box<str>, Error>;
 
-    fn index_of(&self, name: &str) -> Result<u32, std::io::Error>;
+    fn index_of(&self, name: &str) -> Result<u32, Error>;
 }
 
 pub(crate) struct LibcInterfaceNameResolver;
 
 impl ResolveInterfaceName for LibcInterfaceNameResolver {
-    fn resolve(&self, index: u32) -> Result<Box<str>, std::io::Error> {
+    fn resolve(&self, index: u32) -> Result<Box<str>, Error> {
         if_indextoname(index)
     }
 
-    fn index_of(&self, name: &str) -> Result<u32, std::io::Error> {
+    fn index_of(&self, name: &str) -> Result<u32, Error> {
         if_nametoindex(name)
     }
 }

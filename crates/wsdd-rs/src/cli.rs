@@ -319,15 +319,15 @@ fn gethostname() -> Result<Box<str>, eyre::Report> {
 
 fn get_uuid_from_machine() -> Result<Uuid, eyre::Report> {
     #[cfg(miri)]
-    fn read_uuid_from_file(_path: &Path) -> Option<uuid::Uuid> {
+    fn read_uuid_from_file(_path: &Path) -> Option<Uuid> {
         None
     }
 
     #[cfg(not(miri))]
-    fn read_uuid_from_file(path: &Path) -> Option<uuid::Uuid> {
+    fn read_uuid_from_file(path: &Path) -> Option<Uuid> {
         let content = std::fs::read_to_string(path).ok()?;
 
-        uuid::Uuid::try_parse(content.trim()).ok()
+        Uuid::try_parse(content.trim()).ok()
     }
 
     // machine uuid: try machine-id file first but also check for hostid (FreeBSD)
@@ -335,7 +335,7 @@ fn get_uuid_from_machine() -> Result<Uuid, eyre::Report> {
         .or_else(|| read_uuid_from_file(Path::new("/etc/hostid")))
     {
         Some(uuid) => uuid,
-        None => uuid::Uuid::new_v5(&Uuid::NAMESPACE_DNS, gethostname()?.as_bytes()),
+        None => Uuid::new_v5(&Uuid::NAMESPACE_DNS, gethostname()?.as_bytes()),
     };
 
     event!(Level::INFO, %uuid, "using pre-defined UUID");

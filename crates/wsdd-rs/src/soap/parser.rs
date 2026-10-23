@@ -26,7 +26,7 @@ use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
 use crate::soap::parser::app_sequence::{AppSequence, InvalidAppSequence};
 use crate::soap::parser::get::Get;
-use crate::soap::{self, MessageId, WSDMessage};
+use crate::soap::{MessageId, WSDMessage};
 use crate::wsd::device::DeviceUri;
 use crate::xml::{TextReadError, XmlError, XmlReader, read_text};
 
@@ -380,37 +380,27 @@ fn parse_message_body(
         constants::WSD_HELLO => {
             let app_sequence = require_app_sequence(app_sequence)?;
 
-            Ok(soap::parser::hello::parse_hello(&mut reader, app_sequence)?.into())
+            Ok(hello::parse_hello(&mut reader, app_sequence)?.into())
         },
         constants::WSD_BYE => {
             let app_sequence = require_app_sequence(app_sequence)?;
 
-            Ok(soap::parser::bye::parse_bye(&mut reader, app_sequence)?.into())
+            Ok(bye::parse_bye(&mut reader, app_sequence)?.into())
         },
         constants::WSD_PROBE_MATCH => {
             let relates_to = require_relates_to(relates_to)?;
             let app_sequence = require_app_sequence(app_sequence)?;
 
-            Ok(soap::parser::probe_match::parse_probe_matches(
-                &mut reader,
-                relates_to,
-                app_sequence,
-            )?
-            .into())
+            Ok(probe_match::parse_probe_matches(&mut reader, relates_to, app_sequence)?.into())
         },
         constants::WSD_RESOLVE_MATCH => {
             let relates_to = require_relates_to(relates_to)?;
             let app_sequence = require_app_sequence(app_sequence)?;
 
-            Ok(soap::parser::resolve_match::parse_resolve_matches(
-                &mut reader,
-                relates_to,
-                app_sequence,
-            )?
-            .into())
+            Ok(resolve_match::parse_resolve_matches(&mut reader, relates_to, app_sequence)?.into())
         },
-        constants::WSD_PROBE => Ok(soap::parser::probe::parse_probe(&mut reader)?.into()),
-        constants::WSD_RESOLVE => Ok(soap::parser::resolve::parse_resolve(&mut reader)?.into()),
+        constants::WSD_PROBE => Ok(probe::parse_probe(&mut reader)?.into()),
+        constants::WSD_RESOLVE => Ok(resolve::parse_resolve(&mut reader)?.into()),
         action => Err(MessageHandlerError::UnsupportedAction(Box::from(action))),
     }?;
 

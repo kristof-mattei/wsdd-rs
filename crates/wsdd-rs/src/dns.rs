@@ -18,7 +18,7 @@ pub(crate) struct GaiResolver {
     inner: HyperGaiResolver,
 }
 
-impl std::default::Default for GaiResolver {
+impl Default for GaiResolver {
     fn default() -> Self {
         Self::new()
     }

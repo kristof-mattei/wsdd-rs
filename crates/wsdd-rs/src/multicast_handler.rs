@@ -454,7 +454,7 @@ impl MulticastHandler {
 
     pub(crate) async fn enable_wsd_host(&mut self) {
         self.wsd_host
-            .get_or_init(|| async {
+            .get_or_init(async || {
                 let (host_tx, host_rx) = tokio::sync::mpsc::channel(10);
 
                 self.mc_wsd_port_rx
@@ -485,7 +485,7 @@ impl MulticastHandler {
 
     pub(crate) async fn enable_wsd_client(&mut self) {
         self.wsd_client
-            .get_or_init(|| async {
+            .get_or_init(async || {
                 let (client_tx, client_rx) = tokio::sync::mpsc::channel(10);
 
                 self.mc_wsd_port_rx
@@ -513,7 +513,7 @@ impl MulticastHandler {
     pub(crate) async fn enable_http_server(&self) {
         let result = self
             .http_server
-            .get_or_try_init(|| async {
+            .get_or_try_init(async || {
                 WSDHttpServer::init(
                     self.network_address.clone(),
                     self.cancellation_token.child_token(),

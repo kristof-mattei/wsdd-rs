@@ -6,7 +6,7 @@ where
     Fut: Future + Send + 'static,
     Fut::Output: Send + 'static,
 {
-    let builder: Builder = Builder::new();
+    let builder: Builder<'_> = Builder::new();
 
     let builder = builder.name(name);
 

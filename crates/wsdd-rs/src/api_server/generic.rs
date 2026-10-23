@@ -12,7 +12,7 @@ pub(crate) enum GenericReadHalf {
 
 impl AsyncRead for GenericReadHalf {
     fn poll_read(
-        self: std::pin::Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &mut io::ReadBuf<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {

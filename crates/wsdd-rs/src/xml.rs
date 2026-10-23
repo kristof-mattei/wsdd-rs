@@ -264,9 +264,9 @@ mod tests {
         let mut reader = make_reader(xml);
 
         {
-            let _unused: Result<xml::reader::XmlEvent, xml::reader::Error> = reader.next();
-            let _unused: Result<xml::reader::XmlEvent, xml::reader::Error> = reader.next();
-            let _unused: Result<xml::reader::XmlEvent, xml::reader::Error> = reader.next();
+            let _unused: Result<XmlEvent, xml::reader::Error> = reader.next();
+            let _unused: Result<XmlEvent, xml::reader::Error> = reader.next();
+            let _unused: Result<XmlEvent, xml::reader::Error> = reader.next();
         }
 
         let _result = find_child(&mut reader, Some("urn:level3_ns"), "Level3");
