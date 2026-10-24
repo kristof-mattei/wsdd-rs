@@ -1,4 +1,27 @@
 <!-- header goes here -->
+## [1.1.3](https://github.com/kristof-mattei/wsdd-rs/compare/v1.1.2..v1.1.3) - 2026-10-24
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update rust crate tokio to v1.54.1 by [@renovate[bot]](https://github.com/renovate[bot]) ([`ff276d1`](https://github.com/kristof-mattei/wsdd-rs/commit/ff276d15e112f4ee618ff2c88631b724eaed0be8))
+- *(deps)* Update rust crate parking_lot to v0.13.0 by [@renovate[bot]](https://github.com/renovate[bot]) ([`b9fe872`](https://github.com/kristof-mattei/wsdd-rs/commit/b9fe872937759f9c213d19f25d3cba8fec3a372a))
+- *(deps)* Update rust crate uuid to v1.29.0 by [@renovate[bot]](https://github.com/renovate[bot]) ([`1687118`](https://github.com/kristof-mattei/wsdd-rs/commit/1687118af2c3c04daca417af066db6f8b09201d1))
+
+### 🚜 Refactor
+
+- Remove the unused `From<XAddr>` impl for `Url` by [@kristof-mattei](https://github.com/kristof-mattei) ([`10bc473`](https://github.com/kristof-mattei/wsdd-rs/commit/10bc4736ffed48fcf22b281cf20d2f75c916c824))
+
+### ⚙️ Miscellaneous Tasks
+
+- *(lint)* Enforce `unreachable_pub` lint by [@kristof-mattei](https://github.com/kristof-mattei) ([`00e6c14`](https://github.com/kristof-mattei/wsdd-rs/commit/00e6c144f419c0564c528f31e3f5cdbba3a43925))
+- *(lint)* Address new lints by [@kristof-mattei](https://github.com/kristof-mattei) ([`ac98e46`](https://github.com/kristof-mattei/wsdd-rs/commit/ac98e4602f46784eba050000e5bb40bd60b75afc))
+- *(release)* Render the breaking change description as a paragraph, not a list item by [@kristof-mattei](https://github.com/kristof-mattei) ([`639bae2`](https://github.com/kristof-mattei/wsdd-rs/commit/639bae2d5d5fbeec2a97b950b044af86bbbe8ff6))
+- Deny allow-by-default `rustc` lints without a `clippy` equivalent by [@kristof-mattei](https://github.com/kristof-mattei) ([`94b0f18`](https://github.com/kristof-mattei/wsdd-rs/commit/94b0f1828518c3aa3d64b75dded6c80c0d505f2e))
+- Track Clippy 1.97 and 1.99 restriction lints, deny `inline_modules` by [@kristof-mattei](https://github.com/kristof-mattei) ([`c06adf7`](https://github.com/kristof-mattei/wsdd-rs/commit/c06adf7d6eb1c68e64c9de790e50c159c562e3f2))
+- Move the next-version calculation into `calculate-next-version` by [@kristof-mattei](https://github.com/kristof-mattei) ([`2afb59c`](https://github.com/kristof-mattei/wsdd-rs/commit/2afb59c01fdbb35748fdab8de0715c3e40b27001))
+- Check the public API against the latest release with `cargo semver-checks` by [@kristof-mattei](https://github.com/kristof-mattei) ([`b72d110`](https://github.com/kristof-mattei/wsdd-rs/commit/b72d1106cf6c65384f63a6277ffc2c2eecb63af3))
+- Stop denying `unused_results`, too noisy by [@kristof-mattei](https://github.com/kristof-mattei) ([`ea0ba8d`](https://github.com/kristof-mattei/wsdd-rs/commit/ea0ba8d39e52203f388338255ebc1e2f52c582c6))
+- Set up sccache before installing `cargo-edit` by [@kristof-mattei](https://github.com/kristof-mattei) ([`f6bdb23`](https://github.com/kristof-mattei/wsdd-rs/commit/f6bdb23a4d4a441d85d77c70e5450461fd129415))
 ## [1.1.2](https://github.com/kristof-mattei/wsdd-rs/compare/v1.1.1..v1.1.2) - 2026-10-21
 
 ### ⚙️ Miscellaneous Tasks
@@ -55,7 +78,8 @@
 
 - Use clap's built-in `--help` and `--version` by [@kristof-mattei](https://github.com/kristof-mattei) ([`d6b7f85`](https://github.com/kristof-mattei/wsdd-rs/commit/d6b7f8579442d8a578c80b632fd09415e11c3339))
 - Validate `--interface` while parsing the command line by [@kristof-mattei](https://github.com/kristof-mattei) ([`3d1d143`](https://github.com/kristof-mattei/wsdd-rs/commit/3d1d143287298ff3ea44e21e4c002e23b7f20e95))
-  - An invalid `--interface` value exits with code 2 instead of 1
+
+  An invalid `--interface` value exits with code 2 instead of 1
 - Graduate to stable by [@kristof-mattei](https://github.com/kristof-mattei) ([`0466736`](https://github.com/kristof-mattei/wsdd-rs/commit/0466736b4ec11096559e1d45cb83e265d43f7bfb))
 
 ### 🚀 Features
@@ -359,7 +383,8 @@
 ### ⚠️ Breaking Changes
 
 - Drop `-v` and `-s` by [@kristof-mattei](https://github.com/kristof-mattei) ([`feb5dd3`](https://github.com/kristof-mattei/wsdd-rs/commit/feb5dd36132b8d6aa652d87df40fb8be15a1d928))
-  - `-v`, `--verbose`, `-s` and `--shortlog` are rejected as unknown arguments. A unit file or script passing them fails to start instead of ignoring them. Set `RUST_LOG` for level and per-target filtering.
+
+  `-v`, `--verbose`, `-s` and `--shortlog` are rejected as unknown arguments. A unit file or script passing them fails to start instead of ignoring them. Set `RUST_LOG` for level and per-target filtering.
 
 ### 🐛 Bug Fixes
 
