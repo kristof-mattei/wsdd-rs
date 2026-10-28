@@ -124,6 +124,7 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       checks: write # publish-unit-test-result-action creates a check run
+      code-quality: write # upload-code-coverage publishes the coverage report
       contents: read
       id-token: write # codecov-action and qlty-action authenticate over OIDC
       issues: read # publish-unit-test-result-action needs this in private repos
@@ -188,7 +189,7 @@ jobs:
           - name: Run grcov
             shell: bash
             env:
-              GRCOV_OUTPUT_TYPES: lcov
+              GRCOV_OUTPUT_TYPES: cobertura
             run: |
               ./generate-test-report.sh report
 
@@ -211,6 +212,12 @@ jobs:
 
       # the two Codecov.io uploads fail when run in parallel
       - parallel:
+          - uses: actions/upload-code-coverage@v1.4.4
+            with:
+              file: reports/cobertura.xml
+              language: Rust
+              label: code-coverage
+
           - name: Upload coverage results (to Codecov.io)
             # fork PRs run without id-token, so OIDC upload cannot work. Push runs must keep uploading to preserve base coverage
             if: |
@@ -223,7 +230,7 @@ jobs:
               env_vars: RUNNER_OS,RUST
               fail_ci_if_error: true
               flags: tests
-              files: reports/lcov
+              files: reports/cobertura.xml
               name: code-coverage
               plugins: noop
               report_type: "coverage"
@@ -235,8 +242,8 @@ jobs:
               github.event.pull_request.head.repo.full_name == github.repository
             uses: qltysh/qlty-action/coverage@v2.5.0
             with:
-              files: reports/lcov
-              format: lcov
+              files: reports/cobertura.xml
+              format: cobertura
               oidc: true
               skip-errors: false
               tag: tests

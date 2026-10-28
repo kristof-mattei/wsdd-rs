@@ -55,6 +55,7 @@ jobs:
     uses: $/.github/workflows/rust.yml
     permissions:
       checks: write # publish-unit-test-result-action creates a check run
+      code-quality: write # upload-code-coverage publishes the coverage report
       contents: read
       id-token: write # codecov-action and qlty-action authenticate over OIDC
       issues: read # publish-unit-test-result-action needs this in private repos
