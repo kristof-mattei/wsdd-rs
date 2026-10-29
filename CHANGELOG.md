@@ -1,4 +1,13 @@
 <!-- header goes here -->
+## [1.1.4](https://github.com/kristof-mattei/wsdd-rs/compare/v1.1.3..v1.1.4) - 2026-10-29
+
+### 🐛 Bug Fixes
+
+- Replace misspelled `rerun-if-changed-env` build script directives by [@kristof-mattei](https://github.com/kristof-mattei) ([`e23e057`](https://github.com/kristof-mattei/wsdd-rs/commit/e23e057297597154b6281adcc4e399ac428df530))
+
+### 🚜 Refactor
+
+- Return `Result<Infallible, Shutdown>` from `start_tasks` so startup failures propagate with `?` by [@kristof-mattei](https://github.com/kristof-mattei) ([`ef52846`](https://github.com/kristof-mattei/wsdd-rs/commit/ef528465e91a75002376d0b6e1cc5eba572e254a))
 ## [1.1.3](https://github.com/kristof-mattei/wsdd-rs/compare/v1.1.2..v1.1.3) - 2026-10-24
 
 ### 🐛 Bug Fixes
