@@ -31,6 +31,7 @@ mod utils;
 mod wsd;
 mod xml;
 
+use std::convert::Infallible;
 use std::env::{self, VarError};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -63,7 +64,6 @@ use crate::security::{chroot, drop_privileges};
 use crate::shutdown::Shutdown;
 use crate::signal_handlers::{Signal, SignalListeners};
 use crate::soap::MessageId;
-use crate::utils::flatten_shutdown_handle;
 use crate::utils::task::spawn_with_name;
 
 #[cfg_attr(not(miri), global_allocator)]
@@ -141,7 +141,7 @@ fn main() -> Shutdown {
     config.log();
 
     // initialize the runtime
-    let shutdown: Shutdown = tokio::runtime::Builder::new_multi_thread()
+    let Err(shutdown) = tokio::runtime::Builder::new_multi_thread()
         .enable_io()
         .enable_time()
         .build()
@@ -151,7 +151,7 @@ fn main() -> Shutdown {
             // see https://docs.rs/tokio/latest/tokio/attr.main.html#non-worker-async-function
             let handle = spawn_with_name("main task runner", start_tasks(config));
 
-            flatten_shutdown_handle(handle).await
+            handle.await?
         });
 
     shutdown
@@ -173,10 +173,10 @@ fn print_header() {
     );
 }
 
-fn try_chroot(config: &Config) -> Option<Shutdown> {
+fn try_chroot(config: &Config) -> Result<(), Shutdown> {
     if let &Some(ref chroot_path) = &config.chroot {
         if let Err(error) = chroot(chroot_path) {
-            return Some(Shutdown::OperationalFailure {
+            return Err(Shutdown::OperationalFailure {
                 code: ExitCode::from(2),
                 message: "chroot failed",
                 error: Some(Box::new(error)),
@@ -193,7 +193,7 @@ fn try_chroot(config: &Config) -> Option<Shutdown> {
     if let &Some((uid, gid)) = &config.user
         && let Err(error) = drop_privileges(uid, gid)
     {
-        return Some(Shutdown::OperationalFailure {
+        return Err(Shutdown::OperationalFailure {
             code: ExitCode::from(3),
             message: "drop privileges failed",
             error: Some(Box::new(error)),
@@ -213,23 +213,18 @@ fn try_chroot(config: &Config) -> Option<Shutdown> {
         );
     }
 
-    None
+    Ok(())
 }
 
 /// starts all the tasks, such as the web server, the key refresh, ...
 /// ensures all tasks are gracefully shutdown in case of error, `CTRL+c` or `SIGTERM`.
-async fn start_tasks(config: Config) -> Shutdown {
+async fn start_tasks(config: Config) -> Result<Infallible, Shutdown> {
     // when running as PID 1, a signal before this registration is discarded
-    let mut signal_listeners = match SignalListeners::register() {
-        Ok(signal_listeners) => signal_listeners,
-        Err(report) => return Shutdown::from(report),
-    };
+    let mut signal_listeners = SignalListeners::register()?;
 
     let config = Arc::new(config);
 
-    if let Some(shutdown) = try_chroot(&config) {
-        return shutdown;
-    }
+    try_chroot(&config)?;
 
     let recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>> =
         Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES)));
@@ -310,7 +305,7 @@ async fn start_tasks(config: Config) -> Shutdown {
         biased;
         drained = drain => drained.is_ok(),
         second_signal = signal_listeners.wait() => {
-            return abandon_drain(shutdown_reason, second_signal);
+            return Err(abandon_drain(shutdown_reason, second_signal));
         },
     };
 
@@ -320,16 +315,16 @@ async fn start_tasks(config: Config) -> Shutdown {
 
     // a shutdown that already reports a failure is returned unchanged
     if !drained && matches!(shutdown_reason, Shutdown::Success | Shutdown::Signal(_)) {
-        return Shutdown::OperationalFailure {
+        return Err(Shutdown::OperationalFailure {
             code: ExitCode::FAILURE,
             message: "Tasks didn't stop within the allotted time",
             error: None,
-        };
+        });
     }
 
     event!(Level::INFO, "Shutdown completed");
 
-    shutdown_reason
+    Err(shutdown_reason)
 }
 
 async fn launch_address_monitor(
