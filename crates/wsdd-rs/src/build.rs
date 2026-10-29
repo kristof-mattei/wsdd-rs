@@ -18,9 +18,7 @@ fn main() {
         .unwrap_or_default(),
     );
 
-    println!("cargo:rerun-if-changed-env=HOST");
-    println!("cargo:rerun-if-changed-env=TARGET");
-    println!("cargo:rerun-if-changed-env=CARGO_ENCODED_RUSTFLAGS");
+    println!("cargo::rerun-if-changed=src/build.rs");
 }
 
 fn extract_target_cpu_from_rustflags(rustflags: &OsStr) -> Option<String> {
@@ -42,5 +40,5 @@ fn extract_target_cpu_from_rustflags(rustflags: &OsStr) -> Option<String> {
 }
 
 fn export_var(name: &str, value: &str) {
-    println!("cargo:rustc-env={}={}", name, value);
+    println!("cargo::rustc-env={}={}", name, value);
 }
