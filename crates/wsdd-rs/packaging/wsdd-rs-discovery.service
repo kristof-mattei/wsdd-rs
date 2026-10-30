@@ -9,7 +9,7 @@ Type=exec
 ; Use /etc/default/wsdd-rs for defaults, if it exists
 EnvironmentFile=-/etc/default/wsdd-rs
 ; chrooted into its empty runtime directory under /run, the source port differs from the host instance's so both can run on the same machine
-ExecStart=/usr/bin/wsdd-rs --chroot=/run/wsdd-rs-discovery --source-port=37020 --no-host --discovery $WSDD_DISCOVERY_PARAMS
+ExecStart=/usr/bin/wsdd-rs --chroot=/run/wsdd-rs-discovery --source-port=37020 --no-host --discovery $WSDD_RS_DISCOVERY_PARAMS
 DynamicUser=yes
 User=wsdd-rs-discovery
 Group=wsdd-rs-discovery

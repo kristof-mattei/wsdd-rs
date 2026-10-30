@@ -11,7 +11,7 @@ Type=exec
 ; Use /etc/default/wsdd-rs for defaults, if it exists
 EnvironmentFile=-/etc/default/wsdd-rs
 ; chrooted into its empty runtime directory under /run
-ExecStart=/usr/bin/wsdd-rs --chroot=/run/wsdd-rs $WSDD_PARAMS
+ExecStart=/usr/bin/wsdd-rs --chroot=/run/wsdd-rs $WSDD_RS_PARAMS
 DynamicUser=yes
 User=wsdd-rs
 Group=wsdd-rs
