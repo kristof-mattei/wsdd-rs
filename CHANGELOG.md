@@ -1,4 +1,18 @@
 <!-- header goes here -->
+## [2.0.0](https://github.com/kristof-mattei/wsdd-rs/compare/v1.1.4..v2.0.0) - 2026-10-30
+
+### ⚠️ Breaking Changes
+
+- Prefix the environment file variables with `WSDD_RS_` by [@kristof-mattei](https://github.com/kristof-mattei) ([`e2b1eca`](https://github.com/kristof-mattei/wsdd-rs/commit/e2b1ecaa75f99815b960ed57233f27c024fe71e8))
+- Parse durations with humantime by [@kristof-mattei](https://github.com/kristof-mattei) ([`75f4fe6`](https://github.com/kristof-mattei/wsdd-rs/commit/75f4fe617c94e83f3aa117b31ca09d984790ec58))
+
+### 📚 Documentation
+
+- *(cli)* Capitalize the help texts by [@kristof-mattei](https://github.com/kristof-mattei) ([`f7f8d59`](https://github.com/kristof-mattei/wsdd-rs/commit/f7f8d595037b31b19957c143f7e6e0f63a981fb5))
+
+### ⚡ Performance
+
+- Remove the redundant workspace build from `Dockerfile` by [@kristof-mattei](https://github.com/kristof-mattei) ([`23c6dc3`](https://github.com/kristof-mattei/wsdd-rs/commit/23c6dc32e5e06e82e0129b22eb99221233fd73cb))
 ## [1.1.4](https://github.com/kristof-mattei/wsdd-rs/compare/v1.1.3..v1.1.4) - 2026-10-29
 
 ### 🐛 Bug Fixes
