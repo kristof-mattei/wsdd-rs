@@ -21,14 +21,14 @@ use crate::wsd::device::DeviceUri;
 #[derive(Parser)]
 #[command(about, version)]
 pub(crate) struct Cli {
-    #[arg(short, long, value_parser = to_interface_filter, help = "interface, address or scoped IPv6 address such as `fe80::1%eth0` to use")]
+    #[arg(short, long, value_parser = to_interface_filter, help = "Interface, address or scoped IPv6 address such as `fe80::1%eth0` to use")]
     interface: Vec<InterfaceFilter>,
 
     #[arg(
         short = 'H',
         long,
         default_value_t = 1,
-        help = "limit for multicast packets"
+        help = "Limit for multicast packets"
     )]
     hoplimit: u8,
 
@@ -39,11 +39,11 @@ pub(crate) struct Cli {
         short,
         long,
         group = "domain-workgroup",
-        help = "set domain name (disables workgroup)"
+        help = "Set domain name (disables workgroup)"
     )]
     domain: Option<String>,
 
-    #[arg(short = 'n', long, help = "override (NetBIOS) hostname to be used")]
+    #[arg(short = 'n', long, help = "Override (NetBIOS) hostname to be used")]
     hostname: Option<String>,
 
     #[arg(
@@ -51,51 +51,51 @@ pub(crate) struct Cli {
         long,
         group = "domain-workgroup",
         default_value = "WORKGROUP",
-        help = "set workgroup name"
+        help = "Set workgroup name"
     )]
     workgroup: String,
 
-    #[arg(short = 'A', long, help = "do not start networking after launch")]
+    #[arg(short = 'A', long, help = "Do not start networking after launch")]
     no_autostart: bool,
 
-    #[arg(short = 't', long, help = "disable http service (e.g. for debugging)")]
+    #[arg(short = 't', long, help = "Disable http service (e.g. for debugging)")]
     no_http: bool,
 
-    #[arg(short = '4', long, group = "ip", help = "use only IPv4")]
+    #[arg(short = '4', long, group = "ip", help = "Use only IPv4")]
     ipv4only: bool,
 
-    #[arg(short = '6', long, group = "ip", help = "use only IPv6")]
+    #[arg(short = '6', long, group = "ip", help = "Use only IPv6")]
     ipv6only: bool,
 
-    #[arg(short, long, help = "preserve case of the provided/detected hostname")]
+    #[arg(short, long, help = "Preserve case of the provided/detected hostname")]
     preserve_case: bool,
 
-    #[arg(short, long, help = "directory to chroot into")]
+    #[arg(short, long, help = "Directory to chroot into")]
     chroot: Option<PathBuf>,
 
-    #[arg(short, long, value_parser = parse_userspec, help = "drop privileges to user:group")]
+    #[arg(short, long, value_parser = parse_userspec, help = "Drop privileges to user:group")]
     user: Option<(u32, u32)>,
 
-    #[arg(short = 'D', long, help = "enable discovery operation mode")]
+    #[arg(short = 'D', long, help = "Enable discovery operation mode")]
     discovery: bool,
 
-    #[arg(short, long, value_parser = to_listen, help = "listen on path or localhost port in discovery mode")]
+    #[arg(short, long, value_parser = to_listen, help = "Listen on path or localhost port in discovery mode")]
     listen: Option<PortOrSocket>,
 
     #[arg(
         short = 'o',
         long,
-        help = "disable server mode operation (host will be undiscoverable)"
+        help = "Disable server mode operation (host will be undiscoverable)"
     )]
     no_host: bool,
 
-    #[arg(long, default_value = "30.0", value_parser = float_to_duration_parser, help = "set timeout for HTTP-based metadata exchange")]
+    #[arg(long, default_value = "30.0", value_parser = float_to_duration_parser, help = "Set timeout for HTTP-based metadata exchange")]
     metadata_timeout: Duration,
 
     #[arg(
         long,
         default_value_t = 0,
-        help = "send multicast traffic/receive replies on this port"
+        help = "Send multicast traffic/receive replies on this port"
     )]
     source_port: u16,
 }
