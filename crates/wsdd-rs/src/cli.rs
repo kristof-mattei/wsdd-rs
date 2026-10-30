@@ -89,7 +89,7 @@ pub(crate) struct Cli {
     )]
     no_host: bool,
 
-    #[arg(long, default_value = "30.0", value_parser = float_to_duration_parser, help = "Set timeout for HTTP-based metadata exchange")]
+    #[arg(long, default_value = "30s", value_parser = humantime::parse_duration, help = "Set timeout for HTTP-based metadata exchange")]
     metadata_timeout: Duration,
 
     #[arg(
@@ -98,12 +98,6 @@ pub(crate) struct Cli {
         help = "Send multicast traffic/receive replies on this port"
     )]
     source_port: u16,
-}
-
-fn float_to_duration_parser(value: &str) -> Result<Duration, String> {
-    let value = value.parse::<f32>().map_err(|error| error.to_string())?;
-
-    Duration::try_from_secs_f32(value).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -347,6 +341,7 @@ fn get_uuid_from_machine() -> Result<Uuid, eyre::Report> {
 mod tests {
     use std::net::IpAddr;
     use std::path::Path;
+    use std::time::Duration;
 
     use pretty_assertions::{assert_eq, assert_matches};
 
@@ -519,5 +514,26 @@ mod tests {
             port.err().as_deref(),
             Some("cannot parse integer from empty string")
         );
+    }
+
+    #[test]
+    fn metadata_timeout_default() {
+        let config = parse_cli_from(["wsdd-rs"]).unwrap();
+
+        assert_eq!(config.metadata_timeout, Duration::from_secs(30));
+    }
+
+    #[test]
+    fn metadata_timeout_with_units() {
+        let config = parse_cli_from(["wsdd-rs", "--metadata-timeout", "1m 30s"]).unwrap();
+
+        assert_eq!(config.metadata_timeout, Duration::from_secs(90));
+    }
+
+    #[test]
+    fn metadata_timeout_without_unit_is_rejected() {
+        let result = parse_cli_from(["wsdd-rs", "--metadata-timeout", "30"]);
+
+        assert_matches!(result, Err(_));
     }
 }
