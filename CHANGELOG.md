@@ -1,4 +1,11 @@
 <!-- header goes here -->
+## [2.0.1](https://github.com/kristof-mattei/wsdd-rs/compare/v2.0.0..v2.0.1) - 2026-11-03
+
+### ⚙️ Miscellaneous Tasks
+
+- Report container layer sizes to Codecov bundle analysis by [@kristof-mattei](https://github.com/kristof-mattei) ([`dd9a929`](https://github.com/kristof-mattei/wsdd-rs/commit/dd9a929b110c40a34242f2e12b6c54ae49fd9782))
+- Make `report-container-size.js` pass oxlint by [@kristof-mattei](https://github.com/kristof-mattei) ([`f704727`](https://github.com/kristof-mattei/wsdd-rs/commit/f704727f63c6ac16ed7cff7dfa8ba91af1440549))
+- Drop duplicate fork checks from `docker-attest` and rewrite job condition comments by [@kristof-mattei](https://github.com/kristof-mattei) ([`8e57c97`](https://github.com/kristof-mattei/wsdd-rs/commit/8e57c97652f7409476f84c885c6ab52b074d064e))
 ## [2.0.0](https://github.com/kristof-mattei/wsdd-rs/compare/v1.1.4..v2.0.0) - 2026-10-30
 
 ### ⚠️ Breaking Changes
