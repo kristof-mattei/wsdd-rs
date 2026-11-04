@@ -406,11 +406,7 @@ fn format_wsd_discovered_device(device_uri: &DeviceUri, device: &WSDDiscoveredDe
         "{}\t{}\t{}\t{}\t{}\t{}\n",
         device_uri,
         device.display_name().unwrap_or_default(),
-        device
-            .props()
-            .get("BelongsTo")
-            .map(|b| &**b)
-            .unwrap_or_default(),
+        device.props().get("BelongsTo").map_or_default(|b| &**b),
         device
             .last_seen()
             .format(&ISO8601_SECOND_PRECISION)
