@@ -15,7 +15,7 @@ where
     // builder: https://github.com/tokio-rs/tokio/blob/56870433289f6906716c9d9b2a28da5c9e76352e/tokio/src/task/builder.rs#L87-L98
     // direct spawn: https://github.com/tokio-rs/tokio/blob/56870433289f6906716c9d9b2a28da5c9e76352e/tokio/src/task/spawn.rs#L166-L177
 
-    // hence why we unwrap here. The builder is unstable, so we'll need to live with that
+    // hence why we `expect` here. The builder is unstable, so we'll need to live with that
     builder
         .spawn(future)
         .expect("Launching task should not fail")

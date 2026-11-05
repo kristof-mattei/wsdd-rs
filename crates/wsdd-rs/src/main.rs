@@ -216,7 +216,7 @@ fn try_chroot(config: &Config) -> Result<(), Shutdown> {
     Ok(())
 }
 
-/// starts all the tasks, such as the web server, the key refresh, ...
+/// starts all the tasks, such as the address monitor, the network handler, ...
 /// ensures all tasks are gracefully shutdown in case of error, `CTRL+c` or `SIGTERM`.
 async fn start_tasks(config: Config) -> Result<Infallible, Shutdown> {
     // when running as PID 1, a signal before this registration is discarded
@@ -313,7 +313,7 @@ async fn start_tasks(config: Config) -> Result<Infallible, Shutdown> {
         event!(Level::ERROR, "Tasks didn't stop within allotted time!");
     }
 
-    // a shutdown that already reports a failure is returned unchanged
+    // the drain timeout only overrides `Success` and `Signal`, a failure reason is returned unchanged
     if !drained && matches!(shutdown_reason, Shutdown::Success | Shutdown::Signal(_)) {
         return Err(Shutdown::OperationalFailure {
             code: ExitCode::FAILURE,

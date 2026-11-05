@@ -55,9 +55,7 @@ impl Default for MakeSpanWithUuid {
 
 impl<B> MakeSpan<B> for MakeSpanWithUuid {
     fn make_span(&mut self, request: &Request<B>) -> Span {
-        // This ugly macro is needed, unfortunately, because `tracing::span!`
-        // required the level argument to be static. Meaning we can't just pass
-        // `self.level`.
+        // `tracing::span!` requires a constant level, so `self.level` is matched into one call per level
         macro_rules! make_span {
             ($level:expr) => {
                 if self.include_headers {
