@@ -1,4 +1,21 @@
 <!-- header goes here -->
+## [2.1.0](https://github.com/kristof-mattei/wsdd-rs/compare/v2.0.1..v2.1.0) - 2026-11-05
+
+### 🚀 Features
+
+- Add `SECURITY.md` to explain our policy by [@kristof-mattei](https://github.com/kristof-mattei) ([`487ce02`](https://github.com/kristof-mattei/wsdd-rs/commit/487ce02028b314877b2826c577cc845058ae97de))
+
+### 🐛 Bug Fixes
+
+- *(ci)* Re-enable zizmore ref-pin, now that zizmor supports actions-lock by [@kristof-mattei](https://github.com/kristof-mattei) ([`471d815`](https://github.com/kristof-mattei/wsdd-rs/commit/471d815fe58c37310aabf030769ccbbb4a48d631))
+
+### 📚 Documentation
+
+- Correct stale comments and remove narrating ones by [@kristof-mattei](https://github.com/kristof-mattei) ([`b89ff50`](https://github.com/kristof-mattei/wsdd-rs/commit/b89ff5085d74f91dd5fa63ab3704902f58eac264))
+
+### ⚙️ Miscellaneous Tasks
+
+- Use `map_or_default` by [@kristof-mattei](https://github.com/kristof-mattei) ([`0ea287c`](https://github.com/kristof-mattei/wsdd-rs/commit/0ea287c64dd8f11d12a7b73e83cd6f64de55d5e5))
 ## [2.0.1](https://github.com/kristof-mattei/wsdd-rs/compare/v2.0.0..v2.0.1) - 2026-11-03
 
 ### ⚙️ Miscellaneous Tasks
