@@ -1,7 +1,8 @@
 use std::os::fd::AsFd;
 use std::os::unix::prelude::AsRawFd as _;
+use std::ptr;
 
-use libc::{c_int, socklen_t};
+use libc::{c_int, c_void, socklen_t};
 
 use crate::utils::u32_to_usize;
 
@@ -27,7 +28,7 @@ pub(crate) unsafe fn setsockopt<F: AsFd, T>(
     val: c_int,
     payload: &T,
 ) -> std::io::Result<()> {
-    let payload = (&raw const *payload).cast();
+    let payload = ptr::from_ref(payload).cast::<c_void>();
 
     #[expect(
         clippy::as_conversions,
