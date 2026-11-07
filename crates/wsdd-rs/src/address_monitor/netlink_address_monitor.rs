@@ -242,7 +242,7 @@ fn netlink_socket(groups: u32) -> Result<tokio::net::UdpSocket, std::io::Error> 
 
     socket.set_nonblocking(true)?;
 
-    socket.bind(&netlink_address(groups)?)?;
+    socket.bind(&netlink_address(groups))?;
 
     tokio::net::UdpSocket::from_std(std::net::UdpSocket::from(socket))
 }
@@ -306,42 +306,24 @@ fn request_addresses(
 }
 
 fn send_to_kernel(socket: &tokio::net::UdpSocket, request: &[u8]) -> Result<(), std::io::Error> {
-    socket2::SockRef::from(&socket).send_to(request, &netlink_address(0)?)?;
+    socket2::SockRef::from(&socket).send_to(request, &netlink_address(0))?;
 
     Ok(())
 }
 
 /// The kernel's address, or ours with the multicast `groups` to join.
-fn netlink_address(groups: u32) -> Result<socket2::SockAddr, std::io::Error> {
-    #[expect(
-        clippy::multiple_unsafe_ops_per_block,
-        reason = "Lint limitations on nested `unsafe`"
-    )]
-    // SAFETY: this is how to do it as per the API docs
-    let ((), socket_addr) = unsafe {
-        socket2::SockAddr::try_init(|addr_storage, len| {
-            const {
-                assert!(
-                    size_of::<libc::sockaddr_nl>() <= size_of::<SockAddrStorage>(),
-                    "`SockAddrStorage`'s size should be larger `libc::sockaddr_nl`'s size"
-                );
-            }
+fn netlink_address(groups: u32) -> socket2::SockAddr {
+    let mut storage = SockAddrStorage::zeroed();
 
-            // SAFETY: see `SockAddr::try_init` for guarantees that `addr_storage` is zeroed
-            let sockaddr_nl = &mut *addr_storage.cast::<libc::sockaddr_nl>();
+    // SAFETY: `sockaddr_nl` is a `sockaddr_*` type of this platform
+    let sockaddr_nl = unsafe { storage.view_as::<libc::sockaddr_nl>() };
 
-            sockaddr_nl.nl_family = const { i32_to_u16(libc::AF_NETLINK) };
-            sockaddr_nl.nl_pid = 0;
-            sockaddr_nl.nl_groups = groups;
+    sockaddr_nl.nl_family = const { i32_to_u16(libc::AF_NETLINK) };
+    sockaddr_nl.nl_pid = 0;
+    sockaddr_nl.nl_groups = groups;
 
-            // SAFETY: `len` is initialized and `non-null`
-            *len = SIZE_OF_SOCKADDR_NL;
-
-            Ok(())
-        })
-    }?;
-
-    Ok(socket_addr)
+    // SAFETY: `storage` holds an initialized `AF_NETLINK` `sockaddr_nl` of `SIZE_OF_SOCKADDR_NL` bytes
+    unsafe { socket2::SockAddr::new(storage, SIZE_OF_SOCKADDR_NL) }
 }
 
 bitflags! {
@@ -558,7 +540,7 @@ mod tests {
     use bytes::BufMut as _;
     use ipnet::IpNet;
     use libc::{
-        AF_INET, AF_INET6, AF_PHONET, AF_UNSPEC, EINVAL, IFA_ADDRESS, IFA_F_DADFAILED,
+        AF_INET, AF_INET6, AF_NETLINK, AF_PHONET, AF_UNSPEC, EINVAL, IFA_ADDRESS, IFA_F_DADFAILED,
         IFA_F_DEPRECATED, IFA_F_PERMANENT, IFA_F_TENTATIVE, IFA_LOCAL, IFF_MULTICAST, IFF_RUNNING,
         IFF_UP, NLMSG_DONE, RT_SCOPE_LINK, RTM_DELADDR, RTM_NEWADDR, RTM_NEWLINK,
     };
@@ -573,7 +555,7 @@ mod tests {
 
     use crate::address_monitor::netlink_address_monitor::{
         Dump, Exit, Family, SIZE_OF_SOCKADDR_NL, Scope, SkippedStates, forward_dump,
-        process_changes, resync,
+        netlink_address, process_changes, resync,
     };
     use crate::network_handler::Command;
     use crate::rtnetlink::{RTA_ALIGNTO, ReceiveBuffer, RecvBuf};
@@ -589,6 +571,22 @@ mod tests {
             u32_to_usize(SIZE_OF_SOCKADDR_NL),
             size_of::<libc::sockaddr_nl>()
         );
+    }
+
+    #[test]
+    fn netlink_address_sets_family_and_groups() {
+        let address = netlink_address(0b101);
+
+        assert_eq!(i32::from(address.family()), AF_NETLINK);
+        assert_eq!(address.len(), SIZE_OF_SOCKADDR_NL);
+
+        let mut storage = address.as_storage();
+
+        // SAFETY: `netlink_address` initializes the storage as a `sockaddr_nl`
+        let sockaddr_nl = unsafe { storage.view_as::<libc::sockaddr_nl>() };
+
+        assert_eq!(sockaddr_nl.nl_pid, 0);
+        assert_eq!(sockaddr_nl.nl_groups, 0b101);
     }
 
     #[tokio::test]
