@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use bitflags::bitflags;
 use bitflags::parser::to_writer;
-use color_eyre::eyre;
+use color_eyre::eyre::{self, Context as _};
 use ipnet::IpNet;
 use libc::{
     AF_INET, AF_INET6, AF_UNSPEC, IFA_F_DADFAILED, IFA_F_DEPRECATED, IFA_F_HOMEADDRESS,
@@ -157,12 +157,15 @@ where
                         );
 
                         // the queued notifications predate the lost ones and would overwrite the dump
-                        buffer.discard_queued(&recv_buf)?;
+                        buffer
+                            .discard_queued(&recv_buf)
+                            .wrap_err("Failed to discard the queued netlink notifications")?;
 
                         return Ok(Exit::Resync);
                     },
                     Err(error) => {
-                        return Err(error.into());
+                        return Err(eyre::Report::new(error)
+                            .wrap_err("Failed to receive netlink notifications"));
                     },
                 }
             },
@@ -183,18 +186,22 @@ async fn resync(
     cancellation_token: &CancellationToken,
     command_tx: &Sender<Command>,
 ) -> Result<(), eyre::Report> {
-    let socket = netlink_socket(0)?;
+    let socket = netlink_socket(0).wrap_err("Failed to create the netlink dump socket")?;
 
     let mut buffer = ReceiveBuffer::new();
 
     loop {
-        request_links(&socket)?;
+        request_links(&socket).wrap_err("Failed to request the link dump")?;
 
-        let links = forward_dump(&socket, &mut buffer, cancellation_token, command_tx).await?;
+        let links = forward_dump(&socket, &mut buffer, cancellation_token, command_tx)
+            .await
+            .wrap_err("Failed to receive the link dump")?;
 
-        request_addresses(config, &socket)?;
+        request_addresses(config, &socket).wrap_err("Failed to request the address dump")?;
 
-        let addresses = forward_dump(&socket, &mut buffer, cancellation_token, command_tx).await?;
+        let addresses = forward_dump(&socket, &mut buffer, cancellation_token, command_tx)
+            .await
+            .wrap_err("Failed to receive the address dump")?;
 
         if let (Dump::Complete, Dump::Complete) = (links, addresses) {
             return announce(Command::ResyncComplete, cancellation_token, command_tx).await;

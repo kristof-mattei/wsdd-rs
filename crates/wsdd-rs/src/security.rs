@@ -55,7 +55,11 @@ fn getpwname(user: &str) -> Result<u32, String> {
                 if unsafe { *libc::__errno_location() } == 0 {
                     Err(format!("User `{}` not found in /etc/passwd", user))
                 } else {
-                    Err(format!("{}", Error::last_os_error()))
+                    Err(format!(
+                        "Failed to look up user `{}`: {}",
+                        user,
+                        Error::last_os_error()
+                    ))
                 }
             },
             Some(passwd) => Ok(passwd.pw_uid),
@@ -100,7 +104,11 @@ fn getgrname(group: &str) -> Result<u32, String> {
                 if unsafe { *libc::__errno_location() } == 0 {
                     Err(format!("Group `{}` not found in /etc/group", group))
                 } else {
-                    Err(format!("{}", Error::last_os_error()))
+                    Err(format!(
+                        "Failed to look up group `{}`: {}",
+                        group,
+                        Error::last_os_error()
+                    ))
                 }
             },
             Some(group) => Ok(group.gr_gid),
