@@ -1,4 +1,3 @@
-use std::mem::MaybeUninit;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
@@ -106,26 +105,25 @@ async fn socket_rx_forever(
     socket: Arc<UdpSocketWithAddr>,
 ) {
     let message_handler = MessageHandler::new(network_address, recent_messages);
+    let mut buffer: Vec<u8> = Vec::with_capacity(constants::WSD_MAX_LEN);
 
     loop {
-        let mut buffer = vec![MaybeUninit::<u8>::uninit(); constants::WSD_MAX_LEN];
+        buffer.clear();
 
         let result = {
-            let mut buffer_byte_cursor = &mut *buffer;
-
             let socket = socket.socket();
 
             tokio::select! {
                 () = cancellation_token.cancelled() => {
                     break;
                 },
-                result = socket.recv_buf_from(&mut buffer_byte_cursor) => {
+                result = socket.recv_buf_from(&mut buffer) => {
                     result
                 },
             }
         };
 
-        let (bytes_read, from) = match result {
+        let (_, from) = match result {
             Ok(read) => read,
             Err(error) => {
                 event!(
@@ -141,11 +139,7 @@ async fn socket_rx_forever(
 
         let received_at = Instant::now();
 
-        // `recv_buf` tells us that `bytes_read` were read from the socket into our `buffer`, so they're initialized
-        buffer.truncate(bytes_read);
-
-        // SAFETY: we are only initializing the parts of the buffer `recv_buf_from` has written to
-        let buffer: &[u8] = unsafe { buffer.assume_init_ref() };
+        let buffer: &[u8] = &buffer;
 
         let (header, message) = match message_handler.deconstruct_message(buffer, from).await {
             Ok(decoded) => decoded,
