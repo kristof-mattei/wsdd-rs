@@ -151,6 +151,7 @@ profraw
 pton
 pubpubpub
 pyflakes
+qlty
 qname
 qnames
 rawfile
