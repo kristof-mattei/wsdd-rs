@@ -59,7 +59,7 @@ pub(crate) fn if_nametoindex(name: &str) -> Result<u32, Error> {
     let name = CString::new(name).expect("Couldn't convert name to CString");
 
     // SAFETY: libc call
-    let result = unsafe { libc::if_nametoindex(name.as_ptr().cast()) };
+    let result = unsafe { libc::if_nametoindex(name.as_ptr()) };
 
     if result == 0 {
         Err(Error::last_os_error())
