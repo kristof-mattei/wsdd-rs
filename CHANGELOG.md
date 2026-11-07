@@ -1,4 +1,39 @@
 <!-- header goes here -->
+## [2.1.1](https://github.com/kristof-mattei/wsdd-rs/compare/v2.1.0..v2.1.1) - 2026-11-07
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update rust crate uuid to v1.29.1 by [@renovate[bot]](https://github.com/renovate[bot]) ([`ccb2f1b`](https://github.com/kristof-mattei/wsdd-rs/commit/ccb2f1bb8c66bdb9e522edd07f8d86d4fa8a4c0b))
+- *(docker)* Restore `docker-clean` and clear the apt lists in build stages by [@kristof-mattei](https://github.com/kristof-mattei) ([`ef0a0a4`](https://github.com/kristof-mattei/wsdd-rs/commit/ef0a0a42bb7090fe532f65183fe115ee0ba00a1f))
+- Add context to socket setup, netlink, and user lookup errors by [@kristof-mattei](https://github.com/kristof-mattei) ([`0631516`](https://github.com/kristof-mattei/wsdd-rs/commit/06315163cd958c9e320d6c48d6f90967e8c6dbfe))
+
+### 📚 Documentation
+
+- Rewrite narrating and hard-wrapped comments by [@kristof-mattei](https://github.com/kristof-mattei) ([`4c4488c`](https://github.com/kristof-mattei/wsdd-rs/commit/4c4488c9bd01ee491a771f582c493fcae855204b))
+
+### ⚡ Performance
+
+- Allocate the receive buffer once in `socket_rx_forever` by [@kristof-mattei](https://github.com/kristof-mattei) ([`9ee966e`](https://github.com/kristof-mattei/wsdd-rs/commit/9ee966e2fefffa32aeaaf4ca1ecefdaa00734c4f))
+
+### 🚜 Refactor
+
+- Remove the no-op `.cast()` in `if_nametoindex` by [@kristof-mattei](https://github.com/kristof-mattei) ([`f9d23c6`](https://github.com/kristof-mattei/wsdd-rs/commit/f9d23c66636d393352d8cc956ef13a10220d8bfd))
+- Convert the `setsockopt` payload with `ptr::from_ref` by [@kristof-mattei](https://github.com/kristof-mattei) ([`ea59582`](https://github.com/kristof-mattei/wsdd-rs/commit/ea59582f0aa19c8682a062a0ee80c3ca4fe87b0e))
+- Build `netlink_address` with `SockAddrStorage::view_as` by [@kristof-mattei](https://github.com/kristof-mattei) ([`dd474c8`](https://github.com/kristof-mattei/wsdd-rs/commit/dd474c8f24015b969960fc92bfead41fdc09c36e))
+- Check `sigemptyset` for `0` to match the `assume_init` safety comment by [@kristof-mattei](https://github.com/kristof-mattei) ([`cd4a162`](https://github.com/kristof-mattei/wsdd-rs/commit/cd4a162e3f15715baa750fa45f17683f33878e69))
+
+### 🎨 Styling
+
+- *(docker)* Quote `${TARGET}` and `${APPLICATION_NAME}` in `RUN` instructions by [@kristof-mattei](https://github.com/kristof-mattei) ([`11eab77`](https://github.com/kristof-mattei/wsdd-rs/commit/11eab77be3ab09c087d326f937540367eb751748))
+
+### ⚙️ Miscellaneous Tasks
+
+- Use the shared Qlty source from `qlty-config` by [@kristof-mattei](https://github.com/kristof-mattei) ([`222c681`](https://github.com/kristof-mattei/wsdd-rs/commit/222c68110b2e908f821d3b40b76b88c3d050e643))
+- Record nightly-only `implicit_provenance_casts` lint by [@kristof-mattei](https://github.com/kristof-mattei) ([`a051591`](https://github.com/kristof-mattei/wsdd-rs/commit/a051591df2161a987760a081cbc77254f341ad2c))
+
+### 💼 Other
+
+- *(docker)* Declare `ARG TARGET` in `rust-cargo-build` by [@kristof-mattei](https://github.com/kristof-mattei) ([`39704b1`](https://github.com/kristof-mattei/wsdd-rs/commit/39704b141237d7c46d5270cdf9c07594ed8b97e1))
 ## [2.1.0](https://github.com/kristof-mattei/wsdd-rs/compare/v2.0.1..v2.1.0) - 2026-11-05
 
 ### 🚀 Features
