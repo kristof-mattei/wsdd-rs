@@ -528,7 +528,8 @@ impl MulticastHandler {
             event!(
                 Level::ERROR,
                 ?error,
-                "Failed to initialize the http server, probably failed to bind to addr:port"
+                http_listen_address = %self.http_listen_address,
+                "Failed to initialize the http server"
             );
         }
     }

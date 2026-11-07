@@ -5,7 +5,7 @@ use std::os::fd::FromRawFd as _;
 use std::sync::Arc;
 use std::time::Duration;
 
-use color_eyre::eyre;
+use color_eyre::eyre::{self, Context as _};
 use futures_util::StreamExt as _;
 use socket2::{Domain, Type};
 use time::format_description::well_known::Iso8601;
@@ -50,7 +50,7 @@ impl ApiServer {
         cancellation_token: CancellationToken,
         listen_on: &PortOrSocket,
         command_tx: Sender<Command>,
-    ) -> Result<ApiServer, std::io::Error> {
+    ) -> Result<ApiServer, eyre::Report> {
         let listeners: Listeners = match *listen_on {
             PortOrSocket::Port(port) => {
                 // one loopback socket per family, only wildcard binds can be dual-stack
@@ -101,9 +101,13 @@ impl ApiServer {
 
                 match (socket.r#type(), socket.domain()) {
                     (Ok(Type::STREAM), Ok(Domain::UNIX)) => {
-                        socket.set_nonblocking(true)?;
+                        socket
+                            .set_nonblocking(true)
+                            .wrap_err("Failed to set the systemd socket to non-blocking")?;
 
-                        let socket = UnixListener::from_std(socket.into())?;
+                        let socket = UnixListener::from_std(socket.into()).wrap_err(
+                            "Failed to convert the systemd socket into a `UnixListener`",
+                        )?;
 
                         Listeners::Single(socket.into())
                     },
@@ -115,18 +119,25 @@ impl ApiServer {
                             "Received socket of invalid type and/or domain"
                         );
 
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::InvalidInput,
-                            "Invalid socket is of invalid domain and/or type",
+                        return Err(eyre::eyre!(
+                            "Invalid socket is of invalid domain and/or type"
                         ));
                     },
                 }
             },
             PortOrSocket::SocketPath(ref path) => {
-                let socket = tokio::net::UnixSocket::new_stream()?;
-                socket.bind(path)?;
+                let socket = tokio::net::UnixSocket::new_stream()
+                    .wrap_err("Failed to create the API socket")?;
 
-                Listeners::Single(socket.listen(MAX_CONNECTION_BACKLOG)?.into())
+                socket.bind(path).wrap_err_with(|| {
+                    format!("Failed to bind the API socket to `{}`", path.display())
+                })?;
+
+                let listener = socket
+                    .listen(MAX_CONNECTION_BACKLOG)
+                    .wrap_err_with(|| format!("Failed to listen on `{}`", path.display()))?;
+
+                Listeners::Single(listener.into())
             },
         };
 
@@ -209,17 +220,28 @@ impl ApiServer {
     }
 }
 
-fn bind_tcp_loopback(address: SocketAddr) -> Result<GenericListener, std::io::Error> {
+fn bind_tcp_loopback(address: SocketAddr) -> Result<GenericListener, eyre::Report> {
     let socket = match address {
         SocketAddr::V4(_) => tokio::net::TcpSocket::new_v4(),
         SocketAddr::V6(_) => tokio::net::TcpSocket::new_v6(),
-    }?;
+    }
+    .wrap_err("Failed to create the socket")?;
 
-    socket.set_reuseaddr(true)?;
-    socket.set_reuseport(true)?;
-    socket.bind(address)?;
+    socket
+        .set_reuseaddr(true)
+        .wrap_err("Failed to set SO_REUSEADDR")?;
+    socket
+        .set_reuseport(true)
+        .wrap_err("Failed to set SO_REUSEPORT")?;
+    socket
+        .bind(address)
+        .wrap_err_with(|| format!("Failed to bind to {}", address))?;
 
-    Ok(socket.listen(MAX_CONNECTION_BACKLOG)?.into())
+    let listener = socket
+        .listen(MAX_CONNECTION_BACKLOG)
+        .wrap_err_with(|| format!("Failed to listen on {}", address))?;
+
+    Ok(listener.into())
 }
 
 async fn handle_single_connection<R, W>(
@@ -264,7 +286,7 @@ async fn handle_single_connection<R, W>(
                         break;
                     },
                     Err(error) => {
-                        event!(Level::ERROR, ?error, "Something went wrong with the stream");
+                        event!(Level::ERROR, ?error, "Failed to write to the API client");
                         break;
                     },
                 }

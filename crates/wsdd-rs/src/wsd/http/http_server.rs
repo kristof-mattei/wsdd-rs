@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use axum::Router;
-use color_eyre::eyre;
+use color_eyre::eyre::{self, Context as _};
 use socket2::{Domain, Socket, Type};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
@@ -32,14 +32,16 @@ impl WSDHttpServer {
         config: Arc<Config>,
         http_listen_address: SocketAddr,
         recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
-    ) -> Result<WSDHttpServer, std::io::Error> {
+    ) -> Result<WSDHttpServer, eyre::Report> {
         let message_handler = MessageHandler::new(bound_to.clone(), recent_messages);
 
         event!(Level::DEBUG, ?http_listen_address, "Trying to bind");
 
         let listener = bind_listener(http_listen_address, bound_to.interface.index())?;
 
-        let http_bound_to = listener.local_addr()?;
+        let http_bound_to = listener
+            .local_addr()
+            .wrap_err("Failed to read the listener's local address")?;
 
         event!(Level::DEBUG, ?listener, "Bound successfully");
 
@@ -76,26 +78,38 @@ impl WSDHttpServer {
 fn bind_listener(
     address: SocketAddr,
     interface_index: u32,
-) -> Result<tokio::net::TcpListener, std::io::Error> {
+) -> Result<tokio::net::TcpListener, eyre::Report> {
     // mirrors mio's backlog for `tokio::net::TcpListener::bind`, https://github.com/tokio-rs/mio/blob/79d1417c94e3a45c8bdd796e5422e22e8c488086/src/net/tcp/listener.rs#L92
     const LISTEN_BACKLOG: i32 = 128;
 
-    let socket = Socket::new(Domain::for_address(address), Type::STREAM, None)?;
+    let socket = Socket::new(Domain::for_address(address), Type::STREAM, None)
+        .wrap_err("Failed to create the socket")?;
 
-    socket.set_nonblocking(true)?;
-    socket.set_reuse_address(true)?;
+    socket
+        .set_nonblocking(true)
+        .wrap_err("Failed to set the socket to non-blocking")?;
+    socket
+        .set_reuse_address(true)
+        .wrap_err("Failed to set SO_REUSEADDR")?;
 
     match address {
         // IPv4 binds have no scope, and another interface can have the same address
-        SocketAddr::V4(_) => socket.bind_device_by_index_v4(NonZeroU32::new(interface_index))?,
+        SocketAddr::V4(_) => socket
+            .bind_device_by_index_v4(NonZeroU32::new(interface_index))
+            .wrap_err_with(|| format!("Failed to bind to interface {}", interface_index))?,
         // the scope id binds the socket to its interface
         SocketAddr::V6(_) => {},
     }
 
-    socket.bind(&address.into())?;
-    socket.listen(LISTEN_BACKLOG)?;
+    socket
+        .bind(&address.into())
+        .wrap_err_with(|| format!("Failed to bind to {}", address))?;
+    socket
+        .listen(LISTEN_BACKLOG)
+        .wrap_err_with(|| format!("Failed to listen on {}", address))?;
 
     tokio::net::TcpListener::from_std(socket.into())
+        .wrap_err("Failed to convert the socket into a `TcpListener`")
 }
 
 /// Set up server on a bound listener, with a router, and a cancellation token for graceful shutdown.
