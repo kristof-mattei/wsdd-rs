@@ -31,7 +31,7 @@ pub(crate) unsafe fn set_up_handler(
         let mut sa_mask = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
 
         // SAFETY: the pointer is valid for writes of `sigset_t`
-        if unsafe { libc::sigemptyset(sa_mask.as_mut_ptr()) } == -1 {
+        if unsafe { libc::sigemptyset(sa_mask.as_mut_ptr()) } != 0 {
             return Err(wrap_and_report!(
                 Level::ERROR,
                 Error::last_os_error(),
