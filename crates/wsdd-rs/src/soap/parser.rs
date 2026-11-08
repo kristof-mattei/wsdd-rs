@@ -481,7 +481,7 @@ impl MessageHandler {
         Ok((header, body))
     }
 
-    /// Implements SOAP-over-UDP Appendix II Item 2
+    /// Implements SOAP-over-UDP Appendix II Item 1
     /// Deduplicates best-effort: read lock filters most repeats cheaply, then a write
     /// lock inserts the ID if it is still absent. The unlocked gap means a rapid burst
     /// can insert and evict the same id before our write guard runs, so some

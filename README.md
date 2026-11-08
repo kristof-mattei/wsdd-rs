@@ -47,13 +47,11 @@ The packages are also published to `ghcr.io/kristof-mattei/wsdd-rs-deb`, tagged 
 
 # Socket descriptions
 
-- `recv_socket` RECEIVES multicast messages, SENDS unicast, by binding to the multicast address, on the WSD Port
-- `mc_send_socket` SENDS multicast messages, on a custom port, RECEIVES unicast
-- `uc_send_socket` is used REPLY with unicast, it is bound to the interface's address, on the WSD Port
+- `mc_wsd_port_socket` is bound to the multicast group on the WSD port (3702) and receives multicast.
+- `mc_local_port_socket` is bound to the interface's address on `--source-port`, sends multicast and receives the unicast replies to the client's Probe and Resolve messages.
+- `uc_wsd_port_socket` is bound to the interface's address on the WSD port, receives unicast and sends the host's replies.
 
 The sockets are separate for a reason: <https://github.com/christgau/wsdd/commit/ee8783ce71a408a3d9923b5d67659f7ce2712166>
-
-`mc_send_socket` receives messages in `WSDClient`, because it sends out a probe over the `mc_send_socket`, and hosts reply FROM 3072 (in our case `uc_send_socket` TO the `mc_send_socket`, that port)
 
 # Questions
 
