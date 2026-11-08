@@ -1,4 +1,9 @@
 <!-- header goes here -->
+## [2.1.3](https://github.com/kristof-mattei/wsdd-rs/compare/v2.1.2..v2.1.3) - 2026-11-08
+
+### 🐛 Bug Fixes
+
+- Stop logging a Resolve for another endpoint as invalid by [Kristof Mattei](https://github.com/kristof-mattei) ([`204ba98`](https://github.com/kristof-mattei/wsdd-rs/commit/204ba983122460dc222e085a65598c1a4972f8a2))
 ## [2.1.2](https://github.com/kristof-mattei/wsdd-rs/compare/v2.1.1..v2.1.2) - 2026-11-08
 
 ### ⚙️ Miscellaneous Tasks
