@@ -166,8 +166,8 @@ fn handle_resolve(
         event!(
             Level::DEBUG,
             addr_urn = %resolve.addr_urn,
-            expected = %target_uuid.urn(),
-            "invalid resolve request: address does not match own one"
+            own = %target_uuid.urn(),
+            "resolve request for another endpoint: ignoring it"
         );
 
         Ok(None)
