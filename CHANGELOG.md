@@ -1,4 +1,9 @@
 <!-- header goes here -->
+## [2.1.4](https://github.com/kristof-mattei/wsdd-rs/compare/v2.1.3..v2.1.4) - 2026-11-08
+
+### 🐛 Bug Fixes
+
+- Use a comma instead of a dash in the startup header by [Kristof Mattei](https://github.com/kristof-mattei) ([`f762952`](https://github.com/kristof-mattei/wsdd-rs/commit/f762952fdafa00f0a09d3e4f27b954da439436c0))
 ## [2.1.3](https://github.com/kristof-mattei/wsdd-rs/compare/v2.1.2..v2.1.3) - 2026-11-08
 
 ### 🐛 Bug Fixes
