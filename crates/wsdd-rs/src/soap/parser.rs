@@ -550,7 +550,8 @@ where
             {
                 // the `wsa` header blocks are read in any order, see documentation/soap12-part1.pdf, 5.2
                 // a second `wsa:To`, `wsa:Action` or `wsa:MessageID` violates documentation/ws-addressing.pdf, 3
-                // documentation/ws-addressing.pdf, 3.1, allows a second `wsa:RelatesTo`, but the outlines of documentation/ws-discovery.pdf, 4.1, 5.3 and 6.2, have at most one, and WSDAPI drops such a message
+                // a second `wsa:RelatesTo` is valid, see documentation/ws-addressing.pdf, 3.1
+                // a second `wsa:RelatesTo` is rejected because WSDAPI drops such a message, and the outlines list at most one, see documentation/ws-discovery.pdf, 4.1, 5.3 and 6.2
                 match &*name.local_name {
                     "To" => {
                         if to.is_some() {
