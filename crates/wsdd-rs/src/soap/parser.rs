@@ -491,9 +491,9 @@ impl MessageHandler {
         Ok((header, body))
     }
 
-    /// Implements item 1 of documentation/soap-over-udp.pdf, Appendix II, the list of the last n MessageIDs.
-    /// Returns `true` for a known MessageID under the read lock alone, and takes the write lock only to insert an absent one.
-    /// Between the two locks, other calls can insert the same MessageID and evict it again, so this call can return `false` for a duplicate.
+    /// Implements item 1 of documentation/soap-over-udp.pdf, Appendix II, the list of the last n `MessageID`s.
+    /// Returns `true` for a known `MessageID` under the read lock alone, and takes the write lock only to insert an absent one.
+    /// Between the two locks, other calls can insert the same `MessageID` and evict it again, so this call can return `false` for a duplicate.
     pub(crate) async fn is_duplicated_msg(&self, message_id: &MessageId) -> bool {
         {
             let read_lock = self.recent_messages.read().await;
