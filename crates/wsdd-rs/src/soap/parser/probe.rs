@@ -15,7 +15,7 @@ use crate::xml::{XmlError, XmlReader, find_child, read_text};
 type QName = (Box<str>, Box<str>);
 
 pub(crate) struct Probe {
-    /// `None` when the Probe has no `wsd:Types`, which implies any Type (WS-Discovery, Section 5.2).
+    /// `None` means any Type, the implied value of an omitted `wsd:Types`, see documentation/ws-discovery.pdf, 5.2.
     pub types: Option<HashSet<QName>>,
 }
 
@@ -134,7 +134,8 @@ fn parse_types(
 }
 
 impl Probe {
-    /// WS-Discovery, Section 5.1, for Types. Scopes are not matched.
+    /// Implements the Type matching of documentation/ws-discovery.pdf, 5.1.
+    /// Scope matching is unimplemented: `parse_probe` drops `wsd:Scopes`, so `matches` checks only the Types.
     pub(crate) fn matches(&self) -> bool {
         self.types.as_ref().is_none_or(|types| {
             types.iter().all(|&(ref namespace, ref name)| {

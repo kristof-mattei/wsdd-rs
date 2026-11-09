@@ -173,7 +173,7 @@ impl<'config> Builder<'config> {
         Ok((header_and_body.into_inner(), message_id))
     }
 
-    /// WS-Discovery, Section 4.1, Hello message.
+    /// Builds the Hello of documentation/ws-discovery.pdf, 4.1.
     pub(crate) fn build_hello(
         config: &Config,
         xaddr: IpAddr,
@@ -191,7 +191,7 @@ impl<'config> Builder<'config> {
         Ok(MulticastMessage::Hello(message.into_boxed_slice()))
     }
 
-    /// WS-Discovery, Section 4.2, Bye message.
+    /// Builds the Bye of documentation/ws-discovery.pdf, 4.2.
     pub(crate) fn build_bye(config: &Config) -> Result<MulticastMessage, xml::writer::Error> {
         let mut builder = Builder::new(config);
 
@@ -206,7 +206,7 @@ impl<'config> Builder<'config> {
         Ok(MulticastMessage::Bye(message.into_boxed_slice()))
     }
 
-    // WS-Discovery, Section 4.3, Probe message
+    // builds the Probe of documentation/ws-discovery.pdf, 5.2
     pub(crate) fn build_probe(
         config: &Config,
     ) -> Result<(MulticastMessage, Urn), xml::writer::Error> {
@@ -223,7 +223,7 @@ impl<'config> Builder<'config> {
         Ok((MulticastMessage::Probe(message.into_boxed_slice()), urn))
     }
 
-    // WS-Discovery, Section 6.1, Resolve message
+    // builds the Resolve of documentation/ws-discovery.pdf, 6.1
     pub(crate) fn build_resolve(
         config: &Config,
         endpoint: &DeviceUri,

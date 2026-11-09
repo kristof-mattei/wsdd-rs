@@ -61,7 +61,7 @@ impl LastCopy {
         (message, LastCopy::Sending(last_copy_rx))
     }
 
-    /// A match received `MATCH_TIMEOUT` or more after the last copy is discarded, see WS-Discovery, Section 7.
+    /// Returns whether `received_at` is less than `MATCH_TIMEOUT` after the last copy, see documentation/ws-discovery.pdf, 7.
     fn accepts(&mut self, received_at: Instant) -> bool {
         let sent_at = match *self {
             LastCopy::Sent(sent_at) => sent_at,
@@ -135,7 +135,7 @@ impl WSDClient {
         let _r = self.handle.await;
     }
 
-    // WS-Discovery, Section 4.3, Probe message
+    // schedules the Probe of documentation/ws-discovery.pdf, 5.2
     fn schedule_send_probe(&self) {
         let cancellation_token = self.cancellation_token.clone();
         let probe_tx = self.probe_tx.clone();

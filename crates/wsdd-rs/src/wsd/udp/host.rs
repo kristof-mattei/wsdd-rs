@@ -85,7 +85,7 @@ impl WSDHost {
         }
     }
 
-    // documentation/ws-discovery.pdf, 4.1, Hello message
+    // schedules the Hello of documentation/ws-discovery.pdf, 4.1
     // the Hello is sent without the random wait of 4.1, because WSDAPI sends it at once too
     fn schedule_send_hello(&self) {
         let cancellation_token = self.cancellation_token.clone();
@@ -110,7 +110,7 @@ impl WSDHost {
         });
     }
 
-    /// WS-Discovery, Section 4.2, Bye message.
+    /// Queues the Bye of documentation/ws-discovery.pdf, 4.2.
     async fn send_bye(&self) -> Result<(), eyre::Report> {
         let bye = Builder::build_bye(&self.config)?;
 
@@ -248,7 +248,7 @@ async fn listen_forever(
         };
 
         match outgoing.message {
-            // WS-Discovery, Section 5.3, a Probe Match is sent after a random delay
+            // a Probe Match is sent after a random delay, see documentation/ws-discovery.pdf, 5.3
             UnicastMessage::ProbeMatches(_) => {
                 let delay = rand::random_range(Duration::ZERO..=PROBE_MATCH_MAX_DELAY);
                 let cancellation_token = cancellation_token.clone();
@@ -264,7 +264,7 @@ async fn listen_forever(
                         .await;
                 });
             },
-            // WS-Discovery, Section 6.2, a Resolve Match is sent without a delay
+            // a Resolve Match is sent at once, see documentation/ws-discovery.pdf, 6.2
             UnicastMessage::GetResponse(_) | UnicastMessage::ResolveMatches(_) => {
                 respond(&uc_wsd_port_tx, outgoing).await;
             },
