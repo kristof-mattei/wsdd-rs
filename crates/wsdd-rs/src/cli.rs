@@ -17,6 +17,8 @@ use crate::security::parse_userspec;
 use crate::soap::InstanceId;
 use crate::wsd::device::DeviceUri;
 
+const RANDOM_PORT: &str = "random";
+
 #[expect(clippy::struct_excessive_bools, reason = "CLI flags")]
 #[derive(Parser)]
 #[command(about, version)]
@@ -94,7 +96,8 @@ pub(crate) struct Cli {
 
     #[arg(
         long,
-        default_value_t = 0,
+        default_value = RANDOM_PORT,
+        value_parser = to_source_port,
         help = "Send multicast traffic/receive replies on this port"
     )]
     source_port: u16,
@@ -278,6 +281,13 @@ fn to_listen(listen: &str) -> Result<PortOrSocket, String> {
         Ok(PortOrSocket::Port(listen))
     } else {
         Ok(PortOrSocket::SocketPath(PathBuf::from(listen)))
+    }
+}
+
+fn to_source_port(source_port: &str) -> Result<u16, String> {
+    match source_port {
+        RANDOM_PORT => Ok(0),
+        port => port.parse::<u16>().map_err(|error| error.to_string()),
     }
 }
 
@@ -514,6 +524,34 @@ mod tests {
             port.err().as_deref(),
             Some("cannot parse integer from empty string")
         );
+    }
+
+    #[test]
+    fn source_port_default() {
+        let config = parse_cli_from(["wsdd-rs"]).unwrap();
+
+        assert_eq!(config.source_port, 0);
+    }
+
+    #[test]
+    fn source_port_random() {
+        let config = parse_cli_from(["wsdd-rs", "--source-port", "random"]).unwrap();
+
+        assert_eq!(config.source_port, 0);
+    }
+
+    #[test]
+    fn source_port_number() {
+        let config = parse_cli_from(["wsdd-rs", "--source-port", "37020"]).unwrap();
+
+        assert_eq!(config.source_port, 37020);
+    }
+
+    #[test]
+    fn source_port_too_large_is_rejected() {
+        let result = parse_cli_from(["wsdd-rs", "--source-port", "65536"]);
+
+        assert_matches!(result, Err(_));
     }
 
     #[test]
