@@ -13,6 +13,8 @@ use crate::soap::parser;
 use crate::soap::parser::xaddrs::XAddr;
 use crate::xml::{XmlError, XmlReader, find_child, find_optional_child, read_text};
 
+type HostProps = (HashSet<Box<str>>, Option<(Box<str>, Box<str>)>);
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[repr(transparent)]
 /// Represents an opaque Device URI.
@@ -314,10 +316,6 @@ where
     }
 }
 
-type HostProps = (HashSet<Box<str>>, Option<(Box<str>, Box<str>)>);
-
-type ExtractHostPropsResult = Result<HostProps, XmlError>;
-
 fn extract_host_props<R>(reader: &mut XmlReader<R>) -> Result<Option<HostProps>, XmlError>
 where
     R: Read,
@@ -386,7 +384,7 @@ where
     Ok(Some((types, display_name_belongs_to)))
 }
 
-fn read_types_and_pub_computer<R>(reader: &mut XmlReader<R>) -> ExtractHostPropsResult
+fn read_types_and_pub_computer<R>(reader: &mut XmlReader<R>) -> Result<HostProps, XmlError>
 where
     R: Read,
 {

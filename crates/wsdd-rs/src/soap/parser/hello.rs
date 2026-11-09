@@ -9,8 +9,6 @@ use crate::soap::parser::generic::{
 use crate::wsd::device::DeviceUri;
 use crate::xml::{XmlReader, find_child};
 
-type ParsedHelloResult = Result<Hello, BodyParsingError>;
-
 pub(crate) struct Hello {
     pub app_sequence: AppSequence,
     pub endpoint: DeviceUri,
@@ -25,7 +23,7 @@ pub(crate) struct Hello {
 pub(crate) fn parse_hello<R>(
     reader: &mut XmlReader<R>,
     app_sequence: AppSequence,
-) -> ParsedHelloResult
+) -> Result<Hello, BodyParsingError>
 where
     R: Read,
 {

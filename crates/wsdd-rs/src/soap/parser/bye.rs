@@ -7,8 +7,6 @@ use crate::soap::parser::generic::{EndpointMetadata, extract_endpoint_metadata};
 use crate::wsd::device::DeviceUri;
 use crate::xml::{XmlReader, find_child};
 
-type ParsedByeResult = Result<Bye, BodyParsingError>;
-
 pub(crate) struct Bye {
     pub app_sequence: AppSequence,
     pub endpoint: DeviceUri,
@@ -18,7 +16,10 @@ pub(crate) struct Bye {
 ///
 /// This function makes NO claims about the position of the reader
 /// should the structure XML be invalid (e.g. missing `Address`).
-pub(crate) fn parse_bye<R>(reader: &mut XmlReader<R>, app_sequence: AppSequence) -> ParsedByeResult
+pub(crate) fn parse_bye<R>(
+    reader: &mut XmlReader<R>,
+    app_sequence: AppSequence,
+) -> Result<Bye, BodyParsingError>
 where
     R: Read,
 {

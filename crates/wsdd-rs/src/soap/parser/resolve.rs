@@ -8,8 +8,6 @@ use crate::soap::parser::BodyParsingError;
 use crate::soap::parser::generic::extract_endpoint_reference_address;
 use crate::xml::{XmlReader, find_child};
 
-type ParsedResolveResult = Result<Resolve, BodyParsingError>;
-
 pub(crate) struct Resolve {
     pub addr_urn: Urn,
 }
@@ -18,7 +16,7 @@ pub(crate) struct Resolve {
 ///
 /// This function makes NO claims about the position of the reader
 /// should the structure XML be invalid (e.g. missing `Address`).
-pub(crate) fn parse_resolve<R>(reader: &mut XmlReader<R>) -> ParsedResolveResult
+pub(crate) fn parse_resolve<R>(reader: &mut XmlReader<R>) -> Result<Resolve, BodyParsingError>
 where
     R: Read,
 {

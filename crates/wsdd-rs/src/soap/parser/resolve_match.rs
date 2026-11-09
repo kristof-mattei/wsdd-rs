@@ -13,8 +13,6 @@ use crate::soap::parser::generic::{
 use crate::wsd::device::DeviceUri;
 use crate::xml::{XmlError, XmlReader, find_child};
 
-type ParsedResolveMatchesResult = Result<ResolveMatches, BodyParsingError>;
-
 pub(crate) struct ResolveMatches {
     /// The `[message id]` of the Resolve it answers.
     pub relates_to: MessageId,
@@ -37,7 +35,7 @@ pub(crate) fn parse_resolve_matches<R>(
     reader: &mut XmlReader<R>,
     relates_to: MessageId,
     app_sequence: AppSequence,
-) -> ParsedResolveMatchesResult
+) -> Result<ResolveMatches, BodyParsingError>
 where
     R: Read,
 {

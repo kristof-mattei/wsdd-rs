@@ -11,8 +11,6 @@ use crate::soap::parser::BodyParsingError;
 use crate::soap::parser::generic::{list_items, resolve_qname};
 use crate::xml::{XmlError, XmlReader, find_child, read_text};
 
-type ParsedProbeResult = Result<Probe, BodyParsingError>;
-
 /// Namespace and local name.
 type QName = (Box<str>, Box<str>);
 
@@ -52,7 +50,7 @@ impl ProbeChild {
 ///
 /// * `Ok(Probe {})`: when we were able to successfully decode the XML as a `Probe`
 /// * `Err(_)`: Anything went wrong trying to parse the XML
-pub(crate) fn parse_probe<R>(reader: &mut XmlReader<R>) -> ParsedProbeResult
+pub(crate) fn parse_probe<R>(reader: &mut XmlReader<R>) -> Result<Probe, BodyParsingError>
 where
     R: Read,
 {
