@@ -66,6 +66,14 @@ pub(crate) enum HeaderParsingError {
     MissingAppSequence,
     #[error("Invalid wsd:AppSequence: {}", .0)]
     InvalidAppSequence(InvalidAppSequence),
+    #[error("Duplicate wsa:To")]
+    DuplicateTo,
+    #[error("Duplicate wsa:Action")]
+    DuplicateAction,
+    #[error("Duplicate wsa:MessageID")]
+    DuplicateMessageId,
+    #[error("Duplicate wsa:RelatesTo")]
+    DuplicateRelatesTo,
     #[error("Duplicate wsd:AppSequence")]
     DuplicateAppSequence,
     #[error("Duplicate soap:Header")]
@@ -519,6 +527,7 @@ fn parse_header<R>(reader: &mut XmlReader<R>) -> Result<RawHeader, HeaderParsing
 where
     R: Read,
 {
+    // for the `wsa` blocks, `Some(None)` is a block without text
     // <wsa:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
     let mut to = None;
     // <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches</wsa:Action>
@@ -540,20 +549,40 @@ where
                     && name.namespace_ref() == Some(constants::WSA_URI) =>
             {
                 // the `wsa` header blocks are read in any order, see documentation/soap12-part1.pdf, 5.2
+                // a second `wsa:To`, `wsa:Action` or `wsa:MessageID` violates documentation/ws-addressing.pdf, 3
+                // documentation/ws-addressing.pdf, 3.1, allows a second `wsa:RelatesTo`, but the outlines of documentation/ws-discovery.pdf, 4.1, 5.3 and 6.2, have at most one, and WSDAPI drops such a message
                 match &*name.local_name {
                     "To" => {
-                        to = read_text(reader)?.map(|to| DeviceUri::new(to.into_boxed_str()));
+                        if to.is_some() {
+                            return Err(HeaderParsingError::DuplicateTo);
+                        }
+
+                        to = Some(read_text(reader)?.map(|to| DeviceUri::new(to.into_boxed_str())));
                     },
                     "Action" => {
-                        action = read_text(reader)?.map(String::into_boxed_str);
+                        if action.is_some() {
+                            return Err(HeaderParsingError::DuplicateAction);
+                        }
+
+                        action = Some(read_text(reader)?.map(String::into_boxed_str));
                     },
                     "MessageID" => {
-                        message_id =
-                            read_text(reader)?.map(|m_id| MessageId::new(m_id.into_boxed_str()));
+                        if message_id.is_some() {
+                            return Err(HeaderParsingError::DuplicateMessageId);
+                        }
+
+                        message_id = Some(
+                            read_text(reader)?.map(|m_id| MessageId::new(m_id.into_boxed_str())),
+                        );
                     },
                     "RelatesTo" => {
-                        relates_to =
-                            read_text(reader)?.map(|r_to| MessageId::new(r_to.into_boxed_str()));
+                        if relates_to.is_some() {
+                            return Err(HeaderParsingError::DuplicateRelatesTo);
+                        }
+
+                        relates_to = Some(
+                            read_text(reader)?.map(|r_to| MessageId::new(r_to.into_boxed_str())),
+                        );
                     },
                     _ => {
                         // Not a match, continue
@@ -585,21 +614,21 @@ where
         }
     }
 
-    let Some(message_id) = message_id else {
+    let Some(message_id) = message_id.flatten() else {
         return Err(HeaderParsingError::MissingMessageId);
     };
 
-    let Some(action) = action else {
+    let Some(action) = action.flatten() else {
         return Err(HeaderParsingError::MissingAction);
     };
 
     Ok(RawHeader {
         header: Header {
-            to,
+            to: to.flatten(),
             action,
             message_id,
         },
-        relates_to,
+        relates_to: relates_to.flatten(),
         app_sequence,
     })
 }
@@ -915,6 +944,102 @@ mod tests {
             deconstruct_raw(hello.as_bytes()).err(),
             Some(MessageHandlerError::HeaderError(
                 HeaderParsingError::DuplicateAppSequence
+            ))
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_to() {
+        let hello = message(
+            constants::WSD_HELLO,
+            &format!("<wsa:To>{}</wsa:To>", constants::WSA_DISCOVERY),
+            "",
+        );
+
+        assert_matches!(
+            deconstruct_raw(hello.as_bytes()).err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::DuplicateTo
+            ))
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_action() {
+        let hello = message(
+            constants::WSD_HELLO,
+            &format!("<wsa:Action>{}</wsa:Action>", constants::WSD_HELLO),
+            "",
+        );
+
+        assert_matches!(
+            deconstruct_raw(hello.as_bytes()).err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::DuplicateAction
+            ))
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_message_id() {
+        let hello = message(
+            constants::WSD_HELLO,
+            &format!("<wsa:MessageID>{}</wsa:MessageID>", Uuid::now_v7().urn()),
+            "",
+        );
+
+        assert_matches!(
+            deconstruct_raw(hello.as_bytes()).err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::DuplicateMessageId
+            ))
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_relates_to() {
+        let probe_matches = message(
+            constants::WSD_PROBE_MATCH,
+            &format!("{}{}", RELATES_TO, RELATES_TO),
+            "",
+        );
+
+        assert_matches!(
+            deconstruct_raw(probe_matches.as_bytes()).err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::DuplicateRelatesTo
+            ))
+        );
+    }
+
+    #[test]
+    fn rejects_relates_to_followed_by_empty_relates_to() {
+        let hello = message(
+            constants::WSD_HELLO,
+            &format!("{}<wsa:RelatesTo />", RELATES_TO),
+            "",
+        );
+
+        assert_matches!(
+            deconstruct_raw(hello.as_bytes()).err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::DuplicateRelatesTo
+            ))
+        );
+    }
+
+    #[test]
+    fn rejects_two_empty_relates_to() {
+        let hello = message(
+            constants::WSD_HELLO,
+            "<wsa:RelatesTo /><wsa:RelatesTo />",
+            "",
+        );
+
+        assert_matches!(
+            deconstruct_raw(hello.as_bytes()).err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::DuplicateRelatesTo
             ))
         );
     }
