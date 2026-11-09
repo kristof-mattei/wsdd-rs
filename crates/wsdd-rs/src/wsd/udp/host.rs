@@ -1,8 +1,10 @@
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use color_eyre::eyre;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{Level, event};
 
@@ -14,6 +16,9 @@ use crate::soap::parser::probe::Probe;
 use crate::soap::parser::resolve::Resolve;
 use crate::soap::{HostMessage, MessageId, UnicastMessage};
 use crate::utils::task::spawn_with_name;
+
+// a unicast reply to a multicast request passes Windows Firewall only within 4 s, so WSDAPI's Probe Match delay is at most 2,500 ms, see documentation/windows-win32-wsdapi.pdf, "APP_MAX_DELAY"
+const PROBE_MATCH_MAX_DELAY: Duration = Duration::from_millis(2500);
 
 /// handles WSD requests coming from UDP datagrams.
 pub(crate) struct WSDHost {
@@ -235,15 +240,41 @@ async fn listen_forever(
         };
 
         // return to sender
-        if let Err(error) = uc_wsd_port_tx
-            .send(OutgoingMessage {
-                to: from,
-                message: response,
-            })
-            .await
-        {
-            event!(Level::ERROR, ?error, to = ?from, "Failed to respond to message");
+        let outgoing = OutgoingMessage {
+            to: from,
+            message: response,
+        };
+
+        match outgoing.message {
+            // WS-Discovery, Section 5.3, a Probe Match is sent after a random delay
+            UnicastMessage::ProbeMatches(_) => {
+                let delay = rand::random_range(Duration::ZERO..=PROBE_MATCH_MAX_DELAY);
+                let cancellation_token = cancellation_token.clone();
+                let uc_wsd_port_tx = uc_wsd_port_tx.clone();
+
+                tokio::task::spawn(async move {
+                    cancellation_token
+                        .run_until_cancelled(async {
+                            sleep(delay).await;
+
+                            respond(&uc_wsd_port_tx, outgoing).await;
+                        })
+                        .await;
+                });
+            },
+            // WS-Discovery, Section 6.2, a Resolve Match is sent without a delay
+            UnicastMessage::GetResponse(_) | UnicastMessage::ResolveMatches(_) => {
+                respond(&uc_wsd_port_tx, outgoing).await;
+            },
         }
+    }
+}
+
+async fn respond(uc_wsd_port_tx: &Sender<OutgoingMessage>, outgoing: OutgoingMessage) {
+    let to = outgoing.to;
+
+    if let Err(error) = uc_wsd_port_tx.send(outgoing).await {
+        event!(Level::ERROR, ?error, ?to, "Failed to respond to message");
     }
 }
 
@@ -251,19 +282,23 @@ async fn listen_forever(
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
+    use std::time::Duration;
 
     use ipnet::IpNet;
     use libc::RT_SCOPE_SITE;
-    use pretty_assertions::assert_eq;
+    use pretty_assertions::{assert_eq, assert_matches};
+    use tokio::time::{Instant, timeout};
     use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
 
     use crate::constants;
+    use crate::multicast_handler::IncomingHostMessage;
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
+    use crate::soap::{HostMessage, UnicastMessage};
     use crate::test_utils::xml::to_string_pretty;
     use crate::test_utils::{build_config, build_message_handler};
-    use crate::wsd::udp::host::{WSDHost, handle_probe, handle_resolve};
+    use crate::wsd::udp::host::{PROBE_MATCH_MAX_DELAY, WSDHost, handle_probe, handle_resolve};
 
     #[tokio::test]
     async fn sends_hello() {
@@ -545,5 +580,252 @@ mod tests {
         let expected = to_string_pretty(expected.as_bytes()).unwrap();
 
         assert_eq!(response, expected);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn waits_before_sending_probe_matches() {
+        let host_message_handler = build_message_handler();
+
+        // host
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
+
+        let cancellation_token = CancellationToken::new();
+        let (incoming_tx, incoming_rx) = tokio::sync::mpsc::channel(10);
+        let (mc_local_port_tx, _mc_local_port_rx) = tokio::sync::mpsc::channel(10);
+        let (uc_wsd_port_tx, mut uc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
+
+        let _wsd_host = WSDHost::init(
+            cancellation_token.child_token(),
+            Arc::clone(&host_config),
+            NetworkAddress::new(
+                IpNet::new(host_ip.into(), 24).unwrap(),
+                Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+            ),
+            incoming_rx,
+            mc_local_port_tx,
+            uc_wsd_port_tx,
+        );
+
+        // client
+        let client = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(192, 168, 100, 20), 5000));
+        let probe = format!(
+            include_str!("../../test/probe-template-wsdp-device.xml"),
+            Uuid::now_v7()
+        );
+
+        let (header, message) = host_message_handler
+            .deconstruct_message(&probe, client)
+            .await
+            .unwrap();
+
+        let received_at = Instant::now();
+
+        incoming_tx
+            .send(IncomingHostMessage {
+                from: client,
+                header,
+                message: HostMessage::Probe(message.into_probe().unwrap()),
+            })
+            .await
+            .unwrap();
+
+        let reply = uc_wsd_port_rx.recv().await.unwrap();
+
+        let waited = received_at.elapsed();
+
+        assert_matches!(reply.message, UnicastMessage::ProbeMatches(_));
+        assert!(waited > Duration::ZERO);
+        assert!(waited <= PROBE_MATCH_MAX_DELAY);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn sends_resolve_matches_without_waiting() {
+        let host_message_handler = build_message_handler();
+
+        // host
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
+
+        let cancellation_token = CancellationToken::new();
+        let (incoming_tx, incoming_rx) = tokio::sync::mpsc::channel(10);
+        let (mc_local_port_tx, _mc_local_port_rx) = tokio::sync::mpsc::channel(10);
+        let (uc_wsd_port_tx, mut uc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
+
+        let _wsd_host = WSDHost::init(
+            cancellation_token.child_token(),
+            Arc::clone(&host_config),
+            NetworkAddress::new(
+                IpNet::new(host_ip.into(), 24).unwrap(),
+                Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+            ),
+            incoming_rx,
+            mc_local_port_tx,
+            uc_wsd_port_tx,
+        );
+
+        // client
+        let client = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(192, 168, 100, 20), 5000));
+        let resolve = format!(
+            include_str!("../../test/resolve-template.xml"),
+            Uuid::now_v7(),
+            host_config.uuid_as_device_uri,
+        );
+
+        let (header, message) = host_message_handler
+            .deconstruct_message(&resolve, client)
+            .await
+            .unwrap();
+
+        let received_at = Instant::now();
+
+        incoming_tx
+            .send(IncomingHostMessage {
+                from: client,
+                header,
+                message: HostMessage::Resolve(message.into_resolve().unwrap()),
+            })
+            .await
+            .unwrap();
+
+        let reply = uc_wsd_port_rx.recv().await.unwrap();
+
+        assert_matches!(reply.message, UnicastMessage::ResolveMatches(_));
+        assert_eq!(received_at.elapsed(), Duration::ZERO);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn teardown_drops_a_waiting_probe_matches() {
+        let host_message_handler = build_message_handler();
+
+        // host
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
+
+        let cancellation_token = CancellationToken::new();
+        let (incoming_tx, incoming_rx) = tokio::sync::mpsc::channel(10);
+        let (mc_local_port_tx, _mc_local_port_rx) = tokio::sync::mpsc::channel(10);
+        let (uc_wsd_port_tx, mut uc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
+
+        let wsd_host = WSDHost::init(
+            cancellation_token.child_token(),
+            Arc::clone(&host_config),
+            NetworkAddress::new(
+                IpNet::new(host_ip.into(), 24).unwrap(),
+                Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+            ),
+            incoming_rx,
+            mc_local_port_tx,
+            uc_wsd_port_tx,
+        );
+
+        // client
+        let client = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(192, 168, 100, 20), 5000));
+        let probe = format!(
+            include_str!("../../test/probe-template-wsdp-device.xml"),
+            Uuid::now_v7()
+        );
+
+        let (header, message) = host_message_handler
+            .deconstruct_message(&probe, client)
+            .await
+            .unwrap();
+
+        incoming_tx
+            .send(IncomingHostMessage {
+                from: client,
+                header,
+                message: HostMessage::Probe(message.into_probe().unwrap()),
+            })
+            .await
+            .unwrap();
+
+        // yielding lets the host task receive the Probe and spawn the delayed reply
+        tokio::task::yield_now().await;
+
+        assert_eq!(incoming_tx.capacity(), incoming_tx.max_capacity());
+
+        wsd_host.teardown(false).await;
+
+        let reply = timeout(PROBE_MATCH_MAX_DELAY * 2, uc_wsd_port_rx.recv()).await;
+
+        assert!(matches!(reply, Ok(None)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn sends_resolve_matches_while_a_probe_matches_waits() {
+        let host_message_handler = build_message_handler();
+
+        // host
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
+
+        let cancellation_token = CancellationToken::new();
+        let (incoming_tx, incoming_rx) = tokio::sync::mpsc::channel(10);
+        let (mc_local_port_tx, _mc_local_port_rx) = tokio::sync::mpsc::channel(10);
+        let (uc_wsd_port_tx, mut uc_wsd_port_rx) = tokio::sync::mpsc::channel(10);
+
+        let _wsd_host = WSDHost::init(
+            cancellation_token.child_token(),
+            Arc::clone(&host_config),
+            NetworkAddress::new(
+                IpNet::new(host_ip.into(), 24).unwrap(),
+                Arc::new(NetworkInterface::new_with_index("eth0", RT_SCOPE_SITE, 5)),
+            ),
+            incoming_rx,
+            mc_local_port_tx,
+            uc_wsd_port_tx,
+        );
+
+        // client
+        let client = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(192, 168, 100, 20), 5000));
+        let probe = format!(
+            include_str!("../../test/probe-template-wsdp-device.xml"),
+            Uuid::now_v7()
+        );
+        let resolve = format!(
+            include_str!("../../test/resolve-template.xml"),
+            Uuid::now_v7(),
+            host_config.uuid_as_device_uri,
+        );
+
+        let (probe_header, probe_message) = host_message_handler
+            .deconstruct_message(&probe, client)
+            .await
+            .unwrap();
+
+        let (resolve_header, resolve_message) = host_message_handler
+            .deconstruct_message(&resolve, client)
+            .await
+            .unwrap();
+
+        let received_at = Instant::now();
+
+        incoming_tx
+            .send(IncomingHostMessage {
+                from: client,
+                header: probe_header,
+                message: HostMessage::Probe(probe_message.into_probe().unwrap()),
+            })
+            .await
+            .unwrap();
+
+        incoming_tx
+            .send(IncomingHostMessage {
+                from: client,
+                header: resolve_header,
+                message: HostMessage::Resolve(resolve_message.into_resolve().unwrap()),
+            })
+            .await
+            .unwrap();
+
+        let first = uc_wsd_port_rx.recv().await.unwrap();
+
+        assert_matches!(first.message, UnicastMessage::ResolveMatches(_));
+        assert_eq!(received_at.elapsed(), Duration::ZERO);
+
+        let second = uc_wsd_port_rx.recv().await.unwrap();
+
+        assert_matches!(second.message, UnicastMessage::ProbeMatches(_));
     }
 }
