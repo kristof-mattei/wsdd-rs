@@ -150,7 +150,8 @@ pub(crate) fn handle_probe(
         event!(
             Level::DEBUG,
             ?probe.types,
-            "client requests types we don't offer"
+            ?probe.scopes,
+            "Probe does not match"
         );
 
         Ok(None)

@@ -17,7 +17,34 @@ type QName = (Box<str>, Box<str>);
 pub(crate) struct Probe {
     /// `None` means any Type, the implied value of an omitted `wsd:Types`, see documentation/ws-discovery.pdf, 5.2.
     pub types: Option<HashSet<QName>>,
+    pub scopes: ProbeScopes,
 }
+
+/// The `wsd:Scopes` of a Probe.
+#[derive(Debug)]
+pub(crate) enum ProbeScopes {
+    /// An absent `MatchBy`, an empty one, or one in `MATCH_BY_RULES`.
+    SupportedMatchBy(ScopeList),
+    /// A `MatchBy` outside `MATCH_BY_RULES`.
+    UnsupportedMatchBy,
+}
+
+/// The scope list of a `wsd:Scopes`.
+#[derive(Debug)]
+pub(crate) enum ScopeList {
+    /// An absent `wsd:Scopes`, or an empty one.
+    Any,
+    /// At least one scope.
+    Listed,
+}
+
+/// The `MatchBy` URIs of documentation/ws-discovery.pdf, 5.1, without their matching rules, see `Probe::matches`.
+const MATCH_BY_RULES: [&str; 4] = [
+    "http://schemas.xmlsoap.org/ws/2005/04/discovery/rfc2396",
+    "http://schemas.xmlsoap.org/ws/2005/04/discovery/uuid",
+    "http://schemas.xmlsoap.org/ws/2005/04/discovery/ldap",
+    "http://schemas.xmlsoap.org/ws/2005/04/discovery/strcmp0",
+];
 
 /// The children of `wsd:Probe` in `ProbeType` sequence order, see documentation/ws-discovery.pdf, Appendix II.
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
@@ -57,6 +84,7 @@ where
     find_child(reader, Some(constants::XML_WSD_NAMESPACE), "Probe")?;
 
     let mut types = None;
+    let mut scopes = ProbeScopes::SupportedMatchBy(ScopeList::Any);
     let mut last_child = None;
 
     let entry_depth = reader.depth();
@@ -65,7 +93,9 @@ where
         #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
             XmlEvent::StartElement {
-                name, namespace, ..
+                name,
+                attributes,
+                namespace,
             } if reader.depth() == entry_depth + 1 => {
                 let Some(child) = ProbeChild::from_name(&name) else {
                     // not part of `ProbeType`, ignored
@@ -86,14 +116,15 @@ where
                         types = Some(parse_types(&raw_types, &namespace)?);
                     },
                     ProbeChild::Scopes => {
-                        let text = read_text(reader)?;
-                        let raw_scopes = text.unwrap_or_default();
+                        let match_by = attributes
+                            .iter()
+                            .find(|attribute| {
+                                attribute.name.namespace.is_none()
+                                    && attribute.name.local_name == "MatchBy"
+                            })
+                            .map(|attribute| &*attribute.value);
 
-                        event!(
-                            Level::DEBUG,
-                            scopes = %raw_scopes,
-                            "Ignoring unsupported scopes in probe request"
-                        );
+                        scopes = parse_scopes(match_by, &read_text(reader)?.unwrap_or_default());
                     },
                     ProbeChild::Extension => {},
                 }
@@ -116,7 +147,33 @@ where
         event!(Level::DEBUG, "Probe message lacks wsd:Types element.");
     }
 
-    Ok(Probe { types })
+    Ok(Probe { types, scopes })
+}
+
+fn parse_scopes(match_by: Option<&str>, raw_scopes: &str) -> ProbeScopes {
+    match match_by {
+        // documentation/ws-discovery.pdf, 5.2, implies `rfc2396` for an omitted `MatchBy`
+        // an empty `MatchBy` is treated as omitted, because WSDAPI treats it that way too
+        None | Some("") => {},
+        // documentation/ws-discovery.pdf, 5.1, does not define how `MatchBy` URIs are compared
+        // `MatchBy` is compared exactly, because WSDAPI compares it exactly too
+        Some(match_by) if MATCH_BY_RULES.contains(&match_by) => {},
+        Some(match_by) => {
+            event!(Level::DEBUG, match_by, "Probe with an unsupported MatchBy");
+
+            return ProbeScopes::UnsupportedMatchBy;
+        },
+    }
+
+    let scope_list = if list_items(raw_scopes).next().is_some() {
+        event!(Level::DEBUG, scopes = raw_scopes, "Probe lists scopes");
+
+        ScopeList::Listed
+    } else {
+        ScopeList::Any
+    };
+
+    ProbeScopes::SupportedMatchBy(scope_list)
 }
 
 /// Resolves the `xs:QName` list of `wsd:Types` against the namespaces in scope of the element.
@@ -135,15 +192,25 @@ fn parse_types(
 
 impl Probe {
     /// Implements the Type matching of documentation/ws-discovery.pdf, 5.1.
-    /// Scope matching is unimplemented: `parse_probe` drops `wsd:Scopes`, so `matches` checks only the Types.
+    /// Implements its Scope matching in part, because WSDAPI matches Scopes this way for a Target Service with omitted Scopes:
+    /// - returns `false` for any listed scope, the implied `.../discovery/adhoc` scope of 4.1 included.
+    /// - returns `false` for an unsupported `MatchBy`. 5.1 requires a match for an empty scope list.
     pub(crate) fn matches(&self) -> bool {
-        self.types.as_ref().is_none_or(|types| {
-            types.iter().all(|&(ref namespace, ref name)| {
-                constants::ADVERTISED_TYPES.iter().any(|advertised| {
-                    advertised.namespace == &**namespace && advertised.local_name == &**name
+        let scopes_match = match self.scopes {
+            ProbeScopes::SupportedMatchBy(ScopeList::Any) => true,
+            ProbeScopes::SupportedMatchBy(ScopeList::Listed) | ProbeScopes::UnsupportedMatchBy => {
+                false
+            },
+        };
+
+        scopes_match
+            && self.types.as_ref().is_none_or(|types| {
+                types.iter().all(|&(ref namespace, ref name)| {
+                    constants::ADVERTISED_TYPES.iter().any(|advertised| {
+                        advertised.namespace == &**namespace && advertised.local_name == &**name
+                    })
                 })
             })
-        })
     }
 }
 
@@ -156,7 +223,7 @@ mod tests {
 
     use crate::constants;
     use crate::soap::parser::BodyParsingError;
-    use crate::soap::parser::probe::{Probe, parse_probe};
+    use crate::soap::parser::probe::{MATCH_BY_RULES, Probe, ProbeScopes, ScopeList, parse_probe};
     use crate::xml::XmlReader;
 
     fn build_probe(types: &[(&str, &str)]) -> Probe {
@@ -167,6 +234,7 @@ mod tests {
                     .map(|&(namespace, name)| (Box::from(namespace), Box::from(name)))
                     .collect::<HashSet<_>>(),
             ),
+            scopes: ProbeScopes::SupportedMatchBy(ScopeList::Any),
         }
     }
 
@@ -196,9 +264,32 @@ mod tests {
 
     #[test]
     fn no_types_matches() {
-        let probe = Probe { types: None };
+        let probe = Probe {
+            types: None,
+            scopes: ProbeScopes::SupportedMatchBy(ScopeList::Any),
+        };
 
         assert!(probe.matches());
+    }
+
+    #[test]
+    fn listed_scopes_do_not_match() {
+        let probe = Probe {
+            types: None,
+            scopes: ProbeScopes::SupportedMatchBy(ScopeList::Listed),
+        };
+
+        assert!(!probe.matches());
+    }
+
+    #[test]
+    fn unsupported_match_by_does_not_match() {
+        let probe = Probe {
+            types: None,
+            scopes: ProbeScopes::UnsupportedMatchBy,
+        };
+
+        assert!(!probe.matches());
     }
 
     #[test]
@@ -343,6 +434,89 @@ mod tests {
         let result = parse("<wsd:Types>wsdp:Device:x</wsd:Types>");
 
         assert_matches!(result.err(), Some(BodyParsingError::InvalidTypes(raw_types)) if &*raw_types == "wsdp:Device:x");
+    }
+
+    #[test]
+    fn parses_missing_scopes() {
+        let probe = parse("").unwrap();
+
+        assert_matches!(probe.scopes, ProbeScopes::SupportedMatchBy(ScopeList::Any));
+    }
+
+    #[test]
+    fn parses_empty_scopes() {
+        let probe = parse("<wsd:Scopes />").unwrap();
+
+        assert_matches!(probe.scopes, ProbeScopes::SupportedMatchBy(ScopeList::Any));
+    }
+
+    #[test]
+    fn parses_whitespace_scopes() {
+        let probe = parse("<wsd:Scopes> </wsd:Scopes>").unwrap();
+
+        assert_matches!(probe.scopes, ProbeScopes::SupportedMatchBy(ScopeList::Any));
+    }
+
+    #[test]
+    fn parses_listed_scope() {
+        let probe = parse("<wsd:Scopes>urn:x</wsd:Scopes>").unwrap();
+
+        assert_matches!(
+            probe.scopes,
+            ProbeScopes::SupportedMatchBy(ScopeList::Listed)
+        );
+    }
+
+    #[test]
+    fn parses_adhoc_scope_as_listed() {
+        let probe =
+            parse("<wsd:Scopes>http://schemas.xmlsoap.org/ws/2005/04/discovery/adhoc</wsd:Scopes>")
+                .unwrap();
+
+        assert_matches!(
+            probe.scopes,
+            ProbeScopes::SupportedMatchBy(ScopeList::Listed)
+        );
+    }
+
+    #[test]
+    fn parses_empty_scopes_with_every_match_by_rule() {
+        for match_by in MATCH_BY_RULES {
+            let probe = parse(&format!(r#"<wsd:Scopes MatchBy="{}" />"#, match_by)).unwrap();
+
+            assert_matches!(probe.scopes, ProbeScopes::SupportedMatchBy(ScopeList::Any));
+        }
+    }
+
+    #[test]
+    fn parses_empty_match_by_as_absent() {
+        let probe = parse(r#"<wsd:Scopes MatchBy="" />"#).unwrap();
+
+        assert_matches!(probe.scopes, ProbeScopes::SupportedMatchBy(ScopeList::Any));
+    }
+
+    #[test]
+    fn parses_unsupported_match_by() {
+        let probe = parse(r#"<wsd:Scopes MatchBy="urn:unknown" />"#).unwrap();
+
+        assert_matches!(probe.scopes, ProbeScopes::UnsupportedMatchBy);
+    }
+
+    #[test]
+    fn parses_match_by_case_sensitively() {
+        let probe = parse(
+            r#"<wsd:Scopes MatchBy="HTTP://SCHEMAS.XMLSOAP.ORG/WS/2005/04/DISCOVERY/RFC2396" />"#,
+        )
+        .unwrap();
+
+        assert_matches!(probe.scopes, ProbeScopes::UnsupportedMatchBy);
+    }
+
+    #[test]
+    fn parses_unsupported_match_by_before_listed_scopes() {
+        let probe = parse(r#"<wsd:Scopes MatchBy="urn:unknown">urn:x</wsd:Scopes>"#).unwrap();
+
+        assert_matches!(probe.scopes, ProbeScopes::UnsupportedMatchBy);
     }
 
     #[test]
