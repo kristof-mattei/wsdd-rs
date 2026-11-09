@@ -33,7 +33,7 @@ pub(crate) struct Config {
     pub bind_to: BindTo,
 }
 
-/// WS-Discovery, Appendix I. `MessageNumber` orders every message of the Target Service, so all interfaces share this counter.
+/// Contains the `wsd:AppSequence` values of documentation/ws-discovery.pdf, Appendix I. One `sequence_id` covers the messages of every interface, so all interfaces share the `message_number` counter.
 #[derive(Debug)]
 pub(crate) struct AppSequence {
     instance_id: InstanceId,

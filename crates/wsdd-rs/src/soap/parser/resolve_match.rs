@@ -42,7 +42,7 @@ where
     find_child(reader, Some(constants::XML_WSD_NAMESPACE), "ResolveMatches")?;
 
     let mut resolve_match = None;
-    // `ResolveMatchesType` is an optional `ResolveMatch`, then extension elements (WS-Discovery, Appendix II)
+    // `ResolveMatchesType` is an optional `ResolveMatch`, then extension elements, see documentation/ws-discovery.pdf, Appendix II
     let mut extension_seen = false;
 
     let entry_depth = reader.depth();

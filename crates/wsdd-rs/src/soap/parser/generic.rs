@@ -105,7 +105,7 @@ fn is_ncname(value: &str) -> bool {
         && chars.all(|c| c != ':' && is_name_char(c))
 }
 
-/// The children of `wsd:Hello`, `wsd:Bye`, `wsd:ProbeMatch` and `wsd:ResolveMatch` in their shared sequence order (WS-Discovery, Appendix II).
+/// The children of `wsd:Hello`, `wsd:Bye`, `wsd:ProbeMatch` and `wsd:ResolveMatch` in their shared sequence order, see documentation/ws-discovery.pdf, Appendix II.
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 enum EndpointMetadataChild {
     EndpointReference,
