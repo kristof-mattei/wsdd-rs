@@ -60,6 +60,8 @@ pub(crate) enum HeaderParsingError {
     MissingAction,
     #[error("Missing RelatesTo")]
     MissingRelatesTo,
+    #[error("Unexpected RelatesTo")]
+    UnexpectedRelatesTo,
     #[error("Missing wsd:AppSequence")]
     MissingAppSequence,
     #[error("Invalid wsd:AppSequence: {}", .0)]
@@ -337,6 +339,14 @@ fn require_relates_to(relates_to: Option<MessageId>) -> Result<MessageId, Header
     relates_to.ok_or(HeaderParsingError::MissingRelatesTo)
 }
 
+/// Rejects a Hello with `wsa:RelatesTo` of any `RelationshipType`, because WSDAPI drops such a Hello too. The Discovery Proxy suppression of documentation/ws-discovery.pdf, 4.1, is not implemented.
+fn forbid_relates_to(relates_to: Option<&MessageId>) -> Result<(), HeaderParsingError> {
+    match relates_to {
+        None => Ok(()),
+        Some(_) => Err(HeaderParsingError::UnexpectedRelatesTo),
+    }
+}
+
 /// Reads past `</soap:Body>`, then requires `</soap:Envelope>`, see documentation/soap12-part1.pdf, 5.1.
 pub(crate) fn finish_envelope<R>(reader: &mut XmlReader<R>) -> Result<(), HeaderParsingError>
 where
@@ -376,6 +386,8 @@ fn parse_message_body(
     let response = match action {
         constants::WSD_GET => Ok(Get {}.into()),
         constants::WSD_HELLO => {
+            forbid_relates_to(relates_to.as_ref())?;
+
             let app_sequence = require_app_sequence(app_sequence)?;
 
             Ok(hello::parse_hello(&mut reader, app_sequence)?.into())
@@ -913,6 +925,68 @@ mod tests {
     #[tokio::test]
     async fn accepts_hello_with_app_sequence() {
         let hello = message(constants::WSD_HELLO, FULL_APP_SEQUENCE, &hello_body(1));
+
+        let (_, message) = handler_for_tests(8)
+            .deconstruct_message(&hello, SOURCE)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            message.into_hello().map(|hello| hello.app_sequence),
+            Some(full_app_sequence())
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_hello_with_relates_to() {
+        let hello = message(
+            constants::WSD_HELLO,
+            &format!("{}{}", RELATES_TO, FULL_APP_SEQUENCE),
+            &hello_body(1),
+        );
+
+        let result = handler_for_tests(8)
+            .deconstruct_message(&hello, SOURCE)
+            .await;
+
+        assert_matches!(
+            result.err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::UnexpectedRelatesTo
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_suppression_hello() {
+        let hello = message(
+            constants::WSD_HELLO,
+            &format!(
+                r#"<wsa:RelatesTo RelationshipType="wsd:Suppression">urn:uuid:00000000-0000-0000-0000-000000000002</wsa:RelatesTo>{}"#,
+                FULL_APP_SEQUENCE
+            ),
+            &hello_body(1),
+        );
+
+        let result = handler_for_tests(8)
+            .deconstruct_message(&hello, SOURCE)
+            .await;
+
+        assert_matches!(
+            result.err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::UnexpectedRelatesTo
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn accepts_hello_with_empty_relates_to() {
+        let hello = message(
+            constants::WSD_HELLO,
+            &format!("<wsa:RelatesTo />{}", FULL_APP_SEQUENCE),
+            &hello_body(1),
+        );
 
         let (_, message) = handler_for_tests(8)
             .deconstruct_message(&hello, SOURCE)
