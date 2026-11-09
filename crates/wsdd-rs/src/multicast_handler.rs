@@ -638,8 +638,7 @@ async fn repeatedly_send_buffer<T: MessageSplitter>(
         "scheduling message",
     );
 
-    // Schedule to send the given message to the given address.
-    // Implements SOAP over UDP, Appendix I.
+    // implements the retransmission algorithm of documentation/soap-over-udp.pdf, Appendix I
     let mut delta = rand::rng().random_range(constants::UDP_MIN_DELAY..=constants::UDP_MAX_DELAY);
 
     for i in 0..T::REPEAT {

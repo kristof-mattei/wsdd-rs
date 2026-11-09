@@ -47,6 +47,7 @@ fn generate_message_id() -> Urn {
 
     #[cfg(not(test))]
     {
+        // documentation/ws-addressing.pdf, 3, requires only a URI unique in time and space, so any UUID version fits
         Uuid::now_v7().urn()
     }
 }
@@ -142,8 +143,6 @@ impl<'config> Builder<'config> {
         header_and_body.write(XmlEvent::Characters(action))?;
         header_and_body.write(XmlEvent::end_element())?;
 
-        // original codebase uses v1, but spec doesn't specify version,
-        // and MS uses v4
         header_and_body.write(XmlEvent::start_element("wsa:MessageID"))?;
         header_and_body.write(XmlEvent::Characters(&message_id.to_string()))?;
         header_and_body.write(XmlEvent::end_element())?;

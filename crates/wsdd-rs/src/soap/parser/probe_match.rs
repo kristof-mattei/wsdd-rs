@@ -40,7 +40,7 @@ where
     find_child(reader, Some(constants::XML_WSD_NAMESPACE), "ProbeMatches")?;
 
     let mut matches = Vec::new();
-    // `ProbeMatchesType` is any number of `ProbeMatch`, then extension elements (WS-Discovery, Appendix II)
+    // `ProbeMatchesType` is any number of `ProbeMatch`, then extension elements, see documentation/ws-discovery.pdf, Appendix II
     let mut extension_seen = false;
 
     let entry_depth = reader.depth();

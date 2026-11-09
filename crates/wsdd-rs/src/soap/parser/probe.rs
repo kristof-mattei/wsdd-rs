@@ -19,7 +19,7 @@ pub(crate) struct Probe {
     pub types: Option<HashSet<QName>>,
 }
 
-/// The children of `wsd:Probe` in `ProbeType` sequence order (WS-Discovery, Appendix II).
+/// The children of `wsd:Probe` in `ProbeType` sequence order, see documentation/ws-discovery.pdf, Appendix II.
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 enum ProbeChild {
     Types,

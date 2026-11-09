@@ -536,7 +536,8 @@ mod tests {
 
     #[tokio::test]
     async fn handles_probe_with_non_urn_message_id() {
-        // the WS-Discovery spec's own example Probe uses this form, MessageID is `xs:anyURI`
+        // documentation/ws-discovery.pdf, 1.3, uses this `uuid:` form in its example Probe
+        // documentation/ws-addressing.pdf, 3.1, types `wsa:MessageID` as `xs:anyURI`
         const MESSAGE_ID: &str = "uuid:0a6dc791-2be6-4991-9af1-454778a1917a";
 
         let probe = format!(

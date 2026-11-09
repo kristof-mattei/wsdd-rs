@@ -491,12 +491,9 @@ impl MessageHandler {
         Ok((header, body))
     }
 
-    /// Implements SOAP-over-UDP Appendix II Item 1
-    /// Deduplicates best-effort: read lock filters most repeats cheaply, then a write
-    /// lock inserts the ID if it is still absent. The unlocked gap means a rapid burst
-    /// can insert and evict the same id before our write guard runs, so some
-    /// in-flight duplicates may be reprocessed, but we avoid taking a write lock for
-    /// every message.
+    /// Implements item 1 of documentation/soap-over-udp.pdf, Appendix II, the list of the last n MessageIDs.
+    /// Returns `true` for a known MessageID under the read lock alone, and takes the write lock only to insert an absent one.
+    /// Between the two locks, other calls can insert the same MessageID and evict it again, so this call can return `false` for a duplicate.
     pub(crate) async fn is_duplicated_msg(&self, message_id: &MessageId) -> bool {
         {
             let read_lock = self.recent_messages.read().await;
@@ -542,7 +539,7 @@ where
                 if reader.depth() == entry_depth + 1
                     && name.namespace_ref() == Some(constants::WSA_URI) =>
             {
-                // header items can be in any order, as per SOAP 1.1 and 1.2
+                // the `wsa` header blocks are read in any order, see documentation/soap12-part1.pdf, 5.2
                 match &*name.local_name {
                     "To" => {
                         to = read_text(reader)?.map(|to| DeviceUri::new(to.into_boxed_str()));
