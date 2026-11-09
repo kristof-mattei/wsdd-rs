@@ -137,14 +137,12 @@ pub(crate) enum XmlError {
     MissingElement(Box<str>),
 }
 
-type FindDescendantResult = Result<(OwnedName, Vec<OwnedAttribute>), XmlError>;
-
 /// Like [`find_optional_child`], but a missing child is an [`XmlError::MissingElement`].
 pub(crate) fn find_child<R>(
     reader: &mut XmlReader<R>,
     namespace: Option<&str>,
     path: &str,
-) -> FindDescendantResult
+) -> Result<(OwnedName, Vec<OwnedAttribute>), XmlError>
 where
     R: Read,
 {

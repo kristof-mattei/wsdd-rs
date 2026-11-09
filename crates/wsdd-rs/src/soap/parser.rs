@@ -116,8 +116,6 @@ impl From<TextReadError> for BodyParsingError {
     }
 }
 
-type ParsedHeaderResult = Result<RawHeader, HeaderParsingError>;
-
 #[derive(Error, Debug)]
 pub(crate) enum MessageHandlerError {
     #[error("Message already processed")]
@@ -175,9 +173,9 @@ impl MessageHandlerError {
     }
 }
 
-type RawMessageResult<R> = Result<(RawHeader, bool, XmlReader<R>), MessageHandlerError>;
-
-pub(crate) fn deconstruct_raw<R>(raw: R) -> RawMessageResult<R>
+pub(crate) fn deconstruct_raw<R>(
+    raw: R,
+) -> Result<(RawHeader, bool, XmlReader<R>), MessageHandlerError>
 where
     R: Read,
 {
@@ -508,7 +506,7 @@ impl MessageHandler {
     }
 }
 
-fn parse_header<R>(reader: &mut XmlReader<R>) -> ParsedHeaderResult
+fn parse_header<R>(reader: &mut XmlReader<R>) -> Result<RawHeader, HeaderParsingError>
 where
     R: Read,
 {
