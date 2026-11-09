@@ -152,6 +152,7 @@ pton
 pubpubpub
 pyflakes
 qlty
+qltysh
 qname
 qnames
 rawfile
@@ -218,6 +219,7 @@ vadimcn
 withf
 wprt
 wsdapi
+wsdapi's
 wsdd
 wsdp
 wsdudp
