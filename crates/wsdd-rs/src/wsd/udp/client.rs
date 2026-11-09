@@ -1901,7 +1901,7 @@ mod tests {
         assert!(client_devices.read().is_empty());
     }
 
-    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(not(miri), tokio::test(start_paused = true))]
     #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn sends_probe() {
         let cancellation_token = CancellationToken::new();
