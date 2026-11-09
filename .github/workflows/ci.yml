@@ -56,7 +56,7 @@ jobs:
     permissions:
       checks: write # publish-unit-test-result-action creates a check run
       contents: read
-      id-token: write # codecov-action authenticates over OIDC
+      id-token: write # codecov-action and qlty-action authenticate over OIDC
       issues: read # publish-unit-test-result-action needs this in private repos
       pull-requests: write # publish-unit-test-result-action comments the test summary
 
