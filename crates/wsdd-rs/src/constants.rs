@@ -76,19 +76,14 @@ pub(crate) const WSD_HTTP_PORT: NonZeroU16 = NonZeroU16::new(5357).unwrap();
 )]
 pub(crate) const WSD_MAX_LEN: usize = 32767;
 
-// SOAP/UDP transmission constants
-// See Appendix I (non-normative) – Example retransmission in documentation/soap-over-udp.pdf
-pub(crate) const MULTICAST_UDP_REPEAT: usize = 4;
+// documentation/devicesprofile.pdf, Appendix I, supersedes the defaults of documentation/soap-over-udp.pdf and documentation/ws-discovery.pdf
+pub(crate) const MULTICAST_UDP_REPEAT: usize = 2;
 pub(crate) const UNICAST_UDP_REPEAT: usize = 2;
 pub(crate) const UDP_MIN_DELAY: Duration = Duration::from_millis(50);
 pub(crate) const UDP_MAX_DELAY: Duration = Duration::from_millis(250);
-pub(crate) const UDP_UPPER_DELAY: Duration = Duration::from_millis(500);
-
-// See documentation/ws-discovery.pdf, 2.4 Protocol Assignments, Table 4
-pub(crate) const APP_MAX_DELAY: Duration = Duration::from_millis(500);
-
-// See documentation/ws-discovery.pdf, 7. Security Model, Table 8
-pub(crate) const MATCH_TIMEOUT: Duration = APP_MAX_DELAY.saturating_add(Duration::from_millis(100));
+pub(crate) const UDP_UPPER_DELAY: Duration = Duration::from_millis(450);
+pub(crate) const APP_MAX_DELAY: Duration = Duration::from_secs(5);
+pub(crate) const MATCH_TIMEOUT: Duration = Duration::from_secs(10);
 
 // A sane default for the size of text inside an XML element
 pub(crate) const STRING_DEFAULT_CAPACITY: usize = 128;
