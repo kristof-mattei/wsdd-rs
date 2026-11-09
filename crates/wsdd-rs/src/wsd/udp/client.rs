@@ -2582,6 +2582,85 @@ mod tests {
 
     #[cfg_attr(not(miri), tokio::test)]
     #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn ignores_hello_older_than_the_probe_matches_for_every_endpoint() {
+        let (message_handler, client_network_address) = build_message_handler_with_network_address(
+            IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
+        );
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // hosts
+        let probe_message_id = Uuid::now_v7();
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
+        let first_endpoint = new_endpoint();
+        let second_endpoint = new_endpoint();
+
+        // the template's `AppSequence` has `InstanceId` 1
+        let probe_matches = format!(
+            include_str!("../../test/probe-matches-multiple-without-xaddrs-template.xml"),
+            probe_message_id.urn(),
+            first_endpoint,
+            second_endpoint,
+        );
+
+        let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(2);
+
+        let (_, message) = message_handler
+            .deconstruct_message(
+                &probe_matches,
+                SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
+            )
+            .await
+            .unwrap();
+
+        let probes = {
+            let mut hash_map = HashMap::new();
+
+            hash_map.insert(
+                MessageId::from(probe_message_id.urn()),
+                LastCopy::Sent(Instant::now()),
+            );
+
+            hash_map
+        };
+
+        let probe_matches = message.into_probe_matches().unwrap();
+        let mut client = ClientLoop {
+            probes,
+            ..client_loop(
+                &client_config,
+                &client_devices,
+                &client_network_address,
+                &multicast_tx,
+            )
+        };
+
+        let result = client
+            .handle_probe_matches(Instant::now(), probe_matches)
+            .await;
+
+        client.exchanges.wait().await;
+
+        assert_matches!(result, Ok(()));
+
+        for endpoint in [&first_endpoint, &second_endpoint] {
+            let result = hello(
+                &client_config,
+                &client_devices,
+                &client_network_address,
+                endpoint,
+                AppSequence::new(0, None, 5),
+                None,
+            )
+            .await;
+
+            assert_matches!(result, Ok(false));
+        }
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn ignores_probe_matches_for_outdated_probe() {
         let (message_handler, client_network_address) = build_message_handler_with_network_address(
             IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
