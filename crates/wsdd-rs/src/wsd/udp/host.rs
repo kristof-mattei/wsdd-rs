@@ -85,7 +85,8 @@ impl WSDHost {
         }
     }
 
-    // WS-Discovery, Section 4.1, Hello message
+    // documentation/ws-discovery.pdf, 4.1, Hello message
+    // the Hello is sent without the random wait of 4.1, because WSDAPI sends it at once too
     fn schedule_send_hello(&self) {
         let cancellation_token = self.cancellation_token.clone();
         let config = Arc::clone(&self.config);
@@ -239,7 +240,8 @@ async fn listen_forever(
             },
         };
 
-        // return to sender
+        // the reply is sent to the UDP source, also for a non-anonymous `wsa:ReplyTo`, because WSDAPI sends it there too
+        // documentation/ws-discovery.pdf, 7, forbids a reply to such a message without a valid signature
         let outgoing = OutgoingMessage {
             to: from,
             message: response,
