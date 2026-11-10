@@ -16,7 +16,7 @@ use tracing::{Level, event};
 
 use crate::config::Config;
 use crate::constants;
-use crate::soap::parser::{MessageHandler, MessageHandlerError};
+use crate::soap::parser::{HeaderParsingError, MessageHandler, MessageHandlerError};
 use crate::soap::{HostMessage, UnicastMessage, WSDMessage, builder};
 use crate::span::MakeSpanWithUuid;
 
@@ -93,6 +93,17 @@ async fn build_response(
     let (header, message) = match message_handler.deconstruct_http_message(buffer).await {
         Ok(pieces) => pieces,
         Err(MessageHandlerError::DuplicateMessage) => {
+            return Ok(None);
+        },
+        // a request with a repeated `wsa` header block gets 202 without a body, whatever its action, because WSDAPI returns 202 without a body for such a request
+        // the `wsa:InvalidMessageInformationHeader` fault for a repeated `wsa:To`, `wsa:Action` or `wsa:MessageID` is not sent, see documentation/ws-addressing.pdf, 4.1
+        Err(
+            error @ MessageHandlerError::HeaderError(HeaderParsingError::DuplicateAddressingBlock(
+                _,
+            )),
+        ) => {
+            error.log(buffer);
+
             return Ok(None);
         },
         Err(error) => {
