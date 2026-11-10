@@ -143,6 +143,7 @@ mod tests {
     use tokio_util::sync::CancellationToken;
     use uuid::Uuid;
 
+    use crate::config::Config;
     use crate::constants::{self, WSD_MAX_KNOWN_MESSAGES};
     use crate::max_size_deque::MaxSizeDeque;
     use crate::network_address::NetworkAddress;
@@ -294,6 +295,122 @@ mod tests {
         assert_eq!(second.status(), StatusCode::ACCEPTED);
         // no content
         assert_eq!(second.bytes().await.unwrap(), vec![]);
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn drops_get_with_repeated_to() {
+        drops_request_with_repeated_block(get_body, |config| {
+            format!("<wsa:To>{}</wsa:To>", config.uuid_as_device_uri)
+        })
+        .await;
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn drops_get_with_repeated_action() {
+        drops_request_with_repeated_block(get_body, |_| {
+            format!("<wsa:Action>{}</wsa:Action>", constants::WSD_GET)
+        })
+        .await;
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn drops_get_with_repeated_message_id() {
+        drops_request_with_repeated_block(get_body, |_| {
+            format!("<wsa:MessageID>{}</wsa:MessageID>", Uuid::now_v7().urn())
+        })
+        .await;
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn drops_get_with_repeated_relates_to() {
+        drops_request_with_repeated_block(get_body, |_| {
+            let relates_to = format!("<wsa:RelatesTo>{}</wsa:RelatesTo>", Uuid::now_v7().urn());
+
+            format!("{}{}", relates_to, relates_to)
+        })
+        .await;
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn drops_probe_with_repeated_message_id() {
+        let message_id = Uuid::now_v7();
+
+        drops_request_with_repeated_block(
+            |_| {
+                format!(
+                    include_str!("../../test/probe-template-no-types.xml"),
+                    message_id
+                )
+            },
+            |_| format!("<wsa:MessageID>{}</wsa:MessageID>", message_id.urn()),
+        )
+        .await;
+    }
+
+    fn get_body(config: &Config) -> String {
+        format!(
+            include_str!("../../test/get-template.xml"),
+            config.uuid_as_device_uri,
+            Uuid::now_v7()
+        )
+    }
+
+    async fn drops_request_with_repeated_block<B, E>(body: B, extra_blocks: E)
+    where
+        B: FnOnce(&Config) -> String,
+        E: FnOnce(&Config) -> String,
+    {
+        // host
+        let host_ip = Ipv4Addr::LOCALHOST;
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
+        let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
+
+        let cancellation_token = CancellationToken::new();
+
+        let http_server = WSDHttpServer::init(
+            NetworkAddress::new(
+                IpNet::new(host_ip.into(), 8).unwrap(),
+                Arc::new(NetworkInterface::new_with_index(
+                    "lo",
+                    RT_SCOPE_SITE,
+                    if_nametoindex("lo").unwrap(),
+                )),
+            ),
+            cancellation_token.child_token(),
+            Arc::clone(&host_config),
+            host_http_listening_address,
+            Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES))),
+        )
+        .unwrap();
+
+        let body = body(&host_config).replace(
+            "</soap:Header>",
+            &format!("{}</soap:Header>", extra_blocks(&host_config)),
+        );
+
+        let response = reqwest::ClientBuilder::new()
+            .build()
+            .unwrap()
+            .post(format!(
+                "http://{}/{}",
+                http_server.http_bound_to, host_config.uuid
+            ))
+            .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
+            .header("User-Agent", "wsdd-rs")
+            .body(body)
+            .timeout(host_config.metadata_timeout)
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        // no content
+        assert_eq!(response.bytes().await.unwrap(), vec![]);
     }
 
     #[cfg_attr(not(miri), tokio::test)]

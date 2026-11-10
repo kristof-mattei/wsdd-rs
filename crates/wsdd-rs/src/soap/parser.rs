@@ -66,14 +66,8 @@ pub(crate) enum HeaderParsingError {
     MissingAppSequence,
     #[error("Invalid wsd:AppSequence: {}", .0)]
     InvalidAppSequence(InvalidAppSequence),
-    #[error("Duplicate wsa:To")]
-    DuplicateTo,
-    #[error("Duplicate wsa:Action")]
-    DuplicateAction,
-    #[error("Duplicate wsa:MessageID")]
-    DuplicateMessageId,
-    #[error("Duplicate wsa:RelatesTo")]
-    DuplicateRelatesTo,
+    #[error("Duplicate {}", .0)]
+    DuplicateAddressingBlock(AddressingBlock),
     #[error("Duplicate wsd:AppSequence")]
     DuplicateAppSequence,
     #[error("Duplicate soap:Header")]
@@ -86,6 +80,26 @@ pub(crate) enum HeaderParsingError {
     NotASoap12Envelope(Box<str>),
     #[error("Unexpected child of soap:Envelope: {}", .0)]
     UnexpectedEnvelopeChild(Box<str>),
+}
+
+/// A `wsa` header block read by `parse_header`.
+#[derive(Debug)]
+pub(crate) enum AddressingBlock {
+    To,
+    Action,
+    MessageId,
+    RelatesTo,
+}
+
+impl std::fmt::Display for AddressingBlock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            AddressingBlock::To => f.write_str("wsa:To"),
+            AddressingBlock::Action => f.write_str("wsa:Action"),
+            AddressingBlock::MessageId => f.write_str("wsa:MessageID"),
+            AddressingBlock::RelatesTo => f.write_str("wsa:RelatesTo"),
+        }
+    }
 }
 
 impl From<xml::reader::Error> for HeaderParsingError {
@@ -556,21 +570,27 @@ where
                 match &*name.local_name {
                     "To" => {
                         if to.is_some() {
-                            return Err(HeaderParsingError::DuplicateTo);
+                            return Err(HeaderParsingError::DuplicateAddressingBlock(
+                                AddressingBlock::To,
+                            ));
                         }
 
                         to = Some(read_text(reader)?.map(|to| DeviceUri::new(to.into_boxed_str())));
                     },
                     "Action" => {
                         if action.is_some() {
-                            return Err(HeaderParsingError::DuplicateAction);
+                            return Err(HeaderParsingError::DuplicateAddressingBlock(
+                                AddressingBlock::Action,
+                            ));
                         }
 
                         action = Some(read_text(reader)?.map(String::into_boxed_str));
                     },
                     "MessageID" => {
                         if message_id.is_some() {
-                            return Err(HeaderParsingError::DuplicateMessageId);
+                            return Err(HeaderParsingError::DuplicateAddressingBlock(
+                                AddressingBlock::MessageId,
+                            ));
                         }
 
                         message_id = Some(
@@ -579,7 +599,9 @@ where
                     },
                     "RelatesTo" => {
                         if relates_to.is_some() {
-                            return Err(HeaderParsingError::DuplicateRelatesTo);
+                            return Err(HeaderParsingError::DuplicateAddressingBlock(
+                                AddressingBlock::RelatesTo,
+                            ));
                         }
 
                         relates_to = Some(
@@ -655,7 +677,8 @@ mod tests {
     use crate::soap::MessageId;
     use crate::soap::parser::app_sequence::{AppSequence, InvalidAppSequence};
     use crate::soap::parser::{
-        BodyParsingError, HeaderParsingError, MessageHandler, MessageHandlerError, deconstruct_raw,
+        AddressingBlock, BodyParsingError, HeaderParsingError, MessageHandler, MessageHandlerError,
+        deconstruct_raw,
     };
     use crate::xml::XmlError;
 
@@ -961,7 +984,7 @@ mod tests {
         assert_matches!(
             deconstruct_raw(hello.as_bytes()).err(),
             Some(MessageHandlerError::HeaderError(
-                HeaderParsingError::DuplicateTo
+                HeaderParsingError::DuplicateAddressingBlock(AddressingBlock::To)
             ))
         );
     }
@@ -977,7 +1000,7 @@ mod tests {
         assert_matches!(
             deconstruct_raw(hello.as_bytes()).err(),
             Some(MessageHandlerError::HeaderError(
-                HeaderParsingError::DuplicateAction
+                HeaderParsingError::DuplicateAddressingBlock(AddressingBlock::Action)
             ))
         );
     }
@@ -993,7 +1016,7 @@ mod tests {
         assert_matches!(
             deconstruct_raw(hello.as_bytes()).err(),
             Some(MessageHandlerError::HeaderError(
-                HeaderParsingError::DuplicateMessageId
+                HeaderParsingError::DuplicateAddressingBlock(AddressingBlock::MessageId)
             ))
         );
     }
@@ -1009,7 +1032,7 @@ mod tests {
         assert_matches!(
             deconstruct_raw(probe_matches.as_bytes()).err(),
             Some(MessageHandlerError::HeaderError(
-                HeaderParsingError::DuplicateRelatesTo
+                HeaderParsingError::DuplicateAddressingBlock(AddressingBlock::RelatesTo)
             ))
         );
     }
@@ -1025,7 +1048,7 @@ mod tests {
         assert_matches!(
             deconstruct_raw(hello.as_bytes()).err(),
             Some(MessageHandlerError::HeaderError(
-                HeaderParsingError::DuplicateRelatesTo
+                HeaderParsingError::DuplicateAddressingBlock(AddressingBlock::RelatesTo)
             ))
         );
     }
@@ -1041,7 +1064,7 @@ mod tests {
         assert_matches!(
             deconstruct_raw(hello.as_bytes()).err(),
             Some(MessageHandlerError::HeaderError(
-                HeaderParsingError::DuplicateRelatesTo
+                HeaderParsingError::DuplicateAddressingBlock(AddressingBlock::RelatesTo)
             ))
         );
     }
