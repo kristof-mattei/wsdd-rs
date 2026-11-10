@@ -549,9 +549,10 @@ where
                     && name.namespace_ref() == Some(constants::WSA_URI) =>
             {
                 // the `wsa` header blocks are read in any order, see documentation/soap12-part1.pdf, 5.2
-                // a second `wsa:To`, `wsa:Action` or `wsa:MessageID` violates documentation/ws-addressing.pdf, 3
+                // a second `wsa:To`, `wsa:Action` or `wsa:MessageID` violates the cardinality, see documentation/ws-addressing.pdf, 3
                 // a second `wsa:RelatesTo` is valid, see documentation/ws-addressing.pdf, 3.1
-                // a second `wsa:RelatesTo` is rejected because WSDAPI drops such a message, and the outlines list at most one, see documentation/ws-discovery.pdf, 4.1, 5.3 and 6.2
+                // a second `wsa:RelatesTo` is rejected, because WSDAPI drops such a message
+                // the outlines list at most one `wsa:RelatesTo`, see documentation/ws-discovery.pdf, 4.1, 5.3 and 6.2
                 match &*name.local_name {
                     "To" => {
                         if to.is_some() {
