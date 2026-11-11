@@ -314,38 +314,39 @@ jobs:
           cargo "+${TOOLCHAIN}" miri nextest run --profile ci --no-fail-fast --partition "${PARTITION}" ${CARGO_FEATURES} --all-targets --workspace
         continue-on-error: true
 
-      - name: Upload test results
-        if: |
-          github.event_name != 'pull_request' ||
-          github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          if-no-files-found: error
-          name: miri-test-results-${{ matrix.partition }}
-          path: reports/results.xml
-          retention-days: 1
-
       - name: Record Rust version
         shell: bash
         run: |
           echo "RUST=$(rustup run "${TOOLCHAIN}" rustc --version)" >> "$GITHUB_ENV"
 
-      - name: Upload test results (to Codecov.io)
-        if: |
-          github.event_name != 'pull_request' ||
-          github.event.pull_request.head.repo.full_name == github.repository
-        uses: codecov/codecov-action@v7.1.1
-        with:
-          disable_search: true
-          disable_telem: true
-          env_vars: RUNNER_OS,RUST
-          fail_ci_if_error: true
-          flags: tests-with-miri
-          files: reports/results.xml
-          name: test-results
-          plugins: noop
-          report_type: "test_results"
-          use_oidc: true
+      - parallel:
+          - name: Upload test results
+            if: |
+              github.event_name != 'pull_request' ||
+              github.event.pull_request.head.repo.full_name == github.repository
+            uses: actions/upload-artifact@v7.0.2
+            with:
+              if-no-files-found: error
+              name: miri-test-results-${{ matrix.partition }}
+              path: reports/results.xml
+              retention-days: 1
+
+          - name: Upload test results (to Codecov.io)
+            if: |
+              github.event_name != 'pull_request' ||
+              github.event.pull_request.head.repo.full_name == github.repository
+            uses: codecov/codecov-action@v7.1.1
+            with:
+              disable_search: true
+              disable_telem: true
+              env_vars: RUNNER_OS,RUST
+              fail_ci_if_error: true
+              flags: tests-with-miri
+              files: reports/results.xml
+              name: test-results
+              plugins: noop
+              report_type: "test_results"
+              use_oidc: true
 
       - name: Fail if tests failed
         shell: bash
