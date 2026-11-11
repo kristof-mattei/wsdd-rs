@@ -1,4 +1,37 @@
 <!-- header goes here -->
+## [2.2.0](https://github.com/kristof-mattei/wsdd-rs/compare/v2.1.4..v2.2.0) - 2026-11-11
+
+### 🚀 Features
+
+- *(cli)* Make `random` the `--source-port` default by [Kristof Mattei](https://github.com/kristof-mattei) ([`a6c7654`](https://github.com/kristof-mattei/wsdd-rs/commit/a6c7654154f9f69bad53c5a122030f0c856b12a5))
+
+### 🐛 Bug Fixes
+
+- Use the DPWS Appendix I timing constants by [Kristof Mattei](https://github.com/kristof-mattei) ([`be1ccce`](https://github.com/kristof-mattei/wsdd-rs/commit/be1ccce620d6b7b4dd41c0fbafbaee8d618214e8))
+- Wait before sending a Probe Match by [Kristof Mattei](https://github.com/kristof-mattei) ([`a0815dd`](https://github.com/kristof-mattei/wsdd-rs/commit/a0815dd076aad7766c9f3acb9753fcfe9d42efcf))
+- Reject `wsa:RelatesTo` in a Hello by [Kristof Mattei](https://github.com/kristof-mattei) ([`512eccf`](https://github.com/kristof-mattei/wsdd-rs/commit/512eccf79ac4fa84548624346fdebdaa9b75aeb6))
+- Don't answer Probes with Scopes by [Kristof Mattei](https://github.com/kristof-mattei) ([`61f72e2`](https://github.com/kristof-mattei/wsdd-rs/commit/61f72e25b868834c6f312947ec0861e2e278915b))
+- Reject a repeated `wsa:To`, `wsa:Action`, `wsa:MessageID` or `wsa:RelatesTo` by [Kristof Mattei](https://github.com/kristof-mattei) ([`908715c`](https://github.com/kristof-mattei/wsdd-rs/commit/908715c6bcc6661fc427a05d3ff780fd810aec95))
+- Return 202 for an HTTP request with a repeated `wsa` header block by [Kristof Mattei](https://github.com/kristof-mattei) ([`7c7fe61`](https://github.com/kristof-mattei/wsdd-rs/commit/7c7fe61ca1510d9a57e40082131927a80e888ffc))
+- Reject a Bye with `wsa:RelatesTo` by [Kristof Mattei](https://github.com/kristof-mattei) ([`5d617ca`](https://github.com/kristof-mattei/wsdd-rs/commit/5d617ca113e0d8a4dff47de325e0728754561b36))
+- Clear actionlint exceptions by [Kristof Mattei](https://github.com/kristof-mattei) ([`8096d68`](https://github.com/kristof-mattei/wsdd-rs/commit/8096d686465dc00cb4c7f2fa47455d616afbe1cf))
+
+### 📚 Documentation
+
+- Correct the duplicate detection citation and the socket descriptions by [Kristof Mattei](https://github.com/kristof-mattei) ([`1ae4d72`](https://github.com/kristof-mattei/wsdd-rs/commit/1ae4d72075543a0d79bb2bf561a58bb5f20f2e29))
+- Document the host's deviations from WS-Discovery by [Kristof Mattei](https://github.com/kristof-mattei) ([`44d136d`](https://github.com/kristof-mattei/wsdd-rs/commit/44d136d449e682bef521f28697324c08b5900ec6))
+- Cite `documentation/ws-discovery.pdf` in spec comments by [Kristof Mattei](https://github.com/kristof-mattei) ([`6a37c2c`](https://github.com/kristof-mattei/wsdd-rs/commit/6a37c2cea3dcdf4334cf97e94d1f0e944fb30f6f))
+- Cite the vendored PDFs in the remaining spec comments by [Kristof Mattei](https://github.com/kristof-mattei) ([`0606de7`](https://github.com/kristof-mattei/wsdd-rs/commit/0606de7b51a0863a8df621fca192381a6324fb65))
+- Put the citations last in the `wsa:RelatesTo` comment by [Kristof Mattei](https://github.com/kristof-mattei) ([`be9af5c`](https://github.com/kristof-mattei/wsdd-rs/commit/be9af5c17373b019994093d6c4dc21dd9d741136))
+- Split the `wsa:RelatesTo` reasons and put the citations last in `parse_header` by [Kristof Mattei](https://github.com/kristof-mattei) ([`59506c9`](https://github.com/kristof-mattei/wsdd-rs/commit/59506c9ff2853cfd13d7683fbd01dfd86ebfcc2f))
+
+### 🚜 Refactor
+
+- Inline single-use type aliases and move `TaskResult` and `HostProps` to the top of their files by [Kristof Mattei](https://github.com/kristof-mattei) ([`1fe3649`](https://github.com/kristof-mattei/wsdd-rs/commit/1fe3649972aa5ea437d7832e385fccbc0aed8416))
+
+### 🧪 Testing
+
+- Apply the `AppSequence` of a ProbeMatches to every match by [Kristof Mattei](https://github.com/kristof-mattei) ([`0283ae5`](https://github.com/kristof-mattei/wsdd-rs/commit/0283ae556f06830afd4622733744374eeac20abe))
 ## [2.1.4](https://github.com/kristof-mattei/wsdd-rs/compare/v2.1.3..v2.1.4) - 2026-11-08
 
 ### 🐛 Bug Fixes
