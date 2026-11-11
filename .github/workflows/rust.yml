@@ -62,28 +62,29 @@ jobs:
 
           sudo apt-get install --no-install-recommends --yes libsystemd-dev
 
-      - &set_up_mold
-        name: Set up mold
-        uses: rui314/setup-mold@v1
+      - parallel:
+          - &set_up_mold
+            name: Set up mold
+            uses: rui314/setup-mold@v1
 
-      - &set_up_toolchain
-        name: Set up toolchain
-        shell: bash
-        run: |
-          rm "${HOME}/.cargo/bin/cargo-fmt"
-          rm "${HOME}/.cargo/bin/rust-analyzer"
-          rm "${HOME}/.cargo/bin/rustfmt"
+          - &set_up_toolchain
+            name: Set up toolchain
+            shell: bash
+            run: |
+              rm "${HOME}/.cargo/bin/cargo-fmt"
+              rm "${HOME}/.cargo/bin/rust-analyzer"
+              rm "${HOME}/.cargo/bin/rustfmt"
 
-          rustup self update
-          rustup update
-          rustup show active-toolchain || rustup toolchain install
-          rustup show
+              rustup self update
+              rustup update
+              rustup show active-toolchain || rustup toolchain install
+              rustup show
 
-          cargo --version
+              cargo --version
 
-      - &set_up_sccache
-        name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.11
+          - &set_up_sccache
+            name: Set up sccache
+            uses: mozilla-actions/sccache-action@v0.0.11
 
       - &wait_for_libsystemd_dev
         name: Wait for libsystemd-dev
@@ -132,11 +133,12 @@ jobs:
 
       - *set_up_libsystemd_dev
 
-      - *set_up_mold
+      - parallel:
+          - *set_up_mold
 
-      - *set_up_toolchain
+          - *set_up_toolchain
 
-      - *set_up_sccache
+          - *set_up_sccache
 
       - *wait_for_libsystemd_dev
 
@@ -266,21 +268,22 @@ jobs:
     steps:
       - *checkout
 
-      - *set_up_mold
+      - parallel:
+          - *set_up_mold
 
-      - name: Set up toolchain
-        shell: bash
-        run: |
-          rm "${HOME}/.cargo/bin/cargo-fmt"
-          rm "${HOME}/.cargo/bin/rust-analyzer"
-          rm "${HOME}/.cargo/bin/rustfmt"
+          - name: Set up toolchain
+            shell: bash
+            run: |
+              rm "${HOME}/.cargo/bin/cargo-fmt"
+              rm "${HOME}/.cargo/bin/rust-analyzer"
+              rm "${HOME}/.cargo/bin/rustfmt"
 
-          rustup self update
-          rustup update
-          rustup toolchain install "${TOOLCHAIN}"
-          rustup show
+              rustup self update
+              rustup update
+              rustup toolchain install "${TOOLCHAIN}"
+              rustup show
 
-          cargo --version
+              cargo --version
 
       - name: Install miri & rust-src
         shell: bash
@@ -401,11 +404,12 @@ jobs:
 
       - *set_up_libsystemd_dev
 
-      - *set_up_mold
+      - parallel:
+          - *set_up_mold
 
-      - *set_up_toolchain
+          - *set_up_toolchain
 
-      - *set_up_sccache
+          - *set_up_sccache
 
       - *wait_for_libsystemd_dev
 
@@ -468,12 +472,13 @@ jobs:
         run: |
           mv baseline "${RUNNER_TEMP}/baseline"
 
-      - *set_up_mold
+      - parallel:
+          - *set_up_mold
 
-      - *set_up_toolchain
+          - *set_up_toolchain
 
-      # `cargo-edit` builds from source through `RUSTC_WRAPPER`, so sccache has to be set up first
-      - *set_up_sccache
+          # `cargo-edit` builds from source through `RUSTC_WRAPPER`, so sccache has to be set up first
+          - *set_up_sccache
 
       - name: Install cargo-semver-checks, and cargo-edit to do set-version
         uses: taiki-e/install-action@v2.90.3
