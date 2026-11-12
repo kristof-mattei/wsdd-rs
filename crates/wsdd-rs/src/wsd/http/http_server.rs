@@ -561,4 +561,50 @@ mod tests {
         // no content
         assert_eq!(response.bytes().await.unwrap(), vec![]);
     }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn rejects_request_with_another_content_type() {
+        // host
+        let host_ip = Ipv4Addr::LOCALHOST;
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
+        let host_http_listening_address = SocketAddr::V4(SocketAddrV4::new(host_ip, 0));
+
+        let cancellation_token = CancellationToken::new();
+
+        let http_server = WSDHttpServer::init(
+            NetworkAddress::new(
+                IpNet::new(host_ip.into(), 8).unwrap(),
+                Arc::new(NetworkInterface::new_with_index(
+                    "lo",
+                    RT_SCOPE_SITE,
+                    if_nametoindex("lo").unwrap(),
+                )),
+            ),
+            cancellation_token.child_token(),
+            Arc::clone(&host_config),
+            host_http_listening_address,
+            Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES))),
+        )
+        .unwrap();
+
+        let response = reqwest::ClientBuilder::new()
+            .build()
+            .unwrap()
+            .post(format!(
+                "http://{}/{}",
+                http_server.http_bound_to, host_config.uuid
+            ))
+            .header("Content-Type", "text/xml; charset=utf-8")
+            .header("User-Agent", "wsdd-rs")
+            .body(get_body(&host_config))
+            .timeout(host_config.metadata_timeout)
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+        // no content
+        assert_eq!(response.bytes().await.unwrap(), vec![]);
+    }
 }
