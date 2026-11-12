@@ -17,7 +17,9 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{Level, event};
 use xml::ParserConfig;
-use xml::common::XmlVersion;
+use xml::attribute::OwnedAttribute;
+use xml::common::{XmlVersion, is_whitespace_char};
+use xml::namespace::Namespace;
 use xml::reader::XmlEvent;
 
 use crate::constants;
@@ -25,6 +27,7 @@ use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
 use crate::soap::parser::app_sequence::{AppSequence, InvalidAppSequence};
+use crate::soap::parser::generic::resolve_qname;
 use crate::soap::parser::get::Get;
 use crate::soap::{MessageId, WSDMessage};
 use crate::wsd::device::DeviceUri;
@@ -45,9 +48,20 @@ pub(crate) struct Header {
 /// Every header block that was read, before the action decides which of them the message requires.
 pub(crate) struct RawHeader {
     header: Header,
-    relates_to: Option<MessageId>,
+    /// `None` when `wsa:RelatesTo` is absent or empty.
+    relationship: Option<Relationship>,
     /// `None` when the block is absent.
     app_sequence: Option<Result<AppSequence, InvalidAppSequence>>,
+}
+
+/// The `[relationship]` of documentation/ws-addressing.pdf, 3.
+enum Relationship {
+    /// The type `wsa:Reply`, with the `[message id]` of the request.
+    Reply(MessageId),
+    /// The type `wsd:Suppression` of documentation/ws-discovery.pdf, 4.1.
+    Suppression,
+    /// Any other type.
+    Other,
 }
 
 #[derive(Error, Debug)]
@@ -62,6 +76,10 @@ pub(crate) enum HeaderParsingError {
     MissingRelatesTo,
     #[error("Unexpected RelatesTo")]
     UnexpectedRelatesTo,
+    #[error("RelatesTo of the type wsd:Suppression")]
+    SuppressionRelatesTo,
+    #[error("Invalid RelationshipType: {}", .0)]
+    InvalidRelationshipType(Box<str>),
     #[error("Missing wsd:AppSequence")]
     MissingAppSequence,
     #[error("Invalid wsd:AppSequence: {}", .0)]
@@ -357,16 +375,46 @@ fn require_app_sequence(
 }
 
 /// A Probe Match or Resolve Match MUST relate to the Probe or Resolve it answers, see documentation/ws-discovery.pdf, 5.3 and 6.2.
-fn require_relates_to(relates_to: Option<MessageId>) -> Result<MessageId, HeaderParsingError> {
-    relates_to.ok_or(HeaderParsingError::MissingRelatesTo)
+/// A reply relates to its request with a relationship of the type `wsa:Reply`, see documentation/ws-addressing.pdf, 3.
+fn require_relates_to(relationship: Option<Relationship>) -> Result<MessageId, HeaderParsingError> {
+    match relationship {
+        Some(Relationship::Reply(relates_to)) => Ok(relates_to),
+        None | Some(Relationship::Suppression | Relationship::Other) => {
+            Err(HeaderParsingError::MissingRelatesTo)
+        },
+    }
 }
 
 /// A Hello with `wsa:RelatesTo` of any `RelationshipType` is dropped, because the Discovery Proxy suppression is not implemented, see documentation/ws-discovery.pdf, 4.1.
 /// WSDAPI drops such a Hello too.
-fn forbid_relates_to(relates_to: Option<&MessageId>) -> Result<(), HeaderParsingError> {
-    match relates_to {
+fn forbid_relates_to(relationship: Option<&Relationship>) -> Result<(), HeaderParsingError> {
+    match relationship {
         None => Ok(()),
         Some(_) => Err(HeaderParsingError::UnexpectedRelatesTo),
+    }
+}
+
+/// A request with `wsa:RelatesTo` is valid, and the spec has no receiver rule for it, see documentation/ws-addressing.pdf, 3.
+/// A Get with `wsa:RelatesTo` of any `RelationshipType` is rejected, because `FDResPub` returns no `GetResponse` for it.
+fn check_get_relationship(relationship: Option<&Relationship>) -> Result<(), HeaderParsingError> {
+    match relationship {
+        None => Ok(()),
+        Some(&Relationship::Suppression) => Err(HeaderParsingError::SuppressionRelatesTo),
+        Some(&(Relationship::Reply(_) | Relationship::Other)) => {
+            Err(HeaderParsingError::UnexpectedRelatesTo)
+        },
+    }
+}
+
+/// A request with `wsa:RelatesTo` is valid, and the spec has no receiver rule for it, see documentation/ws-addressing.pdf, 3.
+/// A Probe or a Resolve with `wsa:RelatesTo` of a type other than `wsa:Reply` is rejected, because WSDAPI sends no match for it.
+fn check_request_relationship(
+    relationship: Option<&Relationship>,
+) -> Result<(), HeaderParsingError> {
+    match relationship {
+        None | Some(&Relationship::Reply(_)) => Ok(()),
+        Some(&Relationship::Suppression) => Err(HeaderParsingError::SuppressionRelatesTo),
+        Some(&Relationship::Other) => Err(HeaderParsingError::UnexpectedRelatesTo),
     }
 }
 
@@ -402,14 +450,18 @@ where
 /// Parses the body of `action`, and moves the header blocks that the action requires into the message.
 fn parse_message_body(
     action: &str,
-    relates_to: Option<MessageId>,
+    relationship: Option<Relationship>,
     app_sequence: Option<Result<AppSequence, InvalidAppSequence>>,
     mut reader: XmlReader<&[u8]>,
 ) -> Result<WSDMessage, MessageHandlerError> {
     let response = match action {
-        constants::WSD_GET => Ok(Get {}.into()),
+        constants::WSD_GET => {
+            check_get_relationship(relationship.as_ref())?;
+
+            Ok(Get {}.into())
+        },
         constants::WSD_HELLO => {
-            forbid_relates_to(relates_to.as_ref())?;
+            forbid_relates_to(relationship.as_ref())?;
 
             let app_sequence = require_app_sequence(app_sequence)?;
 
@@ -423,19 +475,27 @@ fn parse_message_body(
             Ok(bye::parse_bye(&mut reader, app_sequence)?.into())
         },
         constants::WSD_PROBE_MATCH => {
-            let relates_to = require_relates_to(relates_to)?;
+            let relates_to = require_relates_to(relationship)?;
             let app_sequence = require_app_sequence(app_sequence)?;
 
             Ok(probe_match::parse_probe_matches(&mut reader, relates_to, app_sequence)?.into())
         },
         constants::WSD_RESOLVE_MATCH => {
-            let relates_to = require_relates_to(relates_to)?;
+            let relates_to = require_relates_to(relationship)?;
             let app_sequence = require_app_sequence(app_sequence)?;
 
             Ok(resolve_match::parse_resolve_matches(&mut reader, relates_to, app_sequence)?.into())
         },
-        constants::WSD_PROBE => Ok(probe::parse_probe(&mut reader)?.into()),
-        constants::WSD_RESOLVE => Ok(resolve::parse_resolve(&mut reader)?.into()),
+        constants::WSD_PROBE => {
+            check_request_relationship(relationship.as_ref())?;
+
+            Ok(probe::parse_probe(&mut reader)?.into())
+        },
+        constants::WSD_RESOLVE => {
+            check_request_relationship(relationship.as_ref())?;
+
+            Ok(resolve::parse_resolve(&mut reader)?.into())
+        },
         action => Err(MessageHandlerError::UnsupportedAction(Box::from(action))),
     }?;
 
@@ -486,7 +546,7 @@ impl MessageHandler {
         let (
             RawHeader {
                 header,
-                relates_to,
+                relationship,
                 app_sequence,
             },
             has_body,
@@ -511,7 +571,7 @@ impl MessageHandler {
             has_body,
         )?;
 
-        let body = parse_message_body(&header.action, relates_to, app_sequence, reader)?;
+        let body = parse_message_body(&header.action, relationship, app_sequence, reader)?;
 
         Ok((header, body))
     }
@@ -552,7 +612,7 @@ where
     // <wsa:MessageID>urn:uuid:ae0a8a7b-0138-11f0-8bff-d45ddf1e11a9</wsa:MessageID>
     let mut message_id = None;
     // <wsa:RelatesTo>urn:uuid:ff876786-d5fd-4cc5-825b-fc494834cf19</wsa:RelatesTo>
-    let mut relates_to = None;
+    let mut relationship = None;
     // <wsd:AppSequence InstanceId="1742000334" SequenceId="urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9" MessageNumber="1" />
     let mut app_sequence = None;
 
@@ -561,9 +621,12 @@ where
     loop {
         #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
         match reader.next()? {
-            XmlEvent::StartElement { name, .. }
-                if reader.depth() == entry_depth + 1
-                    && name.namespace_ref() == Some(constants::WSA_URI) =>
+            XmlEvent::StartElement {
+                name,
+                attributes,
+                namespace,
+            } if reader.depth() == entry_depth + 1
+                && name.namespace_ref() == Some(constants::WSA_URI) =>
             {
                 // the `wsa` header blocks are read in any order, see documentation/soap12-part1.pdf, 5.2
                 // a second `wsa:To`, `wsa:Action` or `wsa:MessageID` violates the cardinality, see documentation/ws-addressing.pdf, 3
@@ -601,14 +664,19 @@ where
                         );
                     },
                     "RelatesTo" => {
-                        if relates_to.is_some() {
+                        if relationship.is_some() {
                             return Err(HeaderParsingError::DuplicateAddressingBlock(
                                 AddressingBlock::RelatesTo,
                             ));
                         }
 
-                        relates_to = Some(
-                            read_text(reader)?.map(|r_to| MessageId::new(r_to.into_boxed_str())),
+                        // an empty `wsa:RelatesTo` is ignored, because WSDAPI ignores it in a Hello or a Bye
+                        relationship = Some(
+                            read_text(reader)?
+                                .map(|relates_to| {
+                                    parse_relationship(&attributes, &namespace, relates_to)
+                                })
+                                .transpose()?,
                         );
                     },
                     _ => {
@@ -655,9 +723,39 @@ where
             action,
             message_id,
         },
-        relates_to: relates_to.flatten(),
+        relationship: relationship.flatten(),
         app_sequence,
     })
+}
+
+/// Reads the relationship of a `wsa:RelatesTo` with the text `relates_to`, of the type `wsa:Reply` when `RelationshipType` is absent, see documentation/ws-addressing.pdf, 3.
+fn parse_relationship(
+    attributes: &[OwnedAttribute],
+    namespaces: &Namespace,
+    relates_to: String,
+) -> Result<Relationship, HeaderParsingError> {
+    let Some(relationship_type) = attributes.iter().find(|attribute| {
+        attribute.name.namespace.is_none() && attribute.name.local_name == "RelationshipType"
+    }) else {
+        return Ok(Relationship::Reply(MessageId::new(
+            relates_to.into_boxed_str(),
+        )));
+    };
+
+    // an `xs:QName` collapses its white space, see documentation/xmlschema-2.pdf, 3.2.18
+    match resolve_qname(
+        relationship_type.value.trim_matches(is_whitespace_char),
+        namespaces,
+    ) {
+        Some((constants::WSA_URI, "Reply")) => Ok(Relationship::Reply(MessageId::new(
+            relates_to.into_boxed_str(),
+        ))),
+        Some((constants::XML_WSD_NAMESPACE, "Suppression")) => Ok(Relationship::Suppression),
+        Some(_) => Ok(Relationship::Other),
+        None => Err(HeaderParsingError::InvalidRelationshipType(
+            relationship_type.value.clone().into_boxed_str(),
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -1024,6 +1122,15 @@ mod tests {
         );
     }
 
+    fn relates_to_with_type(relationship_type: &str) -> String {
+        format!(
+            r#"<wsa:RelatesTo RelationshipType="{}">urn:uuid:00000000-0000-0000-0000-000000000002</wsa:RelatesTo>"#,
+            relationship_type
+        )
+    }
+
+    const OTHER_TYPE_RELATES_TO: &str = r#"<wsa:RelatesTo xmlns:x="urn:x" RelationshipType="x:Other">urn:uuid:00000000-0000-0000-0000-000000000002</wsa:RelatesTo>"#;
+
     #[test]
     fn rejects_duplicate_relates_to() {
         let probe_matches = message(
@@ -1068,6 +1175,156 @@ mod tests {
             deconstruct_raw(hello.as_bytes()).err(),
             Some(MessageHandlerError::HeaderError(
                 HeaderParsingError::DuplicateAddressingBlock(AddressingBlock::RelatesTo)
+            ))
+        );
+    }
+
+    #[test]
+    fn rejects_relationship_type_with_undeclared_prefix() {
+        let probe = message(constants::WSD_PROBE, &relates_to_with_type("y:Other"), "");
+
+        assert_matches!(
+            deconstruct_raw(probe.as_bytes()).err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::InvalidRelationshipType(_)
+            ))
+        );
+    }
+
+    async fn deconstruct_get(header_blocks: &str) -> Result<(), MessageHandlerError> {
+        let get = message(constants::WSD_GET, header_blocks, "");
+
+        handler_for_tests(8)
+            .deconstruct_http_message(&get)
+            .await
+            .map(|_| ())
+    }
+
+    #[tokio::test]
+    async fn rejects_get_with_relates_to() {
+        assert_matches!(
+            deconstruct_get(RELATES_TO).await,
+            Err(MessageHandlerError::HeaderError(
+                HeaderParsingError::UnexpectedRelatesTo
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_get_with_suppression_relates_to() {
+        assert_matches!(
+            deconstruct_get(&relates_to_with_type("wsd:Suppression")).await,
+            Err(MessageHandlerError::HeaderError(
+                HeaderParsingError::SuppressionRelatesTo
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_get_with_other_relates_to() {
+        assert_matches!(
+            deconstruct_get(OTHER_TYPE_RELATES_TO).await,
+            Err(MessageHandlerError::HeaderError(
+                HeaderParsingError::UnexpectedRelatesTo
+            ))
+        );
+    }
+
+    async fn deconstruct_probe(header_blocks: &str) -> Result<(), MessageHandlerError> {
+        let probe = message(constants::WSD_PROBE, header_blocks, "<wsd:Probe />");
+
+        handler_for_tests(8)
+            .deconstruct_message(&probe, SOURCE)
+            .await
+            .map(|_| ())
+    }
+
+    #[tokio::test]
+    async fn accepts_probe_with_relates_to() {
+        assert_matches!(deconstruct_probe(RELATES_TO).await, Ok(()));
+    }
+
+    #[tokio::test]
+    async fn accepts_probe_with_explicit_reply_relates_to() {
+        assert_matches!(
+            deconstruct_probe(&relates_to_with_type("wsa:Reply")).await,
+            Ok(())
+        );
+    }
+
+    #[tokio::test]
+    async fn accepts_probe_with_reply_relationship_type_with_white_space() {
+        assert_matches!(
+            deconstruct_probe(&relates_to_with_type(" wsa:Reply ")).await,
+            Ok(())
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_probe_with_suppression_relates_to() {
+        assert_matches!(
+            deconstruct_probe(&relates_to_with_type("wsd:Suppression")).await,
+            Err(MessageHandlerError::HeaderError(
+                HeaderParsingError::SuppressionRelatesTo
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_probe_with_other_relates_to() {
+        assert_matches!(
+            deconstruct_probe(OTHER_TYPE_RELATES_TO).await,
+            Err(MessageHandlerError::HeaderError(
+                HeaderParsingError::UnexpectedRelatesTo
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_probe_with_unprefixed_reply_relationship_type() {
+        // without a default namespace, `Reply` has no namespace
+        assert_matches!(
+            deconstruct_probe(&relates_to_with_type("Reply")).await,
+            Err(MessageHandlerError::HeaderError(
+                HeaderParsingError::UnexpectedRelatesTo
+            ))
+        );
+    }
+
+    async fn deconstruct_resolve(header_blocks: &str) -> Result<(), MessageHandlerError> {
+        let resolve = message(
+            constants::WSD_RESOLVE,
+            header_blocks,
+            "<wsd:Resolve><wsa:EndpointReference><wsa:Address>urn:uuid:00000000-0000-0000-0000-000000000001</wsa:Address></wsa:EndpointReference></wsd:Resolve>",
+        );
+
+        handler_for_tests(8)
+            .deconstruct_message(&resolve, SOURCE)
+            .await
+            .map(|_| ())
+    }
+
+    #[tokio::test]
+    async fn accepts_resolve_with_relates_to() {
+        assert_matches!(deconstruct_resolve(RELATES_TO).await, Ok(()));
+    }
+
+    #[tokio::test]
+    async fn rejects_resolve_with_suppression_relates_to() {
+        assert_matches!(
+            deconstruct_resolve(&relates_to_with_type("wsd:Suppression")).await,
+            Err(MessageHandlerError::HeaderError(
+                HeaderParsingError::SuppressionRelatesTo
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_resolve_with_other_relates_to() {
+        assert_matches!(
+            deconstruct_resolve(OTHER_TYPE_RELATES_TO).await,
+            Err(MessageHandlerError::HeaderError(
+                HeaderParsingError::UnexpectedRelatesTo
             ))
         );
     }
@@ -1211,6 +1468,39 @@ mod tests {
             Some(MessageId::new(Box::from(
                 "urn:uuid:00000000-0000-0000-0000-000000000002"
             )))
+        );
+    }
+
+    async fn deconstruct_probe_matches(relates_to: &str) -> Result<(), MessageHandlerError> {
+        let probe_matches = message(
+            constants::WSD_PROBE_MATCH,
+            &format!("{}{}", APP_SEQUENCE, relates_to),
+            &probe_matches_body(1),
+        );
+
+        handler_for_tests(8)
+            .deconstruct_message(&probe_matches, SOURCE)
+            .await
+            .map(|_| ())
+    }
+
+    #[tokio::test]
+    async fn rejects_probe_matches_with_suppression_relates_to() {
+        assert_matches!(
+            deconstruct_probe_matches(&relates_to_with_type("wsd:Suppression")).await,
+            Err(MessageHandlerError::HeaderError(
+                HeaderParsingError::MissingRelatesTo
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_probe_matches_with_other_relates_to() {
+        assert_matches!(
+            deconstruct_probe_matches(OTHER_TYPE_RELATES_TO).await,
+            Err(MessageHandlerError::HeaderError(
+                HeaderParsingError::MissingRelatesTo
+            ))
         );
     }
 
@@ -1383,10 +1673,7 @@ mod tests {
 
     #[tokio::test]
     async fn accepts_bye_with_suppression_relates_to() {
-        assert_bye_accepted(
-            r#"<wsa:RelatesTo RelationshipType="wsd:Suppression">urn:uuid:00000000-0000-0000-0000-000000000002</wsa:RelatesTo>"#,
-        )
-        .await;
+        assert_bye_accepted(&relates_to_with_type("wsd:Suppression")).await;
     }
 
     #[tokio::test]
