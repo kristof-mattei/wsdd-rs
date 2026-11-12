@@ -61,8 +61,10 @@ async fn handle_post(
         .and_then(|raw| raw.to_str().ok())
         .is_some_and(|raw| raw.starts_with(constants::MIME_TYPE_SOAP_XML));
 
+    // see documentation/soap12-part2.pdf, 7.5.2.1, Table 18
+    // FDResPub returns 400 with `Connection: close` for another media type
     if !valid_content_type {
-        return (StatusCode::BAD_REQUEST, "Invalid Content-Type").into_response();
+        return StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response();
     }
 
     match build_response(&config, &message_handler, &body).await {
