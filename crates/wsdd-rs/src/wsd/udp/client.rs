@@ -5,6 +5,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use color_eyre::eyre;
 use hashbrown::HashMap;
+use http::header::{CONTENT_TYPE, USER_AGENT};
 use ipnet::IpNet;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::oneshot;
@@ -346,8 +347,8 @@ impl ExchangeRunner {
             let builder = self
                 .client
                 .post(xaddr.url().clone())
-                .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
-                .header("User-Agent", "wsdd-rs");
+                .header(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)
+                .header(USER_AGENT, "wsdd-rs");
 
             let request = async {
                 let response = builder
@@ -814,6 +815,7 @@ mod tests {
 
     use color_eyre::eyre;
     use hashbrown::{HashMap, HashSet};
+    use http::header::CONTENT_TYPE;
     use ipnet::{IpNet, Ipv4Net, Ipv6Net};
     use libc::RT_SCOPE_SITE;
     use mockito::{Mock, Server, ServerOpts};
@@ -1957,7 +1959,7 @@ mod tests {
         let failing = server
             .mock("POST", "/failing")
             .with_status(500)
-            .with_header("Content-Type", constants::MIME_TYPE_SOAP_XML)
+            .with_header(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)
             .with_body(
                 r#"<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Body><soap:Fault><soap:Code><soap:Value>soap:Receiver</soap:Value></soap:Code></soap:Fault></soap:Body></soap:Envelope>"#,
             )
@@ -1967,7 +1969,7 @@ mod tests {
 
         let working = server
             .mock("POST", "/working")
-            .with_header("Content-Type", constants::MIME_TYPE_SOAP_XML)
+            .with_header(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)
             .with_body(synology_metadata())
             .expect(1)
             .create_async()
