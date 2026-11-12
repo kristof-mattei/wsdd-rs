@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::extract::State;
 use axum::handler::HandlerWithoutStateExt as _;
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, HeaderValue};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Router, debug_handler};
@@ -56,14 +56,9 @@ async fn handle_post(
     State((config, message_handler)): State<(Arc<Config>, Arc<MessageHandler>)>,
     body: Bytes,
 ) -> Response {
-    let valid_content_type = headers
-        .get(CONTENT_TYPE)
-        .and_then(|raw| raw.to_str().ok())
-        .is_some_and(|raw| raw.starts_with(constants::MIME_TYPE_SOAP_XML));
-
-    // see documentation/soap12-part2.pdf, 7.5.2.1, Table 18
-    // FDResPub returns 400 with `Connection: close` for another media type
-    if !valid_content_type {
+    // a request with another media type gets 415, see documentation/soap12-part2.pdf, 7.5.2.1, Table 18
+    // FDResPub answers such a request with 400 and `Connection: close`
+    if !headers.get(CONTENT_TYPE).is_some_and(starts_with_soap_xml) {
         return StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response();
     }
 
@@ -85,6 +80,15 @@ async fn handle_post(
             (StatusCode::BAD_REQUEST).into_response()
         },
     }
+}
+
+/// Returns whether `content_type` starts with `application/soap+xml` in any case, because `FDResPub` accepts every such `Content-Type`.
+/// RFC 9110 does not allow all of them: `application/soap+xml-foo` is another media type (8.3.1), and `application/soap+xml; charset` has a malformed parameter (5.6.6).
+fn starts_with_soap_xml(content_type: &HeaderValue) -> bool {
+    content_type
+        .as_bytes()
+        .get(..constants::MIME_TYPE_SOAP_XML.len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(constants::MIME_TYPE_SOAP_XML.as_bytes()))
 }
 
 async fn build_response(
@@ -156,4 +160,51 @@ async fn build_response(
     };
 
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::HeaderValue;
+
+    use crate::wsd::http::router::starts_with_soap_xml;
+
+    fn is_accepted(content_type: &'static str) -> bool {
+        starts_with_soap_xml(&HeaderValue::from_static(content_type))
+    }
+
+    #[test]
+    fn accepts_soap_xml() {
+        assert!(is_accepted("application/soap+xml"));
+    }
+
+    #[test]
+    fn accepts_soap_xml_with_parameter() {
+        assert!(is_accepted("application/soap+xml; charset=utf-8"));
+    }
+
+    #[test]
+    fn accepts_soap_xml_in_any_case() {
+        assert!(is_accepted("APPLICATION/SOAP+XML"));
+        assert!(is_accepted("Application/Soap+Xml"));
+    }
+
+    #[test]
+    fn accepts_longer_subtype() {
+        assert!(is_accepted("application/soap+xml-foo"));
+    }
+
+    #[test]
+    fn accepts_malformed_parameter() {
+        assert!(is_accepted("application/soap+xml; charset"));
+    }
+
+    #[test]
+    fn rejects_shorter_subtype() {
+        assert!(!is_accepted("application/soap"));
+    }
+
+    #[test]
+    fn rejects_another_media_type() {
+        assert!(!is_accepted("text/xml; charset=utf-8"));
+    }
 }
