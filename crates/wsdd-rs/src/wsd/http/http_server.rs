@@ -136,6 +136,7 @@ mod tests {
     use std::sync::Arc;
 
     use http::StatusCode;
+    use http::header::{CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, USER_AGENT};
     use ipnet::IpNet;
     use libc::RT_SCOPE_SITE;
     use pretty_assertions::{assert_eq, assert_matches};
@@ -207,8 +208,8 @@ mod tests {
                 "http://{}/{}",
                 http_server.http_bound_to, host_config.uuid
             ))
-            .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
-            .header("User-Agent", "wsdd-rs");
+            .header(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)
+            .header(USER_AGENT, "wsdd-rs");
 
         let response = builder
             .body(body)
@@ -272,8 +273,8 @@ mod tests {
 
         let first = client
             .post(&url)
-            .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
-            .header("User-Agent", "wsdd-rs")
+            .header(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)
+            .header(USER_AGENT, "wsdd-rs")
             .body(body.clone())
             .timeout(host_config.metadata_timeout)
             .send()
@@ -284,8 +285,8 @@ mod tests {
 
         let second = client
             .post(&url)
-            .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
-            .header("User-Agent", "wsdd-rs")
+            .header(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)
+            .header(USER_AGENT, "wsdd-rs")
             .body(body)
             .timeout(host_config.metadata_timeout)
             .send()
@@ -400,8 +401,8 @@ mod tests {
                 "http://{}/{}",
                 http_server.http_bound_to, host_config.uuid
             ))
-            .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
-            .header("User-Agent", "wsdd-rs")
+            .header(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)
+            .header(USER_AGENT, "wsdd-rs")
             .body(body)
             .timeout(host_config.metadata_timeout)
             .send()
@@ -481,8 +482,8 @@ mod tests {
                 "http://{}/{}",
                 http_server.http_bound_to, host_config.uuid
             ))
-            .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
-            .header("User-Agent", "wsdd-rs");
+            .header(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)
+            .header(USER_AGENT, "wsdd-rs");
 
         let response = builder
             .body(probe.to_owned())
@@ -547,8 +548,8 @@ mod tests {
                 "http://{}/{}",
                 http_server.http_bound_to, host_config.uuid
             ))
-            .header("Content-Type", constants::MIME_TYPE_SOAP_XML)
-            .header("User-Agent", "wsdd-rs");
+            .header(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)
+            .header(USER_AGENT, "wsdd-rs");
 
         let response = builder
             .body(probe)
@@ -595,8 +596,8 @@ mod tests {
                 "http://{}/{}",
                 http_server.http_bound_to, host_config.uuid
             ))
-            .header("Content-Type", "text/xml; charset=utf-8")
-            .header("User-Agent", "wsdd-rs")
+            .header(CONTENT_TYPE, "text/xml; charset=utf-8")
+            .header(USER_AGENT, "wsdd-rs")
             .body(get_body(&host_config))
             .timeout(host_config.metadata_timeout)
             .send()
@@ -604,6 +605,9 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+        assert_eq!(response.headers().get(CONNECTION), None);
+        assert_eq!(response.headers().get(CONTENT_TYPE), None);
+        assert_eq!(response.headers().get(CONTENT_LENGTH).unwrap(), "0");
         // no content
         assert_eq!(response.bytes().await.unwrap(), vec![]);
     }
