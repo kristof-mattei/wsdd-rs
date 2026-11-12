@@ -135,8 +135,8 @@ mod tests {
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::sync::Arc;
 
-    use http::StatusCode;
     use http::header::{CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, USER_AGENT};
+    use http::{HeaderMap, StatusCode};
     use ipnet::IpNet;
     use libc::RT_SCOPE_SITE;
     use pretty_assertions::{assert_eq, assert_matches};
@@ -298,6 +298,138 @@ mod tests {
         assert_eq!(second.bytes().await.unwrap(), vec![]);
     }
 
+    const MESSAGE_ID: &str = "urn:uuid:00000000-0000-0000-0000-000000000001";
+
+    fn to_block(address: &str) -> String {
+        format!("<wsa:To>{}</wsa:To>", address)
+    }
+
+    fn message_id_block() -> String {
+        format!("<wsa:MessageID>{}</wsa:MessageID>", MESSAGE_ID)
+    }
+
+    fn reply_to_block(address: &str) -> String {
+        format!(
+            "<wsa:ReplyTo><wsa:Address>{}</wsa:Address></wsa:ReplyTo>",
+            address
+        )
+    }
+
+    fn relates_to_block() -> String {
+        format!("<wsa:RelatesTo>{}</wsa:RelatesTo>", Uuid::now_v7().urn())
+    }
+
+    fn relates_to_block_with_type(relationship_type: &str) -> String {
+        format!(
+            r#"<wsa:RelatesTo xmlns:x="urn:x" RelationshipType="{}">{}</wsa:RelatesTo>"#,
+            relationship_type,
+            Uuid::now_v7().urn()
+        )
+    }
+
+    /// An envelope with `header` as the content of `soap:Header` and `body` as the content of `soap:Body`.
+    fn envelope(header: &str, body: &str) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="{}" xmlns:wsa="{}" xmlns:wsd="{}"><soap:Header>{}</soap:Header><soap:Body>{}</soap:Body></soap:Envelope>"#,
+            constants::XML_SOAP_NAMESPACE,
+            constants::XML_WSA_NAMESPACE,
+            constants::XML_WSD_NAMESPACE,
+            header,
+            body
+        )
+    }
+
+    fn request(action: &str, blocks: &[String], body: &str) -> String {
+        envelope(
+            &format!("<wsa:Action>{}</wsa:Action>{}", action, blocks.concat()),
+            body,
+        )
+    }
+
+    /// A Get with every header block that its answer requires.
+    fn valid_get_blocks(config: &Config) -> [String; 3] {
+        [
+            to_block(config.uuid_as_device_uri.as_ref()),
+            message_id_block(),
+            reply_to_block(constants::WSA_ANON),
+        ]
+    }
+
+    /// A Get with every header block that its answer requires, and `relates_to`.
+    fn get_with_relates_to(config: &Config, relates_to: String) -> String {
+        let mut blocks = valid_get_blocks(config).to_vec();
+
+        blocks.push(relates_to);
+
+        request(constants::WSD_GET, &blocks, "")
+    }
+
+    /// A Probe for any type with `relates_to`.
+    fn probe_with_relates_to(relates_to: &[String]) -> String {
+        let mut blocks = vec![to_block(constants::WSA_DISCOVERY), message_id_block()];
+
+        blocks.extend_from_slice(relates_to);
+
+        request(constants::WSD_PROBE, &blocks, "<wsd:Probe />")
+    }
+
+    /// Starts a host and POSTs the request that `body` builds for its config.
+    async fn post<B>(body: B) -> (StatusCode, HeaderMap, Vec<u8>)
+    where
+        B: FnOnce(&Config) -> String,
+    {
+        let host_ip = Ipv4Addr::LOCALHOST;
+        let host_config = Arc::new(build_config(Uuid::now_v7(), 1_742_000_334));
+
+        let http_server = WSDHttpServer::init(
+            NetworkAddress::new(
+                IpNet::new(host_ip.into(), 8).unwrap(),
+                Arc::new(NetworkInterface::new_with_index(
+                    "lo",
+                    RT_SCOPE_SITE,
+                    if_nametoindex("lo").unwrap(),
+                )),
+            ),
+            CancellationToken::new(),
+            Arc::clone(&host_config),
+            SocketAddr::V4(SocketAddrV4::new(host_ip, 0)),
+            Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES))),
+        )
+        .unwrap();
+
+        let response = reqwest::ClientBuilder::new()
+            .build()
+            .unwrap()
+            .post(format!(
+                "http://{}/{}",
+                http_server.http_bound_to, host_config.uuid
+            ))
+            .header(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)
+            .header(USER_AGENT, "wsdd-rs")
+            .body(body(&host_config))
+            .timeout(host_config.metadata_timeout)
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let headers = response.headers().clone();
+        let body = response.bytes().await.unwrap().to_vec();
+
+        http_server.teardown().await;
+
+        (status, headers, body)
+    }
+
+    async fn assert_status<B>(body: B, expected_status: StatusCode)
+    where
+        B: FnOnce(&Config) -> String,
+    {
+        let (status, _, _) = post(body).await;
+
+        assert_eq!(status, expected_status);
+    }
+
     #[cfg_attr(not(miri), tokio::test)]
     #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn drops_get_with_repeated_to() {
@@ -349,6 +481,76 @@ mod tests {
                 )
             },
             |_| format!("<wsa:MessageID>{}</wsa:MessageID>", message_id.urn()),
+        )
+        .await;
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn rejects_get_with_relationship_type_of_undeclared_prefix() {
+        assert_status(
+            |config| get_with_relates_to(config, relates_to_block_with_type("y:Other")),
+            StatusCode::BAD_REQUEST,
+        )
+        .await;
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn rejects_get_with_relates_to() {
+        assert_status(
+            |config| get_with_relates_to(config, relates_to_block()),
+            StatusCode::BAD_REQUEST,
+        )
+        .await;
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn drops_get_with_suppression_relates_to() {
+        assert_status(
+            |config| get_with_relates_to(config, relates_to_block_with_type("wsd:Suppression")),
+            StatusCode::ACCEPTED,
+        )
+        .await;
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn answers_probe_with_relates_to_with_probe_matches() {
+        assert_status(
+            |_| probe_with_relates_to(&[relates_to_block()]),
+            StatusCode::OK,
+        )
+        .await;
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn drops_probe_with_two_relates_to() {
+        assert_status(
+            |_| probe_with_relates_to(&[relates_to_block(), relates_to_block()]),
+            StatusCode::ACCEPTED,
+        )
+        .await;
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn drops_probe_with_suppression_relates_to() {
+        assert_status(
+            |_| probe_with_relates_to(&[relates_to_block_with_type("wsd:Suppression")]),
+            StatusCode::ACCEPTED,
+        )
+        .await;
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn rejects_probe_with_other_relates_to() {
+        assert_status(
+            |_| probe_with_relates_to(&[relates_to_block_with_type("x:Other")]),
+            StatusCode::BAD_REQUEST,
         )
         .await;
     }

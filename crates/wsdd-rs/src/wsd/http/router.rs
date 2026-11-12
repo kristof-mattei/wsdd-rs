@@ -103,10 +103,12 @@ async fn build_response(
         },
         // a request with a repeated `wsa` header block gets 202 without a body, whatever its action, because WSDAPI returns 202 without a body for such a request
         // the `wsa:InvalidMessageInformationHeader` fault for a repeated `wsa:To`, `wsa:Action` or `wsa:MessageID` is not sent, see documentation/ws-addressing.pdf, 4.1
+        // a request with `wsa:RelatesTo` of the type `wsd:Suppression` gets 202 without a body, because FDResPub returns 202 without a body for such a request
         Err(
-            error @ MessageHandlerError::HeaderError(HeaderParsingError::DuplicateAddressingBlock(
-                _,
-            )),
+            error @ MessageHandlerError::HeaderError(
+                HeaderParsingError::DuplicateAddressingBlock(_)
+                | HeaderParsingError::SuppressionRelatesTo,
+            ),
         ) => {
             error.log(buffer);
 
