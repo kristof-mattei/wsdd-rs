@@ -361,9 +361,8 @@ fn require_relates_to(relates_to: Option<MessageId>) -> Result<MessageId, Header
     relates_to.ok_or(HeaderParsingError::MissingRelatesTo)
 }
 
-/// A Hello or a Bye with `wsa:RelatesTo` of any `RelationshipType` is dropped, because WSDAPI drops such a Hello or Bye too.
-/// For a Hello, the Discovery Proxy suppression is not implemented, see documentation/ws-discovery.pdf, 4.1.
-/// For a Bye, the spec has no receiver rule for `wsa:RelatesTo`, see documentation/ws-discovery.pdf, 4.2. Dropping such a Bye is for WSDAPI parity only.
+/// A Hello with `wsa:RelatesTo` of any `RelationshipType` is dropped, because the Discovery Proxy suppression is not implemented, see documentation/ws-discovery.pdf, 4.1.
+/// WSDAPI drops such a Hello too.
 fn forbid_relates_to(relates_to: Option<&MessageId>) -> Result<(), HeaderParsingError> {
     match relates_to {
         None => Ok(()),
@@ -416,9 +415,9 @@ fn parse_message_body(
 
             Ok(hello::parse_hello(&mut reader, app_sequence)?.into())
         },
+        // a Bye with `wsa:RelatesTo` is handled as one without it: its outline allows other header blocks, and Clients SHOULD listen for a Bye, see documentation/ws-discovery.pdf, 4.2
+        // WSDAPI drops such a Bye
         constants::WSD_BYE => {
-            forbid_relates_to(relates_to.as_ref())?;
-
             let app_sequence = require_app_sequence(app_sequence)?;
 
             Ok(bye::parse_bye(&mut reader, app_sequence)?.into())
@@ -1359,50 +1358,10 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn rejects_bye_with_relates_to() {
+    async fn assert_bye_accepted(header_blocks: &str) {
         let bye = message(
             constants::WSD_BYE,
-            &format!("{}{}", RELATES_TO, FULL_APP_SEQUENCE),
-            BYE_BODY,
-        );
-
-        let result = handler_for_tests(8).deconstruct_message(&bye, SOURCE).await;
-
-        assert_matches!(
-            result.err(),
-            Some(MessageHandlerError::HeaderError(
-                HeaderParsingError::UnexpectedRelatesTo
-            ))
-        );
-    }
-
-    #[tokio::test]
-    async fn rejects_bye_with_suppression_relates_to() {
-        let bye = message(
-            constants::WSD_BYE,
-            &format!(
-                r#"<wsa:RelatesTo RelationshipType="wsd:Suppression">urn:uuid:00000000-0000-0000-0000-000000000002</wsa:RelatesTo>{}"#,
-                FULL_APP_SEQUENCE
-            ),
-            BYE_BODY,
-        );
-
-        let result = handler_for_tests(8).deconstruct_message(&bye, SOURCE).await;
-
-        assert_matches!(
-            result.err(),
-            Some(MessageHandlerError::HeaderError(
-                HeaderParsingError::UnexpectedRelatesTo
-            ))
-        );
-    }
-
-    #[tokio::test]
-    async fn accepts_bye_with_empty_relates_to() {
-        let bye = message(
-            constants::WSD_BYE,
-            &format!("<wsa:RelatesTo />{}", FULL_APP_SEQUENCE),
+            &format!("{}{}", header_blocks, FULL_APP_SEQUENCE),
             BYE_BODY,
         );
 
@@ -1415,6 +1374,24 @@ mod tests {
             message.into_bye().map(|bye| bye.app_sequence),
             Some(full_app_sequence())
         );
+    }
+
+    #[tokio::test]
+    async fn accepts_bye_with_relates_to() {
+        assert_bye_accepted(RELATES_TO).await;
+    }
+
+    #[tokio::test]
+    async fn accepts_bye_with_suppression_relates_to() {
+        assert_bye_accepted(
+            r#"<wsa:RelatesTo RelationshipType="wsd:Suppression">urn:uuid:00000000-0000-0000-0000-000000000002</wsa:RelatesTo>"#,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn accepts_bye_with_empty_relates_to() {
+        assert_bye_accepted("<wsa:RelatesTo />").await;
     }
 
     #[tokio::test]
