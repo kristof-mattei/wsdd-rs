@@ -62,6 +62,9 @@ pub(crate) const WSD_MCAST_GRP_V6: Ipv6Addr = Ipv6Addr::new(0xff02, 0, 0, 0, 0, 
 
 pub(crate) const WSA_ANON: &str = const_format!("{}{}", WSA_URI, "/role/anonymous");
 
+/// The `wsa:Action` of a fault, see documentation/ws-addressing.pdf, 4.
+pub(crate) const WSA_FAULT: &str = const_format!("{}{}", WSA_URI, "/fault");
+
 pub(crate) const WSA_DISCOVERY: &str = "urn:schemas-xmlsoap-org:ws:2005:04:discovery";
 
 pub(crate) const MIME_TYPE_SOAP_XML: &str = "application/soap+xml";

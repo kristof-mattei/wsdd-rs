@@ -1,5 +1,6 @@
 pub(crate) mod bye;
 pub(crate) mod empty_body;
+pub(crate) mod fault;
 pub(crate) mod hello;
 pub(crate) mod metadata;
 pub(crate) mod probe;
