@@ -51,7 +51,11 @@ impl WSDHttpServer {
         let handle = tokio::task::spawn(launch_http_server(
             cancellation_token.clone(),
             listener,
-            build_router(Arc::clone(&config), message_handler),
+            build_router(
+                Arc::clone(&config),
+                bound_to.address.addr(),
+                message_handler,
+            ),
         ));
 
         Ok(Self {
@@ -551,6 +555,61 @@ mod tests {
         assert_status(
             |_| probe_with_relates_to(&[relates_to_block_with_type("x:Other")]),
             StatusCode::BAD_REQUEST,
+        )
+        .await;
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn answers_resolve_with_resolve_matches() {
+        let client_message_id = Uuid::now_v7();
+        let mut expected = String::new();
+
+        let (status, headers, body) = post(|config| {
+            let expected_message_number = 0_usize;
+
+            expected = format!(
+                include_str!("../../test/resolve-matches-template.xml"),
+                client_message_id.urn(),
+                config.app_sequence.instance_id(),
+                expected_message_number,
+                config.uuid_as_device_uri,
+                Ipv4Addr::LOCALHOST,
+                constants::WSD_HTTP_PORT,
+                config.uuid,
+                config.app_sequence.instance_id(),
+            );
+
+            format!(
+                include_str!("../../test/resolve-template.xml"),
+                client_message_id, config.uuid_as_device_uri,
+            )
+        })
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            headers.get(CONTENT_TYPE).unwrap(),
+            constants::MIME_TYPE_SOAP_XML
+        );
+        assert_eq!(
+            to_string_pretty(&body).unwrap(),
+            to_string_pretty(expected.as_bytes()).unwrap()
+        );
+    }
+
+    #[cfg_attr(not(miri), tokio::test)]
+    #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
+    async fn drops_resolve_for_another_endpoint() {
+        assert_status(
+            |_| {
+                format!(
+                    include_str!("../../test/resolve-template.xml"),
+                    Uuid::now_v7(),
+                    Uuid::now_v7().urn(),
+                )
+            },
+            StatusCode::ACCEPTED,
         )
         .await;
     }

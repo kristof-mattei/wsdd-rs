@@ -1,3 +1,4 @@
+use std::net::IpAddr;
 use std::sync::Arc;
 
 use axum::extract::State;
@@ -19,8 +20,14 @@ use crate::constants;
 use crate::soap::parser::{HeaderParsingError, MessageHandler, MessageHandlerError};
 use crate::soap::{HostMessage, UnicastMessage, WSDMessage, builder};
 use crate::span::MakeSpanWithUuid;
+use crate::wsd::udp::host::handle_resolve;
 
-pub(crate) fn build_router(config: Arc<Config>, message_handler: MessageHandler) -> Router {
+/// `address` is the address of the interface, for the `XAddrs` of a `ResolveMatches`.
+pub(crate) fn build_router(
+    config: Arc<Config>,
+    address: IpAddr,
+    message_handler: MessageHandler,
+) -> Router {
     let post_path = format!("/{}", config.uuid);
 
     let router = Router::new()
@@ -37,7 +44,7 @@ pub(crate) fn build_router(config: Arc<Config>, message_handler: MessageHandler)
                 .on_request(DefaultOnRequest::new().level(Level::TRACE))
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
-        .with_state((config, Arc::new(message_handler)));
+        .with_state((config, address, Arc::new(message_handler)));
 
     router
 }
@@ -53,7 +60,7 @@ async fn handler_404() -> impl IntoResponse {
 #[debug_handler]
 async fn handle_post(
     headers: HeaderMap,
-    State((config, message_handler)): State<(Arc<Config>, Arc<MessageHandler>)>,
+    State((config, address, message_handler)): State<(Arc<Config>, IpAddr, Arc<MessageHandler>)>,
     body: Bytes,
 ) -> Response {
     // a request with another media type gets 415, see documentation/soap12-part2.pdf, 7.5.2.1, Table 18
@@ -62,7 +69,7 @@ async fn handle_post(
         return StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response();
     }
 
-    match build_response(&config, &message_handler, &body).await {
+    match build_response(&config, address, &message_handler, &body).await {
         Ok(Some(message)) => (
             StatusCode::OK,
             [(CONTENT_TYPE, constants::MIME_TYPE_SOAP_XML)],
@@ -93,6 +100,7 @@ fn starts_with_soap_xml(content_type: &HeaderValue) -> bool {
 
 async fn build_response(
     config: &Config,
+    address: IpAddr,
     message_handler: &MessageHandler,
     buffer: &[u8],
 ) -> Result<Option<UnicastMessage>, eyre::Report> {
@@ -156,7 +164,12 @@ async fn build_response(
 
             Ok(None)
         },
-        WSDMessage::ClientMessage(_) | WSDMessage::HostMessage(_) => {
+        // a Resolve gets a ResolveMatches, because FDResPub returns one
+        // documentation/ws-discovery.pdf, 6.1 defines a multicast Resolve and a unicast Resolve to a Discovery Proxy, and has no receiver rule for a unicast Resolve to a Target Service
+        WSDMessage::HostMessage(HostMessage::Resolve(resolve)) => {
+            handle_resolve(address, config, config.uuid, &header.message_id, &resolve)
+        },
+        WSDMessage::ClientMessage(_) => {
             return Err(eyre::Report::msg("Invalid Action"));
         },
     };

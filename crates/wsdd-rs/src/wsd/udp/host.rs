@@ -158,7 +158,7 @@ pub(crate) fn handle_probe(
     }
 }
 
-fn handle_resolve(
+pub(crate) fn handle_resolve(
     address: IpAddr,
     config: &Config,
     target_uuid: uuid::Uuid,
