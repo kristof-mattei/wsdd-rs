@@ -6,6 +6,7 @@ Requires=wsdd-rs-discovery.socket
 
 [Service]
 Type=exec
+Environment=WSDD_RS_DISCOVERY_PARAMS=
 ; Use /etc/default/wsdd-rs for defaults, if it exists
 EnvironmentFile=-/etc/default/wsdd-rs
 ; chrooted into its empty runtime directory under /run, the source port differs from the host instance's so both can run on the same machine
