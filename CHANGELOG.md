@@ -1,4 +1,21 @@
 <!-- header goes here -->
+## [2.3.0](https://github.com/kristof-mattei/wsdd-rs/compare/v2.2.0..v2.3.0) - 2026-11-13
+
+### 🚀 Features
+
+- Handle each `RelationshipType` of `wsa:RelatesTo` as FDResPub does by [Kristof Mattei](https://github.com/kristof-mattei) ([`bb6982d`](https://github.com/kristof-mattei/wsdd-rs/commit/bb6982d833b9474b871e9648a4071ab134748169))
+- Answer invalid HTTP requests with SOAP faults by [Kristof Mattei](https://github.com/kristof-mattei) ([`325f430`](https://github.com/kristof-mattei/wsdd-rs/commit/325f430365555ec352deb8d58f99c51298e9ee50))
+- Log a user-supplied UUID at INFO by [Kristof Mattei](https://github.com/kristof-mattei) ([`a77cd66`](https://github.com/kristof-mattei/wsdd-rs/commit/a77cd66cb01e4c1d2d32d58296bd36554251429a))
+
+### 🐛 Bug Fixes
+
+- Answer 415 for a request with another media type by [Kristof Mattei](https://github.com/kristof-mattei) ([`fec93d0`](https://github.com/kristof-mattei/wsdd-rs/commit/fec93d0778b135cc26c40ff3a98e263e81333854))
+- Compare the `Content-Type` prefix in any case by [Kristof Mattei](https://github.com/kristof-mattei) ([`8d1d863`](https://github.com/kristof-mattei/wsdd-rs/commit/8d1d86307e9bb4b02ece1ec4b5fd30b51a132317))
+- Remove the device for a Bye with `wsa:RelatesTo` by [Kristof Mattei](https://github.com/kristof-mattei) ([`f2c3780`](https://github.com/kristof-mattei/wsdd-rs/commit/f2c37809e8ba12b7802234ffe3423afdc579381d))
+
+### 🚜 Refactor
+
+- Use the `http::header` constants for header names by [Kristof Mattei](https://github.com/kristof-mattei) ([`8b69696`](https://github.com/kristof-mattei/wsdd-rs/commit/8b696968ca3c2727d4c8c44a44e5f3b011422fae))
 ## [2.2.0](https://github.com/kristof-mattei/wsdd-rs/compare/v2.1.4..v2.2.0) - 2026-11-11
 
 ### 🚀 Features
