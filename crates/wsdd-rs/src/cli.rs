@@ -129,7 +129,11 @@ pub(crate) fn to_config(args: Cli) -> Result<Config, eyre::Report> {
     };
 
     let uuid = match args.uuid {
-        Some(uuid) => uuid,
+        Some(uuid) => {
+            event!(Level::INFO, %uuid, "user-supplied device UUID");
+
+            uuid
+        },
         None => get_uuid_from_machine()?,
     };
 
