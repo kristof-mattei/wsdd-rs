@@ -1,6 +1,7 @@
 pub(crate) mod app_sequence;
 pub(crate) mod none;
 pub(crate) mod reply_to_from;
+pub(crate) mod upgrade;
 use std::io::Write;
 
 use xml::EventWriter;

@@ -15,6 +15,7 @@ use crate::constants;
 use crate::soap::builder::body::WriteBody;
 use crate::soap::builder::body::bye::Bye;
 use crate::soap::builder::body::empty_body::EmptyBody;
+pub(crate) use crate::soap::builder::body::fault::{Fault, FaultCode};
 use crate::soap::builder::body::hello::Hello;
 use crate::soap::builder::body::metadata::MetaData;
 use crate::soap::builder::body::probe::Probe;
@@ -25,6 +26,7 @@ use crate::soap::builder::header::WriteExtraHeaders;
 use crate::soap::builder::header::app_sequence::AppSequenceHeader;
 use crate::soap::builder::header::none::NoExtraHeaders;
 use crate::soap::builder::header::reply_to_from::ReplyToFrom;
+use crate::soap::builder::header::upgrade::Upgrade;
 use crate::soap::{MessageId, MulticastMessage, UnicastMessage};
 use crate::wsd::device::DeviceUri;
 
@@ -307,5 +309,39 @@ impl<'config> Builder<'config> {
         )?;
 
         Ok(UnicastMessage::GetResponse(message.into_boxed_slice()))
+    }
+
+    /// Builds a fault for the HTTP response, see documentation/ws-addressing.pdf, 4.
+    /// `relates_to` is `None` for a request without `wsa:MessageID`.
+    pub(crate) fn build_fault(
+        config: &Config,
+        fault: Fault,
+        relates_to: Option<&MessageId>,
+    ) -> Result<Box<[u8]>, xml::writer::Error> {
+        let mut builder = Builder::new(config);
+
+        let (message, _): (Vec<_>, _) = match fault {
+            // a `soap:VersionMismatch` fault SHOULD have the `soap:Upgrade` header block, see documentation/soap12-part1.pdf, 5.4.7
+            Fault::VersionMismatch => builder.build_message(
+                constants::WSA_ANON,
+                constants::WSA_FAULT,
+                relates_to,
+                Upgrade::new(),
+                fault,
+            )?,
+            Fault::Sender
+            | Fault::InvalidMessageInformationHeader
+            | Fault::MessageInformationHeaderRequired
+            | Fault::DestinationUnreachable
+            | Fault::EndpointUnavailable => builder.build_message(
+                constants::WSA_ANON,
+                constants::WSA_FAULT,
+                relates_to,
+                NoExtraHeaders::new(),
+                fault,
+            )?,
+        };
+
+        Ok(message.into_boxed_slice())
     }
 }

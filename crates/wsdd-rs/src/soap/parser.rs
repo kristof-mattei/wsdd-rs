@@ -31,7 +31,7 @@ use crate::soap::parser::generic::resolve_qname;
 use crate::soap::parser::get::Get;
 use crate::soap::{MessageId, WSDMessage};
 use crate::wsd::device::DeviceUri;
-use crate::xml::{TextReadError, XmlError, XmlReader, read_text};
+use crate::xml::{TextReadError, XmlError, XmlReader, find_optional_child, read_text};
 
 pub(crate) struct MessageHandler {
     network_address: NetworkAddress,
@@ -40,18 +40,40 @@ pub(crate) struct MessageHandler {
 
 /// The header blocks of every message.
 pub(crate) struct Header {
-    pub to: Option<DeviceUri>,
     pub action: Box<str>,
     pub message_id: MessageId,
 }
 
 /// Every header block that was read, before the action decides which of them the message requires.
 pub(crate) struct RawHeader {
-    header: Header,
+    to: Option<DeviceUri>,
+    action: Box<str>,
+    /// `None` when the block is absent or empty.
+    message_id: Option<MessageId>,
     /// `None` when `wsa:RelatesTo` is absent or empty.
     relationship: Option<Relationship>,
     /// `None` when the block is absent.
     app_sequence: Option<Result<AppSequence, InvalidAppSequence>>,
+    /// `None` when the block is absent.
+    reply_to: Option<ReplyTo>,
+}
+
+impl RawHeader {
+    pub(crate) fn to(&self) -> Option<&DeviceUri> {
+        self.to.as_ref()
+    }
+
+    pub(crate) fn action(&self) -> &str {
+        &self.action
+    }
+
+    pub(crate) fn message_id(&self) -> Option<&MessageId> {
+        self.message_id.as_ref()
+    }
+
+    pub(crate) fn reply_to(&self) -> Option<ReplyTo> {
+        self.reply_to
+    }
 }
 
 /// The `[relationship]` of documentation/ws-addressing.pdf, 3.
@@ -64,6 +86,42 @@ enum Relationship {
     Other,
 }
 
+/// The `[address]` of `wsa:ReplyTo`, see documentation/ws-addressing.pdf, 2.1 and 3.1.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ReplyTo {
+    Anonymous,
+    /// Another or an empty `wsa:Address`.
+    NotAnonymous,
+    WithoutAddress,
+}
+
+/// A message whose header is read, and whose body is not.
+pub(crate) struct ReadHeader<'r> {
+    raw: &'r [u8],
+    header: RawHeader,
+    has_body: bool,
+}
+
+impl<'r> ReadHeader<'r> {
+    /// Reads the header of `raw` with `reader`, a reader of `raw` from [`xml_reader`].
+    pub(crate) fn read(
+        raw: &'r [u8],
+        reader: &mut XmlReader<&'r [u8]>,
+    ) -> Result<Self, MessageHandlerError> {
+        let (header, has_body) = read_envelope_header(reader)?;
+
+        Ok(Self {
+            raw,
+            header,
+            has_body,
+        })
+    }
+
+    pub(crate) fn header(&self) -> &RawHeader {
+        &self.header
+    }
+}
+
 #[derive(Error, Debug)]
 pub(crate) enum HeaderParsingError {
     #[error("Error parsing XML: {}", .0)]
@@ -72,6 +130,8 @@ pub(crate) enum HeaderParsingError {
     MissingMessageId,
     #[error("Missing Action")]
     MissingAction,
+    #[error("Missing soap:Header")]
+    MissingHeader,
     #[error("Missing RelatesTo")]
     MissingRelatesTo,
     #[error("Unexpected RelatesTo")]
@@ -107,6 +167,7 @@ pub(crate) enum AddressingBlock {
     Action,
     MessageId,
     RelatesTo,
+    ReplyTo,
 }
 
 impl std::fmt::Display for AddressingBlock {
@@ -116,6 +177,7 @@ impl std::fmt::Display for AddressingBlock {
             AddressingBlock::Action => f.write_str("wsa:Action"),
             AddressingBlock::MessageId => f.write_str("wsa:MessageID"),
             AddressingBlock::RelatesTo => f.write_str("wsa:RelatesTo"),
+            AddressingBlock::ReplyTo => f.write_str("wsa:ReplyTo"),
         }
     }
 }
@@ -215,21 +277,43 @@ impl MessageHandlerError {
     }
 }
 
+/// The reader of every received message.
+pub(crate) fn xml_reader<R>(raw: R) -> XmlReader<R>
+where
+    R: Read,
+{
+    XmlReader::new(
+        ParserConfig::new()
+            // a well-formed document has one root element
+            .allow_multiple_root_elements(false)
+            .cdata_to_characters(true)
+            .ignore_comments(true)
+            .trim_whitespace(true)
+            .whitespace_to_characters(true)
+            .create_reader(raw),
+    )
+}
+
 pub(crate) fn deconstruct_raw<R>(
     raw: R,
 ) -> Result<(RawHeader, bool, XmlReader<R>), MessageHandlerError>
 where
     R: Read,
 {
-    let mut reader = XmlReader::new(
-        ParserConfig::new()
-            .cdata_to_characters(true)
-            .ignore_comments(true)
-            .trim_whitespace(true)
-            .whitespace_to_characters(true)
-            .create_reader(raw),
-    );
+    let mut reader = xml_reader(raw);
 
+    let (header, has_body) = read_envelope_header(&mut reader)?;
+
+    Ok((header, has_body, reader))
+}
+
+/// Reads the document up to and including the start of `soap:Body`.
+fn read_envelope_header<R>(
+    reader: &mut XmlReader<R>,
+) -> Result<(RawHeader, bool), MessageHandlerError>
+where
+    R: Read,
+{
     #[expect(clippy::wildcard_enum_match_arm, reason = "Library is stable")]
     let root = loop {
         // this is the only loop that should hit `XmlEvent::StartDocument` and `XmlEvent::Doctype`
@@ -285,7 +369,7 @@ where
                     return Err(HeaderParsingError::DuplicateHeader.into());
                 }
 
-                header = Some(parse_header(&mut reader)?);
+                header = Some(parse_header(reader)?);
             },
             XmlEvent::StartElement { name, .. }
                 if name.namespace_ref() == Some(constants::XML_SOAP_NAMESPACE)
@@ -311,20 +395,18 @@ where
     }
 
     let Some(header) = header else {
-        return Err(
-            HeaderParsingError::from(XmlError::MissingElement(Box::from("soap:Header"))).into(),
-        );
+        return Err(HeaderParsingError::MissingHeader.into());
     };
 
-    Ok((header, has_body, reader))
+    Ok((header, has_body))
 }
 
 fn validate_action_body(
     raw: &[u8],
-    header: Header,
+    header: &Header,
     source_info: Option<(SocketAddr, &NetworkInterface)>,
     has_body: bool,
-) -> Result<Header, MessageHandlerError> {
+) -> Result<(), MessageHandlerError> {
     event!(
         Level::DEBUG,
         xml = %String::from_utf8_lossy(raw).trim(),
@@ -332,7 +414,7 @@ fn validate_action_body(
     );
 
     let Some((_, action_method)) = header.action.rsplit_once('/') else {
-        return Err(MessageHandlerError::MalformedAction(header.action));
+        return Err(MessageHandlerError::MalformedAction(header.action.clone()));
     };
 
     if let Some((src, network_interface)) = source_info {
@@ -360,7 +442,7 @@ fn validate_action_body(
         );
     }
 
-    Ok(header)
+    Ok(())
 }
 
 /// A Target Service MUST include `wsd:AppSequence`, see documentation/ws-discovery.pdf, 4.1 and 5.3.
@@ -447,12 +529,24 @@ where
     }
 }
 
+/// Reads the rest of the document, and fails if it is not well-formed XML.
+pub(crate) fn read_to_end<R>(reader: &mut XmlReader<R>) -> Result<(), xml::reader::Error>
+where
+    R: Read,
+{
+    loop {
+        if let XmlEvent::EndDocument = reader.next()? {
+            return Ok(());
+        }
+    }
+}
+
 /// Parses the body of `action`, and moves the header blocks that the action requires into the message.
 fn parse_message_body(
     action: &str,
     relationship: Option<Relationship>,
     app_sequence: Option<Result<AppSequence, InvalidAppSequence>>,
-    mut reader: XmlReader<&[u8]>,
+    reader: &mut XmlReader<&[u8]>,
 ) -> Result<WSDMessage, MessageHandlerError> {
     let response = match action {
         constants::WSD_GET => {
@@ -465,41 +559,41 @@ fn parse_message_body(
 
             let app_sequence = require_app_sequence(app_sequence)?;
 
-            Ok(hello::parse_hello(&mut reader, app_sequence)?.into())
+            Ok(hello::parse_hello(reader, app_sequence)?.into())
         },
         // a Bye with `wsa:RelatesTo` is handled as one without it: its outline allows other header blocks, and Clients SHOULD listen for a Bye, see documentation/ws-discovery.pdf, 4.2
         // WSDAPI drops such a Bye
         constants::WSD_BYE => {
             let app_sequence = require_app_sequence(app_sequence)?;
 
-            Ok(bye::parse_bye(&mut reader, app_sequence)?.into())
+            Ok(bye::parse_bye(reader, app_sequence)?.into())
         },
         constants::WSD_PROBE_MATCH => {
             let relates_to = require_relates_to(relationship)?;
             let app_sequence = require_app_sequence(app_sequence)?;
 
-            Ok(probe_match::parse_probe_matches(&mut reader, relates_to, app_sequence)?.into())
+            Ok(probe_match::parse_probe_matches(reader, relates_to, app_sequence)?.into())
         },
         constants::WSD_RESOLVE_MATCH => {
             let relates_to = require_relates_to(relationship)?;
             let app_sequence = require_app_sequence(app_sequence)?;
 
-            Ok(resolve_match::parse_resolve_matches(&mut reader, relates_to, app_sequence)?.into())
+            Ok(resolve_match::parse_resolve_matches(reader, relates_to, app_sequence)?.into())
         },
         constants::WSD_PROBE => {
             check_request_relationship(relationship.as_ref())?;
 
-            Ok(probe::parse_probe(&mut reader)?.into())
+            Ok(probe::parse_probe(reader)?.into())
         },
         constants::WSD_RESOLVE => {
             check_request_relationship(relationship.as_ref())?;
 
-            Ok(resolve::parse_resolve(&mut reader)?.into())
+            Ok(resolve::parse_resolve(reader)?.into())
         },
         action => Err(MessageHandlerError::UnsupportedAction(Box::from(action))),
     }?;
 
-    finish_envelope(&mut reader)?;
+    finish_envelope(reader)?;
 
     Ok(response)
 }
@@ -524,34 +618,50 @@ impl MessageHandler {
     where
         B: AsRef<[u8]>,
     {
-        self.deconstruct(raw.as_ref(), Some(source)).await
+        let raw = raw.as_ref();
+        let mut reader = xml_reader(raw);
+
+        let message = ReadHeader::read(raw, &mut reader)?;
+
+        let (header, body) = self.deconstruct(message, &mut reader, Some(source)).await?;
+
+        Ok((header, body?))
     }
 
-    /// Handle a WSD message received over HTTP.
-    pub(crate) async fn deconstruct_http_message<B>(
+    /// Handle a WSD message received over HTTP, whose header the router already read with `reader`.
+    /// The inner `Result` is the body, read after the header is accepted.
+    pub(crate) async fn deconstruct_http_message(
         &self,
-        raw: B,
-    ) -> Result<(Header, WSDMessage), MessageHandlerError>
-    where
-        B: AsRef<[u8]>,
-    {
-        self.deconstruct(raw.as_ref(), None).await
+        message: ReadHeader<'_>,
+        reader: &mut XmlReader<&[u8]>,
+    ) -> Result<(Header, Result<WSDMessage, MessageHandlerError>), MessageHandlerError> {
+        self.deconstruct(message, reader, None).await
     }
 
     async fn deconstruct(
         &self,
-        raw: &[u8],
+        message: ReadHeader<'_>,
+        reader: &mut XmlReader<&[u8]>,
         source: Option<SocketAddr>,
-    ) -> Result<(Header, WSDMessage), MessageHandlerError> {
-        let (
-            RawHeader {
-                header,
-                relationship,
-                app_sequence,
-            },
+    ) -> Result<(Header, Result<WSDMessage, MessageHandlerError>), MessageHandlerError> {
+        let ReadHeader {
+            raw,
+            header:
+                RawHeader {
+                    action,
+                    message_id,
+                    relationship,
+                    app_sequence,
+                    ..
+                },
             has_body,
-            reader,
-        ) = deconstruct_raw(raw)?;
+        } = message;
+
+        let Some(message_id) = message_id else {
+            return Err(HeaderParsingError::MissingMessageId.into());
+        };
+
+        let header = Header { action, message_id };
 
         // check for duplicates
         if self.is_duplicated_msg(&header.message_id).await {
@@ -564,14 +674,13 @@ impl MessageHandler {
             return Err(MessageHandlerError::DuplicateMessage);
         }
 
-        let header = validate_action_body(
+        let body = validate_action_body(
             raw,
-            header,
+            &header,
             source.map(|source| (source, &*self.network_address.interface)),
             has_body,
-        )?;
-
-        let body = parse_message_body(&header.action, relationship, app_sequence, reader)?;
+        )
+        .and_then(|()| parse_message_body(&header.action, relationship, app_sequence, reader));
 
         Ok((header, body))
     }
@@ -615,6 +724,8 @@ where
     let mut relationship = None;
     // <wsd:AppSequence InstanceId="1742000334" SequenceId="urn:uuid:ae0a8b77-0138-11f0-93f3-d45ddf1e11a9" MessageNumber="1" />
     let mut app_sequence = None;
+    // <wsa:ReplyTo><wsa:Address>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:Address></wsa:ReplyTo>
+    let mut reply_to = None;
 
     let entry_depth = reader.depth();
 
@@ -629,7 +740,7 @@ where
                 && name.namespace_ref() == Some(constants::WSA_URI) =>
             {
                 // the `wsa` header blocks are read in any order, see documentation/soap12-part1.pdf, 5.2
-                // a second `wsa:To`, `wsa:Action` or `wsa:MessageID` violates the cardinality, see documentation/ws-addressing.pdf, 3
+                // a second `wsa:To`, `wsa:Action`, `wsa:MessageID` or `wsa:ReplyTo` violates the cardinality, see documentation/ws-addressing.pdf, 3
                 // a second `wsa:RelatesTo` is valid, see documentation/ws-addressing.pdf, 3.1
                 // a second `wsa:RelatesTo` is rejected, because WSDAPI drops such a message
                 // the outlines list at most one `wsa:RelatesTo`, see documentation/ws-discovery.pdf, 4.1, 5.3 and 6.2
@@ -670,14 +781,16 @@ where
                             ));
                         }
 
-                        // an empty `wsa:RelatesTo` is ignored, because WSDAPI ignores it in a Hello or a Bye
-                        relationship = Some(
-                            read_text(reader)?
-                                .map(|relates_to| {
-                                    parse_relationship(&attributes, &namespace, relates_to)
-                                })
-                                .transpose()?,
-                        );
+                        relationship = Some(read_relationship(reader, &attributes, &namespace)?);
+                    },
+                    "ReplyTo" => {
+                        if reply_to.is_some() {
+                            return Err(HeaderParsingError::DuplicateAddressingBlock(
+                                AddressingBlock::ReplyTo,
+                            ));
+                        }
+
+                        reply_to = Some(read_reply_to(reader)?);
                     },
                     _ => {
                         // Not a match, continue
@@ -709,26 +822,39 @@ where
         }
     }
 
-    let Some(message_id) = message_id.flatten() else {
-        return Err(HeaderParsingError::MissingMessageId);
-    };
-
     let Some(action) = action.flatten() else {
         return Err(HeaderParsingError::MissingAction);
     };
 
     Ok(RawHeader {
-        header: Header {
-            to: to.flatten(),
-            action,
-            message_id,
-        },
+        to: to.flatten(),
+        action,
+        message_id: message_id.flatten(),
         relationship: relationship.flatten(),
         app_sequence,
+        reply_to,
     })
 }
 
-/// Reads the relationship of a `wsa:RelatesTo` with the text `relates_to`, of the type `wsa:Reply` when `RelationshipType` is absent, see documentation/ws-addressing.pdf, 3.
+/// Reads the relationship of a `wsa:RelatesTo`, of the type `wsa:Reply` when `RelationshipType` is absent, see documentation/ws-addressing.pdf, 3.
+/// Returns `None` for an empty `wsa:RelatesTo`.
+fn read_relationship<R>(
+    reader: &mut XmlReader<R>,
+    attributes: &[OwnedAttribute],
+    namespaces: &Namespace,
+) -> Result<Option<Relationship>, HeaderParsingError>
+where
+    R: Read,
+{
+    // an empty `wsa:RelatesTo` is ignored, because WSDAPI ignores it in a Hello or a Bye
+    let Some(relates_to) = read_text(reader)? else {
+        return Ok(None);
+    };
+
+    parse_relationship(attributes, namespaces, relates_to).map(Some)
+}
+
+/// Parses the relationship of a `wsa:RelatesTo` with the text `relates_to`.
 fn parse_relationship(
     attributes: &[OwnedAttribute],
     namespaces: &Namespace,
@@ -758,6 +884,21 @@ fn parse_relationship(
     }
 }
 
+/// Reads `wsa:ReplyTo` up to its `wsa:Address`, see documentation/ws-addressing.pdf, 2.2.
+fn read_reply_to<R>(reader: &mut XmlReader<R>) -> Result<ReplyTo, HeaderParsingError>
+where
+    R: Read,
+{
+    if find_optional_child(reader, Some(constants::WSA_URI), "Address")?.is_none() {
+        return Ok(ReplyTo::WithoutAddress);
+    }
+
+    match read_text(reader)? {
+        Some(address) if address == constants::WSA_ANON => Ok(ReplyTo::Anonymous),
+        Some(_) | None => Ok(ReplyTo::NotAnonymous),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -779,7 +920,7 @@ mod tests {
     use crate::soap::parser::app_sequence::{AppSequence, InvalidAppSequence};
     use crate::soap::parser::{
         AddressingBlock, BodyParsingError, HeaderParsingError, MessageHandler, MessageHandlerError,
-        deconstruct_raw,
+        ReadHeader, ReplyTo, deconstruct_raw, xml_reader,
     };
     use crate::xml::XmlError;
 
@@ -966,10 +1107,15 @@ mod tests {
             r#"</soap:Body><x:Extra xmlns:x="urn:example" />"#,
         );
 
-        let result = handler_for_tests(8).deconstruct_http_message(&get).await;
+        let mut reader = xml_reader(get.as_bytes());
+        let message = ReadHeader::read(get.as_bytes(), &mut reader).unwrap();
+
+        let result = handler_for_tests(8)
+            .deconstruct_http_message(message, &mut reader)
+            .await;
 
         assert_matches!(
-            result.err(),
+            result.ok().and_then(|(_, body)| body.err()),
             Some(MessageHandlerError::HeaderError(
                 HeaderParsingError::UnexpectedEnvelopeChild(_)
             ))
@@ -1194,10 +1340,14 @@ mod tests {
     async fn deconstruct_get(header_blocks: &str) -> Result<(), MessageHandlerError> {
         let get = message(constants::WSD_GET, header_blocks, "");
 
-        handler_for_tests(8)
-            .deconstruct_http_message(&get)
-            .await
-            .map(|_| ())
+        let mut reader = xml_reader(get.as_bytes());
+        let message = ReadHeader::read(get.as_bytes(), &mut reader)?;
+
+        let (_, body) = handler_for_tests(8)
+            .deconstruct_http_message(message, &mut reader)
+            .await?;
+
+        body.map(|_| ())
     }
 
     #[tokio::test]
@@ -1325,6 +1475,112 @@ mod tests {
             deconstruct_resolve(OTHER_TYPE_RELATES_TO).await,
             Err(MessageHandlerError::HeaderError(
                 HeaderParsingError::UnexpectedRelatesTo
+            ))
+        );
+    }
+
+    fn reply_to_of(reply_to: &str) -> Option<ReplyTo> {
+        let probe = message(constants::WSD_PROBE, reply_to, "");
+
+        let (header, _, _) = deconstruct_raw(probe.as_bytes()).unwrap();
+
+        header.reply_to
+    }
+
+    #[test]
+    fn reads_anonymous_reply_to() {
+        assert_matches!(
+            reply_to_of(&format!(
+                "<wsa:ReplyTo><wsa:Address>{}</wsa:Address></wsa:ReplyTo>",
+                constants::WSA_ANON
+            )),
+            Some(ReplyTo::Anonymous)
+        );
+    }
+
+    #[test]
+    fn reads_reply_to_with_another_address() {
+        assert_matches!(
+            reply_to_of("<wsa:ReplyTo><wsa:Address>http://192.0.2.1/</wsa:Address></wsa:ReplyTo>"),
+            Some(ReplyTo::NotAnonymous)
+        );
+    }
+
+    #[test]
+    fn reads_reply_to_with_an_empty_address() {
+        assert_matches!(
+            reply_to_of("<wsa:ReplyTo><wsa:Address /></wsa:ReplyTo>"),
+            Some(ReplyTo::NotAnonymous)
+        );
+    }
+
+    #[test]
+    fn reads_reply_to_without_address() {
+        assert_matches!(
+            reply_to_of("<wsa:ReplyTo><wsa:ReferenceParameters /></wsa:ReplyTo>"),
+            Some(ReplyTo::WithoutAddress)
+        );
+    }
+
+    #[test]
+    fn reads_missing_reply_to_as_none() {
+        assert_matches!(reply_to_of(""), None);
+    }
+
+    #[test]
+    fn reads_blocks_after_reply_to() {
+        let probe = message(
+            constants::WSD_PROBE,
+            &format!(
+                "<wsa:ReplyTo><wsa:Address>{}</wsa:Address><wsa:ReferenceParameters /></wsa:ReplyTo>{}",
+                constants::WSA_ANON,
+                FULL_APP_SEQUENCE
+            ),
+            "",
+        );
+
+        let (header, _, _) = deconstruct_raw(probe.as_bytes()).unwrap();
+
+        assert_matches!(header.reply_to, Some(ReplyTo::Anonymous));
+        assert_matches!(header.app_sequence, Some(Ok(_)));
+    }
+
+    #[test]
+    fn rejects_duplicate_reply_to() {
+        let reply_to = format!(
+            "<wsa:ReplyTo><wsa:Address>{}</wsa:Address></wsa:ReplyTo>",
+            constants::WSA_ANON
+        );
+
+        let probe = message(constants::WSD_PROBE, &reply_to.repeat(2), "");
+
+        assert_matches!(
+            deconstruct_raw(probe.as_bytes()).err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::DuplicateAddressingBlock(AddressingBlock::ReplyTo)
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_message_without_message_id() {
+        let probe = format!(
+            r#"<soap:Envelope xmlns:soap="{}" xmlns:wsa="{}" xmlns:wsd="{}"><soap:Header><wsa:To>{}</wsa:To><wsa:Action>{}</wsa:Action></soap:Header><soap:Body><wsd:Probe /></soap:Body></soap:Envelope>"#,
+            constants::XML_SOAP_NAMESPACE,
+            constants::WSA_URI,
+            constants::XML_WSD_NAMESPACE,
+            constants::WSA_DISCOVERY,
+            constants::WSD_PROBE,
+        );
+
+        let result = handler_for_tests(8)
+            .deconstruct_message(&probe, SOURCE)
+            .await;
+
+        assert_matches!(
+            result.err(),
+            Some(MessageHandlerError::HeaderError(
+                HeaderParsingError::MissingMessageId
             ))
         );
     }
