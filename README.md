@@ -15,6 +15,10 @@ sudo apt install ./wsdd-rs_<version>-1_amd64.deb
 
 The packages are also published to `ghcr.io/kristof-mattei/wsdd-rs-deb`, tagged `edge` for the latest build on `main` and `vX.Y.Z` per release, for use with `oras pull`.
 
+## Chroot
+
+The packaged services do not use `--chroot`. With `--chroot` and `--discovery`, host names in XAddrs do not resolve, because `/etc/resolv.conf` is out of reach after the chroot. XAddrs with an IP address work.
+
 # TODO
 
 - TODOs in the code
