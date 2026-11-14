@@ -19,6 +19,18 @@ The packages are also published to `ghcr.io/kristof-mattei/wsdd-rs-deb`, tagged 
 
 The packaged services do not use `--chroot`. With `--chroot` and `--discovery`, host names in XAddrs do not resolve, because `/etc/resolv.conf` is out of reach after the chroot. XAddrs with an IP address work.
 
+To resolve host names with `--chroot`, bind the resolver configuration into the chroot directory, for example with `sudo systemctl edit wsdd-rs-discovery.service`:
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/usr/bin/wsdd-rs --chroot=/run/wsdd-rs-discovery --source-port=37020 --no-host --discovery $WSDD_RS_DISCOVERY_PARAMS
+AmbientCapabilities=CAP_SYS_CHROOT
+BindReadOnlyPaths=/etc:/run/wsdd-rs-discovery/etc /run/systemd/resolve:/run/wsdd-rs-discovery/run/systemd/resolve
+```
+
+Ensure you bind the directories, not the files: reading a bind-mounted file returns the old content after the file is replaced, which is how systemd-resolved updates `resolv.conf`. Without systemd-resolved, `ls -l /etc/resolv.conf` shows which directory to bind instead of `/run/systemd/resolve`.
+
 # TODO
 
 - TODOs in the code
