@@ -158,6 +158,7 @@ qname
 qnames
 rawfile
 recond
+resolv
 retag
 retagging
 retags
