@@ -719,7 +719,9 @@ async fn listen_forever(
     // This is especially important when using IPv6 and resolving `fe80::` addresses which are local to the interface.
     // Using `.local_address()` didn't work with IPv6, because `fe80::` addresses (the ones we bind on) don't specify
     // to which interface they belong
-    let client = reqwest::ClientBuilder::new()
+    let client = config
+        .name_resolution
+        .client_builder()
         .interface(bound_to.interface.name())
         .build()
         .expect("WSD Client cannot operate without HTTP Client");

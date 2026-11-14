@@ -12,6 +12,7 @@ use uuid::fmt::Urn;
 
 use crate::config::{AppSequence, BindTo, Config, InterfaceFilter, PortOrSocket};
 use crate::ffi::listen_fds;
+use crate::name_resolution::{NameResolution, SnapshotResolver};
 use crate::network_interface::DevName;
 use crate::security::parse_userspec;
 use crate::soap::InstanceId;
@@ -175,6 +176,24 @@ pub(crate) fn to_config(args: Cli) -> Result<Config, eyre::Report> {
         BindTo::DualStack
     };
 
+    // `/etc/resolv.conf` and `/etc/hosts` are unreachable after the chroot
+    let name_resolution = if args.discovery && args.chroot.is_some() {
+        match SnapshotResolver::from_system() {
+            Ok(resolver) => NameResolution::Snapshot(resolver),
+            Err(error) => {
+                event!(
+                    Level::WARN,
+                    ?error,
+                    "Failed to read the name resolution configuration, host names in XAddrs will not resolve after the chroot"
+                );
+
+                NameResolution::System
+            },
+        }
+    } else {
+        NameResolution::System
+    };
+
     let config = Config {
         interfaces: args.interface,
         hoplimit: args.hoplimit,
@@ -188,6 +207,7 @@ pub(crate) fn to_config(args: Cli) -> Result<Config, eyre::Report> {
         chroot: args.chroot,
         user: args.user,
         discovery: args.discovery,
+        name_resolution,
         listen,
         no_host: args.no_host,
         metadata_timeout: args.metadata_timeout,

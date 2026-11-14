@@ -60,6 +60,7 @@ fedc
 fefd
 freeifaddrs
 getaddr
+getaddrinfo
 getgid
 getgrnam
 getgrname
@@ -158,6 +159,7 @@ qname
 qnames
 rawfile
 recond
+resolv
 retag
 retagging
 retags

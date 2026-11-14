@@ -10,6 +10,7 @@ mod helpers;
 mod max_size_deque;
 mod message_receiver;
 mod multicast_handler;
+mod name_resolution;
 mod network_address;
 mod network_handler;
 mod network_interface;

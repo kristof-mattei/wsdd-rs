@@ -40,6 +40,7 @@ hashbrown = { version = "=0.17.1", default-features = false, features = [
     "equivalent",
     "inline-more",
 ] }
+hickory-resolver = "=0.26.3"
 http = "=1.5.0"
 humantime = "=2.4.0"
 hyper-util = { version = "=0.1.21", features = ["tracing"] }

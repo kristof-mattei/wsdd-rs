@@ -7,6 +7,7 @@ use std::time::Duration;
 use tracing::{Level, event};
 use uuid::Uuid;
 
+use crate::name_resolution::NameResolution;
 use crate::network_interface::DevName;
 use crate::soap::{InstanceId, MessageNumber};
 use crate::wsd::device::DeviceUri;
@@ -25,6 +26,7 @@ pub(crate) struct Config {
     pub chroot: Option<PathBuf>,
     pub user: Option<(u32, u32)>,
     pub discovery: bool,
+    pub name_resolution: NameResolution,
     pub listen: Option<PortOrSocket>,
     pub no_host: bool,
     pub metadata_timeout: Duration,
