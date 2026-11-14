@@ -15,6 +15,29 @@ sudo apt install ./wsdd-rs_<version>-1_amd64.deb
 
 The packages are also published to `ghcr.io/kristof-mattei/wsdd-rs-deb`, tagged `edge` for the latest build on `main` and `vX.Y.Z` per release, for use with `oras pull`.
 
+## Chroot
+
+`--chroot <DIRECTORY>` changes the root directory to `<DIRECTORY>` after startup. The directory can be empty. Both packaged services run with `--chroot` in their empty runtime directory under `/run`.
+
+`/etc` is out of reach after the chroot, so with `--discovery` wsdd-rs reads `/etc/resolv.conf` and `/etc/hosts` once at startup and resolves the host names in XAddrs with that copy. A change to either file takes effect after a restart. Host names that only an NSS module resolves, such as mDNS `.local` names, do not resolve. The host mode resolves no host names, so `wsdd-rs.service` is not affected.
+
+To have `wsdd-rs-discovery.service` follow resolver changes, replace `--chroot` with systemd's `RootDirectory=`. Create a drop-in with `sudo systemctl edit wsdd-rs-discovery.service`:
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/usr/bin/wsdd-rs --source-port=37020 --no-host --discovery $WSDD_RS_DISCOVERY_PARAMS
+AmbientCapabilities=
+RootDirectory=/run/wsdd-rs-discovery
+BindReadOnlyPaths=/usr /usr/lib:/lib -/usr/lib64:/lib64 /etc /run/systemd/resolve
+```
+
+- The empty `ExecStart=` and `AmbientCapabilities=` lines reset the packaged values. The new `ExecStart=` is the packaged one without `--chroot`, and `CAP_SYS_CHROOT` is no longer required.
+- `RootDirectory=` requires the binary and its libraries inside the new root, hence `/usr`, `/lib` and `/lib64`.
+- `/etc` is bound as a directory because a bound file keeps its old content when the file is replaced through a rename, which is how systemd-resolved updates `resolv.conf`.
+- `/run/systemd/resolve` holds the target of `/etc/resolv.conf` on a host with systemd-resolved. On other hosts, `ls -l /etc/resolv.conf` shows which directory to bind instead. A regular `/etc/resolv.conf` requires no extra directory.
+- The service can read all of `/usr` and `/etc`, where `--chroot` exposes nothing.
+
 # TODO
 
 - TODOs in the code
