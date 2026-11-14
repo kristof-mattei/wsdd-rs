@@ -1,4 +1,19 @@
 <!-- header goes here -->
+## [2.4.0](https://github.com/kristof-mattei/wsdd-rs/compare/v2.3.0..v2.4.0) - 2026-11-14
+
+### 🚀 Features
+
+- Set `PrivateDevices=yes` and `ProtectHome=yes` in the systemd units by [Kristof Mattei](https://github.com/kristof-mattei) ([`468d5e6`](https://github.com/kristof-mattei/wsdd-rs/commit/468d5e6055206bec4ca11cf5fc92722036cfc14c))
+
+### 🐛 Bug Fixes
+
+- Define empty parameter defaults in the systemd units by [Kristof Mattei](https://github.com/kristof-mattei) ([`570b97d`](https://github.com/kristof-mattei/wsdd-rs/commit/570b97daabb5807cf650cab13d8fade081b7ff98))
+- Drop `--chroot` from the systemd units by [Kristof Mattei](https://github.com/kristof-mattei) ([`329bb0d`](https://github.com/kristof-mattei/wsdd-rs/commit/329bb0dca56d79dbccee43fb0a520712ff74e802))
+
+### 📚 Documentation
+
+- Note that host names in XAddrs do not resolve after `--chroot` by [Kristof Mattei](https://github.com/kristof-mattei) ([`493cbe1`](https://github.com/kristof-mattei/wsdd-rs/commit/493cbe1abd2b49b3f74bf67339d4b00bc44f4bfc))
+- Show how to resolve host names in XAddrs with `--chroot` by [Kristof Mattei](https://github.com/kristof-mattei) ([`adb6cee`](https://github.com/kristof-mattei/wsdd-rs/commit/adb6cee3cd2a6be14eab2505a00a1059b320e5a5))
 ## [2.3.0](https://github.com/kristof-mattei/wsdd-rs/compare/v2.2.0..v2.3.0) - 2026-11-13
 
 ### 🚀 Features
