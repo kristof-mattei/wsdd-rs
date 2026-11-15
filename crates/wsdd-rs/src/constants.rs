@@ -20,15 +20,22 @@ pub(crate) const XML_PUB_NAMESPACE: &str = "http://schemas.microsoft.com/windows
 
 pub(crate) const WSD_MAX_KNOWN_MESSAGES: usize = 10;
 
-pub(crate) const WSD_PROBE: &str = const_format!("{}{}", WSD_URI, "/Probe");
-pub(crate) const WSD_PROBE_MATCH: &str = const_format!("{}{}", WSD_URI, "/ProbeMatches");
-pub(crate) const WSD_RESOLVE: &str = const_format!("{}{}", WSD_URI, "/Resolve");
-pub(crate) const WSD_RESOLVE_MATCH: &str = const_format!("{}{}", WSD_URI, "/ResolveMatches");
-pub(crate) const WSD_HELLO: &str = const_format!("{}{}", WSD_URI, "/Hello");
-pub(crate) const WSD_BYE: &str = const_format!("{}{}", WSD_URI, "/Bye");
-pub(crate) const WSD_GET: &str = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Get";
-pub(crate) const WSD_GET_RESPONSE: &str =
-    "http://schemas.xmlsoap.org/ws/2004/09/transfer/GetResponse";
+pub(crate) const WSD_PROBE_NAME: &str = "Probe";
+pub(crate) const WSD_PROBE: &str = const_format!("{}/{}", WSD_URI, WSD_PROBE_NAME);
+pub(crate) const WSD_PROBE_MATCH_NAME: &str = "ProbeMatches";
+pub(crate) const WSD_PROBE_MATCH: &str = const_format!("{}/{}", WSD_URI, WSD_PROBE_MATCH_NAME);
+pub(crate) const WSD_RESOLVE_NAME: &str = "Resolve";
+pub(crate) const WSD_RESOLVE: &str = const_format!("{}/{}", WSD_URI, WSD_RESOLVE_NAME);
+pub(crate) const WSD_RESOLVE_MATCH_NAME: &str = "ResolveMatches";
+pub(crate) const WSD_RESOLVE_MATCH: &str = const_format!("{}/{}", WSD_URI, WSD_RESOLVE_MATCH_NAME);
+pub(crate) const WSD_HELLO_NAME: &str = "Hello";
+pub(crate) const WSD_HELLO: &str = const_format!("{}/{}", WSD_URI, WSD_HELLO_NAME);
+pub(crate) const WSD_BYE_NAME: &str = "Bye";
+pub(crate) const WSD_BYE: &str = const_format!("{}/{}", WSD_URI, WSD_BYE_NAME);
+pub(crate) const WXF_URI: &str = "http://schemas.xmlsoap.org/ws/2004/09/transfer";
+pub(crate) const WSD_GET_NAME: &str = "Get";
+pub(crate) const WSD_GET: &str = const_format!("{}/{}", WXF_URI, WSD_GET_NAME);
+pub(crate) const WSD_GET_RESPONSE: &str = const_format!("{}/{}", WXF_URI, "GetResponse");
 
 pub(crate) const WSDP_THIS_DEVICE: &str = "ThisDevice";
 pub(crate) const WSDP_THIS_DEVICE_DIALECT: &str =

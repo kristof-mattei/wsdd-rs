@@ -793,7 +793,7 @@ async fn listen_forever(
             Err(error) => {
                 event!(
                     Level::ERROR,
-                    action = &*header.action,
+                    action = header.action.as_str(),
                     ?error,
                     "Failure to handle message"
                 );

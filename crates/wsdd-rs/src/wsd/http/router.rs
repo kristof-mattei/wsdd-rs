@@ -17,6 +17,7 @@ use tracing::{Level, event};
 use crate::config::Config;
 use crate::constants;
 use crate::soap::builder::{Builder, Fault, FaultCode};
+use crate::soap::parser::action::Action;
 use crate::soap::parser::{
     self, AddressingBlock, HeaderParsingError, MessageHandler, MessageHandlerError, RawHeader,
     ReadHeader, ReplyTo,
@@ -240,9 +241,14 @@ fn answer_from_header(
             .map(Some);
     }
 
-    match header.action() {
-        constants::WSD_GET | constants::WSD_PROBE | constants::WSD_RESOLVE => {},
-        _ => {
+    let is_get = match *header.action() {
+        Action::Get => true,
+        Action::Probe | Action::Resolve => false,
+        Action::Hello
+        | Action::Bye
+        | Action::ProbeMatches
+        | Action::ResolveMatches
+        | Action::Unsupported(_) => {
             // `wsa:ReplyTo` requires `wsa:MessageID`, see documentation/ws-addressing.pdf, 3 and 4.2
             if message_id.is_none() && reply_to.is_some() {
                 return invalid_request_fault(
@@ -258,7 +264,7 @@ fn answer_from_header(
             return valid_request_fault(config, Fault::DestinationUnreachable, message_id)
                 .map(Some);
         },
-    }
+    };
 
     // a Get, a Probe or a Resolve expects a reply, which requires `wsa:MessageID`, see documentation/ws-addressing.pdf, 3 and 4.2
     // FDResPub returns `wsa:DestinationUnreachable` for a Get or a Probe with `wsa:ReplyTo`, and without it `wsa:EndpointUnavailable` for a Get and 202 for a Probe
@@ -268,7 +274,7 @@ fn answer_from_header(
     };
 
     // see documentation/ws-addressing.pdf, 4.3
-    if header.action() == constants::WSD_GET && to != &config.uuid_as_device_uri {
+    if is_get && to != &config.uuid_as_device_uri {
         return valid_request_fault(config, Fault::DestinationUnreachable, Some(message_id))
             .map(Some);
     }

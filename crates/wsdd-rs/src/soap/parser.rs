@@ -1,3 +1,4 @@
+pub(crate) mod action;
 pub(crate) mod app_sequence;
 pub(crate) mod bye;
 pub(crate) mod generic;
@@ -26,6 +27,7 @@ use crate::constants;
 use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
+use crate::soap::parser::action::Action;
 use crate::soap::parser::app_sequence::{AppSequence, InvalidAppSequence};
 use crate::soap::parser::generic::resolve_qname;
 use crate::soap::parser::get::Get;
@@ -40,14 +42,14 @@ pub(crate) struct MessageHandler {
 
 /// The header blocks of every message.
 pub(crate) struct Header {
-    pub action: Box<str>,
+    pub action: Action,
     pub message_id: MessageId,
 }
 
 /// Every header block that was read, before the action decides which of them the message requires.
 pub(crate) struct RawHeader {
     to: Option<DeviceUri>,
-    action: Box<str>,
+    action: Action,
     /// `None` when the block is absent or empty.
     message_id: Option<MessageId>,
     /// `None` when `wsa:RelatesTo` is absent or empty.
@@ -63,7 +65,7 @@ impl RawHeader {
         self.to.as_ref()
     }
 
-    pub(crate) fn action(&self) -> &str {
+    pub(crate) fn action(&self) -> &Action {
         &self.action
     }
 
@@ -413,8 +415,10 @@ fn validate_action_body(
         "incoming message content",
     );
 
-    let Some((_, action_method)) = header.action.rsplit_once('/') else {
-        return Err(MessageHandlerError::MalformedAction(header.action.clone()));
+    let Some(action_name) = header.action.name() else {
+        return Err(MessageHandlerError::MalformedAction(Box::from(
+            header.action.as_str(),
+        )));
     };
 
     if let Some((src, network_interface)) = source_info {
@@ -423,7 +427,7 @@ fn validate_action_body(
             "{}({}) - - \"{} {} UDP\" - -",
             src,
             network_interface,
-            action_method,
+            action_name,
             header.message_id
         );
     } else {
@@ -431,7 +435,7 @@ fn validate_action_body(
         event!(
             Level::DEBUG,
             "processing WSD {} message ({})",
-            action_method,
+            action_name,
             header.message_id
         );
     }
@@ -543,18 +547,18 @@ where
 
 /// Parses the body of `action`, and moves the header blocks that the action requires into the message.
 fn parse_message_body(
-    action: &str,
+    action: &Action,
     relationship: Option<Relationship>,
     app_sequence: Option<Result<AppSequence, InvalidAppSequence>>,
     reader: &mut XmlReader<&[u8]>,
 ) -> Result<WSDMessage, MessageHandlerError> {
-    let response = match action {
-        constants::WSD_GET => {
+    let response = match *action {
+        Action::Get => {
             check_get_relationship(relationship.as_ref())?;
 
             Ok(Get {}.into())
         },
-        constants::WSD_HELLO => {
+        Action::Hello => {
             forbid_relates_to(relationship.as_ref())?;
 
             let app_sequence = require_app_sequence(app_sequence)?;
@@ -563,34 +567,36 @@ fn parse_message_body(
         },
         // a Bye with `wsa:RelatesTo` is handled as one without it: its outline allows other header blocks, and Clients SHOULD listen for a Bye, see documentation/ws-discovery.pdf, 4.2
         // WSDAPI drops such a Bye
-        constants::WSD_BYE => {
+        Action::Bye => {
             let app_sequence = require_app_sequence(app_sequence)?;
 
             Ok(bye::parse_bye(reader, app_sequence)?.into())
         },
-        constants::WSD_PROBE_MATCH => {
+        Action::ProbeMatches => {
             let relates_to = require_relates_to(relationship)?;
             let app_sequence = require_app_sequence(app_sequence)?;
 
             Ok(probe_match::parse_probe_matches(reader, relates_to, app_sequence)?.into())
         },
-        constants::WSD_RESOLVE_MATCH => {
+        Action::ResolveMatches => {
             let relates_to = require_relates_to(relationship)?;
             let app_sequence = require_app_sequence(app_sequence)?;
 
             Ok(resolve_match::parse_resolve_matches(reader, relates_to, app_sequence)?.into())
         },
-        constants::WSD_PROBE => {
+        Action::Probe => {
             check_request_relationship(relationship.as_ref())?;
 
             Ok(probe::parse_probe(reader)?.into())
         },
-        constants::WSD_RESOLVE => {
+        Action::Resolve => {
             check_request_relationship(relationship.as_ref())?;
 
             Ok(resolve::parse_resolve(reader)?.into())
         },
-        action => Err(MessageHandlerError::UnsupportedAction(Box::from(action))),
+        Action::Unsupported(ref action) => {
+            Err(MessageHandlerError::UnsupportedAction(action.clone()))
+        },
     }?;
 
     finish_envelope(reader)?;
@@ -828,7 +834,7 @@ where
 
     Ok(RawHeader {
         to: to.flatten(),
-        action,
+        action: Action::from(action),
         message_id: message_id.flatten(),
         relationship: relationship.flatten(),
         app_sequence,
