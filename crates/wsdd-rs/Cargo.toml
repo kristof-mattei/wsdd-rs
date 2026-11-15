@@ -97,7 +97,7 @@ mockall = "=0.15.0"
 mockito = "=1.7.2"
 pretty_assertions = { version = "=1.4.1", features = ["unstable"] }
 tokio = { version = "=1.54.1", features = ["test-util"] }
-trybuild = "=1.0.122"
+trybuild = "=1.0.123"
 
 # In case we want to check `event!` in tests
 # conflicts with Miri
