@@ -45,26 +45,26 @@ pub(crate) struct MessageHandler {
 #[derive(Hash, PartialEq, Eq)]
 pub(crate) struct KnownMessage {
     message_id: MessageId,
-    /// The index of the interface that received a Bye, `None` for every other message.
-    /// The copy of a Bye on each interface is handled, see `Current::depart`.
-    bye_interface_index: Option<u32>,
+    /// The index of the interface that received a Hello or a Bye, `None` for every other message.
+    /// The copy of a Hello or a Bye on each interface is handled, so a device is recorded and removed per interface, see `Current::depart`.
+    /// WSDAPI handles only the first copy of a Hello, and resolves it with one `MessageID` on every interface, which a host answers once.
+    interface_index: Option<u32>,
 }
 
 /// Borrows the fields of a `KnownMessage` in the same order, so both hash alike.
 #[derive(Hash)]
 struct KnownMessageRef<'a> {
     message_id: &'a MessageId,
-    bye_interface_index: Option<u32>,
+    interface_index: Option<u32>,
 }
 
 impl<'a> KnownMessageRef<'a> {
     fn new(header: &'a Header, interface: &NetworkInterface) -> Self {
         Self {
             message_id: &header.message_id,
-            bye_interface_index: match header.action {
-                Action::Bye => Some(interface.index()),
-                Action::Hello
-                | Action::Probe
+            interface_index: match header.action {
+                Action::Hello | Action::Bye => Some(interface.index()),
+                Action::Probe
                 | Action::ProbeMatches
                 | Action::Resolve
                 | Action::ResolveMatches
@@ -77,7 +77,7 @@ impl<'a> KnownMessageRef<'a> {
 
 impl Equivalent<KnownMessage> for KnownMessageRef<'_> {
     fn equivalent(&self, key: &KnownMessage) -> bool {
-        *self.message_id == key.message_id && self.bye_interface_index == key.bye_interface_index
+        *self.message_id == key.message_id && self.interface_index == key.interface_index
     }
 }
 
@@ -85,12 +85,12 @@ impl From<KnownMessageRef<'_>> for KnownMessage {
     fn from(
         KnownMessageRef {
             message_id,
-            bye_interface_index,
+            interface_index,
         }: KnownMessageRef<'_>,
     ) -> Self {
         Self {
             message_id: message_id.clone(),
-            bye_interface_index,
+            interface_index,
         }
     }
 }
@@ -747,7 +747,7 @@ impl MessageHandler {
     }
 
     /// Implements item 1 of documentation/soap-over-udp.pdf, Appendix II, the list of the last n `MessageID`s.
-    /// A Bye is listed once per interface, see `KnownMessage`.
+    /// A Hello and a Bye are listed once per interface, see `KnownMessage`.
     /// Returns `true` for a known `MessageID` under the read lock alone, and takes the write lock only to insert an absent one.
     /// Between the two locks, other calls can insert the same `MessageID` and evict it again, so this call can return `false` for a duplicate.
     pub(crate) async fn is_duplicated_msg(&self, header: &Header) -> bool {
@@ -1085,7 +1085,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn hello_on_another_interface_is_a_duplicate() {
+    async fn hello_on_another_interface_is_not_a_duplicate() {
         let recent_messages = Arc::new(RwLock::new(MaxSizeDeque::new(8)));
 
         let hello = header(Action::Hello);
@@ -1096,8 +1096,44 @@ mod tests {
                 .await
         );
         assert!(
-            handler_on(2, &recent_messages)
+            !handler_on(2, &recent_messages)
                 .is_duplicated_msg(&hello)
+                .await
+        );
+    }
+
+    #[tokio::test]
+    async fn hello_on_the_same_interface_is_a_duplicate() {
+        let recent_messages = Arc::new(RwLock::new(MaxSizeDeque::new(8)));
+
+        let hello = header(Action::Hello);
+
+        assert!(
+            !handler_on(1, &recent_messages)
+                .is_duplicated_msg(&hello)
+                .await
+        );
+        assert!(
+            handler_on(1, &recent_messages)
+                .is_duplicated_msg(&hello)
+                .await
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_on_another_interface_is_a_duplicate() {
+        let recent_messages = Arc::new(RwLock::new(MaxSizeDeque::new(8)));
+
+        let probe = header(Action::Probe);
+
+        assert!(
+            !handler_on(1, &recent_messages)
+                .is_duplicated_msg(&probe)
+                .await
+        );
+        assert!(
+            handler_on(2, &recent_messages)
+                .is_duplicated_msg(&probe)
                 .await
         );
     }

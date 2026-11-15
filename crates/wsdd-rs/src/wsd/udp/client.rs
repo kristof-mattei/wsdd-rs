@@ -1174,6 +1174,52 @@ mod tests {
         assert_eq!(response, expected);
     }
 
+    #[tokio::test]
+    async fn resolves_a_hello_without_xaddrs_on_each_interface() {
+        let recent_messages = Arc::new(RwLock::new(MaxSizeDeque::new(20)));
+
+        let first = network_address_on(1, Ipv4Addr::new(192, 168, 100, 20));
+        let second = network_address_on(2, Ipv4Addr::new(192, 168, 200, 20));
+
+        // client
+        let (client_config, client_devices) = setup_client();
+
+        // host
+        let host_ip = Ipv4Addr::new(192, 168, 100, 5);
+
+        let host_endpoint_device_uri =
+            DeviceUri::new(Uuid::now_v7().as_urn().to_string().into_boxed_str());
+
+        let hello_without_xaddrs = format!(
+            include_str!("../../test/hello-without-xaddrs-template.xml"),
+            Uuid::now_v7(),
+            host_endpoint_device_uri
+        );
+
+        for bound_to in [&first, &second] {
+            let message_handler =
+                MessageHandler::new(bound_to.clone(), Arc::clone(&recent_messages));
+
+            let (_, message) = message_handler
+                .deconstruct_message(
+                    &hello_without_xaddrs,
+                    SocketAddr::V4(SocketAddrV4::new(host_ip, 5000)),
+                )
+                .await
+                .expect("each interface handles its copy of the Hello");
+
+            let (multicast_tx, mut multicast_rx) = tokio::sync::mpsc::channel(1);
+
+            let mut client = client_loop(&client_config, &client_devices, bound_to, &multicast_tx);
+
+            let result = client.handle_hello(message.into_hello().unwrap()).await;
+
+            assert_matches!(result, Ok(()));
+            assert_matches!(multicast_rx.try_recv(), Ok(_));
+            assert_eq!(client.resolves.len(), 1);
+        }
+    }
+
     #[cfg_attr(not(miri), tokio::test)]
     #[cfg_attr(miri, expect(unused, reason = "This test doesn't work with Miri"))]
     async fn handles_hello_with_xaddr() {
