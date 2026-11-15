@@ -220,7 +220,7 @@ async fn listen_forever(
                 event!(
                     Level::DEBUG,
                     "unhandled action {}/{}",
-                    header.action,
+                    header.action.as_str(),
                     header.message_id
                 );
                 continue;
@@ -233,7 +233,7 @@ async fn listen_forever(
             Err(error) => {
                 event!(
                     Level::ERROR,
-                    action = &*header.action,
+                    action = header.action.as_str(),
                     ?error,
                     "Failure to create XML response"
                 );
