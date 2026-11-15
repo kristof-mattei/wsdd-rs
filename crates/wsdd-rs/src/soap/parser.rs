@@ -14,6 +14,7 @@ use std::io::Read;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use ringmap::Equivalent;
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{Level, event};
@@ -37,7 +38,61 @@ use crate::xml::{TextReadError, XmlError, XmlReader, find_optional_child, read_t
 
 pub(crate) struct MessageHandler {
     network_address: NetworkAddress,
-    recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
+    recent_messages: Arc<RwLock<MaxSizeDeque<KnownMessage>>>,
+}
+
+/// An entry in the list of the last n `MessageID`s, see `MessageHandler::is_duplicated_msg`.
+#[derive(Hash, PartialEq, Eq)]
+pub(crate) struct KnownMessage {
+    message_id: MessageId,
+    /// The index of the interface that received a Bye, `None` for every other message.
+    /// The copy of a Bye on each interface is handled, see `Current::depart`.
+    bye_interface_index: Option<u32>,
+}
+
+/// Borrows the fields of a `KnownMessage` in the same order, so both hash alike.
+#[derive(Hash)]
+struct KnownMessageRef<'a> {
+    message_id: &'a MessageId,
+    bye_interface_index: Option<u32>,
+}
+
+impl<'a> KnownMessageRef<'a> {
+    fn new(header: &'a Header, interface: &NetworkInterface) -> Self {
+        Self {
+            message_id: &header.message_id,
+            bye_interface_index: match header.action {
+                Action::Bye => Some(interface.index()),
+                Action::Hello
+                | Action::Probe
+                | Action::ProbeMatches
+                | Action::Resolve
+                | Action::ResolveMatches
+                | Action::Get
+                | Action::Unsupported(_) => None,
+            },
+        }
+    }
+}
+
+impl Equivalent<KnownMessage> for KnownMessageRef<'_> {
+    fn equivalent(&self, key: &KnownMessage) -> bool {
+        *self.message_id == key.message_id && self.bye_interface_index == key.bye_interface_index
+    }
+}
+
+impl From<KnownMessageRef<'_>> for KnownMessage {
+    fn from(
+        KnownMessageRef {
+            message_id,
+            bye_interface_index,
+        }: KnownMessageRef<'_>,
+    ) -> Self {
+        Self {
+            message_id: message_id.clone(),
+            bye_interface_index,
+        }
+    }
 }
 
 /// The header blocks of every message.
@@ -607,7 +662,7 @@ fn parse_message_body(
 impl MessageHandler {
     pub(crate) fn new(
         network_address: NetworkAddress,
-        recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
+        recent_messages: Arc<RwLock<MaxSizeDeque<KnownMessage>>>,
     ) -> Self {
         Self {
             network_address,
@@ -670,7 +725,7 @@ impl MessageHandler {
         let header = Header { action, message_id };
 
         // check for duplicates
-        if self.is_duplicated_msg(&header.message_id).await {
+        if self.is_duplicated_msg(&header).await {
             event!(
                 Level::DEBUG,
                 message_id = %header.message_id,
@@ -692,20 +747,23 @@ impl MessageHandler {
     }
 
     /// Implements item 1 of documentation/soap-over-udp.pdf, Appendix II, the list of the last n `MessageID`s.
+    /// A Bye is listed once per interface, see `KnownMessage`.
     /// Returns `true` for a known `MessageID` under the read lock alone, and takes the write lock only to insert an absent one.
     /// Between the two locks, other calls can insert the same `MessageID` and evict it again, so this call can return `false` for a duplicate.
-    pub(crate) async fn is_duplicated_msg(&self, message_id: &MessageId) -> bool {
+    pub(crate) async fn is_duplicated_msg(&self, header: &Header) -> bool {
+        let known_message = KnownMessageRef::new(header, &self.network_address.interface);
+
         {
             let read_lock = self.recent_messages.read().await;
 
-            if read_lock.contains(message_id) {
+            if read_lock.contains(&known_message) {
                 return true;
             }
         }
 
         let mut write_lock = self.recent_messages.write().await;
 
-        if write_lock.push_back(message_id.clone()) {
+        if write_lock.push_back(known_message.into()) {
             // the queue did NOT have the message_id, so it's a new message
             false
         } else {
@@ -923,10 +981,11 @@ mod tests {
     use crate::network_address::NetworkAddress;
     use crate::network_interface::NetworkInterface;
     use crate::soap::MessageId;
+    use crate::soap::parser::action::Action;
     use crate::soap::parser::app_sequence::{AppSequence, InvalidAppSequence};
     use crate::soap::parser::{
-        AddressingBlock, BodyParsingError, HeaderParsingError, MessageHandler, MessageHandlerError,
-        ReadHeader, ReplyTo, deconstruct_raw, xml_reader,
+        AddressingBlock, BodyParsingError, Header, HeaderParsingError, KnownMessage,
+        MessageHandler, MessageHandlerError, ReadHeader, ReplyTo, deconstruct_raw, xml_reader,
     };
     use crate::xml::XmlError;
 
@@ -940,14 +999,38 @@ mod tests {
         )
     }
 
+    fn handler_on(
+        interface_index: u32,
+        recent_messages: &Arc<RwLock<MaxSizeDeque<KnownMessage>>>,
+    ) -> MessageHandler {
+        MessageHandler::new(
+            NetworkAddress::new(
+                IpNet::new(Ipv4Addr::new(127, 1, 2, 3).into(), 16).unwrap(),
+                Arc::new(NetworkInterface::new_with_index(
+                    format!("eth{}", interface_index),
+                    RT_SCOPE_SITE,
+                    interface_index,
+                )),
+            ),
+            Arc::clone(recent_messages),
+        )
+    }
+
+    fn header(action: Action) -> Header {
+        Header {
+            action,
+            message_id: MessageId::from(Uuid::now_v7().urn()),
+        }
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn is_duplicated_msg_drops_read_lock_before_waiting_for_write_lock() {
         let handler = handler_for_tests(8);
-        let message_id = MessageId::from(Uuid::now_v7().urn());
+        let header = header(Action::Hello);
 
         let first_hit = timeout(
             Duration::from_millis(100),
-            handler.is_duplicated_msg(&message_id),
+            handler.is_duplicated_msg(&header),
         )
         .await
         .expect("read guard must be released before awaiting a write guard");
@@ -957,11 +1040,65 @@ mod tests {
             "first observation of a message id should be reported as new"
         );
 
-        let second_hit = handler.is_duplicated_msg(&message_id).await;
+        let second_hit = handler.is_duplicated_msg(&header).await;
 
         assert!(
             second_hit,
             "the message id must be seen as duplicate after it is stored"
+        );
+    }
+
+    #[tokio::test]
+    async fn bye_on_another_interface_is_not_a_duplicate() {
+        let recent_messages = Arc::new(RwLock::new(MaxSizeDeque::new(8)));
+
+        let bye = header(Action::Bye);
+
+        assert!(
+            !handler_on(1, &recent_messages)
+                .is_duplicated_msg(&bye)
+                .await
+        );
+        assert!(
+            !handler_on(2, &recent_messages)
+                .is_duplicated_msg(&bye)
+                .await
+        );
+    }
+
+    #[tokio::test]
+    async fn bye_on_the_same_interface_is_a_duplicate() {
+        let recent_messages = Arc::new(RwLock::new(MaxSizeDeque::new(8)));
+
+        let bye = header(Action::Bye);
+
+        assert!(
+            !handler_on(1, &recent_messages)
+                .is_duplicated_msg(&bye)
+                .await
+        );
+        assert!(
+            handler_on(1, &recent_messages)
+                .is_duplicated_msg(&bye)
+                .await
+        );
+    }
+
+    #[tokio::test]
+    async fn hello_on_another_interface_is_a_duplicate() {
+        let recent_messages = Arc::new(RwLock::new(MaxSizeDeque::new(8)));
+
+        let hello = header(Action::Hello);
+
+        assert!(
+            !handler_on(1, &recent_messages)
+                .is_duplicated_msg(&hello)
+                .await
+        );
+        assert!(
+            handler_on(2, &recent_messages)
+                .is_duplicated_msg(&hello)
+                .await
         );
     }
 

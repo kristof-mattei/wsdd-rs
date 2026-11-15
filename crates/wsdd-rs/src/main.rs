@@ -63,7 +63,7 @@ use crate::network_handler::{Command, NetworkHandler};
 use crate::security::{chroot, drop_privileges};
 use crate::shutdown::Shutdown;
 use crate::signal_handlers::{Signal, SignalListeners};
-use crate::soap::MessageId;
+use crate::soap::parser::KnownMessage;
 use crate::utils::task::spawn_with_name;
 
 #[cfg_attr(not(miri), global_allocator)]
@@ -228,7 +228,7 @@ async fn start_tasks(config: Config) -> Result<Infallible, Shutdown> {
 
     try_chroot(&config)?;
 
-    let recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>> =
+    let recent_messages: Arc<RwLock<MaxSizeDeque<KnownMessage>>> =
         Arc::new(RwLock::new(MaxSizeDeque::new(WSD_MAX_KNOWN_MESSAGES)));
 
     let cancellation_token = CancellationToken::new();

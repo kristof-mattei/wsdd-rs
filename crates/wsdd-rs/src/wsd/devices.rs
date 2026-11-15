@@ -26,8 +26,8 @@ pub(crate) struct Devices {
     sequences: RingMap<SequenceKey, MessageNumber>,
     /// The Target Services in `sequences`.
     targets: HashMap<DeviceUri, Target>,
-    /// The Target Services with a metadata exchange in progress.
-    exchanges: HashMap<DeviceUri, Exchanges>,
+    /// The metadata exchanges in progress of each Target Service, by interface index.
+    exchanges: HashMap<DeviceUri, HashMap<u32, RunningExchange>>,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq)]
@@ -89,12 +89,22 @@ pub(crate) struct Current<'d> {
     endpoint: &'d DeviceUri,
 }
 
-#[derive(Default)]
-struct Exchanges {
-    /// Cancelled by a Bye and then replaced, so an exchange that starts after the Bye runs.
+/// A metadata exchange in progress on one interface.
+struct RunningExchange {
+    /// Cancelled by a Bye on the interface and then replaced, so a rerun queued after the Bye runs.
     bye: CancellationToken,
-    /// The interface index of each running exchange, with the `XAddrs` of the last trigger that arrived while it ran.
-    running: HashMap<u32, Option<Vec1<XAddr>>>,
+    /// The `XAddrs` of the last trigger that arrived while the exchange ran.
+    rerun: Option<Vec1<XAddr>>,
+}
+
+/// The result of `Current::depart`.
+pub(crate) enum Departure {
+    /// No device is recorded.
+    Unknown,
+    /// The device has addresses on other interfaces, and is kept.
+    Kept,
+    /// The device had no addresses on other interfaces, and is removed.
+    Removed,
 }
 
 /// A metadata exchange started with `Current::start_exchange`.
@@ -116,12 +126,12 @@ impl Exchange {
         &self.endpoint
     }
 
-    /// The Target Service sent a Bye since the exchange started.
+    /// A Bye of the Target Service arrived on the interface of the exchange since the exchange started.
     pub(crate) fn departed(&self) -> bool {
         self.bye.is_cancelled()
     }
 
-    /// Runs `future` unless the Target Service sends a Bye first, then returns `None`.
+    /// Runs `future` unless a Bye of the Target Service arrives on the interface of the exchange first, then returns `None`.
     pub(crate) async fn run_until_bye<F: Future>(&self, future: F) -> Option<F::Output> {
         self.bye.run_until_cancelled(future).await
     }
@@ -131,26 +141,29 @@ impl Current<'_> {
     /// Starts a metadata exchange with the Target Service on the interface with `interface_index`.
     /// Returns `None` while one already runs there, that one then runs once more with `xaddrs`.
     pub(crate) fn start_exchange(self, interface_index: u32, xaddrs: Vec1<XAddr>) -> Option<Fetch> {
-        let exchanges = match self.devices.exchanges.entry_ref(self.endpoint) {
+        let running = match self.devices.exchanges.entry_ref(self.endpoint) {
             EntryRef::Occupied(occupied_entry) => occupied_entry.into_mut(),
             EntryRef::Vacant(vacant_entry_ref) => {
-                vacant_entry_ref.insert_with_key(self.endpoint.clone(), Exchanges::default())
+                vacant_entry_ref.insert_with_key(self.endpoint.clone(), HashMap::new())
             },
         };
 
-        match exchanges.running.entry(interface_index) {
+        match running.entry(interface_index) {
             Entry::Occupied(mut occupied_entry) => {
-                *occupied_entry.get_mut() = Some(xaddrs);
+                occupied_entry.get_mut().rerun = Some(xaddrs);
 
                 None
             },
             Entry::Vacant(vacant_entry) => {
-                vacant_entry.insert(None);
+                let running_exchange = vacant_entry.insert(RunningExchange {
+                    bye: CancellationToken::new(),
+                    rerun: None,
+                });
 
                 Some(Fetch {
                     exchange: Exchange {
                         endpoint: self.endpoint.clone(),
-                        bye: exchanges.bye.clone(),
+                        bye: running_exchange.bye.clone(),
                         interface_index,
                     },
                     xaddrs,
@@ -159,17 +172,34 @@ impl Current<'_> {
         }
     }
 
-    /// Removes the device, stops its running metadata exchanges, and drops their pending reruns.
-    pub(crate) fn depart(self) -> Option<WSDDiscoveredDevice> {
-        if let Some(exchanges) = self.devices.exchanges.get_mut(self.endpoint) {
-            std::mem::take(&mut exchanges.bye).cancel();
+    /// Removes the addresses of the device on `interface`, stops its metadata exchange on `interface`, and drops the pending rerun of that exchange.
+    /// The addresses on other interfaces stay, because a Target Service sends a Bye when it leaves a network, see documentation/ws-discovery.pdf, 4.2.
+    /// Removes the device once no addresses remain.
+    pub(crate) fn depart(self, interface: &NetworkInterface) -> Departure {
+        if let Some(running_exchange) = self
+            .devices
+            .exchanges
+            .get_mut(self.endpoint)
+            .and_then(|running| running.get_mut(&interface.index()))
+        {
+            std::mem::take(&mut running_exchange.bye).cancel();
 
-            for rerun in exchanges.running.values_mut() {
-                *rerun = None;
-            }
+            running_exchange.rerun = None;
         }
 
-        self.devices.discovered.remove(self.endpoint)
+        let EntryRef::Occupied(mut occupied_entry) =
+            self.devices.discovered.entry_ref(self.endpoint)
+        else {
+            return Departure::Unknown;
+        };
+
+        if occupied_entry.get_mut().leave(interface) {
+            Departure::Kept
+        } else {
+            occupied_entry.remove();
+
+            Departure::Removed
+        }
     }
 }
 
@@ -187,24 +217,26 @@ impl Devices {
             return None;
         };
 
-        let exchanges = occupied_entry.get_mut();
+        let running = occupied_entry.get_mut();
 
-        let pending = exchanges
-            .running
+        let pending = running
             .get_mut(&interface_index)
-            .and_then(Option::take);
+            .and_then(|running_exchange| {
+                running_exchange
+                    .rerun
+                    .take()
+                    .map(|xaddrs| (running_exchange.bye.clone(), xaddrs))
+            });
 
-        let Some(xaddrs) = pending else {
-            exchanges.running.remove(&interface_index);
+        let Some((bye, xaddrs)) = pending else {
+            running.remove(&interface_index);
 
-            if exchanges.running.is_empty() {
+            if running.is_empty() {
                 occupied_entry.remove();
             }
 
             return None;
         };
-
-        let bye = exchanges.bye.clone();
 
         Some(Fetch {
             exchange: Exchange {
@@ -229,7 +261,7 @@ impl Devices {
             return;
         };
 
-        let running = &mut occupied_entry.get_mut().running;
+        let running = occupied_entry.get_mut();
 
         running.remove(&interface_index);
 
@@ -749,11 +781,11 @@ mod tests {
         )
     }
 
-    fn depart(devices: &mut Devices) {
+    fn depart(devices: &mut Devices, interface_index: u32) {
         devices
             .observe(&endpoint(1), &sequence(1, 5))
             .expect("a Bye equal to the last message is current")
-            .depart();
+            .depart(&interface(interface_index));
     }
 
     /// Stores the device at `endpoint(1)` with an address on the interface with `interface_index`.
@@ -780,7 +812,7 @@ mod tests {
 
         let exchange = start(&mut devices, 1);
 
-        depart(&mut devices);
+        depart(&mut devices, 1);
 
         assert!(exchange.departed());
     }
@@ -795,7 +827,7 @@ mod tests {
             tokio::join!(
                 exchange.run_until_bye(std::future::pending::<()>()),
                 async {
-                    depart(&mut devices);
+                    depart(&mut devices, 1);
                 }
             )
         })
@@ -811,7 +843,7 @@ mod tests {
 
         let before = start(&mut devices, 1);
 
-        depart(&mut devices);
+        depart(&mut devices, 1);
 
         let after = start(&mut devices, 2);
 
@@ -823,7 +855,7 @@ mod tests {
     fn bye_before_an_exchange_does_not_depart() {
         let mut devices = Devices::default();
 
-        depart(&mut devices);
+        depart(&mut devices, 1);
 
         let exchange = start(&mut devices, 1);
 
@@ -836,7 +868,7 @@ mod tests {
 
         let before = start(&mut devices, 1);
 
-        depart(&mut devices);
+        depart(&mut devices, 1);
 
         let after = start(&mut devices, 2);
 
@@ -851,7 +883,7 @@ mod tests {
         let first = start(&mut devices, 1);
         let second = start(&mut devices, 2);
 
-        depart(&mut devices);
+        depart(&mut devices, 1);
 
         devices.finish_exchange(first);
 
@@ -866,7 +898,7 @@ mod tests {
     fn bye_without_an_exchange_leaves_no_state() {
         let mut devices = Devices::default();
 
-        depart(&mut devices);
+        depart(&mut devices, 1);
 
         assert!(!devices.has_running_exchanges());
     }
@@ -878,6 +910,33 @@ mod tests {
         let _first = start(&mut devices, 1);
 
         assert!(trigger(&mut devices, 2, "second").is_some());
+    }
+
+    #[test]
+    fn bye_keeps_the_exchange_on_another_interface() {
+        let mut devices = Devices::default();
+
+        let first = start(&mut devices, 1);
+        let second = start(&mut devices, 2);
+
+        depart(&mut devices, 1);
+
+        assert!(first.departed());
+        assert!(!second.departed());
+    }
+
+    #[test]
+    fn bye_keeps_the_rerun_on_another_interface() {
+        let mut devices = Devices::default();
+
+        let _first = start(&mut devices, 1);
+        let second = start(&mut devices, 2);
+
+        assert!(trigger(&mut devices, 2, "second").is_none());
+
+        depart(&mut devices, 1);
+
+        assert!(devices.finish_exchange(second).is_some());
     }
 
     #[test]
@@ -942,7 +1001,7 @@ mod tests {
 
         assert!(trigger(&mut devices, 1, "second").is_none());
 
-        depart(&mut devices);
+        depart(&mut devices, 1);
 
         assert!(first.departed());
         assert!(devices.finish_exchange(first).is_none());
@@ -971,7 +1030,7 @@ mod tests {
 
         let first = start(&mut devices, 1);
 
-        depart(&mut devices);
+        depart(&mut devices, 1);
 
         assert!(trigger(&mut devices, 1, "second").is_none());
 

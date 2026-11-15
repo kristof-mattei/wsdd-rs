@@ -12,8 +12,7 @@ use tracing::{Level, event};
 use crate::config::Config;
 use crate::max_size_deque::MaxSizeDeque;
 use crate::network_address::NetworkAddress;
-use crate::soap::MessageId;
-use crate::soap::parser::MessageHandler;
+use crate::soap::parser::{KnownMessage, MessageHandler};
 use crate::wsd::http::router::build_router;
 
 pub(crate) struct WSDHttpServer {
@@ -31,7 +30,7 @@ impl WSDHttpServer {
         cancellation_token: CancellationToken,
         config: Arc<Config>,
         http_listen_address: SocketAddr,
-        recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
+        recent_messages: Arc<RwLock<MaxSizeDeque<KnownMessage>>>,
     ) -> Result<WSDHttpServer, eyre::Report> {
         let message_handler = MessageHandler::new(bound_to.clone(), recent_messages);
 

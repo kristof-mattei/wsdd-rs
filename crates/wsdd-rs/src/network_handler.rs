@@ -23,7 +23,7 @@ use crate::network_handler::address_handlers::AddressHandlers;
 use crate::network_interface::{
     DevName, LibcInterfaceNameResolver, NetworkInterface, ResolveInterfaceName,
 };
-use crate::soap::MessageId;
+use crate::soap::parser::KnownMessage;
 use crate::task_tracker_ext::TaskTrackerExt as _;
 use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 use crate::wsd::devices::Devices;
@@ -114,7 +114,7 @@ pub(crate) struct NetworkHandler<R = LibcInterfaceNameResolver> {
     matched_filters: Option<Vec<bool>>,
     command_rx: Receiver<Command>,
     start_tx: StartSender<()>,
-    recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
+    recent_messages: Arc<RwLock<MaxSizeDeque<KnownMessage>>>,
 }
 
 #[derive(Debug, Error)]
@@ -129,7 +129,7 @@ impl NetworkHandler {
         config: &Arc<Config>,
         command_rx: Receiver<Command>,
         start_tx: StartSender<()>,
-        recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
+        recent_messages: Arc<RwLock<MaxSizeDeque<KnownMessage>>>,
     ) -> Self {
         Self::with_resolver(
             cancellation_token,
@@ -151,7 +151,7 @@ where
         config: &Arc<Config>,
         command_rx: Receiver<Command>,
         start_tx: StartSender<()>,
-        recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
+        recent_messages: Arc<RwLock<MaxSizeDeque<KnownMessage>>>,
         resolver: R,
     ) -> Self {
         Self {
