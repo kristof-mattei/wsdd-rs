@@ -22,6 +22,7 @@ use crate::config::Config;
 use crate::constants;
 use crate::multicast_handler::{IncomingClientMessage, OutgoingMulticastMessage};
 use crate::network_address::NetworkAddress;
+use crate::network_interface::NetworkInterface;
 use crate::soap::builder::Builder;
 use crate::soap::parser::app_sequence::AppSequence;
 use crate::soap::parser::bye::Bye;
@@ -34,7 +35,7 @@ use crate::task_tracker_ext::TaskTrackerExt as _;
 use crate::utils::SliceDisplay;
 use crate::utils::task::spawn_with_name;
 use crate::wsd::device::DeviceUri;
-use crate::wsd::devices::{Devices, Exchange, Fetch};
+use crate::wsd::devices::{Departure, Devices, Exchange, Fetch};
 
 pub(crate) struct WSDClient {
     cancellation_token: CancellationToken,
@@ -649,6 +650,7 @@ impl ClientLoop {
 
 fn handle_bye(
     devices: &parking_lot::RwLock<Devices>,
+    interface: &NetworkInterface,
     Bye {
         app_sequence,
         endpoint,
@@ -662,12 +664,23 @@ fn handle_bye(
         return;
     };
 
-    if current.depart().is_none() {
-        event!(
-            Level::DEBUG,
-            endpoint = &*endpoint,
-            "Received bye, but not record of that endpoint"
-        );
+    match current.depart(interface) {
+        Departure::Unknown => {
+            event!(
+                Level::DEBUG,
+                endpoint = &*endpoint,
+                "Received bye, but not record of that endpoint"
+            );
+        },
+        Departure::Kept => {
+            event!(
+                Level::DEBUG,
+                %endpoint,
+                %interface,
+                "Received bye, keeping the addresses on other interfaces"
+            );
+        },
+        Departure::Removed => {},
     }
 }
 
@@ -772,7 +785,7 @@ async fn listen_forever(
         let response = match message {
             ClientMessage::Hello(hello) => client_loop.handle_hello(hello).await,
             ClientMessage::Bye(bye) => {
-                handle_bye(&client_loop.devices, bye);
+                handle_bye(&client_loop.devices, &client_loop.bound_to.interface, bye);
 
                 Ok(())
             },
@@ -844,7 +857,9 @@ mod tests {
     use crate::soap::parser::resolve_match::{ResolveMatch, ResolveMatches};
     use crate::soap::parser::xaddrs::XAddr;
     use crate::test_utils::xml::to_string_pretty;
-    use crate::test_utils::{build_config, build_message_handler_with_network_address};
+    use crate::test_utils::{
+        build_config, build_message_handler_with_network_address, synology_metadata,
+    };
     use crate::wsd::device::DeviceUri;
     use crate::wsd::devices::{Devices, Exchange, Fetch};
     use crate::wsd::http::http_server::WSDHttpServer;
@@ -968,14 +983,6 @@ mod tests {
         .await
     }
 
-    fn synology_metadata() -> String {
-        format!(
-            include_str!("../../test/get-response-synology.xml"),
-            Uuid::now_v7().urn(),
-            Uuid::now_v7().urn(),
-        )
-    }
-
     /// Answers exactly `hits` requests with the Synology metadata.
     async fn metadata_server(hits: usize) -> (Server, Mock) {
         let mut server = mock_server().await;
@@ -1069,11 +1076,13 @@ mod tests {
 
     fn bye(
         devices: &Arc<parking_lot::RwLock<Devices>>,
+        bound_to: &NetworkAddress,
         endpoint: &DeviceUri,
         app_sequence: AppSequence,
     ) {
         handle_bye(
             devices,
+            &bound_to.interface,
             Bye {
                 app_sequence,
                 endpoint: endpoint.clone(),
@@ -1271,7 +1280,7 @@ mod tests {
 
     #[tokio::test]
     async fn handles_bye() {
-        let (message_handler, _client_network_address) = build_message_handler_with_network_address(
+        let (message_handler, client_network_address) = build_message_handler_with_network_address(
             IpNet::new((Ipv4Addr::new(192, 168, 100, 20)).into(), 24).unwrap(),
         );
 
@@ -1298,7 +1307,7 @@ mod tests {
 
         let bye = message.into_bye().unwrap();
 
-        handle_bye(&client_devices, bye);
+        handle_bye(&client_devices, &client_network_address.interface, bye);
     }
 
     #[cfg_attr(not(miri), tokio::test)]
@@ -1401,7 +1410,7 @@ mod tests {
 
         let bye = message.into_bye().unwrap();
 
-        handle_bye(&client_devices, bye);
+        handle_bye(&client_devices, &network_address.interface, bye);
 
         // ensure the host is no longer present
         assert!(
@@ -1426,7 +1435,12 @@ mod tests {
 
         let endpoint = new_endpoint();
 
-        bye(&client_devices, &endpoint, AppSequence::new(1, None, 6));
+        bye(
+            &client_devices,
+            &network_address,
+            &endpoint,
+            AppSequence::new(1, None, 6),
+        );
 
         let result = hello(
             &client_config,
@@ -1572,6 +1586,7 @@ mod tests {
 
         bye(
             &client_devices,
+            &network_address,
             &endpoint,
             AppSequence::new(1, Some("urn:uuid:a"), 6),
         );
@@ -1608,7 +1623,12 @@ mod tests {
 
         let endpoint = new_endpoint();
 
-        bye(&client_devices, &endpoint, AppSequence::new(1, None, 7));
+        bye(
+            &client_devices,
+            &network_address,
+            &endpoint,
+            AppSequence::new(1, None, 7),
+        );
 
         let (multicast_tx, _multicast_rx) = tokio::sync::mpsc::channel(1);
         let mut client = client_loop(
@@ -1653,7 +1673,12 @@ mod tests {
 
         let endpoint = new_endpoint();
 
-        bye(&client_devices, &endpoint, AppSequence::new(1, None, 7));
+        bye(
+            &client_devices,
+            &network_address,
+            &endpoint,
+            AppSequence::new(1, None, 7),
+        );
 
         let resolve_message_id = MessageId::from(Uuid::now_v7().urn());
 
@@ -1713,7 +1738,12 @@ mod tests {
 
         assert!(result.is_none());
 
-        bye(&client_devices, &endpoint, AppSequence::new(1, None, 4));
+        bye(
+            &client_devices,
+            &network_address,
+            &endpoint,
+            AppSequence::new(1, None, 4),
+        );
 
         assert!(client_devices.read().contains_key(&endpoint));
     }
@@ -1758,7 +1788,12 @@ mod tests {
 
         metadata_exchange.assert_async().await;
 
-        bye(&client_devices, &endpoint, AppSequence::new(1, None, 6));
+        bye(
+            &client_devices,
+            &network_address,
+            &endpoint,
+            AppSequence::new(1, None, 6),
+        );
 
         assert!(client_devices.read().contains_key(&endpoint));
     }
@@ -1811,7 +1846,12 @@ mod tests {
 
         metadata_exchange.assert_async().await;
 
-        bye(&client_devices, &endpoint, AppSequence::new(1, None, 6));
+        bye(
+            &client_devices,
+            &network_address,
+            &endpoint,
+            AppSequence::new(1, None, 6),
+        );
 
         assert!(client_devices.read().contains_key(&endpoint));
     }
@@ -1838,7 +1878,98 @@ mod tests {
 
         assert!(result.is_none());
 
-        bye(&client_devices, &endpoint, AppSequence::new(1, None, 5));
+        bye(
+            &client_devices,
+            &network_address,
+            &endpoint,
+            AppSequence::new(1, None, 5),
+        );
+
+        assert!(client_devices.read().is_empty());
+    }
+
+    fn network_address_on(interface_index: u32, address: Ipv4Addr) -> NetworkAddress {
+        NetworkAddress::new(
+            IpNet::new(address.into(), 24).unwrap(),
+            Arc::new(NetworkInterface::new_with_index(
+                format!("eth{}", interface_index),
+                RT_SCOPE_SITE,
+                interface_index,
+            )),
+        )
+    }
+
+    /// Stores the device at `endpoint` on the interface of `bound_to`.
+    fn discover(
+        devices: &parking_lot::RwLock<Devices>,
+        endpoint: &DeviceUri,
+        bound_to: &NetworkAddress,
+    ) {
+        let exchange = start_exchange(devices, endpoint, &AppSequence::new(1, None, 5), bound_to);
+
+        let result = finish_exchange_with_synology(devices, exchange, bound_to);
+
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn keeps_device_on_another_interface_after_a_bye() {
+        let first = network_address_on(1, Ipv4Addr::new(192, 168, 100, 20));
+        let second = network_address_on(2, Ipv4Addr::new(192, 168, 200, 20));
+
+        // client
+        let client_devices = Arc::new(parking_lot::RwLock::new(Devices::default()));
+
+        let endpoint = new_endpoint();
+
+        discover(&client_devices, &endpoint, &first);
+        discover(&client_devices, &endpoint, &second);
+
+        bye(
+            &client_devices,
+            &second,
+            &endpoint,
+            AppSequence::new(1, None, 5),
+        );
+
+        let devices = client_devices.read();
+
+        let interfaces = devices.get(&endpoint).map(|device| {
+            device
+                .addresses()
+                .keys()
+                .map(|name| &**name)
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(interfaces, Some(vec!["eth1"]));
+    }
+
+    #[tokio::test]
+    async fn removes_device_after_a_bye_on_each_interface() {
+        let first = network_address_on(1, Ipv4Addr::new(192, 168, 100, 20));
+        let second = network_address_on(2, Ipv4Addr::new(192, 168, 200, 20));
+
+        // client
+        let client_devices = Arc::new(parking_lot::RwLock::new(Devices::default()));
+
+        let endpoint = new_endpoint();
+
+        discover(&client_devices, &endpoint, &first);
+        discover(&client_devices, &endpoint, &second);
+
+        bye(
+            &client_devices,
+            &second,
+            &endpoint,
+            AppSequence::new(1, None, 5),
+        );
+        bye(
+            &client_devices,
+            &first,
+            &endpoint,
+            AppSequence::new(1, None, 5),
+        );
 
         assert!(client_devices.read().is_empty());
     }
@@ -1861,8 +1992,13 @@ mod tests {
             &network_address,
         );
 
-        // another interface's loop handles the Bye while this one awaits the metadata
-        bye(&client_devices, &endpoint, AppSequence::new(1, None, 4));
+        // a Bye on the interface of the exchange arrives while the exchange awaits the metadata
+        bye(
+            &client_devices,
+            &network_address,
+            &endpoint,
+            AppSequence::new(1, None, 4),
+        );
 
         let result = finish_exchange_with_synology(&client_devices, exchange, &network_address);
 
@@ -1889,9 +2025,10 @@ mod tests {
             &network_address,
         );
 
-        // another interface's loop handles the Bye while this one awaits the metadata
+        // a Bye on the interface of the exchange arrives while the exchange awaits the metadata
         bye(
             &client_devices,
+            &network_address,
             &endpoint,
             AppSequence::new(1, Some("urn:uuid:b"), 0),
         );
@@ -2042,7 +2179,12 @@ mod tests {
         let bye = async {
             received_rx.await.unwrap();
 
-            bye(&client_devices, &device_uri, AppSequence::new(1, None, 1));
+            bye(
+                &client_devices,
+                &client_network_address,
+                &device_uri,
+                AppSequence::new(1, None, 1),
+            );
         };
 
         let exchanges = exchange_runner(
@@ -2218,8 +2360,13 @@ mod tests {
             &client_network_address,
         );
 
-        // another interface's loop handles the Bye while this one awaits the metadata
-        bye(&client_devices, &device_uri, AppSequence::new(1, None, 1));
+        // a Bye on the interface of the exchange arrives while the exchange awaits the metadata
+        bye(
+            &client_devices,
+            &client_network_address,
+            &device_uri,
+            AppSequence::new(1, None, 1),
+        );
 
         let result =
             finish_exchange_with_synology(&client_devices, exchange, &client_network_address);

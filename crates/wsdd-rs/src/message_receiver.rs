@@ -11,8 +11,8 @@ use crate::constants;
 use crate::max_size_deque::MaxSizeDeque;
 use crate::multicast_handler::{IncomingClientMessage, IncomingHostMessage};
 use crate::network_address::NetworkAddress;
-use crate::soap::parser::MessageHandler;
-use crate::soap::{MessageId, WSDMessage};
+use crate::soap::WSDMessage;
+use crate::soap::parser::{KnownMessage, MessageHandler};
 use crate::udp_socket_with_addr::UdpSocketWithAddr;
 use crate::utils::task::spawn_with_name;
 
@@ -30,7 +30,7 @@ impl MessageReceiver {
     pub(crate) fn new(
         cancellation_token: CancellationToken,
         network_address: NetworkAddress,
-        recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
+        recent_messages: Arc<RwLock<MaxSizeDeque<KnownMessage>>>,
         socket: Arc<UdpSocketWithAddr>,
     ) -> Self {
         let listeners = Arc::new(RwLock::const_new(ClientHostListener {
@@ -101,7 +101,7 @@ async fn socket_rx_forever(
     cancellation_token: CancellationToken,
     network_address: NetworkAddress,
     listeners: Arc<RwLock<ClientHostListener>>,
-    recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
+    recent_messages: Arc<RwLock<MaxSizeDeque<KnownMessage>>>,
     socket: Arc<UdpSocketWithAddr>,
 ) {
     let message_handler = MessageHandler::new(network_address, recent_messages);

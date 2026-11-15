@@ -21,10 +21,8 @@ use crate::max_size_deque::MaxSizeDeque;
 use crate::message_receiver::MessageReceiver;
 use crate::network_address::NetworkAddress;
 use crate::network_interface::NetworkInterface;
-use crate::soap::parser::Header;
-use crate::soap::{
-    ClientMessage, HostMessage, MessageId, MessageType, MulticastMessage, UnicastMessage,
-};
+use crate::soap::parser::{Header, KnownMessage};
+use crate::soap::{ClientMessage, HostMessage, MessageType, MulticastMessage, UnicastMessage};
 use crate::task_tracker_ext::TaskTrackerExt as _;
 use crate::udp_address::UdpAddress;
 use crate::udp_socket_with_addr::UdpSocketWithAddr;
@@ -44,7 +42,7 @@ pub(crate) struct MulticastHandler {
     /// Shared reference to all discovered devices.
     devices: Arc<parking_lot::RwLock<Devices>>,
 
-    recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
+    recent_messages: Arc<RwLock<MaxSizeDeque<KnownMessage>>>,
 
     /// The address and interface we're bound on.
     network_address: NetworkAddress,
@@ -101,7 +99,7 @@ impl MulticastHandler {
         cancellation_token: CancellationToken,
         config: Arc<Config>,
         devices: Arc<parking_lot::RwLock<Devices>>,
-        recent_messages: Arc<RwLock<MaxSizeDeque<MessageId>>>,
+        recent_messages: Arc<RwLock<MaxSizeDeque<KnownMessage>>>,
     ) -> Result<Self, eyre::Report> {
         let domain = match network_address.address {
             IpNet::V4(_) => Domain::IPV4,
