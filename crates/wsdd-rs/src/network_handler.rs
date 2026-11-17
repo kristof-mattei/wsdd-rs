@@ -550,13 +550,18 @@ where
             return;
         }
 
-        let Some(handler) = self.multicast_handlers.remove_prefix(&network_address) else {
-            return;
-        };
+        if let Some(handler) = self.multicast_handlers.remove_prefix(&network_address) {
+            handler.teardown(false).await;
 
-        handler.teardown(false).await;
+            // handler gets dropped
+        }
 
-        // handler gets dropped
+        if !self
+            .multicast_handlers
+            .has_interface(network_address.interface.index())
+        {
+            self.forget_devices_on(&network_address.interface);
+        }
     }
 
     async fn handle_link(&mut self, index: u32, state: LinkState) {
@@ -631,6 +636,15 @@ where
 
         tasks.close();
         tasks.wait().await;
+
+        if let Some(interface) = self.interfaces.get(&index) {
+            self.forget_devices_on(interface);
+        }
+    }
+
+    /// Removes the addresses of the discovered devices on `interface`, because a Bye can no longer arrive there.
+    fn forget_devices_on(&self, interface: &NetworkInterface) {
+        self.devices.write().forget_interface(interface);
     }
 
     pub(crate) async fn teardown(&mut self) {
@@ -652,6 +666,9 @@ where
 
         tasks.close();
         tasks.wait().await;
+
+        // no interface has a handler anymore, see `forget_devices_on`
+        self.devices.write().clear_discovered();
     }
 
     pub(crate) fn start(&mut self) {
@@ -679,7 +696,9 @@ mod tests {
     use crate::network_address::NetworkAddress;
     use crate::network_handler::{Command, LinkState, NetworkHandler, Reason};
     use crate::network_interface::{DevName, MockResolveInterfaceName, NetworkInterface};
-    use crate::test_utils::{build_config, find_first_non_lo_network_interface};
+    use crate::soap::parser::xaddrs::XAddr;
+    use crate::test_utils::{build_config, find_first_non_lo_network_interface, synology_metadata};
+    use crate::wsd::device::DeviceUri;
 
     fn build_network_handler(config: Config) -> NetworkHandler<MockResolveInterfaceName> {
         build_network_handler_with_resolver(config, MockResolveInterfaceName::new())
@@ -1161,5 +1180,60 @@ mod tests {
             .await;
 
         assert_eq!(network_handler.matched_filters, None);
+    }
+
+    fn store_device_on_eth0(network_handler: &NetworkHandler<MockResolveInterfaceName>) {
+        network_handler
+            .devices
+            .write()
+            .store(
+                &DeviceUri::new(Uuid::now_v7().urn().to_string().into_boxed_str()),
+                synology_metadata().as_bytes(),
+                &XAddr::try_from("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721")
+                    .unwrap(),
+                &address_on_eth0(),
+            )
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn deleting_the_last_address_of_an_interface_forgets_its_devices() {
+        let mut network_handler = network_handler_with_address_on_eth0(vec![]);
+
+        store_device_on_eth0(&network_handler);
+
+        network_handler
+            .handle_command(Command::DeleteAddress {
+                address: address_on_eth0().address,
+                scope: 0,
+                index: 2,
+            })
+            .await;
+
+        assert!(network_handler.devices.read().is_empty());
+    }
+
+    #[tokio::test]
+    async fn link_that_stops_running_forgets_its_devices() {
+        let mut network_handler = network_handler_with_address_on_eth0(vec![]);
+
+        store_device_on_eth0(&network_handler);
+
+        network_handler
+            .handle_command(Command::NewLink { index: 2, flags: 0 })
+            .await;
+
+        assert!(network_handler.devices.read().is_empty());
+    }
+
+    #[tokio::test]
+    async fn stop_forgets_every_device() {
+        let mut network_handler = network_handler_with_address_on_eth0(vec![]);
+
+        store_device_on_eth0(&network_handler);
+
+        network_handler.handle_command(Command::Stop).await;
+
+        assert!(network_handler.devices.read().is_empty());
     }
 }
