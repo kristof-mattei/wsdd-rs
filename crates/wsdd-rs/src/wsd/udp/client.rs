@@ -844,7 +844,9 @@ mod tests {
     use crate::soap::parser::resolve_match::{ResolveMatch, ResolveMatches};
     use crate::soap::parser::xaddrs::XAddr;
     use crate::test_utils::xml::to_string_pretty;
-    use crate::test_utils::{build_config, build_message_handler_with_network_address};
+    use crate::test_utils::{
+        build_config, build_message_handler_with_network_address, synology_metadata,
+    };
     use crate::wsd::device::DeviceUri;
     use crate::wsd::devices::{Devices, Exchange, Fetch};
     use crate::wsd::http::http_server::WSDHttpServer;
@@ -966,14 +968,6 @@ mod tests {
             assert_on_drop: true,
         })
         .await
-    }
-
-    fn synology_metadata() -> String {
-        format!(
-            include_str!("../../test/get-response-synology.xml"),
-            Uuid::now_v7().urn(),
-            Uuid::now_v7().urn(),
-        )
     }
 
     /// Answers exactly `hits` requests with the Synology metadata.

@@ -51,6 +51,14 @@ pub(crate) fn build_message_handler() -> MessageHandler {
     )
 }
 
+pub(crate) fn synology_metadata() -> String {
+    format!(
+        include_str!("test/get-response-synology.xml"),
+        Uuid::now_v7().urn(),
+        Uuid::now_v7().urn(),
+    )
+}
+
 pub(crate) fn find_first_non_lo_network_interface() -> Result<(Box<str>, u32), std::io::Error> {
     let mut ifaddrs_p: *mut ifaddrs = std::ptr::null_mut();
 

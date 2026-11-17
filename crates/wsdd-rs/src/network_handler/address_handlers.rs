@@ -76,6 +76,13 @@ impl<H> AddressHandlers<H> {
             .map(|(_, handled)| handled.handler)
     }
 
+    /// Returns whether an address on the interface with `index` has a handler.
+    pub(crate) fn has_interface(&self, index: u32) -> bool {
+        self.handled
+            .keys()
+            .any(|&(_, handled_index)| handled_index == index)
+    }
+
     pub(crate) fn handlers(&self) -> impl Iterator<Item = &H> {
         self.handled.values().map(|handled| &handled.handler)
     }
@@ -126,6 +133,28 @@ mod tests {
 
         assert!(handlers.add_prefix_if_handled(&network_address("eth0", 5, 16)));
         assert_eq!(handlers.handlers().collect::<Vec<_>>(), [&"handler"]);
+    }
+
+    #[test]
+    fn interface_has_a_handler_until_its_last_address_is_removed() {
+        let mut handlers = AddressHandlers::default();
+
+        let first = network_address("eth0", 5, 24);
+        let second = NetworkAddress::new(
+            Ipv4Net::new(Ipv4Addr::new(10, 9, 9, 10), 24)
+                .unwrap()
+                .into(),
+            Arc::clone(&first.interface),
+        );
+
+        handlers.insert(&first, "first");
+        handlers.insert(&second, "second");
+
+        assert_eq!(handlers.remove_prefix(&first), Some("first"));
+        assert!(handlers.has_interface(5));
+
+        assert_eq!(handlers.remove_prefix(&second), Some("second"));
+        assert!(!handlers.has_interface(5));
     }
 
     #[test]

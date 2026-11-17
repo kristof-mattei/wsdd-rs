@@ -9,6 +9,7 @@ use xml::reader::XmlEvent;
 
 use crate::constants;
 use crate::network_address::NetworkAddress;
+use crate::network_interface::NetworkInterface;
 use crate::soap::parser;
 use crate::soap::parser::xaddrs::XAddr;
 use crate::xml::{XmlError, XmlReader, find_child, find_optional_child, read_text};
@@ -93,6 +94,13 @@ impl WSDDiscoveredDevice {
 
     pub(crate) fn types(&self) -> &HashSet<Box<str>> {
         &self.types
+    }
+
+    /// Removes the addresses on `interface`, and returns whether addresses on other interfaces remain.
+    pub(crate) fn leave(&mut self, interface: &NetworkInterface) -> bool {
+        self.addresses.remove(interface.name());
+
+        !self.addresses.is_empty()
     }
 
     pub(crate) fn update(

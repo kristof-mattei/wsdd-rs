@@ -8,6 +8,7 @@ use tokio_util::sync::CancellationToken;
 use vec1::Vec1;
 
 use crate::network_address::NetworkAddress;
+use crate::network_interface::NetworkInterface;
 use crate::soap::parser::app_sequence::AppSequence;
 use crate::soap::parser::xaddrs::XAddr;
 use crate::soap::{InstanceId, MessageNumber};
@@ -330,6 +331,11 @@ impl Devices {
         self.discovered.clear();
     }
 
+    /// Removes the addresses on `interface` from every device, and removes the devices without addresses on other interfaces.
+    pub(crate) fn forget_interface(&mut self, interface: &NetworkInterface) {
+        self.discovered.retain(|_, device| device.leave(interface));
+    }
+
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&DeviceUri, &WSDDiscoveredDevice)> {
         self.discovered.iter()
     }
@@ -426,14 +432,19 @@ impl Devices {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use std::time::Duration;
 
+    use libc::RT_SCOPE_SITE;
     use pretty_assertions::assert_eq;
     use url::Url;
     use vec1::{Vec1, vec1};
 
+    use crate::network_address::NetworkAddress;
+    use crate::network_interface::NetworkInterface;
     use crate::soap::parser::app_sequence::AppSequence;
     use crate::soap::parser::xaddrs::XAddr;
+    use crate::test_utils::synology_metadata;
     use crate::wsd::device::DeviceUri;
     use crate::wsd::devices::{Devices, Exchange, Fetch, MAX_SEQUENCES};
 
@@ -730,11 +741,37 @@ mod tests {
         exchange
     }
 
+    fn interface(interface_index: u32) -> NetworkInterface {
+        NetworkInterface::new_with_index(
+            format!("eth{}", interface_index),
+            RT_SCOPE_SITE,
+            interface_index,
+        )
+    }
+
     fn depart(devices: &mut Devices) {
         devices
             .observe(&endpoint(1), &sequence(1, 5))
             .expect("a Bye equal to the last message is current")
             .depart();
+    }
+
+    /// Stores the device at `endpoint(1)` with an address on the interface with `interface_index`.
+    fn store(devices: &mut Devices, interface_index: u32) {
+        let bound_to = NetworkAddress::new(
+            "192.0.2.1/24".parse().unwrap(),
+            Arc::new(interface(interface_index)),
+        );
+
+        devices
+            .store(
+                &endpoint(1),
+                synology_metadata().as_bytes(),
+                &XAddr::try_from("http://diskstation:5357/2e91b960-d258-43d6-989b-a24f108f1721")
+                    .unwrap(),
+                &bound_to,
+            )
+            .unwrap();
     }
 
     #[test]
@@ -841,6 +878,37 @@ mod tests {
         let _first = start(&mut devices, 1);
 
         assert!(trigger(&mut devices, 2, "second").is_some());
+    }
+
+    #[test]
+    fn forgetting_an_interface_keeps_the_addresses_on_another_interface() {
+        let mut devices = Devices::default();
+
+        store(&mut devices, 1);
+        store(&mut devices, 2);
+
+        devices.forget_interface(&interface(1));
+
+        let interfaces = devices.get(&endpoint(1)).map(|device| {
+            device
+                .addresses()
+                .keys()
+                .map(|name| &**name)
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(interfaces, Some(vec!["eth2"]));
+    }
+
+    #[test]
+    fn forgetting_the_last_interface_of_a_device_removes_it() {
+        let mut devices = Devices::default();
+
+        store(&mut devices, 1);
+
+        devices.forget_interface(&interface(1));
+
+        assert!(!devices.contains_key(&endpoint(1)));
     }
 
     #[test]
