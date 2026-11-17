@@ -3,7 +3,7 @@ use std::io::Read;
 use color_eyre::eyre;
 use hashbrown::hash_map::EntryRef;
 use hashbrown::{HashMap, HashSet};
-use time::OffsetDateTime;
+use jiff::Timestamp;
 use tracing::{Level, event};
 use xml::reader::XmlEvent;
 
@@ -51,7 +51,7 @@ pub(crate) struct WSDDiscoveredDevice {
     addresses: HashMap<Box<str>, HashSet<Box<str>>>,
     props: HashMap<Box<str>, Box<str>>,
     display_name: Option<Box<str>>,
-    last_seen: OffsetDateTime,
+    last_seen: Timestamp,
     types: HashSet<Box<str>>,
 }
 
@@ -66,7 +66,7 @@ impl WSDDiscoveredDevice {
             addresses: HashMap::new(),
             props: HashMap::new(),
             display_name: None,
-            last_seen: OffsetDateTime::UNIX_EPOCH,
+            last_seen: Timestamp::UNIX_EPOCH,
             types: HashSet::new(),
         };
 
@@ -87,7 +87,7 @@ impl WSDDiscoveredDevice {
         self.display_name.as_deref()
     }
 
-    pub(crate) fn last_seen(&self) -> &OffsetDateTime {
+    pub(crate) fn last_seen(&self) -> &Timestamp {
         &self.last_seen
     }
 
@@ -121,7 +121,7 @@ impl WSDDiscoveredDevice {
             },
         };
 
-        self.last_seen = OffsetDateTime::now_utc();
+        self.last_seen = Timestamp::now();
 
         if let Some((display_name, belongs_to)) = self
             .props
@@ -475,8 +475,8 @@ where
 mod tests {
     use color_eyre::eyre;
     use hashbrown::{HashMap, HashSet};
+    use jiff::Timestamp;
     use pretty_assertions::{assert_eq, assert_matches};
-    use time::OffsetDateTime;
     use xml::reader::EventReader;
 
     use crate::constants;
@@ -539,7 +539,7 @@ mod tests {
             addresses: HashMap::new(),
             props: HashMap::new(),
             display_name: None,
-            last_seen: OffsetDateTime::UNIX_EPOCH,
+            last_seen: Timestamp::UNIX_EPOCH,
             types: HashSet::new(),
         };
 

@@ -8,8 +8,6 @@ use std::time::Duration;
 use color_eyre::eyre::{self, Context as _};
 use futures_util::StreamExt as _;
 use socket2::{Domain, Type};
-use time::format_description::well_known::Iso8601;
-use time::format_description::well_known::iso8601::{Config as Iso8601Config, TimePrecision};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::UnixListener;
 use tokio::sync::mpsc::Sender;
@@ -27,17 +25,6 @@ use crate::wsd::device::{DeviceUri, WSDDiscoveredDevice};
 const MAX_CONNECTION_BACKLOG: u32 = 100;
 const MAX_CONCURRENT_CONNECTIONS: usize = 10;
 const MAX_COMMAND_LENGTH: usize = 255;
-
-/// `Iso8601`, like `2026-01-14T17:37:29Z`, rounded on seconds (ergo no milliseconds / nanoseconds).
-const ISO8601_SECOND_PRECISION: Iso8601<
-    {
-        Iso8601Config::DEFAULT
-            .set_time_precision(TimePrecision::Second {
-                decimal_digits: None,
-            })
-            .encode()
-    },
-> = Iso8601;
 
 pub(crate) struct ApiServer {
     cancellation_token: CancellationToken,
@@ -425,14 +412,12 @@ where
 
 fn format_wsd_discovered_device(device_uri: &DeviceUri, device: &WSDDiscoveredDevice) -> String {
     format!(
-        "{}\t{}\t{}\t{}\t{}\t{}\n",
+        "{}\t{}\t{}\t{:.0}\t{}\t{}\n",
         device_uri,
         device.display_name().unwrap_or_default(),
         device.props().get("BelongsTo").map_or_default(|b| &**b),
-        device
-            .last_seen()
-            .format(&ISO8601_SECOND_PRECISION)
-            .unwrap(),
+        // `{:.0}` truncates to whole seconds, like `2026-01-14T17:37:29Z`
+        device.last_seen(),
         device
             .addresses()
             .iter()
