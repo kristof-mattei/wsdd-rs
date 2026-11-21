@@ -76,7 +76,7 @@ tracing-subscriber = { version = "=0.3.23", features = [
     "env-filter",
     "tracing-log",
 ] }
-url = "=2.5.8"
+url = "=2.5.9"
 uuid = { version = "=1.29.3", default-features = false, features = [
     "std",
     "v5",
