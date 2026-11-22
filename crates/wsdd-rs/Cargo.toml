@@ -35,7 +35,7 @@ dotenvy = "=0.15.7"
 futures-util = { version = "=0.3.34", default-features = false, features = [
     "alloc",
 ] }
-hashbrown = { version = "=0.17.1", default-features = false, features = [
+hashbrown = { version = "=0.17.2", default-features = false, features = [
     "default-hasher",
     "equivalent",
     "inline-more",
