@@ -75,7 +75,7 @@ impl Termination for Shutdown {
                     "Exiting because of an unexpected error"
                 );
 
-                Err::<std::convert::Infallible, _>(report).report()
+                Err::<!, _>(report).report()
             },
         }
     }

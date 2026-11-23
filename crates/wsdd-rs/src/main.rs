@@ -31,7 +31,6 @@ mod utils;
 mod wsd;
 mod xml;
 
-use std::convert::Infallible;
 use std::env::{self, VarError};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -220,7 +219,7 @@ fn try_chroot(config: &Config) -> Result<(), Shutdown> {
 
 /// starts all the tasks, such as the address monitor, the network handler, ...
 /// ensures all tasks are gracefully shutdown in case of error, `CTRL+c` or `SIGTERM`.
-async fn start_tasks(config: Config) -> Result<Infallible, Shutdown> {
+async fn start_tasks(config: Config) -> Result<!, Shutdown> {
     // when running as PID 1, a signal before this registration is discarded
     let mut signal_listeners = SignalListeners::register()?;
 
