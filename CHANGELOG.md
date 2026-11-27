@@ -1,4 +1,30 @@
 <!-- header goes here -->
+## [2.5.0](https://github.com/kristof-mattei/wsdd-rs/compare/v2.4.0..v2.5.0) - 2026-11-27
+
+### 🚀 Features
+
+- Forget the devices of an interface without handlers by [Kristof Mattei](https://github.com/kristof-mattei) ([`70a355c`](https://github.com/kristof-mattei/wsdd-rs/commit/70a355ca77f741cb92703a581929774e46afd66a))
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update rust crate rand to v0.10.4 by [renovate\[bot\]](https://github.com/renovate[bot]) ([`e888f1e`](https://github.com/kristof-mattei/wsdd-rs/commit/e888f1ebc86d1f11bf19ed18f33b7b9e9ef4c986))
+- *(deps)* Update rust crate uuid to v1.29.3 by [renovate\[bot\]](https://github.com/renovate[bot]) ([`df87738`](https://github.com/kristof-mattei/wsdd-rs/commit/df877387446dd8cee7486578f4739b623e166b97))
+- *(deps)* Update rust crate bytes to v1.12.2 by [renovate\[bot\]](https://github.com/renovate[bot]) ([`51506b3`](https://github.com/kristof-mattei/wsdd-rs/commit/51506b392df57d03ef182c978dd5a1689387ecd5))
+- *(deps)* Update rust crate pin-project to v1.2.0 by [renovate\[bot\]](https://github.com/renovate[bot]) ([`4e5e6a6`](https://github.com/kristof-mattei/wsdd-rs/commit/4e5e6a6d13f7bbf2ae37aaddc27841717bbc4d8b))
+- *(deps)* Update rust crate url to v2.5.9 by [renovate\[bot\]](https://github.com/renovate[bot]) ([`233db13`](https://github.com/kristof-mattei/wsdd-rs/commit/233db13ad0680c0a5094f435aa428d9550893222))
+- *(deps)* Update rust crate hashbrown to v0.17.2 by [renovate\[bot\]](https://github.com/renovate[bot]) ([`55190a7`](https://github.com/kristof-mattei/wsdd-rs/commit/55190a7b04916b950ded3238c980ece812796a2e))
+- *(deps)* Update rust crate clap to v4.6.10 by [renovate\[bot\]](https://github.com/renovate[bot]) ([`bc2ea74`](https://github.com/kristof-mattei/wsdd-rs/commit/bc2ea746941db6912025c466a17779558989cdc5))
+- *(deps)* Update rust crate jiff to v1.0.3 by [renovate\[bot\]](https://github.com/renovate[bot]) ([`e58c0f9`](https://github.com/kristof-mattei/wsdd-rs/commit/e58c0f90f37a721353aaf3150b68804f22e647ec))
+- Use never type by [Kristof Mattei](https://github.com/kristof-mattei) ([`6c5804e`](https://github.com/kristof-mattei/wsdd-rs/commit/6c5804eacf5e294777fb0e397d55a6c44901012e))
+- Remove lint exception that no longer fires by [Kristof Mattei](https://github.com/kristof-mattei) ([`85ff5cd`](https://github.com/kristof-mattei/wsdd-rs/commit/85ff5cdf878d360b1a21608b8bbec606e541c445))
+
+### 🚜 Refactor
+
+- Parse `wsa:Action` once into an `Action` enum by [Kristof Mattei](https://github.com/kristof-mattei) ([`beb1c57`](https://github.com/kristof-mattei/wsdd-rs/commit/beb1c57bd7734e5522cc96b74a676b53a276b14c))
+
+### ⚙️ Miscellaneous Tasks
+
+- Replace `time` with `jiff` by [Kristof Mattei](https://github.com/kristof-mattei) ([`f33d9ad`](https://github.com/kristof-mattei/wsdd-rs/commit/f33d9ada864ea2009d63a443a87ef180219adf1d))
 ## [2.4.0](https://github.com/kristof-mattei/wsdd-rs/compare/v2.3.0..v2.4.0) - 2026-11-14
 
 ### 🚀 Features
